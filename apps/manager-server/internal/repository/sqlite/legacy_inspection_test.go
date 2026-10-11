@@ -25,9 +25,14 @@ func inspectionSnapshot(t *testing.T, root string) map[string]string {
 		}
 		var digest [32]byte
 		if info.Mode().IsRegular() {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
+			// Windows locks forbid reading the held, empty ownership file.
+			// Its zero size determines the content; metadata is still compared.
+			var data []byte
+			if info.Size() > 0 {
+				data, err = os.ReadFile(path)
+				if err != nil {
+					return err
+				}
 			}
 			digest = sha256.Sum256(data)
 		}
