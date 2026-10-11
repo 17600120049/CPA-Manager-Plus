@@ -24,6 +24,8 @@ type InspectionOptions struct {
 	// Operator assertion that ALL writers have stopped; stat/hash is no fence.
 	SourceStopped bool
 	// Retained by the caller through native startup, without release/reacquire.
+	// Only cooperating single-Manager writers are fenced; arbitrary writers
+	// must be stopped separately before relying on the inspection.
 	ManagerLock *processlock.Lock
 }
 type InspectionFile struct {
@@ -392,6 +394,9 @@ func inspectFiles(paths InspectionPaths) ([]InspectionFile, error) {
 	return files, nil
 }
 
+// This metadata witness detects replacement and ordinary file changes. It
+// cannot detect same-inode, same-size overwrites with restored modification
+// times and does not establish writer quiescence or backup content consistency.
 func sameInspectionFiles(before, after []InspectionFile) bool {
 	if len(before) != len(after) {
 		return false
@@ -409,6 +414,8 @@ func sameInspectionFiles(before, after []InspectionFile) bool {
 }
 
 // Only ownership metadata may differ between provisional and fenced reads.
+// This comparison inherits the metadata witness limits above; it is not a
+// content-consistency proof for a later backup or an arbitrary live writer.
 func SameInspectionSource(before, after LegacyInspection) bool {
 	if len(before.Files) != len(after.Files) || before.SchemaFingerprint != after.SchemaFingerprint {
 		return false
@@ -541,7 +548,9 @@ func copyInspectionFile(ctx context.Context, source, destination string) error {
 	_, copyErr := io.Copy(output, &inspectionContextReader{ctx: ctx, reader: input})
 	closeErr := output.Close()
 	if copyErr != nil || closeErr != nil {
-		return errors.New("inspection copy failed")
+		// Keep cancellation identifiable without exposing source paths or OS
+		// errors through the inspection report.
+		return errors.Join(errors.New("inspection copy failed"), ctx.Err())
 	}
 	return nil
 }

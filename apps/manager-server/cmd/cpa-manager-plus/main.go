@@ -59,6 +59,16 @@ func main() {
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "initialize":
+			if len(os.Args) == 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+				fmt.Fprintln(os.Stdout, "Usage: cpa-manager-plus initialize\nStart a deliberate new installation with a pre-created config. Existing database, sidecar, data-key or archive assets are not bypassed. Use normal startup after initialization.\nStartup inspection timeout: CPA_MANAGER_PREFLIGHT_TIMEOUT (positive duration; default 2m). WAL inspection copies the complete database and WAL.")
+				return
+			}
+			if len(os.Args) != 2 {
+				log.Fatal("Usage: cpa-manager-plus initialize")
+			}
+			runServerWithOptions(legacypreflight.Options{Initialize: true})
+			return
 		case "legacy-preflight":
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -118,6 +128,18 @@ func main() {
 	runServer()
 }
 
+func startupPreflightTimeout() (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv("CPA_MANAGER_PREFLIGHT_TIMEOUT"))
+	if value == "" {
+		return 2 * time.Minute, nil
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 {
+		return 0, errors.New("CPA_MANAGER_PREFLIGHT_TIMEOUT must be a positive duration, for example 2m or 5m")
+	}
+	return timeout, nil
+}
+
 func writeVersion(args []string, stdout io.Writer) (bool, error) {
 	if len(args) != 1 || (args[0] != "-v" && args[0] != "--version") {
 		return false, nil
@@ -133,6 +155,14 @@ func runManagerDataSnapshotCommand(args []string, stdout io.Writer, stderr io.Wr
 }
 
 func runServer() {
+	runServerWithOptions(legacypreflight.Options{})
+}
+
+func runServerWithOptions(options legacypreflight.Options) {
+	inspectionTimeout, err := startupPreflightTimeout()
+	if err != nil {
+		log.Fatalf("configure startup inspection: %v", err)
+	}
 	cfg, err := config.LoadForInspection()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
@@ -141,13 +171,16 @@ func runServer() {
 	if err != nil {
 		log.Fatalf("resolve inspection config: %v", err)
 	}
-	inspectionCtx, cancelInspection := context.WithTimeout(context.Background(), 30*time.Second)
+	inspectionCtx, cancelInspection := context.WithTimeout(context.Background(), inspectionTimeout)
 	databaseLock, err := legacypreflight.AdmitStartup(inspectionCtx, sqliterepo.InspectionPaths{
 		Database: cfg.DBPath, Config: configPath, DataKey: cfg.DataKeyPath, Archives: cfg.UsageArchiveDir,
-	}, legacypreflight.Options{ProvisioningConfig: cfg.ProvisioningConfigOnly})
+	}, options)
 	cancelInspection()
 	if err != nil {
-		log.Fatalf("acquire manager database process lock: %v", err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			log.Fatalf("Manager startup inspection timed out after %s before data-key creation or writable database open; full database and WAL inspection is required; check storage and retry with a larger CPA_MANAGER_PREFLIGHT_TIMEOUT: %v", inspectionTimeout, err)
+		}
+		log.Fatalf("Manager startup preflight: %v", err)
 	}
 	defer func() {
 		if err := databaseLock.Close(); err != nil {

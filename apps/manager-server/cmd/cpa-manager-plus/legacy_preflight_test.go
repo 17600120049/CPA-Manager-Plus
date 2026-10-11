@@ -72,12 +72,20 @@ func writeOwnedProvisioningConfig(t *testing.T, dir string) {
 }
 
 func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
-	for _, kind := range []string{"legacy", "unknown", "corrupt", "orphan-wal", "old-config-only"} {
+	for _, kind := range []string{"legacy", "unknown", "corrupt", "orphan-wal", "old-config-only", "plain-config-only", "admin-key-config-only", "external-data-key-config-only", "recognized-config-only", "inspection-timeout", "invalid-timeout"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "usage.sqlite")
 			writeOwnedProvisioningConfig(t, dir)
 			switch kind {
+			case "inspection-timeout", "invalid-timeout":
+				db, err := sqliterepo.Open(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
 			case "legacy", "unknown":
 				db, err := sql.Open("sqlite", path)
 				if err != nil {
@@ -103,15 +111,51 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"dataDir":".","cpaUpstreamUrl":"https://owned.invalid"}`), 0600); err != nil {
 					t.Fatal(err)
 				}
+			case "admin-key-config-only", "external-data-key-config-only", "recognized-config-only":
+				keyDir := t.TempDir()
+				keyPath := filepath.Join(keyDir, "owned.key")
+				if err := os.WriteFile(keyPath, []byte("OWNED_EXISTING_KEY"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				value := map[string]any{"dataDir": "."}
+				if kind == "admin-key-config-only" {
+					value["adminKeyFile"] = keyPath
+				} else if kind == "external-data-key-config-only" {
+					value["dataKeyFile"] = keyPath
+				} else {
+					value["usageArchiveRetentionEnabled"] = true
+				}
+				encoded, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "config.json"), encoded, 0600); err != nil {
+					t.Fatal(err)
+				}
+				keyBefore := managerSourceSnapshot(t, keyDir)
+				t.Cleanup(func() {
+					if !reflect.DeepEqual(keyBefore, managerSourceSnapshot(t, keyDir)) {
+						t.Error("blocked startup changed independent credential source")
+					}
+				})
 			}
 			before := managerSourceSnapshot(t, dir)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestManagerServerHelperProcess$")
 			cmd.Env = ownedPreflightEnvironment(dir, path)
+			if kind == "inspection-timeout" {
+				cmd.Env = append(cmd.Env, "CPA_MANAGER_PREFLIGHT_TIMEOUT=1ns")
+			}
+			if kind == "invalid-timeout" {
+				cmd.Env = append(cmd.Env, "CPA_MANAGER_PREFLIGHT_TIMEOUT=0")
+			}
 			output, err := cmd.CombinedOutput()
 			if err == nil || ctx.Err() != nil || strings.Contains(string(output), "listening on") {
 				t.Fatalf("unsafe startup: err=%v output=%s", err, output)
+			}
+			if (kind == "inspection-timeout" || kind == "invalid-timeout") && !strings.Contains(string(output), "CPA_MANAGER_PREFLIGHT_TIMEOUT") {
+				t.Fatalf("timeout feedback missing: %s", output)
 			}
 			if !reflect.DeepEqual(before, managerSourceSnapshot(t, dir)) {
 				t.Fatal("blocked startup changed source/config/key/lock")
@@ -263,7 +307,7 @@ func TestNativeV2FreshAndReopenStartup(t *testing.T) {
 			t.Setenv(key, value)
 		}
 	}
-	first := startManagerServerProcess(t, dir, path)
+	first := startManagerServerProcess(t, dir, path, "initialize")
 	assertManagerEndpoint(t, first.addr, "/usage-service/info")
 	first.stop(t)
 	if _, err := os.Stat(filepath.Join(dir, "data.key")); err != nil {
@@ -272,6 +316,22 @@ func TestNativeV2FreshAndReopenStartup(t *testing.T) {
 	second := startManagerServerProcess(t, dir, path)
 	assertManagerEndpoint(t, second.addr, "/usage-service/info")
 	second.stop(t)
+}
+
+func TestFreshNoConfigNormalStartup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	t.Setenv("CPA_MANAGER_CONFIG", "")
+	t.Setenv("CPA_UPSTREAM_URL", "")
+	t.Setenv("CPA_MANAGEMENT_KEY", "")
+	t.Setenv("CPA_MANAGEMENT_KEY_FILE", filepath.Join(dir, "no-management-secret"))
+	t.Setenv("CPA_MANAGER_DATA_KEY", "")
+	t.Setenv("CPA_MANAGER_DATA_KEY_FILE", filepath.Join(dir, "no-key-secret"))
+	t.Setenv("CPAMP_RUNTIME_URL", "")
+	t.Setenv("CPAMP_RUNTIME_TOKEN_FILE", "")
+	server := startManagerServerProcess(t, dir, path)
+	assertManagerEndpoint(t, server.addr, "/usage-service/info")
+	server.stop(t)
 }
 
 func TestNativeV2CrashWALStartupReadsCommittedUsage(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestInspectionConfigStrictMissingMalformedAndProvisioningPaths(t *testing.T) {
+func TestInspectionConfigStrictMissingMalformedAndExistingPaths(t *testing.T) {
 	clearConfigEnv(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -21,21 +21,18 @@ func TestInspectionConfigStrictMissingMalformedAndProvisioningPaths(t *testing.T
 		t.Fatal("inspection created config")
 	}
 	for _, test := range []struct {
-		raw                     string
-		wantError, provisioning bool
+		raw       string
+		wantError bool
 	}{
-		{`{broken`, true, false}, {`{"dataDir":"owned"}`, false, true}, {`{"cpaUpstreamUrl":"https://owned.invalid"}`, false, false},
-		{`{"retiredSource":{"managementKey":"owned"}}`, false, false},
+		{`{broken`, true}, {`{"dataDir":"owned"}`, false}, {`{"cpaUpstreamUrl":"https://owned.invalid"}`, false},
+		{`{"retiredSource":{"managementKey":"owned"}}`, false},
 	} {
 		if err := os.WriteFile(path, []byte(test.raw), 0600); err != nil {
 			t.Fatal(err)
 		}
-		cfg, err := LoadForInspection()
+		_, err := LoadForInspection()
 		if (err != nil) != test.wantError {
 			t.Fatalf("error=%v", err)
-		}
-		if err == nil && cfg.ProvisioningConfigOnly != test.provisioning {
-			t.Fatal("provisioning/source config classification failed")
 		}
 		after, err := os.ReadFile(path)
 		if err != nil || string(after) != test.raw {

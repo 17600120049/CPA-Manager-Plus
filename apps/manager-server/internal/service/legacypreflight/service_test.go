@@ -89,16 +89,21 @@ func TestStartupRejectsLegacyUnknownAndPartialWithoutSourceWrites(t *testing.T) 
 					t.Fatal(err)
 				}
 			}
-			before := sourceState(t, filepath.Dir(paths.Database))
-			lock, err := AdmitStartup(context.Background(), paths, Options{})
-			if err == nil || lock != nil {
-				if lock != nil {
-					_ = lock.Close()
+			for _, initialize := range []bool{false, true} {
+				if kind == "config-without-db" && initialize {
+					continue
 				}
-				t.Fatal("unsafe source admitted")
-			}
-			if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
-				t.Fatal("blocked startup changed source or created lock/config/key")
+				before := sourceState(t, filepath.Dir(paths.Database))
+				lock, err := AdmitStartup(context.Background(), paths, Options{Initialize: initialize})
+				if err == nil || lock != nil {
+					if lock != nil {
+						_ = lock.Close()
+					}
+					t.Fatalf("unsafe source admitted, initialize=%v", initialize)
+				}
+				if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+					t.Fatal("blocked startup changed source or created lock/config/key")
+				}
 			}
 		})
 	}
@@ -167,7 +172,7 @@ func TestNativeSchemaWithoutCanonicalPrimaryKeyCannotEnterMigration(t *testing.T
 	}
 }
 
-func TestFreshProvisioningConfigAndSourceConfigAreDistinct(t *testing.T) {
+func TestConfigOnlyStartupRequiresExplicitInitialization(t *testing.T) {
 	paths := fixturePaths(t)
 	if err := os.WriteFile(paths.Config, []byte(`{"dataDir":"./data"}`), 0600); err != nil {
 		t.Fatal(err)
@@ -180,11 +185,46 @@ func TestFreshProvisioningConfigAndSourceConfigAreDistinct(t *testing.T) {
 	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
 		t.Fatal("unclassified source changed")
 	}
-	lock, err = AdmitStartup(context.Background(), paths, Options{ProvisioningConfig: true})
+	report, err := Inspect(context.Background(), paths, Options{})
+	if err != nil || report.SourceKind != "partial-source" || startupAllowed(report) {
+		t.Fatalf("existing config is not fresh evidence: report=%+v err=%v", report, err)
+	}
+	lock, err = AdmitStartup(context.Background(), paths, Options{Initialize: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer lock.Close()
+}
+
+func TestInitializationCannotBypassSourceArtifacts(t *testing.T) {
+	for _, role := range []string{"database", "wal", "shm", "journal", "data-key", "archives"} {
+		t.Run(role, func(t *testing.T) {
+			paths := fixturePaths(t)
+			if err := os.WriteFile(paths.Config, []byte(`{"dataDir":"."}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			path := map[string]string{"database": paths.Database, "wal": paths.Database + "-wal", "shm": paths.Database + "-shm", "journal": paths.Database + "-journal", "data-key": paths.DataKey, "archives": paths.Archives}[role]
+			if role == "archives" {
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(path, []byte("owned-source"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			before := sourceState(t, filepath.Dir(paths.Database))
+			lock, err := AdmitStartup(context.Background(), paths, Options{Initialize: true})
+			if lock != nil {
+				_ = lock.Close()
+				t.Fatal("initialization bypassed source artifacts")
+			}
+			if err == nil {
+				t.Fatal("initialization accepted existing source artifacts")
+			}
+			if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+				t.Fatal("blocked initialization changed source")
+			}
+		})
+	}
 }
 
 func TestInspectNeverClaimsExactReleaseOrBackupAndKeepsMissingDistinct(t *testing.T) {

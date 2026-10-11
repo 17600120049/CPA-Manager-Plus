@@ -21,9 +21,10 @@ type Report struct {
 
 type Options struct {
 	SourceStopped bool
-	// Only an otherwise empty location may accept a parsed provisioning-only
-	// config. Old CPA connection configuration remains partial source evidence.
-	ProvisioningConfig bool
+	// Explicit new-installation intent may accept a pre-created config only.
+	// Config fields cannot establish freshness. Database, sidecar, key and
+	// archive evidence is never bypassed by this option.
+	Initialize bool
 }
 
 type Admission struct {
@@ -57,7 +58,7 @@ func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options,
 	if observed.Files[0].State == "missing" {
 		report.SourceKind = "fresh"
 		for _, file := range observed.Files[1:7] {
-			if file.Role == "config" && options.ProvisioningConfig && file.State == "present" {
+			if file.Role == "config" && options.Initialize && file.State == "present" {
 				continue
 			}
 			if file.State == "not-inspected" {
@@ -164,7 +165,7 @@ func AdmitStartup(ctx context.Context, paths sqlite.InspectionPaths, options Opt
 		return nil, err
 	}
 	if !startupAllowed(before) {
-		return nil, errors.New("Manager source requires compatibility and verified-backup authorization; run legacy-preflight")
+		return nil, errors.New("Manager source is not proven fresh or native v2; run legacy-preflight and restore missing source assets; use initialize only for a deliberate config-only new installation")
 	}
 	if lock == nil {
 		lock, err = processlock.Acquire(paths.Database)

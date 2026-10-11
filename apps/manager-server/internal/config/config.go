@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -31,8 +30,6 @@ const (
 )
 
 type Config struct {
-	// A parsed connection-bearing old config is source evidence when DB is absent.
-	ProvisioningConfigOnly       bool
 	HTTPAddr                     string
 	DataDir                      string
 	DBPath                       string
@@ -75,7 +72,6 @@ type LoadOptions struct {
 }
 
 type fileConfig struct {
-	provisioningOnly             bool
 	HTTPAddr                     string   `json:"httpAddr,omitempty"`
 	DataDir                      string   `json:"dataDir,omitempty"`
 	DBPath                       string   `json:"dbPath,omitempty"`
@@ -175,7 +171,6 @@ func LoadWithOptions(options LoadOptions) (Config, error) {
 	}
 
 	return Config{
-		ProvisioningConfigOnly:       cfgFile.provisioningOnly,
 		HTTPAddr:                     env("HTTP_ADDR", stringFallback(cfgFile.HTTPAddr, "0.0.0.0:18317")),
 		DataDir:                      dataDir,
 		DBPath:                       dbPath,
@@ -297,12 +292,6 @@ func readFileConfig(configPath string) (fileConfig, string, bool, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return fileConfig{}, filepath.Dir(configPath), false, fmt.Errorf("parse config %s: %w", configPath, err)
 	}
-	// Unknown old fields cannot turn a missing database into Fresh. Normal
-	// decoding and runtime environment precedence are unchanged.
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	var known fileConfig
-	cfg.provisioningOnly = decoder.Decode(&known) == nil && strings.TrimSpace(cfg.CPAUpstreamURL) == "" && strings.TrimSpace(cfg.ManagementKeyFile) == ""
 	return cfg, filepath.Dir(configPath), true, nil
 }
 
@@ -329,7 +318,7 @@ func ResolveInspectionLocations(configPath, databasePath string) (Config, error)
 	if keyPath == "" {
 		keyPath = filepath.Join(dataDir, "data.key")
 	}
-	return Config{DBPath: databasePath, DataKeyPath: keyPath, UsageArchiveDir: filepath.Join(archiveBaseDir, "usage-archives"), ProvisioningConfigOnly: cfg.provisioningOnly}, nil
+	return Config{DBPath: databasePath, DataKeyPath: keyPath, UsageArchiveDir: filepath.Join(archiveBaseDir, "usage-archives")}, nil
 }
 
 func createDefaultFileConfig(configPath string) (fileConfig, string, error) {

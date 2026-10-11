@@ -41,6 +41,25 @@ func TestWriteVersion(t *testing.T) {
 	}
 }
 
+func TestStartupPreflightTimeout(t *testing.T) {
+	for _, test := range []struct {
+		value   string
+		want    time.Duration
+		invalid bool
+	}{
+		{"", 2 * time.Minute, false}, {" 5m ", 5 * time.Minute, false}, {"500ms", 500 * time.Millisecond, false},
+		{"0", 0, true}, {"-1s", 0, true}, {"invalid", 0, true}, {"999999999h", 0, true},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			t.Setenv("CPA_MANAGER_PREFLIGHT_TIMEOUT", test.value)
+			got, err := startupPreflightTimeout()
+			if (err != nil) != test.invalid || got != test.want {
+				t.Fatalf("timeout=%s err=%v", got, err)
+			}
+		})
+	}
+}
+
 type recordingInspectionStopper struct {
 	calls       int
 	firstErr    error
@@ -374,6 +393,13 @@ func TestManagerServerHelperProcess(t *testing.T) {
 	if os.Getenv("CPA_MANAGER_TEST_HELPER") != "1" {
 		t.Skip("helper process only")
 	}
+	for i, arg := range os.Args {
+		if arg == "--" {
+			os.Args = append([]string{"cpa-manager-plus"}, os.Args[i+1:]...)
+			main()
+			return
+		}
+	}
 	runServer()
 }
 
@@ -449,9 +475,9 @@ func (l *synchronizedLog) String() string {
 	return strings.Join(l.lines, "\n")
 }
 
-func startManagerServerProcess(t testing.TB, dataDir, dbPath string) *managerServerProcess {
+func startManagerServerProcess(t testing.TB, dataDir, dbPath string, startupArgs ...string) *managerServerProcess {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestManagerServerHelperProcess$")
+	cmd := exec.Command(os.Args[0], append([]string{"-test.run=^TestManagerServerHelperProcess$", "--"}, startupArgs...)...)
 	cmd.Env = managerServerTestEnvironment(dataDir, dbPath)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -502,6 +528,7 @@ func startManagerServerProcess(t testing.TB, dataDir, dbPath string) *managerSer
 
 func managerServerTestEnvironment(dataDir, dbPath string) []string {
 	overrides := map[string]string{
+		"CPA_MANAGER_PREFLIGHT_TIMEOUT":         "",
 		"CPA_MANAGER_TEST_HELPER":               "1",
 		"CPA_MANAGER_ADMIN_KEY":                 "cpamp_startup_migration_test_admin_key",
 		"CPA_MANAGER_DATA_KEY_PATH":             filepath.Join(dataDir, "data.key"),

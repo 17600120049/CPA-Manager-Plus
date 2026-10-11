@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
 )
@@ -107,6 +109,34 @@ func TestLegacyInspectionColdAndCancellationPreserveEverySourceFile(t *testing.T
 	defer db.Close()
 	if _, err := db.Exec(`create table forbidden(id integer)`); err == nil {
 		t.Fatal("inspection DSN accepted a write")
+	}
+}
+
+func TestInspectionCopyPreservesCancellationCauseAndSource(t *testing.T) {
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			dir := t.TempDir()
+			source := filepath.Join(dir, "owned-source")
+			if err := os.WriteFile(source, []byte("owned source content"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			before := inspectionSnapshot(t, dir)
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if cause == context.DeadlineExceeded {
+				ctx, cancel = context.WithDeadline(context.Background(), time.Time{})
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
+			}
+			cancel()
+			err := copyInspectionFile(ctx, source, filepath.Join(t.TempDir(), "owned-copy"))
+			if !errors.Is(err, cause) {
+				t.Fatalf("cancellation cause lost: %v", err)
+			}
+			if !reflect.DeepEqual(before, inspectionSnapshot(t, dir)) {
+				t.Fatal("cancelled copy changed source")
+			}
+		})
 	}
 }
 
@@ -283,6 +313,39 @@ func TestLegacyInspectionDetectsReplacementWithIdenticalBytesAndTimestamp(t *tes
 	result, err := InspectLegacySource(ctx, paths, InspectionOptions{SourceStopped: true})
 	if err == nil || result.Consistency != "changed" {
 		t.Fatalf("replacement accepted: result=%+v err=%v", result, err)
+	}
+}
+
+func TestLegacyInspectionMetadataDoesNotEstablishWriterQuiescence(t *testing.T) {
+	paths := coldInspectionFixture(t)
+	if err := os.WriteFile(paths.Config, []byte("owned-before"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := inspectFiles(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(paths.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Overwrite the same inode with the same byte count, restoring mtime.
+	if err := os.WriteFile(paths.Config, []byte("owned-after!"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(paths.Config, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	after, err := inspectFiles(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameInspectionFiles(before, after) {
+		t.Fatal("fixture did not preserve the compared metadata")
+	}
+	result, err := InspectLegacySource(context.Background(), paths, InspectionOptions{})
+	if err != nil || result.SQLite != "not-inspected" || result.Consistency != "unknown" || len(result.Issues) != 1 || result.Issues[0] != "source-quiescence-unproven" {
+		t.Fatalf("metadata was accepted as writer quiescence: result=%+v err=%v", result, err)
 	}
 }
 
