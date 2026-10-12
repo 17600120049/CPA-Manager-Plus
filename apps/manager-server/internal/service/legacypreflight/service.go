@@ -16,14 +16,15 @@ import (
 )
 
 type Report struct {
-	SourceKind           string                  `json:"sourceKind"`
-	Observed             sqlite.LegacyInspection `json:"observed"`
-	Unknown              []string                `json:"unknown"`
-	Blocked              []string                `json:"blocked"`
-	UpgradeAuthorized    bool                    `json:"upgradeAuthorized"`
-	CompatibilityProfile *CompatibilityProfile   `json:"compatibilityProfile,omitempty"`
-	ExactSourceRelease   *ProfileObservation     `json:"exactSourceRelease,omitempty"`
-	BridgeReadiness      *BridgeReadiness        `json:"bridgeReadiness,omitempty"`
+	SourceKind             string                  `json:"sourceKind"`
+	Observed               sqlite.LegacyInspection `json:"observed"`
+	Unknown                []string                `json:"unknown"`
+	Blocked                []string                `json:"blocked"`
+	UpgradeAuthorized      bool                    `json:"upgradeAuthorized"`
+	CompatibilityProfile   *CompatibilityProfile   `json:"compatibilityProfile,omitempty"`
+	ExactSourceRelease     *ProfileObservation     `json:"exactSourceRelease,omitempty"`
+	BridgeReadiness        *BridgeReadiness        `json:"bridgeReadiness,omitempty"`
+	PlannedBridgeCandidate *PlannedBridgeCandidate `json:"plannedBridgeCandidate,omitempty"`
 }
 
 type Options struct {
@@ -79,7 +80,10 @@ func (a *Admission) Close() error {
 	return a.closeErr
 }
 
-func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options) (Report, error) {
+func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options) (report Report, err error) {
+	// Diagnostic projection only. Startup admission uses inspect directly and
+	// never consumes the planned target as source identity or authority.
+	defer func() { addPlannedBridgeCandidate(&report) }()
 	lock, err := processlock.AcquireExisting(paths.Database)
 	if err != nil && !errors.Is(err, processlock.ErrNoExistingLock) {
 		report := Report{SourceKind: "unknown", Unknown: []string{"source-consistency", "compatibility-profile", "exact-source-release"}, Blocked: []string{"source-ownership-unavailable"}}
