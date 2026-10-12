@@ -225,6 +225,21 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 				})
 			}
 			before := managerSourceSnapshot(t, dir)
+			if strings.HasPrefix(kind, "legacy-profile-") {
+				paths := legacypreflight.DefaultPaths(path)
+				paths.Config = filepath.Join(dir, "config.json")
+				report, err := legacypreflight.Inspect(context.Background(), paths, legacypreflight.Options{SourceStopped: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantCandidate := kind != "legacy-profile-partial"
+				if (report.PlannedBridgeCandidate != nil) != wantCandidate || report.ExactSourceRelease.Status != "unknown" || report.UpgradeAuthorized {
+					t.Fatalf("diagnostic target changed source identity/authority: %+v", report)
+				}
+				if wantCandidate && (report.PlannedBridgeCandidate.Status != "planned" || report.PlannedBridgeCandidate.Release != "v1.14.4") {
+					t.Fatal("legacy startup regression did not inspect the planned target")
+				}
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestManagerServerHelperProcess$")
@@ -407,6 +422,16 @@ func TestNativeV2FreshAndReopenStartup(t *testing.T) {
 	first := startManagerServerProcess(t, dir, path, "initialize")
 	assertManagerEndpoint(t, first.addr, "/usage-service/info")
 	first.stop(t)
+	paths := legacypreflight.DefaultPaths(path)
+	paths.Config = filepath.Join(dir, "config.json")
+	before := managerSourceSnapshot(t, dir)
+	report, err := legacypreflight.Inspect(context.Background(), paths, legacypreflight.Options{SourceStopped: true})
+	if err != nil || report.SourceKind != "native-v2" || report.PlannedBridgeCandidate != nil || report.UpgradeAuthorized {
+		t.Fatalf("native source acquired a legacy planned target: report=%+v err=%v", report, err)
+	}
+	if !reflect.DeepEqual(before, managerSourceSnapshot(t, dir)) {
+		t.Fatal("native diagnostic inspection changed source")
+	}
 	if _, err := os.Stat(filepath.Join(dir, "data.key")); err != nil {
 		t.Fatal("fresh native key was not created")
 	}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -188,11 +189,17 @@ func TestCommandHistoricalProfileContractAndRejectedPartialSource(t *testing.T) 
 					t.Fatalf("unsafe contract: %+v", report)
 				}
 				if partial {
+					if report.PlannedBridgeCandidate != nil || bytes.Contains(out.Bytes(), []byte(`"plannedBridgeCandidate"`)) {
+						t.Fatal("partial CLI source acquired a planned candidate")
+					}
 					if report.CompatibilityProfile.Status != "partial" || report.CompatibilityProfile.Family != "" {
 						t.Fatal("partial gained family")
 					}
 				} else if report.CompatibilityProfile.Status != "recognized" || report.CompatibilityProfile.Family != fixture.Family {
 					t.Fatal("recognized fixture lost family")
+				}
+				if !partial {
+					assertPlannedCandidateCLIContract(t, report, out.Bytes())
 				}
 				if strings.Contains(out.String()+errOut.String(), "OWNED_SECRET") {
 					t.Fatal("source setting leaked")
@@ -288,6 +295,7 @@ func TestCommandHistoricalMigrationBlockersPreserveSource(t *testing.T) {
 			if !strings.Contains(strings.Join(report.Blocked, ","), "legacy-bridge-blocked") {
 				t.Fatal("Bridge blocker absent")
 			}
+			assertPlannedCandidateCLIContract(t, report, out.Bytes())
 			if strings.Contains(out.String()+errOut.String(), "OWNED_SECRET") {
 				t.Fatal("migration error leaked")
 			}
@@ -300,5 +308,27 @@ func TestCommandHistoricalMigrationBlockersPreserveSource(t *testing.T) {
 				t.Fatal("CLI created source assets")
 			}
 		})
+	}
+}
+
+func assertPlannedCandidateCLIContract(t *testing.T, report service.Report, data []byte) {
+	t.Helper()
+	candidate := report.PlannedBridgeCandidate
+	if candidate == nil || candidate.Status != "planned" || candidate.Release != "v1.14.4" || candidate.SourceCommit != "166262365d506157b99968105c890f480cc7c07c" {
+		t.Fatalf("CLI lost fixed planned candidate: %+v", candidate)
+	}
+	if report.ExactSourceRelease.Status != "unknown" || report.UpgradeAuthorized || !slices.Contains(report.Unknown, "exact-source-release") || !slices.Contains(report.Unknown, "forward-hop-evidence") {
+		t.Fatal("CLI planned candidate concealed missing evidence or granted authority")
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(object["plannedBridgeCandidate"], &fields); err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) != 3 || fields["status"] == nil || fields["release"] == nil || fields["sourceCommit"] == nil {
+		t.Fatal("planned target acquired extra evidence/authority fields")
 	}
 }
