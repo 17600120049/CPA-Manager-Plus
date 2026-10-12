@@ -198,15 +198,13 @@ export const mergeCodexResetCreditsFromQuotaSnapshots = (
     typeof quota?.resetCreditsCountEvidenceAtMs === 'number' &&
     Number.isFinite(quota.resetCreditsCountEvidenceAtMs) &&
     quota.resetCreditsCountEvidenceAtMs > 0;
-  const localCountEvidenceAtMs =
-    resolveCodexResetCreditsCountEvidenceAtMs(quota) ?? 0;
+  const localCountEvidenceAtMs = resolveCodexResetCreditsCountEvidenceAtMs(quota) ?? 0;
 
   const hasLocalDetailEvidence =
     typeof quota?.resetCreditsDetailEvidenceAtMs === 'number' &&
     Number.isFinite(quota.resetCreditsDetailEvidenceAtMs) &&
     quota.resetCreditsDetailEvidenceAtMs > 0;
-  const localDetailEvidenceAtMs =
-    resolveCodexResetCreditsDetailEvidenceAtMs(quota) ?? 0;
+  const localDetailEvidenceAtMs = resolveCodexResetCreditsDetailEvidenceAtMs(quota) ?? 0;
 
   const localResetInvalidationAtMs =
     quota?.resetCreditsDetailStale === true &&
@@ -223,11 +221,7 @@ export const mergeCodexResetCreditsFromQuotaSnapshots = (
 
   const localDetailInvalidationBoundaryAtMs =
     quota?.resetCreditsDetailStale === true
-      ? Math.max(
-          localDetailEvidenceAtMs,
-          localCountEvidenceAtMs,
-          localResetInvalidationAtMs
-        )
+      ? Math.max(localDetailEvidenceAtMs, localCountEvidenceAtMs, localResetInvalidationAtMs)
       : localDetailEvidenceAtMs;
 
   const usableSnapshots = snapshots.filter(
@@ -255,8 +249,7 @@ export const mergeCodexResetCreditsFromQuotaSnapshots = (
     : 0;
 
   const localIsZeroCountAtOrAfterSnapshot =
-    quota?.rateLimitResetCreditsAvailableCount === 0 &&
-    localCountEvidenceAtMs >= creditsObservedAt;
+    quota?.rateLimitResetCreditsAvailableCount === 0 && localCountEvidenceAtMs >= creditsObservedAt;
 
   const useSnapshotCount =
     countSnapshot !== undefined &&
@@ -273,8 +266,8 @@ export const mergeCodexResetCreditsFromQuotaSnapshots = (
     (quota?.resetCreditsDetailStale === true
       ? creditsObservedAt >= localDetailInvalidationBoundaryAtMs
       : quota?.rateLimitResetCredits === undefined &&
-        !hasLocalDetailEvidence &&
-        localDetailInvalidationBoundaryAtMs === 0
+          !hasLocalDetailEvidence &&
+          localDetailInvalidationBoundaryAtMs === 0
         ? true
         : creditsObservedAt >= localDetailInvalidationBoundaryAtMs);
 
@@ -289,16 +282,27 @@ export const mergeCodexResetCreditsFromQuotaSnapshots = (
   const clearCreditsFromZeroCount =
     activeCount === 0 && activeCountObservedAt >= activeCreditsObservedAt;
 
-  const finalCredits = clearCreditsFromZeroCount
-    ? []
-    : useSnapshotCredits
-      ? (creditsSnapshot.reset_credits ?? []).map((credit) => ({
-          id: credit.id,
-          status: 'available',
-          grantedAt: '',
-          expiresAt: new Date(credit.expires_at_ms).toISOString(),
-        }))
-      : (quota?.rateLimitResetCredits ?? []);
+  // A changed count invalidates older detail just as a count-only provider
+  // refresh does. Detail observed at or after that count remains independent.
+  const invalidateOlderCreditsFromChangedCount =
+    useSnapshotCount &&
+    typeof quota?.rateLimitResetCreditsAvailableCount === 'number' &&
+    activeCount !== null &&
+    activeCount > 0 &&
+    activeCount !== quota.rateLimitResetCreditsAvailableCount &&
+    activeCountObservedAt > activeCreditsObservedAt;
+
+  const finalCredits =
+    clearCreditsFromZeroCount || invalidateOlderCreditsFromChangedCount
+      ? []
+      : useSnapshotCredits
+        ? (creditsSnapshot.reset_credits ?? []).map((credit) => ({
+            id: credit.id,
+            status: 'available',
+            grantedAt: '',
+            expiresAt: new Date(credit.expires_at_ms).toISOString(),
+          }))
+        : (quota?.rateLimitResetCredits ?? []);
 
   const detailSupersedesCount =
     useSnapshotCredits &&
@@ -309,10 +313,7 @@ export const mergeCodexResetCreditsFromQuotaSnapshots = (
   const finalCount = detailSupersedesCount ? finalCredits.length : activeCount;
   const finalCountEvidenceAtMs = detailSupersedesCount
     ? creditsObservedAt
-    : Math.max(
-        localCountEvidenceAtMs,
-        useSnapshotCount ? countObservedAt : 0
-      );
+    : Math.max(localCountEvidenceAtMs, useSnapshotCount ? countObservedAt : 0);
 
   const finalDetailEvidenceAtMs = clearCreditsFromZeroCount
     ? null
@@ -331,9 +332,11 @@ export const mergeCodexResetCreditsFromQuotaSnapshots = (
     resetCreditsDetailEvidenceAtMs: finalDetailEvidenceAtMs,
     resetCreditsDetailStale: clearCreditsFromZeroCount
       ? false
-      : useSnapshotCredits
-        ? false
-        : (quota?.resetCreditsDetailStale ?? false),
+      : invalidateOlderCreditsFromChangedCount
+        ? true
+        : useSnapshotCredits
+          ? false
+          : (quota?.resetCreditsDetailStale ?? false),
     resetCreditsEvidenceAtMs: Math.max(
       localCountEvidenceAtMs,
       localDetailEvidenceAtMs,
