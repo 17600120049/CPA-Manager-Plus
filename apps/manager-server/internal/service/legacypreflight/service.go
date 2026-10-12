@@ -22,8 +22,8 @@ type Report struct {
 type Options struct {
 	SourceStopped bool
 	// Explicit new-installation intent may accept a pre-created config only.
-	// Config fields cannot establish freshness. Database, sidecar, key and
-	// archive evidence is never bypassed by this option.
+	// Config fields cannot establish freshness. Database, sidecar, key, archive
+	// and pre-existing process-lock evidence is never bypassed by this option.
 	Initialize bool
 }
 
@@ -40,10 +40,12 @@ func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options)
 	if lock != nil {
 		defer lock.Close()
 	}
-	return inspect(ctx, paths, options, lock)
+	return inspect(ctx, paths, options, lock, false)
 }
 
-func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options, lock *processlock.Lock) (Report, error) {
+// createdLock is only set for the fenced recheck after an initially admitted
+// source had no ownership marker. Diagnostic callers never ignore an old lock.
+func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options, lock *processlock.Lock, createdLock bool) (Report, error) {
 	observed, err := sqlite.InspectLegacySource(ctx, paths, sqlite.InspectionOptions{SourceStopped: options.SourceStopped, ManagerLock: lock})
 	report := Report{SourceKind: "unknown", Observed: observed, Unknown: []string{
 		"exact-source-release", "compatibility-profile", "verified-backup", "full-database-integrity", "archive-content",
@@ -57,7 +59,10 @@ func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options,
 	}
 	if observed.Files[0].State == "missing" {
 		report.SourceKind = "fresh"
-		for _, file := range observed.Files[1:7] {
+		for _, file := range observed.Files[1:] {
+			if file.Role == "source-directory" || (file.Role == "process-lock" && createdLock && file.State == "present") {
+				continue
+			}
 			if file.Role == "config" && options.Initialize && file.State == "present" {
 				continue
 			}
@@ -160,7 +165,7 @@ func AdmitStartup(ctx context.Context, paths sqlite.InspectionPaths, options Opt
 		}
 	}()
 	options.SourceStopped = true // provisional cold read; WAL still requires a fence
-	before, err := inspect(ctx, paths, options, lock)
+	before, err := inspect(ctx, paths, options, lock, false)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +178,7 @@ func AdmitStartup(ctx context.Context, paths sqlite.InspectionPaths, options Opt
 			return nil, err
 		}
 		paths.Database = lock.DatabasePath()
-		after, err := inspect(ctx, paths, options, lock)
+		after, err := inspect(ctx, paths, options, lock, true)
 		if err != nil {
 			return nil, err
 		}

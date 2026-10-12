@@ -61,7 +61,7 @@ func main() {
 		switch os.Args[1] {
 		case "initialize":
 			if len(os.Args) == 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
-				fmt.Fprintln(os.Stdout, "Usage: cpa-manager-plus initialize\nStart a deliberate new installation with a pre-created config. Existing database, sidecar, data-key or archive assets are not bypassed. Use normal startup after initialization.\nStartup inspection timeout: CPA_MANAGER_PREFLIGHT_TIMEOUT (positive duration; default 2m). WAL inspection copies the complete database and WAL.")
+				fmt.Fprintln(os.Stdout, "Usage: cpa-manager-plus initialize\nStart a deliberate new installation with a pre-created config. This starts the Manager Server and keeps it running; it does not exit after initialization. Existing database, sidecar, data-key, archive or pre-existing process-lock assets are not bypassed. Use normal startup on subsequent runs.\nStartup inspection timeout: CPA_MANAGER_PREFLIGHT_TIMEOUT (positive duration; default 2m). WAL inspection copies the complete database and WAL.")
 				return
 			}
 			if len(os.Args) != 2 {

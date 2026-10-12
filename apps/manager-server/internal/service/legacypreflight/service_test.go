@@ -46,7 +46,7 @@ func fixturePaths(t *testing.T) sqlite.InspectionPaths {
 }
 
 func TestStartupRejectsLegacyUnknownAndPartialWithoutSourceWrites(t *testing.T) {
-	for _, kind := range []string{"legacy", "single-gateway-table", "unknown", "orphan-wal", "key-without-db", "config-without-db", "corrupt", "empty"} {
+	for _, kind := range []string{"legacy", "single-gateway-table", "unknown", "orphan-wal", "key-without-db", "config-without-db", "process-lock-without-db", "corrupt", "empty"} {
 		t.Run(kind, func(t *testing.T) {
 			paths := fixturePaths(t)
 			switch kind {
@@ -80,6 +80,14 @@ func TestStartupRejectsLegacyUnknownAndPartialWithoutSourceWrites(t *testing.T) 
 				if err := os.WriteFile(paths.Config, []byte(`{"cpaUpstreamUrl":"https://owned.invalid"}`), 0600); err != nil {
 					t.Fatal(err)
 				}
+			case "process-lock-without-db":
+				lock, err := processlock.Acquire(paths.Database)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := lock.Close(); err != nil {
+					t.Fatal(err)
+				}
 			case "corrupt":
 				if err := os.WriteFile(paths.Database, []byte("owned-corrupt"), 0600); err != nil {
 					t.Fatal(err)
@@ -87,6 +95,12 @@ func TestStartupRejectsLegacyUnknownAndPartialWithoutSourceWrites(t *testing.T) 
 			case "empty":
 				if err := os.WriteFile(paths.Database, nil, 0600); err != nil {
 					t.Fatal(err)
+				}
+			}
+			if kind == "process-lock-without-db" {
+				report, err := Inspect(context.Background(), paths, Options{SourceStopped: true})
+				if err != nil || report.SourceKind != "partial-source" || startupAllowed(report) || report.UpgradeAuthorized {
+					t.Fatalf("old ownership marker treated as fresh: report=%+v err=%v", report, err)
 				}
 			}
 			for _, initialize := range []bool{false, true} {
@@ -197,13 +211,13 @@ func TestConfigOnlyStartupRequiresExplicitInitialization(t *testing.T) {
 }
 
 func TestInitializationCannotBypassSourceArtifacts(t *testing.T) {
-	for _, role := range []string{"database", "wal", "shm", "journal", "data-key", "archives"} {
+	for _, role := range []string{"database", "wal", "shm", "journal", "data-key", "archives", "process-lock"} {
 		t.Run(role, func(t *testing.T) {
 			paths := fixturePaths(t)
 			if err := os.WriteFile(paths.Config, []byte(`{"dataDir":"."}`), 0600); err != nil {
 				t.Fatal(err)
 			}
-			path := map[string]string{"database": paths.Database, "wal": paths.Database + "-wal", "shm": paths.Database + "-shm", "journal": paths.Database + "-journal", "data-key": paths.DataKey, "archives": paths.Archives}[role]
+			path := map[string]string{"database": paths.Database, "wal": paths.Database + "-wal", "shm": paths.Database + "-shm", "journal": paths.Database + "-journal", "data-key": paths.DataKey, "archives": paths.Archives, "process-lock": paths.Database + ".manager.lock"}[role]
 			if role == "archives" {
 				if err := os.Mkdir(path, 0700); err != nil {
 					t.Fatal(err)

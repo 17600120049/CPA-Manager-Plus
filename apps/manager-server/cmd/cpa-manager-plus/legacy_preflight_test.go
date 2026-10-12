@@ -72,12 +72,43 @@ func writeOwnedProvisioningConfig(t *testing.T, dir string) {
 }
 
 func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
-	for _, kind := range []string{"legacy", "unknown", "corrupt", "orphan-wal", "old-config-only", "plain-config-only", "admin-key-config-only", "external-data-key-config-only", "recognized-config-only", "inspection-timeout", "invalid-timeout"} {
+	for _, kind := range []string{"legacy", "unknown", "corrupt", "orphan-wal", "old-lock-only", "old-lock-initialize", "symlink-config", "old-config-only", "plain-config-only", "admin-key-config-only", "external-data-key-config-only", "recognized-config-only", "inspection-timeout", "invalid-timeout"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "usage.sqlite")
 			writeOwnedProvisioningConfig(t, dir)
 			switch kind {
+			case "old-lock-only", "old-lock-initialize":
+				lock, err := processlock.Acquire(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := lock.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if kind == "old-lock-only" {
+					if err := os.Remove(filepath.Join(dir, "config.json")); err != nil {
+						t.Fatal(err)
+					}
+				}
+			case "symlink-config":
+				targetDir := t.TempDir()
+				target := filepath.Join(targetDir, "config.json")
+				if err := os.WriteFile(target, []byte(`{broken`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(filepath.Join(dir, "config.json")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, filepath.Join(dir, "config.json")); err != nil {
+					t.Fatal(err)
+				}
+				targetBefore := managerSourceSnapshot(t, targetDir)
+				t.Cleanup(func() {
+					if !reflect.DeepEqual(targetBefore, managerSourceSnapshot(t, targetDir)) {
+						t.Error("config link rejection changed independent target")
+					}
+				})
 			case "inspection-timeout", "invalid-timeout":
 				db, err := sqliterepo.Open(path)
 				if err != nil {
@@ -144,6 +175,12 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestManagerServerHelperProcess$")
 			cmd.Env = ownedPreflightEnvironment(dir, path)
+			if kind == "old-lock-only" {
+				cmd.Env = append(cmd.Env, "CPA_MANAGER_CONFIG=")
+			}
+			if kind == "old-lock-initialize" {
+				cmd.Args = append(cmd.Args, "--", "initialize")
+			}
 			if kind == "inspection-timeout" {
 				cmd.Env = append(cmd.Env, "CPA_MANAGER_PREFLIGHT_TIMEOUT=1ns")
 			}
@@ -153,6 +190,12 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 			output, err := cmd.CombinedOutput()
 			if err == nil || ctx.Err() != nil || strings.Contains(string(output), "listening on") {
 				t.Fatalf("unsafe startup: err=%v output=%s", err, output)
+			}
+			if kind == "symlink-config" && !strings.Contains(string(output), "config is not a regular file") {
+				t.Fatalf("config link was read before rejection: %s", output)
+			}
+			if (kind == "old-lock-only" || kind == "old-lock-initialize") && !strings.Contains(string(output), "Manager source is not proven fresh or native v2") {
+				t.Fatalf("old ownership marker did not fail at startup admission: %s", output)
 			}
 			if (kind == "inspection-timeout" || kind == "invalid-timeout") && !strings.Contains(string(output), "CPA_MANAGER_PREFLIGHT_TIMEOUT") {
 				t.Fatalf("timeout feedback missing: %s", output)

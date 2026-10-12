@@ -271,7 +271,7 @@ func readOrCreateFileConfig(configPath string) (fileConfig, string, error) {
 }
 
 func readFileConfig(configPath string) (fileConfig, string, bool, error) {
-	info, err := os.Stat(configPath)
+	info, err := os.Lstat(configPath)
 	if os.IsNotExist(err) {
 		return fileConfig{}, filepath.Dir(configPath), false, nil
 	}

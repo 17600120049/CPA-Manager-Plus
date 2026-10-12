@@ -59,6 +59,44 @@ func TestInspectionLocationsIgnoreRuntimeEnvironmentAndNeverReadSecrets(t *testi
 	}
 }
 
+func TestConfigRejectsSymbolicLinksBeforeParsing(t *testing.T) {
+	for _, targetKind := range []string{"valid", "malformed", "missing"} {
+		t.Run(targetKind, func(t *testing.T) {
+			clearConfigEnv(t)
+			dir := t.TempDir()
+			target := filepath.Join(dir, "target.json")
+			raw := `{"dataDir":"."}`
+			if targetKind == "malformed" {
+				raw = `{broken`
+			}
+			if targetKind != "missing" {
+				if err := os.WriteFile(target, []byte(raw), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := filepath.Join(dir, "config.json")
+			if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(configEnvKey, path)
+			for _, load := range []func() (Config, error){LoadForInspection, Load, func() (Config, error) {
+				return ResolveInspectionLocations(path, filepath.Join(dir, "usage.sqlite"))
+			}} {
+				if _, err := load(); err == nil || !strings.Contains(err.Error(), "config is not a regular file") {
+					t.Fatalf("config link was followed before rejection: %v", err)
+				}
+			}
+			if targetKind == "missing" {
+				if _, err := os.Lstat(target); !os.IsNotExist(err) {
+					t.Fatal("config link created its missing target")
+				}
+			} else if after, err := os.ReadFile(target); err != nil || string(after) != raw {
+				t.Fatal("config link rejection changed target")
+			}
+		})
+	}
+}
+
 func TestInspectionDefaultKeyLocationMatchesSourceConfig(t *testing.T) {
 	clearConfigEnv(t)
 	dir := t.TempDir()
