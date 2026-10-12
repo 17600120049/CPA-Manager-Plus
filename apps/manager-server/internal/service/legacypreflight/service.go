@@ -16,11 +16,14 @@ import (
 )
 
 type Report struct {
-	SourceKind        string                  `json:"sourceKind"`
-	Observed          sqlite.LegacyInspection `json:"observed"`
-	Unknown           []string                `json:"unknown"`
-	Blocked           []string                `json:"blocked"`
-	UpgradeAuthorized bool                    `json:"upgradeAuthorized"`
+	SourceKind           string                  `json:"sourceKind"`
+	Observed             sqlite.LegacyInspection `json:"observed"`
+	Unknown              []string                `json:"unknown"`
+	Blocked              []string                `json:"blocked"`
+	UpgradeAuthorized    bool                    `json:"upgradeAuthorized"`
+	CompatibilityProfile *CompatibilityProfile   `json:"compatibilityProfile,omitempty"`
+	ExactSourceRelease   *ProfileObservation     `json:"exactSourceRelease,omitempty"`
+	BridgeReadiness      *BridgeReadiness        `json:"bridgeReadiness,omitempty"`
 }
 
 type Options struct {
@@ -79,7 +82,9 @@ func (a *Admission) Close() error {
 func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options) (Report, error) {
 	lock, err := processlock.AcquireExisting(paths.Database)
 	if err != nil && !errors.Is(err, processlock.ErrNoExistingLock) {
-		return Report{SourceKind: "unknown", Unknown: []string{"source-consistency"}, Blocked: []string{"source-ownership-unavailable"}}, errors.New("source ownership unavailable")
+		report := Report{SourceKind: "unknown", Unknown: []string{"source-consistency", "compatibility-profile", "exact-source-release"}, Blocked: []string{"source-ownership-unavailable"}}
+		addCompatibilityObservations(&report)
+		return report, errors.New("source ownership unavailable")
 	}
 	if lock != nil {
 		defer lock.Close()
@@ -89,11 +94,12 @@ func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options)
 
 // createdLock is only set for the fenced recheck after an initially admitted
 // source had no ownership marker. Diagnostic callers never ignore an old lock.
-func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options, lock *processlock.Lock, createdLock bool) (Report, error) {
+func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options, lock *processlock.Lock, createdLock bool) (report Report, err error) {
 	observed, err := sqlite.InspectLegacySource(ctx, paths, sqlite.InspectionOptions{SourceStopped: options.SourceStopped, ManagerLock: lock})
-	report := Report{SourceKind: "unknown", Observed: observed, Unknown: []string{
+	report = Report{SourceKind: "unknown", Observed: observed, Unknown: []string{
 		"exact-source-release", "compatibility-profile", "verified-backup", "full-database-integrity", "archive-content",
 	}, Blocked: append([]string{}, observed.Issues...)}
+	defer func() { addCompatibilityObservations(&report) }()
 	if err != nil {
 		report.Blocked = append(report.Blocked, "inspection-failed")
 		return report, err

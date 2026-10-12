@@ -1,0 +1,262 @@
+{
+  "format": 1,
+  "fixtures": [
+    {
+      "ref": "v1.12.12",
+      "commit": "e19d8267a52ca146c43bdb86d185bb7baed7ff38",
+      "sourcePath": "apps/manager-server/internal/repository/sqlite/migrate.go",
+      "sourceBlob": "ea2feaab3fc94b228f84139560152be6a535d498",
+      "sourceSha256": "0b8ae678b66318021e77b7135d94e37e4b962a08f9a0bd2ffc3f5830f62b3be8",
+      "family": "LegacySchemaA",
+      "scope": "inspected schema excerpt only; not upgrade qualification",
+      "ddl": [
+        {
+          "table": "settings",
+          "sql": "create table if not exists settings (\n\t\t\tkey text primary key,\n\t\t\tvalue text not null,\n\t\t\tupdated_at_ms integer not null\n\t\t)",
+          "sha256": "5f83f2eb3ee7532058ec58b5170328aac16d6fd238a728366b701e71c958b38a"
+        },
+        {
+          "table": "usage_events",
+          "sql": "create table if not exists usage_events (\n\t\t\tid integer primary key autoincrement,\n\t\t\trequest_id text,\n\t\t\tevent_hash text not null unique,\n\t\t\ttimestamp_ms integer not null,\n\t\t\ttimestamp text not null,\n\t\t\tprovider text,\n\t\t\texecutor_type text,\n\t\t\tmodel text not null,\n\t\t\tendpoint text,\n\t\t\tmethod text,\n\t\t\tpath text,\n\t\t\tclient_ip text,\n\t\t\tx_forwarded_for text,\n\t\t\tuser_agent text,\n\t\t\tauth_type text,\n\t\t\tauth_index text,\n\t\t\tsource text,\n\t\t\tsource_hash text,\n\t\t\tapi_key_hash text,\n\t\t\taccount_snapshot text,\n\t\t\tauth_label_snapshot text,\n\t\t\tauth_file_snapshot text,\n\t\t\tauth_provider_snapshot text,\n\t\t\tauth_account_id_snapshot text,\n\t\t\tauth_project_id_snapshot text,\n\t\t\tauth_snapshot_at_ms integer,\n\t\t\trequested_model text,\n\t\t\tresolved_model text,\n\t\t\treasoning_effort text,\n\t\t\tservice_tier text,\n\t\t\trequest_service_tier text,\n\t\t\tresponse_service_tier text,\n\t\t\tcache_input_mode text,\n\t\t\tinput_tokens integer not null default 0,\n\t\t\toutput_tokens integer not null default 0,\n\t\t\treasoning_tokens integer not null default 0,\n\t\t\tcached_tokens integer not null default 0,\n\t\t\tcache_tokens integer not null default 0,\n\t\t\tcache_read_tokens integer not null default 0,\n\t\t\tcache_creation_tokens integer not null default 0,\n\t\t\tnormalized_uncached_input_tokens integer,\n\t\t\tnormalized_total_input_tokens integer,\n\t\t\tnormalized_cache_read_tokens integer,\n\t\t\tnormalized_cache_creation_tokens integer,\n\t\t\ttotal_tokens integer not null default 0,\n\t\t\tlatency_ms integer,\n\t\t\tttft_ms integer,\n\t\t\tfailed integer not null default 0,\n\t\t\tfail_status_code integer,\n\t\t\tfail_summary text,\n\t\t\tresponse_metadata_json text,\n\t\t\theader_quota_recover_at_ms integer,\n\t\t\theader_quota_used_percent real,\n\t\t\theader_quota_plan_type text,\n\t\t\theader_error_kind text,\n\t\t\theader_error_code text,\n\t\t\theader_trace_id text,\n\t\t\tfail_body text,\n\t\t\traw_json text,\n\t\t\tcreated_at_ms integer not null\n\t\t)",
+          "sha256": "28625ec9a58060429feef3b250825782161ff10614463388dbbdf470dd068e6d"
+        },
+        {
+          "table": "usage_data_migrations",
+          "sql": "create table if not exists usage_data_migrations (\n\t\t\tname text primary key,\n\t\t\tstatus text not null,\n\t\t\tlast_event_id integer not null default 0,\n\t\t\ttarget_event_id integer not null default 0,\n\t\t\tprocessed_rows integer not null default 0,\n\t\t\tchanged_rows integer not null default 0,\n\t\t\tapplied_rows integer not null default 0,\n\t\t\tstarted_at_ms integer,\n\t\t\tupdated_at_ms integer not null default 0,\n\t\t\tfinished_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "82e8ae48bd5c7ca8b42075464b93d5404d9149b3f58420ad8d83c8a4f2167406"
+        }
+      ]
+    },
+    {
+      "ref": "v1.13.0",
+      "commit": "ff361648f0b6d54bb678ae555cd86169142635d0",
+      "sourcePath": "apps/manager-server/internal/repository/sqlite/migrate.go",
+      "sourceBlob": "ea2feaab3fc94b228f84139560152be6a535d498",
+      "sourceSha256": "0b8ae678b66318021e77b7135d94e37e4b962a08f9a0bd2ffc3f5830f62b3be8",
+      "family": "LegacySchemaA",
+      "scope": "inspected schema excerpt only; not upgrade qualification",
+      "ddl": [
+        {
+          "table": "settings",
+          "sql": "create table if not exists settings (\n\t\t\tkey text primary key,\n\t\t\tvalue text not null,\n\t\t\tupdated_at_ms integer not null\n\t\t)",
+          "sha256": "5f83f2eb3ee7532058ec58b5170328aac16d6fd238a728366b701e71c958b38a"
+        },
+        {
+          "table": "usage_events",
+          "sql": "create table if not exists usage_events (\n\t\t\tid integer primary key autoincrement,\n\t\t\trequest_id text,\n\t\t\tevent_hash text not null unique,\n\t\t\ttimestamp_ms integer not null,\n\t\t\ttimestamp text not null,\n\t\t\tprovider text,\n\t\t\texecutor_type text,\n\t\t\tmodel text not null,\n\t\t\tendpoint text,\n\t\t\tmethod text,\n\t\t\tpath text,\n\t\t\tclient_ip text,\n\t\t\tx_forwarded_for text,\n\t\t\tuser_agent text,\n\t\t\tauth_type text,\n\t\t\tauth_index text,\n\t\t\tsource text,\n\t\t\tsource_hash text,\n\t\t\tapi_key_hash text,\n\t\t\taccount_snapshot text,\n\t\t\tauth_label_snapshot text,\n\t\t\tauth_file_snapshot text,\n\t\t\tauth_provider_snapshot text,\n\t\t\tauth_account_id_snapshot text,\n\t\t\tauth_project_id_snapshot text,\n\t\t\tauth_snapshot_at_ms integer,\n\t\t\trequested_model text,\n\t\t\tresolved_model text,\n\t\t\treasoning_effort text,\n\t\t\tservice_tier text,\n\t\t\trequest_service_tier text,\n\t\t\tresponse_service_tier text,\n\t\t\tcache_input_mode text,\n\t\t\tinput_tokens integer not null default 0,\n\t\t\toutput_tokens integer not null default 0,\n\t\t\treasoning_tokens integer not null default 0,\n\t\t\tcached_tokens integer not null default 0,\n\t\t\tcache_tokens integer not null default 0,\n\t\t\tcache_read_tokens integer not null default 0,\n\t\t\tcache_creation_tokens integer not null default 0,\n\t\t\tnormalized_uncached_input_tokens integer,\n\t\t\tnormalized_total_input_tokens integer,\n\t\t\tnormalized_cache_read_tokens integer,\n\t\t\tnormalized_cache_creation_tokens integer,\n\t\t\ttotal_tokens integer not null default 0,\n\t\t\tlatency_ms integer,\n\t\t\tttft_ms integer,\n\t\t\tfailed integer not null default 0,\n\t\t\tfail_status_code integer,\n\t\t\tfail_summary text,\n\t\t\tresponse_metadata_json text,\n\t\t\theader_quota_recover_at_ms integer,\n\t\t\theader_quota_used_percent real,\n\t\t\theader_quota_plan_type text,\n\t\t\theader_error_kind text,\n\t\t\theader_error_code text,\n\t\t\theader_trace_id text,\n\t\t\tfail_body text,\n\t\t\traw_json text,\n\t\t\tcreated_at_ms integer not null\n\t\t)",
+          "sha256": "28625ec9a58060429feef3b250825782161ff10614463388dbbdf470dd068e6d"
+        },
+        {
+          "table": "usage_data_migrations",
+          "sql": "create table if not exists usage_data_migrations (\n\t\t\tname text primary key,\n\t\t\tstatus text not null,\n\t\t\tlast_event_id integer not null default 0,\n\t\t\ttarget_event_id integer not null default 0,\n\t\t\tprocessed_rows integer not null default 0,\n\t\t\tchanged_rows integer not null default 0,\n\t\t\tapplied_rows integer not null default 0,\n\t\t\tstarted_at_ms integer,\n\t\t\tupdated_at_ms integer not null default 0,\n\t\t\tfinished_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "82e8ae48bd5c7ca8b42075464b93d5404d9149b3f58420ad8d83c8a4f2167406"
+        }
+      ]
+    },
+    {
+      "ref": "v1.13.1",
+      "commit": "e188cd8ac4a9ef7a9875d37480a301f29997905d",
+      "sourcePath": "apps/manager-server/internal/repository/sqlite/migrate.go",
+      "sourceBlob": "93f3c74b710d876d5826886c3523cff5202a6f0e",
+      "sourceSha256": "6c9ffe1bd73c3921a90b4b203987b8014a187339415c08d0df560ec798da0504",
+      "family": "LegacySchemaB",
+      "scope": "inspected schema excerpt only; not upgrade qualification",
+      "ddl": [
+        {
+          "table": "settings",
+          "sql": "create table if not exists settings (\n\t\t\tkey text primary key,\n\t\t\tvalue text not null,\n\t\t\tupdated_at_ms integer not null\n\t\t)",
+          "sha256": "5f83f2eb3ee7532058ec58b5170328aac16d6fd238a728366b701e71c958b38a"
+        },
+        {
+          "table": "usage_events",
+          "sql": "create table if not exists usage_events (\n\t\t\tid integer primary key autoincrement,\n\t\t\trequest_id text,\n\t\t\tevent_hash text not null unique,\n\t\t\ttimestamp_ms integer not null,\n\t\t\ttimestamp text not null,\n\t\t\tprovider text,\n\t\t\texecutor_type text,\n\t\t\tmodel text not null,\n\t\t\tendpoint text,\n\t\t\tmethod text,\n\t\t\tpath text,\n\t\t\tclient_ip text,\n\t\t\tx_forwarded_for text,\n\t\t\tuser_agent text,\n\t\t\tauth_type text,\n\t\t\tauth_index text,\n\t\t\tsource text,\n\t\t\tsource_hash text,\n\t\t\tapi_key_hash text,\n\t\t\taccount_snapshot text,\n\t\t\tauth_label_snapshot text,\n\t\t\tauth_file_snapshot text,\n\t\t\tauth_provider_snapshot text,\n\t\t\tauth_account_id_snapshot text,\n\t\t\tauth_project_id_snapshot text,\n\t\t\tauth_snapshot_at_ms integer,\n\t\t\trequested_model text,\n\t\t\tresolved_model text,\n\t\t\treasoning_effort text,\n\t\t\tservice_tier text,\n\t\t\trequest_service_tier text,\n\t\t\tresponse_service_tier text,\n\t\t\tcache_input_mode text,\n\t\t\tinput_tokens integer not null default 0,\n\t\t\toutput_tokens integer not null default 0,\n\t\t\treasoning_tokens integer not null default 0,\n\t\t\tcached_tokens integer not null default 0,\n\t\t\tcache_tokens integer not null default 0,\n\t\t\tcache_read_tokens integer not null default 0,\n\t\t\tcache_creation_tokens integer not null default 0,\n\t\t\tnormalized_uncached_input_tokens integer,\n\t\t\tnormalized_total_input_tokens integer,\n\t\t\tnormalized_cache_read_tokens integer,\n\t\t\tnormalized_cache_creation_tokens integer,\n\t\t\ttotal_tokens integer not null default 0,\n\t\t\tlatency_ms integer,\n\t\t\tttft_ms integer,\n\t\t\tfailed integer not null default 0,\n\t\t\tfail_status_code integer,\n\t\t\tfail_summary text,\n\t\t\tresponse_metadata_json text,\n\t\t\theader_quota_recover_at_ms integer,\n\t\t\theader_quota_used_percent real,\n\t\t\theader_quota_plan_type text,\n\t\t\theader_error_kind text,\n\t\t\theader_error_code text,\n\t\t\theader_trace_id text,\n\t\t\tfail_body text,\n\t\t\traw_json text,\n\t\t\tresponse_model text,\n\t\t\tsession_id text,\n\t\t\tparent_session_id text,\n\t\t\taccess_token_sha256 text,\n\t\t\tgenerate integer,\n\t\t\tstream integer,\n\t\t\tcreated_at_ms integer not null\n\t\t)",
+          "sha256": "7260dfb95bc312c095a4253a7f60b1b9a5c434173a366e216d776e323d5ffa84"
+        },
+        {
+          "table": "usage_data_migrations",
+          "sql": "create table if not exists usage_data_migrations (\n\t\t\tname text primary key,\n\t\t\tstatus text not null,\n\t\t\tlast_event_id integer not null default 0,\n\t\t\ttarget_event_id integer not null default 0,\n\t\t\tprocessed_rows integer not null default 0,\n\t\t\tchanged_rows integer not null default 0,\n\t\t\tapplied_rows integer not null default 0,\n\t\t\tstarted_at_ms integer,\n\t\t\tupdated_at_ms integer not null default 0,\n\t\t\tfinished_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "82e8ae48bd5c7ca8b42075464b93d5404d9149b3f58420ad8d83c8a4f2167406"
+        }
+      ]
+    },
+    {
+      "ref": "v1.13.2",
+      "commit": "1fa5e8a79ce067350d9a5ba6dd5a7b1843cc77f4",
+      "sourcePath": "apps/manager-server/internal/repository/sqlite/migrate.go",
+      "sourceBlob": "93f3c74b710d876d5826886c3523cff5202a6f0e",
+      "sourceSha256": "6c9ffe1bd73c3921a90b4b203987b8014a187339415c08d0df560ec798da0504",
+      "family": "LegacySchemaB",
+      "scope": "inspected schema excerpt only; not upgrade qualification",
+      "ddl": [
+        {
+          "table": "settings",
+          "sql": "create table if not exists settings (\n\t\t\tkey text primary key,\n\t\t\tvalue text not null,\n\t\t\tupdated_at_ms integer not null\n\t\t)",
+          "sha256": "5f83f2eb3ee7532058ec58b5170328aac16d6fd238a728366b701e71c958b38a"
+        },
+        {
+          "table": "usage_events",
+          "sql": "create table if not exists usage_events (\n\t\t\tid integer primary key autoincrement,\n\t\t\trequest_id text,\n\t\t\tevent_hash text not null unique,\n\t\t\ttimestamp_ms integer not null,\n\t\t\ttimestamp text not null,\n\t\t\tprovider text,\n\t\t\texecutor_type text,\n\t\t\tmodel text not null,\n\t\t\tendpoint text,\n\t\t\tmethod text,\n\t\t\tpath text,\n\t\t\tclient_ip text,\n\t\t\tx_forwarded_for text,\n\t\t\tuser_agent text,\n\t\t\tauth_type text,\n\t\t\tauth_index text,\n\t\t\tsource text,\n\t\t\tsource_hash text,\n\t\t\tapi_key_hash text,\n\t\t\taccount_snapshot text,\n\t\t\tauth_label_snapshot text,\n\t\t\tauth_file_snapshot text,\n\t\t\tauth_provider_snapshot text,\n\t\t\tauth_account_id_snapshot text,\n\t\t\tauth_project_id_snapshot text,\n\t\t\tauth_snapshot_at_ms integer,\n\t\t\trequested_model text,\n\t\t\tresolved_model text,\n\t\t\treasoning_effort text,\n\t\t\tservice_tier text,\n\t\t\trequest_service_tier text,\n\t\t\tresponse_service_tier text,\n\t\t\tcache_input_mode text,\n\t\t\tinput_tokens integer not null default 0,\n\t\t\toutput_tokens integer not null default 0,\n\t\t\treasoning_tokens integer not null default 0,\n\t\t\tcached_tokens integer not null default 0,\n\t\t\tcache_tokens integer not null default 0,\n\t\t\tcache_read_tokens integer not null default 0,\n\t\t\tcache_creation_tokens integer not null default 0,\n\t\t\tnormalized_uncached_input_tokens integer,\n\t\t\tnormalized_total_input_tokens integer,\n\t\t\tnormalized_cache_read_tokens integer,\n\t\t\tnormalized_cache_creation_tokens integer,\n\t\t\ttotal_tokens integer not null default 0,\n\t\t\tlatency_ms integer,\n\t\t\tttft_ms integer,\n\t\t\tfailed integer not null default 0,\n\t\t\tfail_status_code integer,\n\t\t\tfail_summary text,\n\t\t\tresponse_metadata_json text,\n\t\t\theader_quota_recover_at_ms integer,\n\t\t\theader_quota_used_percent real,\n\t\t\theader_quota_plan_type text,\n\t\t\theader_error_kind text,\n\t\t\theader_error_code text,\n\t\t\theader_trace_id text,\n\t\t\tfail_body text,\n\t\t\traw_json text,\n\t\t\tresponse_model text,\n\t\t\tsession_id text,\n\t\t\tparent_session_id text,\n\t\t\taccess_token_sha256 text,\n\t\t\tgenerate integer,\n\t\t\tstream integer,\n\t\t\tcreated_at_ms integer not null\n\t\t)",
+          "sha256": "7260dfb95bc312c095a4253a7f60b1b9a5c434173a366e216d776e323d5ffa84"
+        },
+        {
+          "table": "usage_data_migrations",
+          "sql": "create table if not exists usage_data_migrations (\n\t\t\tname text primary key,\n\t\t\tstatus text not null,\n\t\t\tlast_event_id integer not null default 0,\n\t\t\ttarget_event_id integer not null default 0,\n\t\t\tprocessed_rows integer not null default 0,\n\t\t\tchanged_rows integer not null default 0,\n\t\t\tapplied_rows integer not null default 0,\n\t\t\tstarted_at_ms integer,\n\t\t\tupdated_at_ms integer not null default 0,\n\t\t\tfinished_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "82e8ae48bd5c7ca8b42075464b93d5404d9149b3f58420ad8d83c8a4f2167406"
+        }
+      ]
+    },
+    {
+      "ref": "v1.14.0",
+      "commit": "eea422fd6a19ddb90f117b79b80d1f785a3b6a83",
+      "sourcePath": "apps/manager-server/internal/repository/sqlite/migrate.go",
+      "sourceBlob": "eacb257f2d6e8860d0c7fcdcec76c65589e9e8ce",
+      "sourceSha256": "af338446ba7611ee8f9af64b0aaf57f6cfd7804b7b76d595082ee7309460cbc7",
+      "family": "LegacySchemaC",
+      "scope": "inspected schema excerpt only; not upgrade qualification",
+      "ddl": [
+        {
+          "table": "settings",
+          "sql": "create table if not exists settings (\n\t\t\tkey text primary key,\n\t\t\tvalue text not null,\n\t\t\tupdated_at_ms integer not null\n\t\t)",
+          "sha256": "5f83f2eb3ee7532058ec58b5170328aac16d6fd238a728366b701e71c958b38a"
+        },
+        {
+          "table": "usage_events",
+          "sql": "create table if not exists usage_events (\n\t\t\tid integer primary key autoincrement,\n\t\t\trequest_id text,\n\t\t\tevent_hash text not null unique,\n\t\t\ttimestamp_ms integer not null,\n\t\t\ttimestamp text not null,\n\t\t\tprovider text,\n\t\t\texecutor_type text,\n\t\t\tmodel text not null,\n\t\t\tendpoint text,\n\t\t\tmethod text,\n\t\t\tpath text,\n\t\t\tclient_ip text,\n\t\t\tx_forwarded_for text,\n\t\t\tuser_agent text,\n\t\t\tauth_type text,\n\t\t\tauth_index text,\n\t\t\tsource text,\n\t\t\tsource_hash text,\n\t\t\tapi_key_hash text,\n\t\t\taccount_snapshot text,\n\t\t\tauth_label_snapshot text,\n\t\t\tauth_file_snapshot text,\n\t\t\tauth_provider_snapshot text,\n\t\t\tauth_account_id_snapshot text,\n\t\t\tauth_project_id_snapshot text,\n\t\t\tauth_snapshot_at_ms integer,\n\t\t\trequested_model text,\n\t\t\tresolved_model text,\n\t\t\treasoning_effort text,\n\t\t\tservice_tier text,\n\t\t\trequest_service_tier text,\n\t\t\tresponse_service_tier text,\n\t\t\tcache_input_mode text,\n\t\t\tinput_tokens integer not null default 0,\n\t\t\toutput_tokens integer not null default 0,\n\t\t\treasoning_tokens integer not null default 0,\n\t\t\tcached_tokens integer not null default 0,\n\t\t\tcache_tokens integer not null default 0,\n\t\t\tcache_read_tokens integer not null default 0,\n\t\t\tcache_creation_tokens integer not null default 0,\n\t\t\tnormalized_uncached_input_tokens integer,\n\t\t\tnormalized_total_input_tokens integer,\n\t\t\tnormalized_cache_read_tokens integer,\n\t\t\tnormalized_cache_creation_tokens integer,\n\t\t\ttotal_tokens integer not null default 0,\n\t\t\tlatency_ms integer,\n\t\t\tttft_ms integer,\n\t\t\tfailed integer not null default 0,\n\t\t\tfail_status_code integer,\n\t\t\tfail_summary text,\n\t\t\tresponse_metadata_json text,\n\t\t\theader_quota_recover_at_ms integer,\n\t\t\theader_quota_used_percent real,\n\t\t\theader_quota_plan_type text,\n\t\t\theader_error_kind text,\n\t\t\theader_error_code text,\n\t\t\theader_trace_id text,\n\t\t\tfail_body text,\n\t\t\traw_json text,\n\t\t\tresponse_model text,\n\t\t\tsession_id text,\n\t\t\tparent_session_id text,\n\t\t\taccess_token_sha256 text,\n\t\t\tgenerate integer,\n\t\t\tstream integer,\n\t\t\tcreated_at_ms integer not null\n\t\t)",
+          "sha256": "7260dfb95bc312c095a4253a7f60b1b9a5c434173a366e216d776e323d5ffa84"
+        },
+        {
+          "table": "usage_data_migrations",
+          "sql": "create table if not exists usage_data_migrations (\n\t\t\tname text primary key,\n\t\t\tstatus text not null,\n\t\t\tlast_event_id integer not null default 0,\n\t\t\ttarget_event_id integer not null default 0,\n\t\t\tprocessed_rows integer not null default 0,\n\t\t\tchanged_rows integer not null default 0,\n\t\t\tapplied_rows integer not null default 0,\n\t\t\tstarted_at_ms integer,\n\t\t\tupdated_at_ms integer not null default 0,\n\t\t\tfinished_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "82e8ae48bd5c7ca8b42075464b93d5404d9149b3f58420ad8d83c8a4f2167406"
+        },
+        {
+          "table": "usage_archive_runs",
+          "sql": "create table if not exists usage_archive_runs (\n\t\t\tid text primary key,\n\t\t\tmode text not null default 'manual',\n\t\t\tschema_version integer not null,\n\t\t\tformat text not null,\n\t\t\tstatus text not null,\n\t\t\tresume_status text,\n\t\t\trequested_stage text,\n\t\t\tprogress_phase text,\n\t\t\tprogress_current integer not null default 0,\n\t\t\tprogress_total integer not null default 0,\n\t\t\tprogress_unit text,\n\t\t\tprogress_updated_at_ms integer,\n\t\t\tcutoff_timestamp_ms integer not null,\n\t\t\ttarget_event_id integer not null,\n\t\t\tevent_count integer not null,\n\t\t\testimated_bytes integer not null default 0,\n\t\t\tlast_archived_event_id integer not null default 0,\n\t\t\tarchived_event_count integer not null default 0,\n\t\t\tarchived_uncompressed_bytes integer not null default 0,\n\t\t\tarchived_compressed_bytes integer not null default 0,\n\t\t\tarchive_digest text,\n\t\t\tmanifest_file text,\n\t\t\tmanifest_sha256 text,\n\t\t\tlast_deleted_event_id integer not null default 0,\n\t\t\tdeleted_event_count integer not null default 0,\n\t\t\tcreated_at_ms integer not null,\n\t\t\tupdated_at_ms integer not null,\n\t\t\tstarted_at_ms integer,\n\t\t\tarchived_at_ms integer,\n\t\t\tverified_at_ms integer,\n\t\t\tdelete_started_at_ms integer,\n\t\t\tcompleted_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "8c7a84cd686b5679b0bbebbf2ff0a3638d06fd9d10754b9854162efaa3a7a139"
+        },
+        {
+          "table": "usage_archive_segments",
+          "sql": "create table if not exists usage_archive_segments (\n\t\t\trun_id text not null,\n\t\t\tsequence integer not null,\n\t\t\tstatus text not null,\n\t\t\tfile_name text not null,\n\t\t\tfirst_event_id integer not null,\n\t\t\tlast_event_id integer not null,\n\t\t\tmin_timestamp_ms integer not null,\n\t\t\tmax_timestamp_ms integer not null,\n\t\t\tevent_count integer not null,\n\t\t\tuncompressed_bytes integer not null,\n\t\t\tcompressed_bytes integer not null,\n\t\t\tcontent_sha256 text not null,\n\t\t\tevent_hash_digest text not null,\n\t\t\tcreated_at_ms integer not null,\n\t\t\tverified_at_ms integer,\n\t\t\tprimary key (run_id, sequence),\n\t\t\tunique (file_name),\n\t\t\tforeign key (run_id) references usage_archive_runs(id) on delete cascade\n\t\t)",
+          "sha256": "bf2120920d9f75ee8b198b103a0f37391713dda20679b6b778ea6125e80c50e1"
+        },
+        {
+          "table": "usage_archive_event_refs",
+          "sql": "create table if not exists usage_archive_event_refs (\n\t\t\tevent_hash text primary key,\n\t\t\trun_id text not null,\n\t\t\tsegment_sequence integer not null,\n\t\t\traw_event_id integer not null,\n\t\t\ttimestamp_ms integer not null,\n\t\t\tarchived_at_ms integer not null,\n\t\t\traw_deleted_at_ms integer,\n\t\t\tunique (run_id, raw_event_id),\n\t\t\tforeign key (run_id, segment_sequence)\n\t\t\t\treferences usage_archive_segments(run_id, sequence) on delete cascade,\n\t\t\tforeign key (event_hash) references usage_event_identity_ledger(event_hash)\n\t\t)",
+          "sha256": "822fd3fe066c26c710c7b9710929f99962aa7c848a7d7b171d88ccb79d602e09"
+        },
+        {
+          "table": "usage_archive_deleted_coverage_daily",
+          "sql": "create table if not exists usage_archive_deleted_coverage_daily (\n\t\tutc_day integer primary key,\n\t\tdeleted_event_count integer not null,\n\t\tmin_timestamp_ms integer not null,\n\t\tmax_timestamp_ms integer not null\n\t)",
+          "sha256": "21cfa05dd10c0667cebe3f62bb630d9b245268b072fcd8a4d9ebca09fb3127db"
+        },
+        {
+          "table": "usage_maintenance_locks",
+          "sql": "create table if not exists usage_maintenance_locks (\n\t\t\tname text primary key,\n\t\t\trun_id text not null,\n\t\t\toperation text not null,\n\t\t\tacquired_at_ms integer not null,\n\t\t\tupdated_at_ms integer not null,\n\t\t\tforeign key (run_id) references usage_archive_runs(id) on delete cascade\n\t\t)",
+          "sha256": "1fc2ee88eba2ac2aae9604e83ab0734e6c76735b1b834433de22e0393f1b2de4"
+        }
+      ]
+    },
+    {
+      "ref": "v1.14.3",
+      "commit": "fb3e8f501f47a29b0fa66a5bf31f0f36739750d3",
+      "sourcePath": "apps/manager-server/internal/repository/sqlite/migrate.go",
+      "sourceBlob": "eacb257f2d6e8860d0c7fcdcec76c65589e9e8ce",
+      "sourceSha256": "af338446ba7611ee8f9af64b0aaf57f6cfd7804b7b76d595082ee7309460cbc7",
+      "family": "LegacySchemaC",
+      "scope": "inspected schema excerpt only; not upgrade qualification",
+      "ddl": [
+        {
+          "table": "settings",
+          "sql": "create table if not exists settings (\n\t\t\tkey text primary key,\n\t\t\tvalue text not null,\n\t\t\tupdated_at_ms integer not null\n\t\t)",
+          "sha256": "5f83f2eb3ee7532058ec58b5170328aac16d6fd238a728366b701e71c958b38a"
+        },
+        {
+          "table": "usage_events",
+          "sql": "create table if not exists usage_events (\n\t\t\tid integer primary key autoincrement,\n\t\t\trequest_id text,\n\t\t\tevent_hash text not null unique,\n\t\t\ttimestamp_ms integer not null,\n\t\t\ttimestamp text not null,\n\t\t\tprovider text,\n\t\t\texecutor_type text,\n\t\t\tmodel text not null,\n\t\t\tendpoint text,\n\t\t\tmethod text,\n\t\t\tpath text,\n\t\t\tclient_ip text,\n\t\t\tx_forwarded_for text,\n\t\t\tuser_agent text,\n\t\t\tauth_type text,\n\t\t\tauth_index text,\n\t\t\tsource text,\n\t\t\tsource_hash text,\n\t\t\tapi_key_hash text,\n\t\t\taccount_snapshot text,\n\t\t\tauth_label_snapshot text,\n\t\t\tauth_file_snapshot text,\n\t\t\tauth_provider_snapshot text,\n\t\t\tauth_account_id_snapshot text,\n\t\t\tauth_project_id_snapshot text,\n\t\t\tauth_snapshot_at_ms integer,\n\t\t\trequested_model text,\n\t\t\tresolved_model text,\n\t\t\treasoning_effort text,\n\t\t\tservice_tier text,\n\t\t\trequest_service_tier text,\n\t\t\tresponse_service_tier text,\n\t\t\tcache_input_mode text,\n\t\t\tinput_tokens integer not null default 0,\n\t\t\toutput_tokens integer not null default 0,\n\t\t\treasoning_tokens integer not null default 0,\n\t\t\tcached_tokens integer not null default 0,\n\t\t\tcache_tokens integer not null default 0,\n\t\t\tcache_read_tokens integer not null default 0,\n\t\t\tcache_creation_tokens integer not null default 0,\n\t\t\tnormalized_uncached_input_tokens integer,\n\t\t\tnormalized_total_input_tokens integer,\n\t\t\tnormalized_cache_read_tokens integer,\n\t\t\tnormalized_cache_creation_tokens integer,\n\t\t\ttotal_tokens integer not null default 0,\n\t\t\tlatency_ms integer,\n\t\t\tttft_ms integer,\n\t\t\tfailed integer not null default 0,\n\t\t\tfail_status_code integer,\n\t\t\tfail_summary text,\n\t\t\tresponse_metadata_json text,\n\t\t\theader_quota_recover_at_ms integer,\n\t\t\theader_quota_used_percent real,\n\t\t\theader_quota_plan_type text,\n\t\t\theader_error_kind text,\n\t\t\theader_error_code text,\n\t\t\theader_trace_id text,\n\t\t\tfail_body text,\n\t\t\traw_json text,\n\t\t\tresponse_model text,\n\t\t\tsession_id text,\n\t\t\tparent_session_id text,\n\t\t\taccess_token_sha256 text,\n\t\t\tgenerate integer,\n\t\t\tstream integer,\n\t\t\tcreated_at_ms integer not null\n\t\t)",
+          "sha256": "7260dfb95bc312c095a4253a7f60b1b9a5c434173a366e216d776e323d5ffa84"
+        },
+        {
+          "table": "usage_data_migrations",
+          "sql": "create table if not exists usage_data_migrations (\n\t\t\tname text primary key,\n\t\t\tstatus text not null,\n\t\t\tlast_event_id integer not null default 0,\n\t\t\ttarget_event_id integer not null default 0,\n\t\t\tprocessed_rows integer not null default 0,\n\t\t\tchanged_rows integer not null default 0,\n\t\t\tapplied_rows integer not null default 0,\n\t\t\tstarted_at_ms integer,\n\t\t\tupdated_at_ms integer not null default 0,\n\t\t\tfinished_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "82e8ae48bd5c7ca8b42075464b93d5404d9149b3f58420ad8d83c8a4f2167406"
+        },
+        {
+          "table": "usage_archive_runs",
+          "sql": "create table if not exists usage_archive_runs (\n\t\t\tid text primary key,\n\t\t\tmode text not null default 'manual',\n\t\t\tschema_version integer not null,\n\t\t\tformat text not null,\n\t\t\tstatus text not null,\n\t\t\tresume_status text,\n\t\t\trequested_stage text,\n\t\t\tprogress_phase text,\n\t\t\tprogress_current integer not null default 0,\n\t\t\tprogress_total integer not null default 0,\n\t\t\tprogress_unit text,\n\t\t\tprogress_updated_at_ms integer,\n\t\t\tcutoff_timestamp_ms integer not null,\n\t\t\ttarget_event_id integer not null,\n\t\t\tevent_count integer not null,\n\t\t\testimated_bytes integer not null default 0,\n\t\t\tlast_archived_event_id integer not null default 0,\n\t\t\tarchived_event_count integer not null default 0,\n\t\t\tarchived_uncompressed_bytes integer not null default 0,\n\t\t\tarchived_compressed_bytes integer not null default 0,\n\t\t\tarchive_digest text,\n\t\t\tmanifest_file text,\n\t\t\tmanifest_sha256 text,\n\t\t\tlast_deleted_event_id integer not null default 0,\n\t\t\tdeleted_event_count integer not null default 0,\n\t\t\tcreated_at_ms integer not null,\n\t\t\tupdated_at_ms integer not null,\n\t\t\tstarted_at_ms integer,\n\t\t\tarchived_at_ms integer,\n\t\t\tverified_at_ms integer,\n\t\t\tdelete_started_at_ms integer,\n\t\t\tcompleted_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "8c7a84cd686b5679b0bbebbf2ff0a3638d06fd9d10754b9854162efaa3a7a139"
+        },
+        {
+          "table": "usage_archive_segments",
+          "sql": "create table if not exists usage_archive_segments (\n\t\t\trun_id text not null,\n\t\t\tsequence integer not null,\n\t\t\tstatus text not null,\n\t\t\tfile_name text not null,\n\t\t\tfirst_event_id integer not null,\n\t\t\tlast_event_id integer not null,\n\t\t\tmin_timestamp_ms integer not null,\n\t\t\tmax_timestamp_ms integer not null,\n\t\t\tevent_count integer not null,\n\t\t\tuncompressed_bytes integer not null,\n\t\t\tcompressed_bytes integer not null,\n\t\t\tcontent_sha256 text not null,\n\t\t\tevent_hash_digest text not null,\n\t\t\tcreated_at_ms integer not null,\n\t\t\tverified_at_ms integer,\n\t\t\tprimary key (run_id, sequence),\n\t\t\tunique (file_name),\n\t\t\tforeign key (run_id) references usage_archive_runs(id) on delete cascade\n\t\t)",
+          "sha256": "bf2120920d9f75ee8b198b103a0f37391713dda20679b6b778ea6125e80c50e1"
+        },
+        {
+          "table": "usage_archive_event_refs",
+          "sql": "create table if not exists usage_archive_event_refs (\n\t\t\tevent_hash text primary key,\n\t\t\trun_id text not null,\n\t\t\tsegment_sequence integer not null,\n\t\t\traw_event_id integer not null,\n\t\t\ttimestamp_ms integer not null,\n\t\t\tarchived_at_ms integer not null,\n\t\t\traw_deleted_at_ms integer,\n\t\t\tunique (run_id, raw_event_id),\n\t\t\tforeign key (run_id, segment_sequence)\n\t\t\t\treferences usage_archive_segments(run_id, sequence) on delete cascade,\n\t\t\tforeign key (event_hash) references usage_event_identity_ledger(event_hash)\n\t\t)",
+          "sha256": "822fd3fe066c26c710c7b9710929f99962aa7c848a7d7b171d88ccb79d602e09"
+        },
+        {
+          "table": "usage_archive_deleted_coverage_daily",
+          "sql": "create table if not exists usage_archive_deleted_coverage_daily (\n\t\tutc_day integer primary key,\n\t\tdeleted_event_count integer not null,\n\t\tmin_timestamp_ms integer not null,\n\t\tmax_timestamp_ms integer not null\n\t)",
+          "sha256": "21cfa05dd10c0667cebe3f62bb630d9b245268b072fcd8a4d9ebca09fb3127db"
+        },
+        {
+          "table": "usage_maintenance_locks",
+          "sql": "create table if not exists usage_maintenance_locks (\n\t\t\tname text primary key,\n\t\t\trun_id text not null,\n\t\t\toperation text not null,\n\t\t\tacquired_at_ms integer not null,\n\t\t\tupdated_at_ms integer not null,\n\t\t\tforeign key (run_id) references usage_archive_runs(id) on delete cascade\n\t\t)",
+          "sha256": "1fc2ee88eba2ac2aae9604e83ab0734e6c76735b1b834433de22e0393f1b2de4"
+        }
+      ]
+    },
+    {
+      "ref": "v1.14.4",
+      "commit": "166262365d506157b99968105c890f480cc7c07c",
+      "sourcePath": "apps/manager-server/internal/repository/sqlite/migrate.go",
+      "sourceBlob": "eacb257f2d6e8860d0c7fcdcec76c65589e9e8ce",
+      "sourceSha256": "af338446ba7611ee8f9af64b0aaf57f6cfd7804b7b76d595082ee7309460cbc7",
+      "family": "LegacySchemaC",
+      "scope": "inspected schema excerpt only; not upgrade qualification",
+      "ddl": [
+        {
+          "table": "settings",
+          "sql": "create table if not exists settings (\n\t\t\tkey text primary key,\n\t\t\tvalue text not null,\n\t\t\tupdated_at_ms integer not null\n\t\t)",
+          "sha256": "5f83f2eb3ee7532058ec58b5170328aac16d6fd238a728366b701e71c958b38a"
+        },
+        {
+          "table": "usage_events",
+          "sql": "create table if not exists usage_events (\n\t\t\tid integer primary key autoincrement,\n\t\t\trequest_id text,\n\t\t\tevent_hash text not null unique,\n\t\t\ttimestamp_ms integer not null,\n\t\t\ttimestamp text not null,\n\t\t\tprovider text,\n\t\t\texecutor_type text,\n\t\t\tmodel text not null,\n\t\t\tendpoint text,\n\t\t\tmethod text,\n\t\t\tpath text,\n\t\t\tclient_ip text,\n\t\t\tx_forwarded_for text,\n\t\t\tuser_agent text,\n\t\t\tauth_type text,\n\t\t\tauth_index text,\n\t\t\tsource text,\n\t\t\tsource_hash text,\n\t\t\tapi_key_hash text,\n\t\t\taccount_snapshot text,\n\t\t\tauth_label_snapshot text,\n\t\t\tauth_file_snapshot text,\n\t\t\tauth_provider_snapshot text,\n\t\t\tauth_account_id_snapshot text,\n\t\t\tauth_project_id_snapshot text,\n\t\t\tauth_snapshot_at_ms integer,\n\t\t\trequested_model text,\n\t\t\tresolved_model text,\n\t\t\treasoning_effort text,\n\t\t\tservice_tier text,\n\t\t\trequest_service_tier text,\n\t\t\tresponse_service_tier text,\n\t\t\tcache_input_mode text,\n\t\t\tinput_tokens integer not null default 0,\n\t\t\toutput_tokens integer not null default 0,\n\t\t\treasoning_tokens integer not null default 0,\n\t\t\tcached_tokens integer not null default 0,\n\t\t\tcache_tokens integer not null default 0,\n\t\t\tcache_read_tokens integer not null default 0,\n\t\t\tcache_creation_tokens integer not null default 0,\n\t\t\tnormalized_uncached_input_tokens integer,\n\t\t\tnormalized_total_input_tokens integer,\n\t\t\tnormalized_cache_read_tokens integer,\n\t\t\tnormalized_cache_creation_tokens integer,\n\t\t\ttotal_tokens integer not null default 0,\n\t\t\tlatency_ms integer,\n\t\t\tttft_ms integer,\n\t\t\tfailed integer not null default 0,\n\t\t\tfail_status_code integer,\n\t\t\tfail_summary text,\n\t\t\tresponse_metadata_json text,\n\t\t\theader_quota_recover_at_ms integer,\n\t\t\theader_quota_used_percent real,\n\t\t\theader_quota_plan_type text,\n\t\t\theader_error_kind text,\n\t\t\theader_error_code text,\n\t\t\theader_trace_id text,\n\t\t\tfail_body text,\n\t\t\traw_json text,\n\t\t\tresponse_model text,\n\t\t\tsession_id text,\n\t\t\tparent_session_id text,\n\t\t\taccess_token_sha256 text,\n\t\t\tgenerate integer,\n\t\t\tstream integer,\n\t\t\tcreated_at_ms integer not null\n\t\t)",
+          "sha256": "7260dfb95bc312c095a4253a7f60b1b9a5c434173a366e216d776e323d5ffa84"
+        },
+        {
+          "table": "usage_data_migrations",
+          "sql": "create table if not exists usage_data_migrations (\n\t\t\tname text primary key,\n\t\t\tstatus text not null,\n\t\t\tlast_event_id integer not null default 0,\n\t\t\ttarget_event_id integer not null default 0,\n\t\t\tprocessed_rows integer not null default 0,\n\t\t\tchanged_rows integer not null default 0,\n\t\t\tapplied_rows integer not null default 0,\n\t\t\tstarted_at_ms integer,\n\t\t\tupdated_at_ms integer not null default 0,\n\t\t\tfinished_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "82e8ae48bd5c7ca8b42075464b93d5404d9149b3f58420ad8d83c8a4f2167406"
+        },
+        {
+          "table": "usage_archive_runs",
+          "sql": "create table if not exists usage_archive_runs (\n\t\t\tid text primary key,\n\t\t\tmode text not null default 'manual',\n\t\t\tschema_version integer not null,\n\t\t\tformat text not null,\n\t\t\tstatus text not null,\n\t\t\tresume_status text,\n\t\t\trequested_stage text,\n\t\t\tprogress_phase text,\n\t\t\tprogress_current integer not null default 0,\n\t\t\tprogress_total integer not null default 0,\n\t\t\tprogress_unit text,\n\t\t\tprogress_updated_at_ms integer,\n\t\t\tcutoff_timestamp_ms integer not null,\n\t\t\ttarget_event_id integer not null,\n\t\t\tevent_count integer not null,\n\t\t\testimated_bytes integer not null default 0,\n\t\t\tlast_archived_event_id integer not null default 0,\n\t\t\tarchived_event_count integer not null default 0,\n\t\t\tarchived_uncompressed_bytes integer not null default 0,\n\t\t\tarchived_compressed_bytes integer not null default 0,\n\t\t\tarchive_digest text,\n\t\t\tmanifest_file text,\n\t\t\tmanifest_sha256 text,\n\t\t\tlast_deleted_event_id integer not null default 0,\n\t\t\tdeleted_event_count integer not null default 0,\n\t\t\tcreated_at_ms integer not null,\n\t\t\tupdated_at_ms integer not null,\n\t\t\tstarted_at_ms integer,\n\t\t\tarchived_at_ms integer,\n\t\t\tverified_at_ms integer,\n\t\t\tdelete_started_at_ms integer,\n\t\t\tcompleted_at_ms integer,\n\t\t\tlast_error text\n\t\t)",
+          "sha256": "8c7a84cd686b5679b0bbebbf2ff0a3638d06fd9d10754b9854162efaa3a7a139"
+        },
+        {
+          "table": "usage_archive_segments",
+          "sql": "create table if not exists usage_archive_segments (\n\t\t\trun_id text not null,\n\t\t\tsequence integer not null,\n\t\t\tstatus text not null,\n\t\t\tfile_name text not null,\n\t\t\tfirst_event_id integer not null,\n\t\t\tlast_event_id integer not null,\n\t\t\tmin_timestamp_ms integer not null,\n\t\t\tmax_timestamp_ms integer not null,\n\t\t\tevent_count integer not null,\n\t\t\tuncompressed_bytes integer not null,\n\t\t\tcompressed_bytes integer not null,\n\t\t\tcontent_sha256 text not null,\n\t\t\tevent_hash_digest text not null,\n\t\t\tcreated_at_ms integer not null,\n\t\t\tverified_at_ms integer,\n\t\t\tprimary key (run_id, sequence),\n\t\t\tunique (file_name),\n\t\t\tforeign key (run_id) references usage_archive_runs(id) on delete cascade\n\t\t)",
+          "sha256": "bf2120920d9f75ee8b198b103a0f37391713dda20679b6b778ea6125e80c50e1"
+        },
+        {
+          "table": "usage_archive_event_refs",
+          "sql": "create table if not exists usage_archive_event_refs (\n\t\t\tevent_hash text primary key,\n\t\t\trun_id text not null,\n\t\t\tsegment_sequence integer not null,\n\t\t\traw_event_id integer not null,\n\t\t\ttimestamp_ms integer not null,\n\t\t\tarchived_at_ms integer not null,\n\t\t\traw_deleted_at_ms integer,\n\t\t\tunique (run_id, raw_event_id),\n\t\t\tforeign key (run_id, segment_sequence)\n\t\t\t\treferences usage_archive_segments(run_id, sequence) on delete cascade,\n\t\t\tforeign key (event_hash) references usage_event_identity_ledger(event_hash)\n\t\t)",
+          "sha256": "822fd3fe066c26c710c7b9710929f99962aa7c848a7d7b171d88ccb79d602e09"
+        },
+        {
+          "table": "usage_archive_deleted_coverage_daily",
+          "sql": "create table if not exists usage_archive_deleted_coverage_daily (\n\t\tutc_day integer primary key,\n\t\tdeleted_event_count integer not null,\n\t\tmin_timestamp_ms integer not null,\n\t\tmax_timestamp_ms integer not null\n\t)",
+          "sha256": "21cfa05dd10c0667cebe3f62bb630d9b245268b072fcd8a4d9ebca09fb3127db"
+        },
+        {
+          "table": "usage_maintenance_locks",
+          "sql": "create table if not exists usage_maintenance_locks (\n\t\t\tname text primary key,\n\t\t\trun_id text not null,\n\t\t\toperation text not null,\n\t\t\tacquired_at_ms integer not null,\n\t\t\tupdated_at_ms integer not null,\n\t\t\tforeign key (run_id) references usage_archive_runs(id) on delete cascade\n\t\t)",
+          "sha256": "1fc2ee88eba2ac2aae9604e83ab0734e6c76735b1b834433de22e0393f1b2de4"
+        }
+      ]
+    }
+  ]
+}

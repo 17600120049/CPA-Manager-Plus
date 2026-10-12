@@ -72,13 +72,66 @@ func writeOwnedProvisioningConfig(t *testing.T, dir string) {
 	}
 }
 
+func writeHistoricalProfileSource(t *testing.T, path, ref string) {
+	t.Helper()
+	data, err := os.ReadFile("../../internal/service/legacypreflight/testdata/legacy-profiles/schema-fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Fixtures []struct {
+			Ref string
+			DDL []struct{ SQL string }
+		}
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range manifest.Fixtures {
+		if fixture.Ref != ref {
+			continue
+		}
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		for _, ddl := range fixture.DDL {
+			if _, err := db.Exec(ddl.SQL); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	t.Fatal("missing fixed-source schema fixture", ref)
+}
+
 func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
-	for _, kind := range []string{"legacy", "unknown", "corrupt", "orphan-wal", "old-lock-only", "old-lock-initialize", "symlink-config", "old-config-only", "plain-config-only", "admin-key-config-only", "external-data-key-config-only", "recognized-config-only", "inspection-timeout", "invalid-timeout"} {
+	for _, kind := range []string{"legacy", "legacy-profile-A", "legacy-profile-B", "legacy-profile-C", "legacy-profile-partial", "unknown", "corrupt", "orphan-wal", "old-lock-only", "old-lock-initialize", "symlink-config", "old-config-only", "plain-config-only", "admin-key-config-only", "external-data-key-config-only", "recognized-config-only", "inspection-timeout", "invalid-timeout"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "usage.sqlite")
 			writeOwnedProvisioningConfig(t, dir)
 			switch kind {
+			case "legacy-profile-A", "legacy-profile-B", "legacy-profile-C", "legacy-profile-partial":
+				ref := map[string]string{"legacy-profile-A": "v1.12.12", "legacy-profile-B": "v1.13.1", "legacy-profile-C": "v1.14.4", "legacy-profile-partial": "v1.14.4"}[kind]
+				writeHistoricalProfileSource(t, path, ref)
+				if kind == "legacy-profile-partial" {
+					db, err := sql.Open("sqlite", path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := db.Exec("alter table usage_events drop column request_id"); err != nil {
+						db.Close()
+						t.Fatal(err)
+					}
+					if err := db.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
 			case "old-lock-only", "old-lock-initialize":
 				lock, err := processlock.Acquire(path)
 				if err != nil {

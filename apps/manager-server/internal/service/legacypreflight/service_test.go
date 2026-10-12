@@ -307,6 +307,9 @@ func TestNativeAdmissionRetainsFenceAndDoesNotMigrateDuringInspection(t *testing
 	if err != nil || report.SourceKind != "native-v2" || report.UpgradeAuthorized {
 		t.Fatalf("report=%+v err=%v", report, err)
 	}
+	if report.CompatibilityProfile == nil || report.CompatibilityProfile.Status != "not-applicable" || report.BridgeReadiness.Status != "unknown" {
+		t.Fatal("legacy profile rules changed native admission or claimed bridge readiness")
+	}
 	lock, err := AdmitStartup(context.Background(), paths, Options{})
 	if err != nil {
 		t.Fatal(err)
