@@ -1,0 +1,36 @@
+package legacyartifact
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCommandCannotClaimWriterOrDiscoverManagerData(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "archive")
+	if err := os.WriteFile(p, []byte("secret forged v1.14.4 executable"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{nil, {"--archive", p}, {"--asset", "unknown"}, {"--archive", p, "--asset", "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz"}, {"--archive", p, "--asset", "unknown", "--timeout", "0s"}} {
+		var out, stderr bytes.Buffer
+		err := Run(context.Background(), args, &out, &stderr)
+		if err == nil || out.Len() != 0 || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), dir) {
+			t.Fatalf("invalid CLI evidence: %q %v", out.String(), err)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatal("command touched Manager/source data")
+	}
+	var out, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"--help"}, &out, &stderr); !IsHelp(err) {
+		t.Fatal(err)
+	}
+	if out.Len() != 0 {
+		t.Fatal("help emitted evidence")
+	}
+}
