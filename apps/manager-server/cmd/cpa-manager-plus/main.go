@@ -28,6 +28,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/cpaconnection"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/derivedmaintenance"
 	legacypreflightcommand "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/legacypreflight"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/managerdatabundle"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/managerdatasnapshot"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/runtimeconfig"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/usagecompact"
@@ -114,6 +115,14 @@ func main() {
 		case "manager-data-snapshot":
 			if err := runManagerDataSnapshotCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
 				log.Printf("manage Manager data snapshot: %v", err)
+				os.Exit(1)
+			}
+			return
+		case "manager-data-bundle":
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			if err := managerdatabundle.Run(ctx, os.Args[2:], os.Stdout, os.Stderr); err != nil {
+				log.Printf("manage Manager data bundle: %v", err)
 				os.Exit(1)
 			}
 			return
