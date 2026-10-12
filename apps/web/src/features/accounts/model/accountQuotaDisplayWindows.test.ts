@@ -24,6 +24,8 @@ import {
   getQuotaCredentialStoreKey,
 } from '@/utils/quota/credentialScope';
 import { buildAccountDetailViewModel } from './accountDetailViewModel';
+import { buildAccountListItem } from './accountListPresentation';
+import { buildAccountRecommendation } from './quotaRecommendations';
 import { buildAccountQuotaWindowDefinitions } from './accountQuotaWindowDefinitions';
 import { accountWindowUsageRequestKey } from './accountWindowUsageRows';
 
@@ -934,6 +936,41 @@ describe('accountQuotaDisplayWindows', () => {
       expect(row.quota).toMatchObject({ status: 'unknown', remainingPercent: null });
     }
   );
+
+  it.each([undefined, 'unknown'])(
+    'keeps observed windows separate from list and drawer health for plan %s',
+    (planType) => {
+      for (const usagePercent of [0, 42, 100]) {
+        const { row, windows } = buildXaiObservedWindows(
+          makeXaiBilling({
+            usagePercent,
+            periodStart: '2026-07-01T00:00:00Z',
+            periodEnd: '2026-07-08T00:00:00Z',
+            productUsage: [{ product: 'Grok', usagePercent }],
+          }),
+          planType
+        );
+        expect(windows.map((window) => window.kind)).toEqual(['weekly', 'product']);
+        expect(row.quota.status).toBe('unknown');
+        expect(buildAccountListItem(row, { t, quotaWindows: windows }).health.status).toBe('raw');
+        const detail = buildAccountDetailViewModel(row, { t, quotaWindows: windows });
+        expect(detail.health.status).toBe('raw');
+        expect(detail.quota.windows).toHaveLength(2);
+        expect(buildAccountRecommendation(row)).toBeNull();
+      }
+    }
+  );
+
+  it.each([
+    [42, 'available'],
+    [100, 'weekly_exhausted'],
+  ] as const)('retains confirmed paid xAI health for observed usage %s', (usagePercent, health) => {
+    const { row, windows } = buildXaiObservedWindows(makeXaiBilling({ usagePercent }), 'SuperGrok');
+    expect(buildAccountListItem(row, { t, quotaWindows: windows }).health.status).toBe(health);
+    expect(buildAccountDetailViewModel(row, { t, quotaWindows: windows }).health.status).toBe(
+      health
+    );
+  });
 
   it.each(['periodStart', 'periodEnd'] as const)(
     'shows unknown-plan weekly period with only valid %s',
