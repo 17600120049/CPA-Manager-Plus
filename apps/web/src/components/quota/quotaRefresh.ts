@@ -68,12 +68,16 @@ export const refreshQuotaWithConfig = async <TState, TData>({
   try {
     const data = await config.fetchQuota(file, t, requestScope);
     if (!isCurrent() || !isSharedGenerationCurrent()) return null;
-    const state = config.buildSuccessState(data, file);
+    let state = config.buildSuccessState(data, file, currentState);
     const committed = commitIfRefreshCurrent(() => {
-      setQuota((previous) => ({
-        ...previous,
-        [storeKey]: state,
-      }));
+      setQuota((previous) => {
+        const previousState = getScopedQuotaState(config, previous, file) ?? currentState;
+        state = config.buildSuccessState(data, file, previousState);
+        return {
+          ...previous,
+          [storeKey]: state,
+        };
+      });
     });
     return committed ? { status: 'success', data, state } : null;
   } catch (error: unknown) {

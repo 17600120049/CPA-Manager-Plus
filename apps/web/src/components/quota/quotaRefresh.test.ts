@@ -1,7 +1,8 @@
 import type { TFunction } from 'i18next';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AuthFileItem } from '@/types';
+import type { AuthFileItem, CodexQuotaState } from '@/types';
 import { fetchClaudeQuota, fetchCodexQuota } from '@/utils/quota';
+import type { CodexQuotaData } from '@/utils/quota/providerRequests';
 import { getQuotaCredentialStoreKey } from '@/utils/quota/credentialScope';
 import { useQuotaStore } from '@/stores/useQuotaStore';
 import { CLAUDE_CONFIG, CODEX_CONFIG, type QuotaConfig } from './quotaConfigs';
@@ -93,6 +94,44 @@ describe('refreshQuotaWithConfig', () => {
     useQuotaStore.getState().clearQuotaCache();
     vi.mocked(fetchClaudeQuota).mockReset();
     vi.mocked(fetchCodexQuota).mockReset();
+  });
+
+  it('merges count-only refresh with details added to the scoped cache while the request was in flight', async () => {
+    const request = deferred<CodexQuotaData>();
+    vi.mocked(fetchCodexQuota).mockReturnValueOnce(request.promise);
+    const initial: CodexQuotaState = {
+      ...CODEX_CONFIG.buildSuccessState(codexData(20), codexFile),
+      rateLimitResetCreditsAvailableCount: 2,
+      resetCreditsCountEvidenceAtMs: 1_000,
+    };
+    const storeKey = getQuotaCredentialStoreKey(codexFile);
+    useQuotaStore.getState().setCodexQuota({ [storeKey]: initial });
+    const refresh = runRefresh(CODEX_CONFIG, codexFile, useQuotaStore.getState().setCodexQuota, initial);
+    const credit = { id: 'recent', status: 'available', grantedAt: '', expiresAt: '2026-10-13' };
+    useQuotaStore.getState().setCodexQuota({
+      [storeKey]: {
+        ...initial,
+        rateLimitResetCredits: [credit],
+        resetCreditsDetailEvidenceAtMs: 1_500,
+      },
+    });
+    request.resolve({
+      ...codexData(30),
+      observedAtMs: 2_000,
+      rateLimitResetCreditsAvailableCount: 2,
+      rateLimitResetCreditsError: 'Detail timeout',
+      resetCreditsCountEvidenceAtMs: 2_000,
+      resetCreditsDetailEvidenceAtMs: null,
+    });
+    const result = await refresh;
+    expect(result?.state).toMatchObject({
+      rateLimitResetCreditsAvailableCount: 2,
+      resetCreditsCountEvidenceAtMs: 2_000,
+      rateLimitResetCredits: [credit],
+      resetCreditsDetailEvidenceAtMs: 1_500,
+      rateLimitResetCreditsError: 'Detail timeout',
+    });
+    expect(useQuotaStore.getState().codexQuota[storeKey]).toEqual(result?.state);
   });
 
   it('writes the Provider state once to the shared Codex store for all consumers', async () => {

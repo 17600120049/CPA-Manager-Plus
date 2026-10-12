@@ -317,6 +317,9 @@ import type { AuthFileItem, CodexQuotaState, XaiQuotaState } from '@/types';
 import {
   fetchCodexResetCredits,
   type CodexResetCreditsData,
+  type CodexResetCreditsMergeInput,
+  resolveCodexResetCreditsObservationCount,
+  mergeCodexResetCreditsEvidence,
 } from '@/utils/quota';
 import type { AuthJsonInputType } from '@/features/authFiles/sessionAuthConverter';
 import {
@@ -5516,17 +5519,28 @@ export function AccountsPage() {
                   windows: [],
                   ...buildQuotaCredentialIdentity(row.raw),
                 };
+              const merged = mergeCodexResetCreditsEvidence(
+                base,
+                {
+                  rateLimitResetCreditsAvailableCount: resolveCodexResetCreditsObservationCount(
+                    data.availableCount,
+                    data.credits,
+                    data.creditsObserved
+                  ),
+                  rateLimitResetCredits: data.credits,
+                  rateLimitResetCreditsError: null,
+                  resetCreditsEvidenceAtMs: data.resetCreditsEvidenceAtMs,
+                  resetCreditsCountEvidenceAtMs: data.resetCreditsCountEvidenceAtMs,
+                  resetCreditsDetailEvidenceAtMs: data.resetCreditsDetailEvidenceAtMs,
+                  observedAtMs: data.observedAtMs,
+                },
+                { isFullDetailObservation: data.creditsObserved }
+              );
               return {
                 ...prev,
                 [storeKey]: {
                   ...base,
-                  rateLimitResetCreditsAvailableCount: data.availableCount,
-                  rateLimitResetCredits: data.credits,
-                  rateLimitResetCreditsError: null,
-                  resetCreditsEvidenceAtMs:
-                    data.resetCreditsEvidenceAtMs ??
-                    data.observedAtMs ??
-                    Date.now(),
+                  ...merged,
                 },
               };
             });
@@ -5550,7 +5564,9 @@ export function AccountsPage() {
               };
             });
           });
-          return committed ? { availableCount: null, credits: [], error: message } : null;
+          return committed
+            ? { availableCount: null, credits: [], creditsObserved: false, error: message }
+            : null;
         }
       })();
 
@@ -6790,22 +6806,33 @@ export function AccountsPage() {
           endResetTransaction();
           return;
         }
-        if (
-          fresh.error ||
-          (fresh.availableCount === null && fresh.credits.length === 0)
-        ) {
+        if (fresh.error) {
           endResetTransaction();
           showNotification(
             t('codex_quota.reset_verify_failed', {
               name: displayName,
-              message: fresh.error || t('codex_quota.reset_credits_invalid_payload'),
+              message: fresh.error,
             }),
             'error'
           );
           return;
         }
-        const verifiedCount =
-          fresh.availableCount ?? fresh.credits.length;
+        const verifiedCount = resolveCodexResetCreditsObservationCount(
+          fresh.availableCount,
+          fresh.credits,
+          fresh.creditsObserved
+        );
+        if (verifiedCount === null) {
+          endResetTransaction();
+          showNotification(
+            t('codex_quota.reset_verify_failed', {
+              name: displayName,
+              message: t('codex_quota.reset_credits_invalid_payload'),
+            }),
+            'error'
+          );
+          return;
+        }
         commitIfQuotaCacheCurrent(cacheGeneration, () => {
           setCodexQuota((prev) => {
             const current = getScopedQuotaState(CODEX_CONFIG, prev, row.raw);
@@ -6814,14 +6841,31 @@ export function AccountsPage() {
               windows: [],
               ...buildQuotaCredentialIdentity(row.raw),
             };
+            const incoming: CodexResetCreditsMergeInput = {
+              rateLimitResetCreditsAvailableCount: verifiedCount,
+              rateLimitResetCredits: fresh.credits,
+              rateLimitResetCreditsError: null,
+              resetCreditsEvidenceAtMs: fresh.resetCreditsEvidenceAtMs,
+              resetCreditsCountEvidenceAtMs: fresh.resetCreditsCountEvidenceAtMs,
+              resetCreditsDetailEvidenceAtMs: fresh.creditsObserved
+                ? (fresh.resetCreditsDetailEvidenceAtMs ?? fresh.observedAtMs ?? Date.now())
+                : null,
+              observedAtMs: fresh.observedAtMs,
+            };
+            const merged = mergeCodexResetCreditsEvidence(baseState, incoming, {
+              isFullDetailObservation: fresh.creditsObserved,
+            });
             return {
               ...prev,
               [storeKey]: {
                 ...baseState,
-                rateLimitResetCreditsAvailableCount: fresh.availableCount,
-                rateLimitResetCredits: fresh.credits,
-                rateLimitResetCreditsError: null,
-                resetCreditsEvidenceAtMs: fresh.resetCreditsEvidenceAtMs ?? Date.now(),
+                rateLimitResetCreditsAvailableCount: merged.rateLimitResetCreditsAvailableCount,
+                rateLimitResetCredits: merged.rateLimitResetCredits,
+                rateLimitResetCreditsError: merged.rateLimitResetCreditsError,
+                resetCreditsEvidenceAtMs: merged.resetCreditsEvidenceAtMs,
+                resetCreditsCountEvidenceAtMs: merged.resetCreditsCountEvidenceAtMs,
+                resetCreditsDetailEvidenceAtMs: merged.resetCreditsDetailEvidenceAtMs,
+                resetCreditsDetailStale: merged.resetCreditsDetailStale,
               },
             };
           });
@@ -6893,6 +6937,7 @@ export function AccountsPage() {
                       windows: [],
                       ...buildQuotaCredentialIdentity(row.raw),
                     };
+                    const nowMs = Date.now();
                     return {
                       ...prev,
                       [storeKey]: {
@@ -6900,7 +6945,10 @@ export function AccountsPage() {
                         rateLimitResetCreditsAvailableCount: 0,
                         rateLimitResetCredits: [],
                         rateLimitResetCreditsError: null,
-                        resetCreditsEvidenceAtMs: Date.now(),
+                        resetCreditsEvidenceAtMs: nowMs,
+                        resetCreditsCountEvidenceAtMs: nowMs,
+                        resetCreditsDetailEvidenceAtMs: null,
+                        resetCreditsDetailStale: false,
                       },
                     };
                   });
@@ -6956,6 +7004,7 @@ export function AccountsPage() {
                   windows: [],
                   ...buildQuotaCredentialIdentity(row.raw),
                 };
+                const nowMs = Date.now();
                 return {
                   ...prev,
                   [storeKey]: {
@@ -6963,7 +7012,10 @@ export function AccountsPage() {
                     rateLimitResetCreditsAvailableCount: null,
                     rateLimitResetCredits: [],
                     rateLimitResetCreditsError: null,
-                    resetCreditsEvidenceAtMs: Date.now(),
+                    resetCreditsEvidenceAtMs: nowMs,
+                    resetCreditsCountEvidenceAtMs: null,
+                    resetCreditsDetailEvidenceAtMs: null,
+                    resetCreditsDetailStale: true,
                   },
                 };
               });
@@ -7003,10 +7055,14 @@ export function AccountsPage() {
               const data = await CODEX_CONFIG.fetchQuota(row.raw, t, authFilesRequestScope);
               if (postMutationIsCurrent()) {
                 commitIfQuotaCacheCurrent(cacheGeneration, () => {
-                  setCodexQuota((prev) => ({
-                    ...prev,
-                    [storeKey]: CODEX_CONFIG.buildSuccessState(data, row.raw),
-                  }));
+                  setCodexQuota((prev) => {
+                    const currentState = getScopedQuotaState(CODEX_CONFIG, prev, row.raw);
+                    const nextState = CODEX_CONFIG.buildSuccessState(data, row.raw, currentState);
+                    return {
+                      ...prev,
+                      [storeKey]: nextState,
+                    };
+                  });
                 });
               }
               quotaRefreshSuccess = true;
