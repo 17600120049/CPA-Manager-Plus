@@ -34,3 +34,13 @@ func TestCommandCannotClaimWriterOrDiscoverManagerData(t *testing.T) {
 		t.Fatal("help emitted evidence")
 	}
 }
+
+func TestCommandRedactsInvalidArgumentValues(t *testing.T) {
+	for _, args := range [][]string{{"--timeout", "secret-token"}, {"--secret-token=value"}, {"--archive", "--asset"}} {
+		var out, stderr bytes.Buffer
+		err := Run(context.Background(), args, &out, &stderr)
+		if err == nil || out.Len() != 0 || strings.Contains(stderr.String(), "secret-token") || strings.Contains(err.Error(), "secret-token") {
+			t.Fatalf("argument input leaked: stderr=%q err=%v", stderr.String(), err)
+		}
+	}
+}
