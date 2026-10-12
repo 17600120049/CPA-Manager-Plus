@@ -224,6 +224,7 @@ func runServerWithOptions(options legacypreflight.Options) {
 	if err != nil {
 		failStartup("open sqlite: %v", err)
 	}
+	databaseLock.RetainMarker()
 	defer func() {
 		if err := db.Close(); err != nil {
 			log.Printf("close sqlite: %v", err)

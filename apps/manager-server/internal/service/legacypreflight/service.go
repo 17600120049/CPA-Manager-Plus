@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
@@ -39,6 +40,13 @@ type Admission struct {
 	initial           sqlite.LegacyInspection
 	closeOnce         sync.Once
 	closeErr          error
+	markerPermanent   atomic.Bool
+}
+
+// RetainMarker makes the ownership marker permanent after writable DB open.
+// Later loss of source assets must never turn that marker back into Fresh data.
+func (a *Admission) RetainMarker() {
+	a.markerPermanent.Store(true)
 }
 
 // Close rolls back only an unchanged Fresh admission's own marker. Source
@@ -48,7 +56,7 @@ func (a *Admission) Close() error {
 		return nil
 	}
 	a.closeOnce.Do(func() {
-		if a.fresh {
+		if a.fresh && !a.markerPermanent.Load() {
 			// Once database creation was attempted, do not inspect or roll back it.
 			if _, err := os.Lstat(a.paths.Database); os.IsNotExist(err) {
 				// Use an independent, bounded context after caller cancellation.

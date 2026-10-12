@@ -128,6 +128,36 @@ func TestFreshAdmissionClosePreservesPartialSource(t *testing.T) {
 	}
 }
 
+func TestFreshAdmissionPreservesMarkerAfterInitializedDatabaseLoss(t *testing.T) {
+	paths := fixturePaths(t)
+	admission, err := AdmitStartup(context.Background(), paths, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.Database, []byte("initialized database"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	admission.RetainMarker()
+	if err := os.Remove(paths.Database); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceState(t, filepath.Dir(paths.Database))
+	if err := admission.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+		t.Fatal("shutdown discarded established ownership after database loss")
+	}
+	for _, initialize := range []bool{false, true} {
+		if retry, err := AdmitStartup(context.Background(), paths, Options{Initialize: initialize}); retry != nil || err == nil {
+			if retry != nil {
+				_ = retry.Close()
+			}
+			t.Fatal("lost initialized database readmitted as fresh")
+		}
+	}
+}
+
 func TestFreshAdmissionRejectsInterposedOwnershipMarker(t *testing.T) {
 	// The child creates and releases ownership after the parent's first
 	// inspection, deterministically opening the reported admission window.
