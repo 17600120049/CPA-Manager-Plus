@@ -24,7 +24,9 @@ func sourceState(t *testing.T, root string) map[string]string {
 			return err
 		}
 		var digest [32]byte
-		if info.Mode().IsRegular() {
+		// Empty files have no bytes to read; Windows locks the marker's first
+		// byte even though the marker is empty. Still compare all metadata.
+		if info.Mode().IsRegular() && info.Size() > 0 {
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return err
@@ -44,6 +46,86 @@ func fixturePaths(t *testing.T) sqlite.InspectionPaths {
 	paths := DefaultPaths(filepath.Join(dir, "usage.sqlite"))
 	paths.Config = filepath.Join(dir, "config.json")
 	return paths
+}
+
+// Cancel only the fenced second inspection, after exclusive marker creation.
+type cancelFencedInspection struct {
+	context.Context
+	checks int
+}
+
+func (c *cancelFencedInspection) Err() error {
+	c.checks++
+	if c.checks >= 2 {
+		return context.Canceled
+	}
+	return nil
+}
+
+func TestFreshAdmissionCancellationAllowsCleanRetry(t *testing.T) {
+	for _, initialize := range []bool{false, true} {
+		t.Run(fmt.Sprintf("initialize=%v", initialize), func(t *testing.T) {
+			paths := fixturePaths(t)
+			if initialize {
+				if err := os.WriteFile(paths.Config, []byte(`{"dataDir":"."}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			options := Options{Initialize: initialize}
+			ctx := &cancelFencedInspection{Context: context.Background()}
+			admission, err := AdmitStartup(ctx, paths, options)
+			if admission != nil || !errors.Is(err, context.Canceled) || ctx.checks < 2 {
+				t.Fatalf("fenced cancellation: admission=%v checks=%d err=%v", admission, ctx.checks, err)
+			}
+			for _, path := range []string{paths.Database, paths.DataKey} {
+				if _, err := os.Lstat(path); !os.IsNotExist(err) {
+					t.Fatalf("failed admission left source asset %s: %v", path, err)
+				}
+			}
+			retry, err := AdmitStartup(context.Background(), paths, options)
+			if err != nil {
+				t.Fatalf("clean retry blocked after canceled fresh admission: %v", err)
+			}
+			defer retry.Close()
+		})
+	}
+}
+
+func TestFreshAdmissionClosePreservesPartialSource(t *testing.T) {
+	for _, asset := range []string{"database", "data-key", "wal", "archives", "config"} {
+		t.Run(asset, func(t *testing.T) {
+			paths := fixturePaths(t)
+			admission, err := AdmitStartup(context.Background(), paths, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := map[string]string{"database": paths.Database, "data-key": paths.DataKey,
+				"wal": paths.Database + "-wal", "archives": paths.Archives, "config": paths.Config}[asset]
+			if asset == "archives" {
+				err = os.Mkdir(path, 0700)
+			} else {
+				err = os.WriteFile(path, []byte("partial startup evidence"), 0600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := sourceState(t, filepath.Dir(paths.Database))
+			if err := admission.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+				t.Fatal("failed initialization cleanup changed source evidence")
+			}
+			for _, initialize := range []bool{false, true} {
+				if retry, err := AdmitStartup(context.Background(), paths, Options{Initialize: initialize}); err == nil || retry != nil {
+					if retry != nil {
+						_ = retry.Close()
+					}
+					t.Fatal("partial initialization admitted on retry")
+				}
+			}
+		})
+	}
 }
 
 func TestFreshAdmissionRejectsInterposedOwnershipMarker(t *testing.T) {

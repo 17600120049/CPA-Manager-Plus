@@ -3,9 +3,12 @@ package legacypreflight
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
@@ -30,6 +33,39 @@ type Options struct {
 type Admission struct {
 	*processlock.Lock
 	ConnectionStorage sqlite.PersistedCPAConnectionStorageInspection
+	fresh             bool
+	paths             sqlite.InspectionPaths
+	options           Options
+	initial           sqlite.LegacyInspection
+	closeOnce         sync.Once
+	closeErr          error
+}
+
+// Close rolls back only an unchanged Fresh admission's own marker. Source
+// evidence written after admission is retained for explicit recovery.
+func (a *Admission) Close() error {
+	if a == nil || a.Lock == nil {
+		return nil
+	}
+	a.closeOnce.Do(func() {
+		if a.fresh {
+			// Once database creation was attempted, do not inspect or roll back it.
+			if _, err := os.Lstat(a.paths.Database); os.IsNotExist(err) {
+				// Use an independent, bounded context after caller cancellation.
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				report, err := inspect(ctx, a.paths, a.options, a.Lock, true)
+				if err == nil && report.SourceKind == "fresh" && startupAllowed(report) &&
+					sqlite.SameInspectionSource(a.initial, report.Observed) {
+					a.closeErr = a.Lock.DiscardNew()
+					return
+				}
+				a.closeErr = err
+			}
+		}
+		a.closeErr = errors.Join(a.closeErr, a.Lock.Close())
+	})
+	return a.closeErr
 }
 
 func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options) (Report, error) {
@@ -158,9 +194,14 @@ func AdmitStartup(ctx context.Context, paths sqlite.InspectionPaths, options Opt
 		return nil, err
 	}
 	owned := false
+	var freshAdmission *Admission
 	defer func() {
 		if !owned && lock != nil {
-			_ = lock.Close()
+			if freshAdmission != nil {
+				err = errors.Join(err, freshAdmission.Close())
+			} else {
+				err = errors.Join(err, lock.Close())
+			}
 			admission = nil
 		}
 	}()
@@ -179,6 +220,9 @@ func AdmitStartup(ctx context.Context, paths sqlite.InspectionPaths, options Opt
 			return nil, err
 		}
 		paths.Database = lock.DatabasePath()
+		if fresh {
+			freshAdmission = &Admission{Lock: lock, fresh: true, paths: paths, options: options, initial: before.Observed}
+		}
 		after, err := inspect(ctx, paths, options, lock, fresh)
 		if err != nil {
 			return nil, err
@@ -192,6 +236,10 @@ func AdmitStartup(ctx context.Context, paths sqlite.InspectionPaths, options Opt
 		return nil, err
 	}
 	owned = true
+	if freshAdmission != nil {
+		freshAdmission.ConnectionStorage = before.Observed.ConnectionStorage
+		return freshAdmission, nil
+	}
 	return &Admission{Lock: lock, ConnectionStorage: before.Observed.ConnectionStorage}, nil
 }
 

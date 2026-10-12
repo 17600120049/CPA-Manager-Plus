@@ -188,12 +188,20 @@ func runServerWithOptions(options legacypreflight.Options) {
 		}
 	}()
 	// Defaults are created only after the source has passed fenced admission.
+	// Fatalf exits without running defers; release/rollback admission explicitly
+	// on initialization errors before a database has been opened successfully.
+	failStartup := func(format string, args ...any) {
+		if err := databaseLock.Close(); err != nil {
+			log.Printf("close failed startup admission: %v", err)
+		}
+		log.Fatalf(format, args...)
+	}
 	loadedConfig, err := config.Load()
 	if err != nil {
-		log.Fatalf("load admitted config: %v", err)
+		failStartup("load admitted config: %v", err)
 	}
 	if loadedConfig.DBPath != cfg.DBPath || loadedConfig.DataKeyPath != cfg.DataKeyPath || loadedConfig.UsageArchiveDir != cfg.UsageArchiveDir || loadedConfig.DataKey != cfg.DataKey {
-		log.Fatal("source configuration changed before startup")
+		failStartup("source configuration changed before startup")
 	}
 	cfg = loadedConfig
 	cfg.DBPath = databaseLock.DatabasePath()
@@ -202,19 +210,19 @@ func runServerWithOptions(options legacypreflight.Options) {
 		cfg.DataKey,
 		cfg.DataKeyPath,
 	); err != nil {
-		log.Fatalf("validate data key availability: %v", err)
+		failStartup("validate data key availability: %v", err)
 	}
 	dataKey, dataKeyCreated, err := security.LoadOrCreateDataKey(cfg.DataKey, cfg.DataKeyPath)
 	if err != nil {
-		log.Fatalf("load data key: %v", err)
+		failStartup("load data key: %v", err)
 	}
 	protector, err := security.NewProtector(dataKey)
 	if err != nil {
-		log.Fatalf("initialize secret protector: %v", err)
+		failStartup("initialize secret protector: %v", err)
 	}
 	db, err := store.Open(cfg.DBPath, protector)
 	if err != nil {
-		log.Fatalf("open sqlite: %v", err)
+		failStartup("open sqlite: %v", err)
 	}
 	defer func() {
 		if err := db.Close(); err != nil {

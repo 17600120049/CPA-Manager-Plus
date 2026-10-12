@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -359,6 +360,62 @@ func TestNativeV2FreshAndReopenStartup(t *testing.T) {
 	second := startManagerServerProcess(t, dir, path)
 	assertManagerEndpoint(t, second.addr, "/usage-service/info")
 	second.stop(t)
+}
+
+func TestFreshInitializationFailureAllowsRetry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix directory permissions; Windows tests fenced cancellation and cleanup directly")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	writeOwnedProvisioningConfig(t, dir)
+	keyDir := t.TempDir()
+	keyPath := filepath.Join(keyDir, "data.key")
+	if err := os.Chmod(keyDir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(keyDir, 0700)
+	// Root bypasses this owned filesystem fault, so verify the precondition.
+	if err := os.WriteFile(filepath.Join(keyDir, "probe"), nil, 0600); err == nil {
+		t.Skip("current user bypasses read-only directory permissions")
+	}
+	env := ownedPreflightEnvironment(dir, path)
+	for i, entry := range env {
+		if strings.HasPrefix(entry, "CPA_MANAGER_DATA_KEY_PATH=") {
+			env[i] = "CPA_MANAGER_DATA_KEY_PATH=" + keyPath
+		}
+	}
+	before := managerSourceSnapshot(t, dir)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestManagerServerHelperProcess$", "--", "initialize")
+	cmd.Env = env
+	output, err := cmd.CombinedOutput()
+	if err == nil || ctx.Err() != nil || !strings.Contains(string(output), "load data key:") {
+		t.Fatalf("initialization did not reach owned write failure: %v\n%s", err, output)
+	}
+	// Creating/removing our marker changes only the directory's timestamp.
+	after := managerSourceSnapshot(t, dir)
+	delete(before, dir)
+	delete(after, dir)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("failed fresh initialization left source evidence:\n%s", output)
+	}
+	if _, err := os.Lstat(keyPath); !os.IsNotExist(err) {
+		t.Fatalf("key created: %v", err)
+	}
+	if err := os.Chmod(keyDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(key, "CPA_") || strings.HasPrefix(key, "CPAMP_RUNTIME_") {
+			t.Setenv(key, value)
+		}
+	}
+	retry := startManagerServerProcess(t, dir, path, "initialize")
+	defer retry.stop(t)
+	assertManagerEndpoint(t, retry.addr, "/usage-service/info")
 }
 
 func TestFreshNoConfigNormalStartup(t *testing.T) {

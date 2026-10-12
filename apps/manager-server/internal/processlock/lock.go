@@ -20,6 +20,7 @@ type Lock struct {
 	lockPath     string
 	closeOnce    sync.Once
 	closeErr     error
+	createdNew   bool
 }
 
 // AcquireExisting takes the normal Manager ownership lock without creating a
@@ -58,7 +59,7 @@ func AcquireExisting(databasePath string) (*Lock, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("existing process lock is not a regular file")
 	}
-	file, err := os.Open(lockPath)
+	file, err := openLockFile(lockPath, os.O_RDONLY)
 	if err != nil {
 		return nil, err
 	}
@@ -80,11 +81,12 @@ func AcquireExisting(databasePath string) (*Lock, error) {
 		_ = file.Close()
 		return nil, err
 	}
-	if err := rejectHardLinkedDatabase(absolutePath); err != nil && !os.IsNotExist(err) {
+	lock := &Lock{file: file, databasePath: absolutePath, lockPath: lockPath}
+	if err := lock.Validate(); err != nil {
 		_ = errors.Join(unlockFile(file), file.Close())
 		return nil, err
 	}
-	return &Lock{file: file, databasePath: absolutePath, lockPath: lockPath}, nil
+	return lock, nil
 }
 
 func Acquire(databasePath string) (*Lock, error) {
@@ -107,7 +109,7 @@ func acquire(databasePath string, exclusive bool) (*Lock, error) {
 	if exclusive {
 		flags |= os.O_EXCL
 	}
-	file, err := os.OpenFile(lockPath, flags, 0o600)
+	file, err := openLockFile(lockPath, flags)
 	if err != nil {
 		return nil, fmt.Errorf("open manager database process lock %s: %w", lockPath, err)
 	}
@@ -118,15 +120,12 @@ func acquire(databasePath string, exclusive bool) (*Lock, error) {
 		}
 		return nil, fmt.Errorf("acquire manager database process lock %s: %w", lockPath, err)
 	}
-	if err := rejectHardLinkedDatabase(absolutePath); err != nil {
+	lock := &Lock{file: file, databasePath: absolutePath, lockPath: lockPath, createdNew: exclusive}
+	if err := lock.Validate(); err != nil {
 		_ = errors.Join(unlockFile(file), file.Close())
 		return nil, err
 	}
-	return &Lock{
-		file:         file,
-		databasePath: absolutePath,
-		lockPath:     lockPath,
-	}, nil
+	return lock, nil
 }
 
 func rejectHardLinkedDatabase(databasePath string) error {
@@ -222,11 +221,35 @@ func (l *Lock) Validate() error {
 }
 
 func (l *Lock) Close() error {
+	return l.close(false)
+}
+
+// DiscardNew removes only this caller's exclusively created marker, while its
+// ownership fence is still held. Callers must first prove that no source assets
+// were written. Closing an ordinary or already closed lock never removes it.
+func (l *Lock) DiscardNew() error {
+	return l.close(true)
+}
+
+func (l *Lock) close(discard bool) error {
 	if l == nil || l.file == nil {
 		return nil
 	}
 	l.closeOnce.Do(func() {
-		l.closeErr = errors.Join(unlockFile(l.file), l.file.Close())
+		if discard {
+			if !l.createdNew {
+				l.closeErr = errors.New("cannot discard a pre-existing ownership marker")
+			} else if err := l.Validate(); err != nil {
+				l.closeErr = err
+			} else if _, err := os.Lstat(l.databasePath); !os.IsNotExist(err) {
+				l.closeErr = errors.New("cannot discard ownership marker with database evidence")
+			} else if multiple, err := hasMultipleLinks(l.file); err != nil || multiple {
+				l.closeErr = errors.Join(err, ErrHardLinked)
+			} else {
+				l.closeErr = os.Remove(l.lockPath)
+			}
+		}
+		l.closeErr = errors.Join(l.closeErr, unlockFile(l.file), l.file.Close())
 	})
 	return l.closeErr
 }
