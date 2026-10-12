@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +52,7 @@ func TestCommandReportsLegacySchemaWithoutSecretsOrUpgradeGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errOut bytes.Buffer
-	if err := Run(context.Background(), []string{"--db", path, "--source-stopped"}, &out, &errOut); err != nil {
+	if err := Run(context.Background(), []string{"--db", path, "--source-stopped"}, &out, &errOut); !errors.Is(err, ErrBlocked) {
 		t.Fatal(err)
 	}
 	var report service.Report
@@ -60,6 +61,9 @@ func TestCommandReportsLegacySchemaWithoutSecretsOrUpgradeGrant(t *testing.T) {
 	}
 	if report.SourceKind != "legacy-manager" || report.UpgradeAuthorized || len(report.Unknown) < 5 {
 		t.Fatalf("report=%+v", report)
+	}
+	if report.CompatibilityProfile == nil || report.CompatibilityProfile.Status != "partial" || report.ExactSourceRelease.Status != "unknown" {
+		t.Fatalf("partial schema claimed a supported profile: %+v", report)
 	}
 	if strings.Contains(out.String()+errOut.String(), "OWNED_SECRET") {
 		t.Fatal("credential escaped")
@@ -124,3 +128,87 @@ func TestCommandHelpCancellationAndOutputFailure(t *testing.T) {
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, os.ErrPermission }
+
+func TestCommandHistoricalProfileContractAndRejectedPartialSource(t *testing.T) {
+	data, err := os.ReadFile("../../service/legacypreflight/testdata/legacy-profiles/schema-fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Fixtures []struct {
+			Ref, Family string
+			DDL         []struct{ SQL string }
+		}
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range manifest.Fixtures {
+		for _, partial := range []bool{false, true} {
+			t.Run(fixture.Ref+map[bool]string{false: "/recognized", true: "/partial"}[partial], func(t *testing.T) {
+				dir := t.TempDir()
+				path := filepath.Join(dir, "usage.sqlite")
+				db, err := sql.Open("sqlite", path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, ddl := range fixture.DDL {
+					if _, err := db.Exec(ddl.SQL); err != nil {
+						db.Close()
+						t.Fatal(err)
+					}
+				}
+				if partial {
+					if _, err := db.Exec("alter table usage_events drop column request_id"); err != nil {
+						db.Close()
+						t.Fatal(err)
+					}
+				}
+				if _, err := db.Exec(`insert into settings values('untrusted_version','v1.14.4 OWNED_SECRET_VERSION',0)`); err != nil {
+					db.Close()
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+				before, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var out, errOut bytes.Buffer
+				runErr := Run(context.Background(), []string{"--db", path, "--source-stopped"}, &out, &errOut)
+				if (partial && !errors.Is(runErr, ErrBlocked)) || (!partial && runErr != nil) {
+					t.Fatalf("unexpected CLI exit: %v", runErr)
+				}
+				var report service.Report
+				if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+					t.Fatal(err)
+				}
+				if report.UpgradeAuthorized || report.SourceKind != "legacy-manager" || report.ExactSourceRelease.Status != "unknown" {
+					t.Fatalf("unsafe contract: %+v", report)
+				}
+				if partial {
+					if report.CompatibilityProfile.Status != "partial" || report.CompatibilityProfile.Family != "" {
+						t.Fatal("partial gained family")
+					}
+				} else if report.CompatibilityProfile.Status != "recognized" || report.CompatibilityProfile.Family != fixture.Family {
+					t.Fatal("recognized fixture lost family")
+				}
+				if strings.Contains(out.String()+errOut.String(), "OWNED_SECRET") {
+					t.Fatal("source setting leaked")
+				}
+				after, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(before, after) {
+					t.Fatal("CLI changed source")
+				}
+				entries, err := os.ReadDir(dir)
+				if err != nil || len(entries) != 1 {
+					t.Fatal("CLI created source assets")
+				}
+			})
+		}
+	}
+}

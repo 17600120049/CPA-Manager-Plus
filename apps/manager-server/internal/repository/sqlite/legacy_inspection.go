@@ -54,6 +54,7 @@ type LegacyInspection struct {
 	SchemaFingerprint        string                                  `json:"schemaFingerprint,omitempty"`
 	History                  map[string]string                       `json:"history"`
 	HistoryRowsObserved      map[string]int                          `json:"historyRowsObserved,omitempty"`
+	CacheAccountingV2        string                                  `json:"cacheAccountingV2"`
 	ConnectionStorageVersion *int                                    `json:"connectionStorageVersion,omitempty"`
 	ConnectionStorage        PersistedCPAConnectionStorageInspection `json:"connectionStorage"`
 	Issues                   []string                                `json:"issues"`
@@ -76,7 +77,7 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 	result = LegacyInspection{SQLite: "not-inspected", Consistency: "unknown", History: map[string]string{
 		"rawDeleted": "not-inspected", "archives": "not-inspected",
 		"migrations": "not-inspected", "maintenance": "not-inspected",
-	}, Issues: []string{}}
+	}, CacheAccountingV2: "not-inspected", Issues: []string{}}
 	if strings.TrimSpace(paths.Database) == "" {
 		return result, errors.New("explicit database path is required")
 	}
@@ -282,6 +283,9 @@ func inspectionHasColumns(result *LegacyInspection, name string, columns ...stri
 
 func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
 	result.HistoryRowsObserved = make(map[string]int)
+	if err := inspectCacheAccountingV2(ctx, db, result); err != nil {
+		return err
+	}
 	if inspectionHasColumns(result, "settings", "key", "value") {
 		var raw string
 		err := db.QueryRowContext(ctx, `select value from settings where key = 'bootstrap_state_v1'`).Scan(&raw)
@@ -353,6 +357,40 @@ func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) e
 		if exists {
 			result.History[query.key] = "present-observed"
 		}
+	}
+	return nil
+}
+
+// Observe only the exact migration's bounded, allowlisted state. A table's
+// existence or an aggregate count cannot prove cache accounting revision 2.
+func inspectCacheAccountingV2(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+	if !inspectionHasColumns(result, "usage_data_migrations", "name", "status") {
+		return nil
+	}
+	result.CacheAccountingV2 = "unknown"
+	rows, err := db.QueryContext(ctx, `select case
+		when typeof(name) != 'text' or typeof(status) != 'text' then 'unknown'
+		when status = 'completed' then 'completed-observed'
+		when status = 'failed' then 'failed-observed'
+		when status in ('pending', 'discovering', 'running', 'paused') then 'incomplete-observed'
+		else 'unknown' end
+		from usage_data_migrations where name collate binary = 'usage_cache_accounting_v2' limit 2`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	count, state := 0, "unknown"
+	for rows.Next() {
+		if err := rows.Scan(&state); err != nil {
+			return err
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if count == 1 {
+		result.CacheAccountingV2 = state
 	}
 	return nil
 }

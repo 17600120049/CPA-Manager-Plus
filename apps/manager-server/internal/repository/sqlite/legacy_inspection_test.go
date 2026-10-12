@@ -389,3 +389,77 @@ func TestLegacyInspectionDamagedEmptyJournalAndSymlinkDoNotWrite(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyInspectionCacheAccountingExactRowIsBoundedAndSafe(t *testing.T) {
+	for _, test := range []struct{ name, query, state string }{
+		{"missing", `delete from usage_data_migrations`, "unknown"},
+		{"unrelated-completed", `insert into usage_data_migrations values('unrelated','completed')`, "unknown"},
+		{"completed", `insert into usage_data_migrations values('usage_cache_accounting_v2','completed')`, "completed-observed"},
+		{"pending", `insert into usage_data_migrations values('usage_cache_accounting_v2','pending')`, "incomplete-observed"},
+		{"failed", `insert into usage_data_migrations values('usage_cache_accounting_v2','failed')`, "failed-observed"},
+		{"cancelled", `insert into usage_data_migrations values('usage_cache_accounting_v2','cancelled')`, "unknown"},
+		{"invalid", `insert into usage_data_migrations values('usage_cache_accounting_v2','OWNED_SECRET_STATUS')`, "unknown"},
+		{"blob", `insert into usage_data_migrations values('usage_cache_accounting_v2',x'4f574e45445f534543524554')`, "unknown"},
+		{"duplicate", `drop table usage_data_migrations;create table usage_data_migrations(name text,status text);insert into usage_data_migrations values('usage_cache_accounting_v2','completed'),('usage_cache_accounting_v2','completed')`, "unknown"},
+		{"nonbinary-name", `drop table usage_data_migrations;create table usage_data_migrations(name text primary key collate nocase,status text);insert into usage_data_migrations values('USAGE_CACHE_ACCOUNTING_V2','completed')`, "unknown"},
+		{"missing-column", `drop table usage_data_migrations;create table usage_data_migrations(name text)`, "not-inspected"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			paths := coldInspectionFixture(t)
+			db, err := sql.Open("sqlite", paths.Database)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(test.query); err != nil {
+				db.Close()
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			before := inspectionSnapshot(t, filepath.Dir(paths.Database))
+			result, err := InspectLegacySource(context.Background(), paths, InspectionOptions{SourceStopped: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.CacheAccountingV2 != test.state {
+				t.Fatalf("state=%s expected=%s", result.CacheAccountingV2, test.state)
+			}
+			encoded, _ := json.Marshal(result)
+			if strings.Contains(string(encoded), "OWNED_SECRET") {
+				t.Fatal("raw migration status leaked")
+			}
+			if !reflect.DeepEqual(before, inspectionSnapshot(t, filepath.Dir(paths.Database))) {
+				t.Fatal("named migration read changed source")
+			}
+		})
+	}
+}
+func TestLegacyInspectionAggregateBudgetCannotReplaceExactMigration(t *testing.T) {
+	paths := coldInspectionFixture(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`delete from usage_data_migrations;
+ with recursive owned(n) as (values(1) union all select n+1 from owned where n<1001)
+ insert into usage_data_migrations select 'owned_'||n,'completed' from owned;
+ insert into usage_data_migrations values('usage_cache_accounting_v2','completed')`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before := inspectionSnapshot(t, filepath.Dir(paths.Database))
+	result, err := InspectLegacySource(context.Background(), paths, InspectionOptions{SourceStopped: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CacheAccountingV2 != "completed-observed" || result.History["migrations"] != "unknown" || result.HistoryRowsObserved["migrations"] != 1001 {
+		t.Fatalf("named/aggregate states mixed: %+v", result)
+	}
+	if !reflect.DeepEqual(before, inspectionSnapshot(t, filepath.Dir(paths.Database))) {
+		t.Fatal("bounded read changed source")
+	}
+}
