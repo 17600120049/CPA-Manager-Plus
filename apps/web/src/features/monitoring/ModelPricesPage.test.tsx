@@ -1,0 +1,199 @@
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Input } from '@/components/ui/Input';
+import { calculateCost, type ModelPrice } from '@/utils/usage';
+import { ModelPricesPage } from './ModelPricesPage';
+
+const mocks = vi.hoisted(() => {
+  (
+    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
+  return {
+    prices: {} as Record<string, ModelPrice>,
+    save: vi.fn(async (_prices: Record<string, ModelPrice>) => undefined),
+    notify: vi.fn(),
+  };
+});
+
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-i18next')>()),
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+vi.mock('react-router-dom', () => ({ Link: 'a' }));
+vi.mock('@/stores', () => ({
+  useAuthStore: (selector: (state: { managementKey: string }) => unknown) =>
+    selector({ managementKey: '' }),
+  useNotificationStore: () => ({ showNotification: mocks.notify }),
+}));
+vi.mock('@/hooks/usePanelFeatureAvailability', () => ({
+  usePanelFeatureAvailability: () => ({ modelPricesAvailable: false }),
+}));
+vi.mock('@/features/monitoring/hooks/useUsageData', () => ({
+  useUsageData: () => ({
+    loading: false,
+    modelPrices: mocks.prices,
+    setModelPrices: mocks.save,
+    syncModelPrices: vi.fn(),
+    usageServiceAvailable: true,
+  }),
+}));
+
+// Synthetic published-price shape; this exercises the real edit/save consumer,
+// not historical database migration or upgrade qualification.
+const tieredPrice = (): ModelPrice => ({
+  prompt: 2,
+  completion: 4,
+  cache: 1,
+  source: 'sync',
+  contextTiers: [
+    {
+      thresholdTokens: 200_000,
+      prompt: 8,
+      completion: 0,
+      cache: 0,
+      promptConfigured: true,
+      completionConfigured: false,
+      cacheConfigured: false,
+      cacheRead: 0,
+      cacheReadConfigured: true,
+    },
+  ],
+  serviceTiers: [
+    {
+      mode: 'fast',
+      serviceTier: 'priority',
+      prompt: 0,
+      completion: 7,
+      cache: 0,
+      promptConfigured: true,
+      completionConfigured: true,
+      cacheConfigured: false,
+    },
+  ],
+});
+
+let renderer: ReactTestRenderer;
+
+const editFirstModel = async () => {
+  await act(async () => {
+    renderer = create(<ModelPricesPage />);
+  });
+  await act(async () => {
+    renderer.root.findAllByProps({ 'aria-label': 'common.edit' })[0].props.onClick();
+  });
+};
+
+const changeField = async (label: string, value: string) => {
+  await act(async () => {
+    renderer.root
+      .findAllByType(Input)
+      .find((input) => input.props.label === label)!
+      .props.onChange({ target: { value } });
+  });
+};
+
+const save = async () => {
+  await act(async () => {
+    renderer.root
+      .findAllByType('button')
+      .find((button) =>
+        button.findAllByType('span').some((span) => span.children.includes('common.save'))
+      )!
+      .props.onClick();
+  });
+  return mocks.save.mock.calls[mocks.save.mock.calls.length - 1][0];
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.prices = { 'tiered-model': tieredPrice() };
+});
+afterEach(async () => {
+  await act(async () => {
+    renderer?.unmount();
+  });
+});
+
+describe('ModelPricesPage base price edits', () => {
+  it('saves existing rules, inherited rates and explicit zero through the real Save action', async () => {
+    const original = structuredClone(mocks.prices);
+    await editFirstModel();
+    expect(
+      renderer.root
+        .findAllByType('div')
+        .some((node) => node.children.includes('model_prices.manual_preserves_pricing_rules'))
+    ).toBe(true);
+    await changeField('usage_stats.model_price_prompt ($/1M)', '3');
+    await changeField('usage_stats.model_price_completion ($/1M)', '5');
+    const saved = await save();
+    expect(saved['tiered-model']).toMatchObject({ prompt: 3, completion: 5, source: 'manual' });
+    expect(saved['tiered-model'].contextTiers).toEqual(original['tiered-model'].contextTiers);
+    expect(saved['tiered-model'].serviceTiers).toEqual(original['tiered-model'].serviceTiers);
+    expect(mocks.prices).toEqual(original);
+    expect(saved['tiered-model'].contextTiers![0]).not.toBe(
+      mocks.prices['tiered-model'].contextTiers![0]
+    );
+
+    // Context completion inherits the edited base rate; explicit free cache stays free.
+    expect(
+      calculateCost(
+        {
+          __modelName: 'tiered-model',
+          tokens: { input_tokens: 300_000, output_tokens: 100_000, cache_read_tokens: 100_000 },
+        },
+        saved
+      )
+    ).toBeCloseTo(2.1);
+    // Service-tier explicit zero prompt does not inherit the edited nonzero base.
+    expect(
+      calculateCost(
+        {
+          __modelName: 'tiered-model',
+          service_tier: 'priority',
+          tokens: { input_tokens: 100_000, output_tokens: 100_000 },
+        },
+        saved
+      )
+    ).toBeCloseTo(0.7);
+  });
+
+  it('uses the target model rules when the model name is changed', async () => {
+    mocks.prices['z-target'] = {
+      ...tieredPrice(),
+      contextTiers: [{ ...tieredPrice().contextTiers![0], thresholdTokens: 500_000 }],
+      serviceTiers: [{ ...tieredPrice().serviceTiers![0], completion: 12 }],
+    };
+    await editFirstModel();
+    await changeField('usage_stats.model_name', ' z-target ');
+    const saved = await save();
+    expect(saved['z-target'].contextTiers).toEqual(mocks.prices['z-target'].contextTiers);
+    expect(saved['z-target'].serviceTiers).toEqual(mocks.prices['z-target'].serviceTiers);
+    expect(saved['tiered-model']).toEqual(mocks.prices['tiered-model']);
+  });
+
+  it('does not copy the original model rules into a new model', async () => {
+    await editFirstModel();
+    await changeField('usage_stats.model_name', 'new-model');
+    const saved = await save();
+    expect(saved['new-model'].contextTiers).toEqual([]);
+    expect(saved['new-model'].serviceTiers).toEqual([]);
+    expect(saved['tiered-model']).toEqual(mocks.prices['tiered-model']);
+  });
+
+  it('preserves current rules when prices refresh while the editor is open', async () => {
+    await editFirstModel();
+    mocks.prices = {
+      'tiered-model': {
+        ...tieredPrice(),
+        serviceTiers: [],
+        contextTiers: [{ ...tieredPrice().contextTiers![0], thresholdTokens: 400_000 }],
+      },
+    };
+    await act(async () => {
+      renderer.update(<ModelPricesPage />);
+    });
+    const saved = await save();
+    expect(saved['tiered-model'].contextTiers).toEqual(mocks.prices['tiered-model'].contextTiers);
+    expect(saved['tiered-model'].serviceTiers).toEqual([]);
+  });
+});

@@ -2310,7 +2310,7 @@
     "calls": "呼叫",
     "source": "來源",
     "pricing_rules": "計費規則",
-    "manual_clears_pricing_rules": "儲存手動價格將移除 {{count}} 條已同步的上下文或服務層級規則。",
+    "manual_preserves_pricing_rules": "儲存基礎價格將保留 {{count}} 條既有的上下文或服務層級規則。",
     "needs_confirmation": "需要確認價格",
     "no_price": "未設定價格",
     "candidate_select": "選擇價格",
