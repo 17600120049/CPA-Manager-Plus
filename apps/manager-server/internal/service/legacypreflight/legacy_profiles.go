@@ -171,7 +171,7 @@ func addCompatibilityObservations(report *Report) {
 
 func legacyBridgeObservations(report *Report) BridgeReadiness {
 	result := BridgeReadiness{Status: "unknown", Items: map[string]ProfileObservation{}}
-	for _, item := range []string{"cache-accounting-v2", "maintenance", "raw-deletion", "archive-coverage", "encrypted-key", "database-integrity", "foreign-keys", "verified-backup", "disk-space"} {
+	for _, item := range []string{"cache-accounting-v2", "quota-snapshot-lifecycle-v1", "maintenance", "raw-deletion", "archive-coverage", "encrypted-key", "database-integrity", "foreign-keys", "verified-backup", "disk-space"} {
 		result.Items[item] = ProfileObservation{Status: "unknown", Reason: "not-verified"}
 	}
 	if report.SourceKind != "legacy-manager" || len(report.Blocked) != 0 || report.Observed.SQLite != "observed" {
@@ -188,6 +188,12 @@ func legacyBridgeObservations(report *Report) BridgeReadiness {
 		set("cache-accounting-v2", "observed", "completed-row-observed-not-semantic-parity")
 	case "failed-observed", "incomplete-observed":
 		set("cache-accounting-v2", "blocked", "migration-not-completed")
+	}
+	switch report.Observed.QuotaSnapshotLifecycleV1 {
+	case "completed-observed":
+		set("quota-snapshot-lifecycle-v1", "observed", "completed-row-observed-not-semantic-parity")
+	case "failed-observed", "incomplete-observed":
+		set("quota-snapshot-lifecycle-v1", "blocked", "migration-not-completed")
 	}
 	switch report.Observed.History["maintenance"] {
 	case "present-observed":

@@ -396,6 +396,10 @@ func TestLegacyInspectionCacheAccountingExactRowIsBoundedAndSafe(t *testing.T) {
 		{"unrelated-completed", `insert into usage_data_migrations values('unrelated','completed')`, "unknown"},
 		{"completed", `insert into usage_data_migrations values('usage_cache_accounting_v2','completed')`, "completed-observed"},
 		{"pending", `insert into usage_data_migrations values('usage_cache_accounting_v2','pending')`, "incomplete-observed"},
+		{"discovering", `insert into usage_data_migrations values('usage_cache_accounting_v2','discovering')`, "incomplete-observed"},
+		{"running", `insert into usage_data_migrations values('usage_cache_accounting_v2','running')`, "incomplete-observed"},
+		{"applying", `insert into usage_data_migrations values('usage_cache_accounting_v2','applying')`, "incomplete-observed"},
+		{"clearing", `insert into usage_data_migrations values('usage_cache_accounting_v2','clearing')`, "incomplete-observed"},
 		{"failed", `insert into usage_data_migrations values('usage_cache_accounting_v2','failed')`, "failed-observed"},
 		{"cancelled", `insert into usage_data_migrations values('usage_cache_accounting_v2','cancelled')`, "unknown"},
 		{"invalid", `insert into usage_data_migrations values('usage_cache_accounting_v2','OWNED_SECRET_STATUS')`, "unknown"},
@@ -435,6 +439,56 @@ func TestLegacyInspectionCacheAccountingExactRowIsBoundedAndSafe(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyInspectionQuotaSnapshotExactRowIsBoundedAndSafe(t *testing.T) {
+	for _, test := range []struct{ name, query, state string }{
+		{"missing", `delete from usage_data_migrations`, "unknown"},
+		{"unrelated-completed", `insert into usage_data_migrations values('unrelated','completed')`, "unknown"},
+		{"completed", `insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','completed')`, "completed-observed"},
+		{"pending", `insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','pending')`, "incomplete-observed"},
+		{"running", `insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','running')`, "incomplete-observed"},
+		{"offline-required", `insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','offline_required')`, "incomplete-observed"},
+		{"failed", `insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','failed')`, "failed-observed"},
+		{"wrong-state-machine", `insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','applying')`, "unknown"},
+		{"invalid", `insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','OWNED_SECRET_STATUS')`, "unknown"},
+		{"blob-status", `insert into usage_data_migrations values('quota_snapshot_lifecycle_v1',x'4f574e45445f534543524554')`, "unknown"},
+		{"blob-name", `insert into usage_data_migrations values(cast('quota_snapshot_lifecycle_v1' as blob),'completed')`, "unknown"},
+		{"duplicate", `drop table usage_data_migrations;create table usage_data_migrations(name text,status text);insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','completed'),('quota_snapshot_lifecycle_v1','pending')`, "unknown"},
+		{"nonbinary-name", `drop table usage_data_migrations;create table usage_data_migrations(name text primary key collate nocase,status text);insert into usage_data_migrations values('QUOTA_SNAPSHOT_LIFECYCLE_V1','completed')`, "unknown"},
+		{"nonbinary-status", `drop table usage_data_migrations;create table usage_data_migrations(name text primary key,status text collate nocase);insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','COMPLETED')`, "unknown"},
+		{"missing-column", `drop table usage_data_migrations;create table usage_data_migrations(name text)`, "not-inspected"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			paths := coldInspectionFixture(t)
+			db, err := sql.Open("sqlite", paths.Database)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(test.query); err != nil {
+				db.Close()
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			before := inspectionSnapshot(t, filepath.Dir(paths.Database))
+			result, err := InspectLegacySource(context.Background(), paths, InspectionOptions{SourceStopped: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.QuotaSnapshotLifecycleV1 != test.state {
+				t.Fatalf("state=%s expected=%s", result.QuotaSnapshotLifecycleV1, test.state)
+			}
+			encoded, _ := json.Marshal(result)
+			if strings.Contains(string(encoded), "OWNED_SECRET") {
+				t.Fatal("raw migration state leaked")
+			}
+			if !reflect.DeepEqual(before, inspectionSnapshot(t, filepath.Dir(paths.Database))) {
+				t.Fatal("named migration read changed source")
+			}
+		})
+	}
+}
 func TestLegacyInspectionAggregateBudgetCannotReplaceExactMigration(t *testing.T) {
 	paths := coldInspectionFixture(t)
 	db, err := sql.Open("sqlite", paths.Database)
@@ -444,7 +498,8 @@ func TestLegacyInspectionAggregateBudgetCannotReplaceExactMigration(t *testing.T
 	if _, err := db.Exec(`delete from usage_data_migrations;
  with recursive owned(n) as (values(1) union all select n+1 from owned where n<1001)
  insert into usage_data_migrations select 'owned_'||n,'completed' from owned;
- insert into usage_data_migrations values('usage_cache_accounting_v2','completed')`); err != nil {
+ insert into usage_data_migrations values('usage_cache_accounting_v2','completed');
+ insert into usage_data_migrations values('quota_snapshot_lifecycle_v1','offline_required')`); err != nil {
 		db.Close()
 		t.Fatal(err)
 	}
@@ -456,7 +511,7 @@ func TestLegacyInspectionAggregateBudgetCannotReplaceExactMigration(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.CacheAccountingV2 != "completed-observed" || result.History["migrations"] != "unknown" || result.HistoryRowsObserved["migrations"] != 1001 {
+	if result.CacheAccountingV2 != "completed-observed" || result.QuotaSnapshotLifecycleV1 != "incomplete-observed" || result.History["migrations"] != "unknown" || result.HistoryRowsObserved["migrations"] != 1001 {
 		t.Fatalf("named/aggregate states mixed: %+v", result)
 	}
 	if !reflect.DeepEqual(before, inspectionSnapshot(t, filepath.Dir(paths.Database))) {

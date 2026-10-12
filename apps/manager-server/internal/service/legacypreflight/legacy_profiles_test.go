@@ -155,6 +155,15 @@ func TestBridgeObservationsNeverClaimReadinessOrLeakSecrets(t *testing.T) {
 		{"completed", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','completed')`, "cache-accounting-v2", "observed"},
 		{"pending", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','pending')`, "cache-accounting-v2", "blocked"},
 		{"failed", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','failed')`, "cache-accounting-v2", "blocked"},
+		{"applying", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','applying')`, "cache-accounting-v2", "blocked"},
+		{"clearing", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','clearing')`, "cache-accounting-v2", "blocked"},
+		{"quota-completed", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','completed')`, "quota-snapshot-lifecycle-v1", "observed"},
+		{"quota-pending", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','pending')`, "quota-snapshot-lifecycle-v1", "blocked"},
+		{"quota-running", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','running')`, "quota-snapshot-lifecycle-v1", "blocked"},
+		{"quota-failed", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','failed')`, "quota-snapshot-lifecycle-v1", "blocked"},
+		{"quota-offline-required", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','offline_required')`, "quota-snapshot-lifecycle-v1", "blocked"},
+		{"quota-unknown", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','OWNED_SECRET_STATUS')`, "quota-snapshot-lifecycle-v1", "unknown"},
+		{"quota-over-budget", `with recursive owned(n) as (values(1) union all select n+1 from owned where n<1001) insert into usage_data_migrations(name,status) select 'owned_'||n,'completed' from owned; insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','offline_required')`, "quota-snapshot-lifecycle-v1", "blocked"},
 		{"unknown", `insert into usage_data_migrations(name,status) values('usage_cache_accounting_v2','OWNED_SECRET_STATUS')`, "cache-accounting-v2", "unknown"},
 		{"deleted-history", `insert into usage_archive_deleted_coverage_daily values(20261012,1,1,1)`, "archive-coverage", "blocked"},
 		{"maintenance", `insert into usage_maintenance_locks values('owned','owned-run','archive',1,1)`, "maintenance", "blocked"},
@@ -171,7 +180,10 @@ func TestBridgeObservationsNeverClaimReadinessOrLeakSecrets(t *testing.T) {
 			if report.BridgeReadiness.Items[test.item].Status != test.status || report.BridgeReadiness.Status == "ready" || report.UpgradeAuthorized || report.ExactSourceRelease.Status != "unknown" {
 				t.Fatalf("bridge/profile state: %+v", report)
 			}
-			if test.status == "blocked" && (report.BridgeReadiness.Status != "blocked" || len(report.Blocked) == 0) {
+			if report.CompatibilityProfile.Status != "recognized" || report.CompatibilityProfile.Family != "LegacySchemaC" {
+				t.Fatal("runtime migration state changed capability classification")
+			}
+			if test.status == "blocked" && (report.BridgeReadiness.Status != "blocked" || !strings.Contains(strings.Join(report.Blocked, ","), "legacy-bridge-blocked")) {
 				t.Fatal("blocker absent from report")
 			}
 			encoded, _ := json.Marshal(report)

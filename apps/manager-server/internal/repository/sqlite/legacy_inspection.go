@@ -55,6 +55,7 @@ type LegacyInspection struct {
 	History                  map[string]string                       `json:"history"`
 	HistoryRowsObserved      map[string]int                          `json:"historyRowsObserved,omitempty"`
 	CacheAccountingV2        string                                  `json:"cacheAccountingV2"`
+	QuotaSnapshotLifecycleV1 string                                  `json:"quotaSnapshotLifecycleV1"`
 	ConnectionStorageVersion *int                                    `json:"connectionStorageVersion,omitempty"`
 	ConnectionStorage        PersistedCPAConnectionStorageInspection `json:"connectionStorage"`
 	Issues                   []string                                `json:"issues"`
@@ -77,7 +78,7 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 	result = LegacyInspection{SQLite: "not-inspected", Consistency: "unknown", History: map[string]string{
 		"rawDeleted": "not-inspected", "archives": "not-inspected",
 		"migrations": "not-inspected", "maintenance": "not-inspected",
-	}, CacheAccountingV2: "not-inspected", Issues: []string{}}
+	}, CacheAccountingV2: "not-inspected", QuotaSnapshotLifecycleV1: "not-inspected", Issues: []string{}}
 	if strings.TrimSpace(paths.Database) == "" {
 		return result, errors.New("explicit database path is required")
 	}
@@ -283,7 +284,7 @@ func inspectionHasColumns(result *LegacyInspection, name string, columns ...stri
 
 func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
 	result.HistoryRowsObserved = make(map[string]int)
-	if err := inspectCacheAccountingV2(ctx, db, result); err != nil {
+	if err := inspectRequiredLegacyMigrations(ctx, db, result); err != nil {
 		return err
 	}
 	if inspectionHasColumns(result, "settings", "key", "value") {
@@ -361,38 +362,52 @@ func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) e
 	return nil
 }
 
-// Observe only the exact migration's bounded, allowlisted state. A table's
-// existence or an aggregate count cannot prove cache accounting revision 2.
-func inspectCacheAccountingV2(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
-	if !inspectionHasColumns(result, "usage_data_migrations", "name", "status") {
-		return nil
-	}
-	result.CacheAccountingV2 = "unknown"
-	rows, err := db.QueryContext(ctx, `select case
-		when typeof(name) != 'text' or typeof(status) != 'text' then 'unknown'
-		when status = 'completed' then 'completed-observed'
-		when status = 'failed' then 'failed-observed'
-		when status in ('pending', 'discovering', 'running', 'paused') then 'incomplete-observed'
-		else 'unknown' end
-		from usage_data_migrations where name collate binary = 'usage_cache_accounting_v2' limit 2`)
+// Observe only exact required migrations' bounded, allowlisted states. A
+// table's existence or an aggregate count cannot prove migration completion.
+func inspectRequiredLegacyMigrations(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+	var err error
+	result.CacheAccountingV2, err = inspectRequiredLegacyMigration(ctx, db, result, "usage_cache_accounting_v2")
 	if err != nil {
 		return err
+	}
+	result.QuotaSnapshotLifecycleV1, err = inspectRequiredLegacyMigration(ctx, db, result, "quota_snapshot_lifecycle_v1")
+	return err
+}
+
+// These two required v1 migrations have separate historical state machines.
+// Missing/ambiguous rows remain unknown; completed is only a row observation.
+func inspectRequiredLegacyMigration(ctx context.Context, db *sql.DB, result *LegacyInspection, name string) (string, error) {
+	if !inspectionHasColumns(result, "usage_data_migrations", "name", "status") {
+		return "not-inspected", nil
+	}
+	rows, err := db.QueryContext(ctx, `select case
+		when typeof(name) != 'text' or typeof(status) != 'text' then 'unknown'
+		when status collate binary = 'completed' then 'completed-observed'
+		when status collate binary = 'failed' then 'failed-observed'
+		when name collate binary = 'usage_cache_accounting_v2'
+			and status collate binary in ('pending', 'discovering', 'running', 'applying', 'clearing', 'paused') then 'incomplete-observed'
+		when name collate binary = 'quota_snapshot_lifecycle_v1'
+			and status collate binary in ('pending', 'running', 'offline_required') then 'incomplete-observed'
+		else 'unknown' end
+		from usage_data_migrations where name collate binary = ? limit 2`, name)
+	if err != nil {
+		return "unknown", err
 	}
 	defer rows.Close()
 	count, state := 0, "unknown"
 	for rows.Next() {
 		if err := rows.Scan(&state); err != nil {
-			return err
+			return "unknown", err
 		}
 		count++
 	}
 	if err := rows.Err(); err != nil {
-		return err
+		return "unknown", err
 	}
 	if count == 1 {
-		result.CacheAccountingV2 = state
+		return state, nil
 	}
-	return nil
+	return "unknown", nil
 }
 
 func inspectFiles(paths InspectionPaths) ([]InspectionFile, error) {
