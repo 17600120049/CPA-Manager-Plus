@@ -8,6 +8,58 @@ import (
 	"testing"
 )
 
+func TestAcquireNewCreatesOnceAndPreservesExistingOwnershipMarker(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data", "usage.sqlite")
+	first, err := AcquireNew(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if err := first.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if lock, err := AcquireNew(path); lock != nil || !errors.Is(err, os.ErrExist) {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		t.Fatalf("existing held marker accepted as new: lock=%v err=%v", lock, err)
+	}
+	if lock, err := Acquire(path); lock != nil || !errors.Is(err, ErrLocked) {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		t.Fatalf("new marker lost ownership fence: lock=%v err=%v", lock, err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Lstat(first.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lock, err := AcquireNew(path); lock != nil || !errors.Is(err, os.ErrExist) {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		t.Fatalf("existing released marker accepted as new: lock=%v err=%v", lock, err)
+	}
+	after, err := os.Lstat(first.Path())
+	if err != nil || !os.SameFile(before, after) || before.Size() != after.Size() || before.Mode() != after.Mode() || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("exclusive creation changed existing marker")
+	}
+	// Existing native-v2 owners retain the normal reusable-lock behavior.
+	reopened, err := Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatal("lock acquisition created database")
+	}
+}
+
 func TestAcquireExistingNeverCreatesSourceAndRetainsNormalOwnership(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "missing", "usage.sqlite")

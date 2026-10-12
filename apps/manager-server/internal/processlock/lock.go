@@ -88,12 +88,26 @@ func AcquireExisting(databasePath string) (*Lock, error) {
 }
 
 func Acquire(databasePath string) (*Lock, error) {
+	return acquire(databasePath, false)
+}
+
+// AcquireNew proves that this caller created the persistent ownership marker.
+// An existing marker is rejected atomically, even when its owner released it.
+func AcquireNew(databasePath string) (*Lock, error) {
+	return acquire(databasePath, true)
+}
+
+func acquire(databasePath string, exclusive bool) (*Lock, error) {
 	absolutePath, err := resolveDatabasePath(databasePath)
 	if err != nil {
 		return nil, err
 	}
 	lockPath := absolutePath + ".manager.lock"
-	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	flags := os.O_CREATE | os.O_RDWR
+	if exclusive {
+		flags |= os.O_EXCL
+	}
+	file, err := os.OpenFile(lockPath, flags, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open manager database process lock %s: %w", lockPath, err)
 	}

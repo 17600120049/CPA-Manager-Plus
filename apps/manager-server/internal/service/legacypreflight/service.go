@@ -173,12 +173,13 @@ func AdmitStartup(ctx context.Context, paths sqlite.InspectionPaths, options Opt
 		return nil, errors.New("Manager source is not proven fresh or native v2; run legacy-preflight and restore missing source assets; use initialize only for a deliberate config-only new installation")
 	}
 	if lock == nil {
-		lock, err = processlock.Acquire(paths.Database)
+		fresh := before.SourceKind == "fresh"
+		lock, err = acquireStartupLock(paths.Database, fresh)
 		if err != nil {
 			return nil, err
 		}
 		paths.Database = lock.DatabasePath()
-		after, err := inspect(ctx, paths, options, lock, true)
+		after, err := inspect(ctx, paths, options, lock, fresh)
 		if err != nil {
 			return nil, err
 		}
@@ -192,6 +193,13 @@ func AdmitStartup(ctx context.Context, paths sqlite.InspectionPaths, options Opt
 	}
 	owned = true
 	return &Admission{Lock: lock, ConnectionStorage: before.Observed.ConnectionStorage}, nil
+}
+
+func acquireStartupLock(databasePath string, fresh bool) (*processlock.Lock, error) {
+	if fresh {
+		return processlock.AcquireNew(databasePath)
+	}
+	return processlock.Acquire(databasePath)
 }
 
 func startupAllowed(report Report) bool {

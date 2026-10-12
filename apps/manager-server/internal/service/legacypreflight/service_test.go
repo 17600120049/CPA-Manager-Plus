@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -43,6 +44,60 @@ func fixturePaths(t *testing.T) sqlite.InspectionPaths {
 	paths := DefaultPaths(filepath.Join(dir, "usage.sqlite"))
 	paths.Config = filepath.Join(dir, "config.json")
 	return paths
+}
+
+func TestFreshAdmissionRejectsInterposedOwnershipMarker(t *testing.T) {
+	// The child creates and releases ownership after the parent's first
+	// inspection, deterministically opening the reported admission window.
+	if path := os.Getenv("CPAMP_TEST_FRESH_ADMISSION_LOCK_CONTENDER"); path != "" {
+		lock, err := processlock.Acquire(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := lock.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	for _, initialize := range []bool{false, true} {
+		t.Run(fmt.Sprintf("initialize=%v", initialize), func(t *testing.T) {
+			paths := fixturePaths(t)
+			if initialize {
+				if err := os.WriteFile(paths.Config, []byte(`{"dataDir":"."}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			options := Options{SourceStopped: true, Initialize: initialize}
+			before, err := inspect(context.Background(), paths, options, nil, false)
+			if err != nil || before.SourceKind != "fresh" || !startupAllowed(before) {
+				t.Fatalf("first inspection was not fresh: report=%+v err=%v", before, err)
+			}
+			cmd := exec.Command(os.Args[0], "-test.run=^TestFreshAdmissionRejectsInterposedOwnershipMarker$")
+			cmd.Env = append(os.Environ(), "CPAMP_TEST_FRESH_ADMISSION_LOCK_CONTENDER="+paths.Database)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("interposed owner: %v\n%s", err, output)
+			}
+			state := sourceState(t, filepath.Dir(paths.Database))
+			lock, err := acquireStartupLock(paths.Database, before.SourceKind == "fresh")
+			if lock != nil {
+				_ = lock.Close()
+				t.Fatal("fresh admission reused a marker created by another process")
+			}
+			if !errors.Is(err, os.ErrExist) {
+				t.Fatalf("interposed marker did not fail exclusive creation: %v", err)
+			}
+			if !reflect.DeepEqual(state, sourceState(t, filepath.Dir(paths.Database))) {
+				t.Fatal("failed exclusive admission changed source")
+			}
+			admission, err := AdmitStartup(context.Background(), paths, options)
+			if err == nil || admission != nil {
+				if admission != nil {
+					_ = admission.Close()
+				}
+				t.Fatal("complete reclassification admitted the interposed old marker")
+			}
+		})
+	}
 }
 
 func TestStartupRejectsLegacyUnknownAndPartialWithoutSourceWrites(t *testing.T) {
