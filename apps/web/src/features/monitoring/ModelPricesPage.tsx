@@ -175,8 +175,8 @@ export function ModelPricesPage() {
   };
 
   const handleSaveDraft = async () => {
-    const price = buildPriceFromDraft(draft);
     const model = draft.model.trim();
+    const price = buildPriceFromDraft(draft, modelPrices[model]);
     if (!model || !price) {
       showNotification(t('usage_stats.model_price_model_required'), 'warning');
       return;
@@ -371,7 +371,7 @@ export function ModelPricesPage() {
               (modelPrices[draft.model.trim()]?.serviceTiers?.length ?? 0) >
             0 ? (
               <div className={styles.tierClearNotice}>
-                {t('model_prices.manual_clears_pricing_rules', {
+                {t('model_prices.manual_preserves_pricing_rules', {
                   count:
                     (modelPrices[draft.model.trim()]?.contextTiers?.length ?? 0) +
                     (modelPrices[draft.model.trim()]?.serviceTiers?.length ?? 0),

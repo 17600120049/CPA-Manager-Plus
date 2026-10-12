@@ -66,7 +66,10 @@ export const parsePriceValue = (value: string) => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 };
 
-export const buildPriceFromDraft = (draft: PriceDraft): ModelPrice | null => {
+export const buildPriceFromDraft = (
+  draft: PriceDraft,
+  existingPrice?: ModelPrice
+): ModelPrice | null => {
   const model = draft.model.trim();
   if (!model) return null;
   const prompt = parsePriceValue(draft.prompt);
@@ -83,8 +86,8 @@ export const buildPriceFromDraft = (draft: PriceDraft): ModelPrice | null => {
     cacheReadConfigured: draft.cacheRead.trim() !== '',
     cacheCreationConfigured: draft.cacheCreation.trim() !== '',
     source: 'manual',
-    contextTiers: [],
-    serviceTiers: [],
+    contextTiers: (existingPrice?.contextTiers ?? []).map((tier) => ({ ...tier })),
+    serviceTiers: (existingPrice?.serviceTiers ?? []).map((tier) => ({ ...tier })),
   };
 };
 

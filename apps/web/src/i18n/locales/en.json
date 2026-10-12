@@ -2312,7 +2312,7 @@
     "calls": "Calls",
     "source": "Source",
     "pricing_rules": "Pricing rules",
-    "manual_clears_pricing_rules": "Saving a manual price removes {{count}} synchronized context or service-tier rule(s).",
+    "manual_preserves_pricing_rules": "Saving a base price preserves {{count}} existing context or service-tier rule(s).",
     "needs_confirmation": "Candidate confirmation needed",
     "no_price": "No price set",
     "candidate_select": "Select candidate price",
