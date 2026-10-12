@@ -9,6 +9,115 @@ import (
 	"time"
 )
 
+func TestInspectionConfigStrictMissingMalformedAndExistingPaths(t *testing.T) {
+	clearConfigEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	t.Setenv(configEnvKey, path)
+	if _, err := LoadForInspection(); err == nil {
+		t.Fatal("missing explicit config accepted")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("inspection created config")
+	}
+	for _, test := range []struct {
+		raw       string
+		wantError bool
+	}{
+		{`{broken`, true}, {`{"dataDir":"owned"}`, false}, {`{"cpaUpstreamUrl":"https://owned.invalid"}`, false},
+		{`{"retiredSource":{"managementKey":"owned"}}`, false},
+	} {
+		if err := os.WriteFile(path, []byte(test.raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadForInspection()
+		if (err != nil) != test.wantError {
+			t.Fatalf("error=%v", err)
+		}
+		after, err := os.ReadFile(path)
+		if err != nil || string(after) != test.raw {
+			t.Fatal("inspection changed config")
+		}
+	}
+}
+
+func TestInspectionLocationsIgnoreRuntimeEnvironmentAndNeverReadSecrets(t *testing.T) {
+	clearConfigEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"dataDir":"source-data","dataKeyPath":"source.key","managementKeyFile":"unused-secret"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("USAGE_DATA_DIR", filepath.Join(dir, "unrelated-runtime"))
+	t.Setenv("CPA_MANAGER_DATA_KEY", "UNRELATED_SECRET")
+	cfg, err := ResolveInspectionLocations(path, filepath.Join(dir, "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DataKey != "" || cfg.ManagementKey != "" || cfg.DataKeyPath != filepath.Join(dir, "source.key") || cfg.UsageArchiveDir != filepath.Join(dir, "source-data", "usage-archives") {
+		t.Fatal("source paths consumed runtime credentials or overrides")
+	}
+}
+
+func TestConfigRejectsSymbolicLinksBeforeParsing(t *testing.T) {
+	for _, targetKind := range []string{"valid", "malformed", "missing"} {
+		t.Run(targetKind, func(t *testing.T) {
+			clearConfigEnv(t)
+			dir := t.TempDir()
+			target := filepath.Join(dir, "target.json")
+			raw := `{"dataDir":"."}`
+			if targetKind == "malformed" {
+				raw = `{broken`
+			}
+			if targetKind != "missing" {
+				if err := os.WriteFile(target, []byte(raw), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := filepath.Join(dir, "config.json")
+			if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(configEnvKey, path)
+			for _, load := range []func() (Config, error){LoadForInspection, Load, func() (Config, error) {
+				return ResolveInspectionLocations(path, filepath.Join(dir, "usage.sqlite"))
+			}} {
+				if _, err := load(); err == nil || !strings.Contains(err.Error(), "config is not a regular file") {
+					t.Fatalf("config link was followed before rejection: %v", err)
+				}
+			}
+			if targetKind == "missing" {
+				if _, err := os.Lstat(target); !os.IsNotExist(err) {
+					t.Fatal("config link created its missing target")
+				}
+			} else if after, err := os.ReadFile(target); err != nil || string(after) != raw {
+				t.Fatal("config link rejection changed target")
+			}
+		})
+	}
+}
+
+func TestInspectionDefaultKeyLocationMatchesSourceConfig(t *testing.T) {
+	clearConfigEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"dbPath":"custom/usage.sqlite"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(configEnvKey, path)
+	source, err := LoadForInspection()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := ResolveInspectionLocations(path, source.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.DataKeyPath != source.DataKeyPath || inspection.UsageArchiveDir != source.UsageArchiveDir {
+		t.Fatalf("source key/archive=%s/%s inspection=%s/%s", source.DataKeyPath, source.UsageArchiveDir, inspection.DataKeyPath, inspection.UsageArchiveDir)
+	}
+}
+
 func TestLoadCreatesDefaultConfig(t *testing.T) {
 	clearConfigEnv(t)
 	dir := t.TempDir()

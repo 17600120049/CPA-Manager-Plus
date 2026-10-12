@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -35,6 +36,25 @@ func TestWriteVersion(t *testing.T) {
 			}
 			if got, want := stdout.String(), buildinfo.Version+"\n"; got != want {
 				t.Fatalf("writeVersion(%q) output = %q, want %q", arg, got, want)
+			}
+		})
+	}
+}
+
+func TestStartupPreflightTimeout(t *testing.T) {
+	for _, test := range []struct {
+		value   string
+		want    time.Duration
+		invalid bool
+	}{
+		{"", 2 * time.Minute, false}, {" 5m ", 5 * time.Minute, false}, {"500ms", 500 * time.Millisecond, false},
+		{"0", 0, true}, {"-1s", 0, true}, {"invalid", 0, true}, {"999999999h", 0, true},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			t.Setenv("CPA_MANAGER_PREFLIGHT_TIMEOUT", test.value)
+			got, err := startupPreflightTimeout()
+			if (err != nil) != test.invalid || got != test.want {
+				t.Fatalf("timeout=%s err=%v", got, err)
 			}
 		})
 	}
@@ -242,7 +262,7 @@ func TestManagerDatabaseProcessLockPrecedesStoreOpen(t *testing.T) {
 		t.Fatalf("read main.go: %v", err)
 	}
 	source := string(content)
-	lockAt := strings.Index(source, "processlock.Acquire(cfg.DBPath)")
+	lockAt := strings.Index(source, "legacypreflight.AdmitStartup(")
 	storeOpenAt := strings.Index(source, "store.Open(cfg.DBPath, protector)")
 	lockCloseAt := strings.Index(source, "databaseLock.Close()")
 	if lockAt < 0 || storeOpenAt < lockAt || lockCloseAt < lockAt {
@@ -373,6 +393,13 @@ func TestManagerServerHelperProcess(t *testing.T) {
 	if os.Getenv("CPA_MANAGER_TEST_HELPER") != "1" {
 		t.Skip("helper process only")
 	}
+	for i, arg := range os.Args {
+		if arg == "--" {
+			os.Args = append([]string{"cpa-manager-plus"}, os.Args[i+1:]...)
+			main()
+			return
+		}
+	}
 	runServer()
 }
 
@@ -448,9 +475,9 @@ func (l *synchronizedLog) String() string {
 	return strings.Join(l.lines, "\n")
 }
 
-func startManagerServerProcess(t testing.TB, dataDir, dbPath string) *managerServerProcess {
+func startManagerServerProcess(t testing.TB, dataDir, dbPath string, startupArgs ...string) *managerServerProcess {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestManagerServerHelperProcess$")
+	cmd := exec.Command(os.Args[0], append([]string{"-test.run=^TestManagerServerHelperProcess$", "--"}, startupArgs...)...)
 	cmd.Env = managerServerTestEnvironment(dataDir, dbPath)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -501,6 +528,7 @@ func startManagerServerProcess(t testing.TB, dataDir, dbPath string) *managerSer
 
 func managerServerTestEnvironment(dataDir, dbPath string) []string {
 	overrides := map[string]string{
+		"CPA_MANAGER_PREFLIGHT_TIMEOUT":         "",
 		"CPA_MANAGER_TEST_HELPER":               "1",
 		"CPA_MANAGER_ADMIN_KEY":                 "cpamp_startup_migration_test_admin_key",
 		"CPA_MANAGER_DATA_KEY_PATH":             filepath.Join(dataDir, "data.key"),
@@ -526,13 +554,22 @@ func managerServerTestEnvironment(dataDir, dbPath string) []string {
 
 func (p *managerServerProcess) stop(t testing.TB) {
 	t.Helper()
-	if err := p.cmd.Process.Signal(os.Interrupt); err != nil {
+	signal := os.Interrupt
+	if runtime.GOOS == "windows" {
+		// Windows cannot send Interrupt through os.Process. Terminate this
+		// owned helper; reopen tests then exercise native crash recovery.
+		signal = os.Kill
+	}
+	if err := p.cmd.Process.Signal(signal); err != nil {
 		t.Fatalf("signal manager server helper: %v", err)
 	}
 	select {
 	case err := <-p.done:
 		if err != nil {
-			t.Fatalf("manager server helper shutdown: %v\n%s", err, p.logs.String())
+			var exitErr *exec.ExitError
+			if signal != os.Kill || !errors.As(err, &exitErr) {
+				t.Fatalf("manager server helper shutdown: %v\n%s", err, p.logs.String())
+			}
 		}
 	case <-time.After(20 * time.Second):
 		_ = p.cmd.Process.Kill()

@@ -67,7 +67,8 @@ type Config struct {
 }
 
 type LoadOptions struct {
-	CreateDefaultConfig bool
+	CreateDefaultConfig   bool
+	RequireExplicitConfig bool
 }
 
 type fileConfig struct {
@@ -106,6 +107,19 @@ func Load() (Config, error) {
 
 func LoadWithoutCreatingDefault() (Config, error) {
 	return LoadWithOptions(LoadOptions{})
+}
+
+// LoadForInspection preserves normal path/secret precedence without creating
+// defaults, and does not silently ignore a missing explicitly selected config.
+func LoadForInspection() (Config, error) {
+	return LoadWithOptions(LoadOptions{RequireExplicitConfig: true})
+}
+
+func InspectionConfigPath() (string, error) {
+	if path := strings.TrimSpace(os.Getenv(configEnvKey)); path != "" {
+		return path, nil
+	}
+	return executableConfigPath()
 }
 
 func LoadWithOptions(options LoadOptions) (Config, error) {
@@ -223,6 +237,9 @@ func loadFileConfig(options LoadOptions) (fileConfig, string, error) {
 			if err != nil || ok {
 				return cfg, cfgDir, err
 			}
+			if options.RequireExplicitConfig {
+				return fileConfig{}, cfgDir, fmt.Errorf("explicit config file is missing")
+			}
 			return fileConfig{}, filepath.Dir(configPath), nil
 		}
 		return readOrCreateFileConfig(configPath)
@@ -254,6 +271,16 @@ func readOrCreateFileConfig(configPath string) (fileConfig, string, error) {
 }
 
 func readFileConfig(configPath string) (fileConfig, string, bool, error) {
+	info, err := os.Lstat(configPath)
+	if os.IsNotExist(err) {
+		return fileConfig{}, filepath.Dir(configPath), false, nil
+	}
+	if err != nil {
+		return fileConfig{}, filepath.Dir(configPath), false, fmt.Errorf("stat config %s: %w", configPath, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fileConfig{}, filepath.Dir(configPath), false, fmt.Errorf("config is not a regular file: %s", configPath)
+	}
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -266,6 +293,32 @@ func readFileConfig(configPath string) (fileConfig, string, bool, error) {
 		return fileConfig{}, filepath.Dir(configPath), false, fmt.Errorf("parse config %s: %w", configPath, err)
 	}
 	return cfg, filepath.Dir(configPath), true, nil
+}
+
+// ResolveInspectionLocations reads only the explicit source config, without
+// runtime environment overrides or reading any credential/secret files.
+func ResolveInspectionLocations(configPath, databasePath string) (Config, error) {
+	cfg, dir, exists, err := readFileConfig(configPath)
+	if err != nil {
+		return Config{}, err
+	}
+	if !exists {
+		return Config{}, fmt.Errorf("explicit config file is missing")
+	}
+	// The default key follows the config's data directory even when dbPath
+	// selects a database elsewhere. Archives follow the explicit database unless
+	// the config specifies dataDir, matching the normal source path semantics.
+	dataDir := resolveConfigPath("./data", dir)
+	archiveBaseDir := filepath.Dir(databasePath)
+	if strings.TrimSpace(cfg.DataDir) != "" {
+		dataDir = resolveConfigPath(cfg.DataDir, dir)
+		archiveBaseDir = dataDir
+	}
+	keyPath := resolveConfigPath(cfg.DataKeyPath, dir)
+	if keyPath == "" {
+		keyPath = filepath.Join(dataDir, "data.key")
+	}
+	return Config{DBPath: databasePath, DataKeyPath: keyPath, UsageArchiveDir: filepath.Join(archiveBaseDir, "usage-archives")}, nil
 }
 
 func createDefaultFileConfig(configPath string) (fileConfig, string, error) {

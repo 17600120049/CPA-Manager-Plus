@@ -27,6 +27,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/adminreset"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/cpaconnection"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/derivedmaintenance"
+	legacypreflightcommand "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/legacypreflight"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/managerdatasnapshot"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/runtimeconfig"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/usagecompact"
@@ -35,13 +36,13 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	identitystoreports "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/ports/identitystore"
-	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	bootstrapservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrap"
 	collectorservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/collector"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpaauthfiles"
 	cpaupdateservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpaupdate"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
@@ -58,6 +59,27 @@ func main() {
 	}
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "initialize":
+			if len(os.Args) == 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+				fmt.Fprintln(os.Stdout, "Usage: cpa-manager-plus initialize\nStart a deliberate new installation with a pre-created config. This starts the Manager Server and keeps it running; it does not exit after initialization. Existing database, sidecar, data-key, archive or pre-existing process-lock assets are not bypassed. Use normal startup on subsequent runs.\nStartup inspection timeout: CPA_MANAGER_PREFLIGHT_TIMEOUT (positive duration; default 2m). WAL inspection copies the complete database and WAL.")
+				return
+			}
+			if len(os.Args) != 2 {
+				log.Fatal("Usage: cpa-manager-plus initialize")
+			}
+			runServerWithOptions(legacypreflight.Options{Initialize: true})
+			return
+		case "legacy-preflight":
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			if err := legacypreflightcommand.Run(ctx, os.Args[2:], os.Stdout, os.Stderr); err != nil {
+				if legacypreflightcommand.IsHelp(err) {
+					return
+				}
+				log.Printf("legacy preflight: %v", err)
+				os.Exit(1)
+			}
+			return
 		case "reset-admin-key", "reset-admin-password":
 			if err := adminreset.Run(context.Background(), os.Args[2:], os.Stdout, os.Stderr); err != nil {
 				log.Printf("reset admin key: %v", err)
@@ -106,6 +128,18 @@ func main() {
 	runServer()
 }
 
+func startupPreflightTimeout() (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv("CPA_MANAGER_PREFLIGHT_TIMEOUT"))
+	if value == "" {
+		return 2 * time.Minute, nil
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 {
+		return 0, errors.New("CPA_MANAGER_PREFLIGHT_TIMEOUT must be a positive duration, for example 2m or 5m")
+	}
+	return timeout, nil
+}
+
 func writeVersion(args []string, stdout io.Writer) (bool, error) {
 	if len(args) != 1 || (args[0] != "-v" && args[0] != "--version") {
 		return false, nil
@@ -121,40 +155,76 @@ func runManagerDataSnapshotCommand(args []string, stdout io.Writer, stderr io.Wr
 }
 
 func runServer() {
-	cfg, err := config.Load()
+	runServerWithOptions(legacypreflight.Options{})
+}
+
+func runServerWithOptions(options legacypreflight.Options) {
+	inspectionTimeout, err := startupPreflightTimeout()
+	if err != nil {
+		log.Fatalf("configure startup inspection: %v", err)
+	}
+	cfg, err := config.LoadForInspection()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-	databaseLock, err := processlock.Acquire(cfg.DBPath)
+	configPath, err := config.InspectionConfigPath()
 	if err != nil {
-		log.Fatalf("acquire manager database process lock: %v", err)
+		log.Fatalf("resolve inspection config: %v", err)
+	}
+	inspectionCtx, cancelInspection := context.WithTimeout(context.Background(), inspectionTimeout)
+	databaseLock, err := legacypreflight.AdmitStartup(inspectionCtx, sqliterepo.InspectionPaths{
+		Database: cfg.DBPath, Config: configPath, DataKey: cfg.DataKeyPath, Archives: cfg.UsageArchiveDir,
+	}, options)
+	cancelInspection()
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			log.Fatalf("Manager startup inspection timed out after %s before data-key creation or writable database open; full database and WAL inspection is required; check storage and retry with a larger CPA_MANAGER_PREFLIGHT_TIMEOUT: %v", inspectionTimeout, err)
+		}
+		log.Fatalf("Manager startup preflight: %v", err)
 	}
 	defer func() {
 		if err := databaseLock.Close(); err != nil {
 			log.Printf("close manager database process lock: %v", err)
 		}
 	}()
+	// Defaults are created only after the source has passed fenced admission.
+	// Fatalf exits without running defers; release/rollback admission explicitly
+	// on initialization errors before a database has been opened successfully.
+	failStartup := func(format string, args ...any) {
+		if err := databaseLock.Close(); err != nil {
+			log.Printf("close failed startup admission: %v", err)
+		}
+		log.Fatalf(format, args...)
+	}
+	loadedConfig, err := config.Load()
+	if err != nil {
+		failStartup("load admitted config: %v", err)
+	}
+	if loadedConfig.DBPath != cfg.DBPath || loadedConfig.DataKeyPath != cfg.DataKeyPath || loadedConfig.UsageArchiveDir != cfg.UsageArchiveDir || loadedConfig.DataKey != cfg.DataKey {
+		failStartup("source configuration changed before startup")
+	}
+	cfg = loadedConfig
 	cfg.DBPath = databaseLock.DatabasePath()
-	if err := sqliterepo.RequireExistingDataKeyForEncryptedCPAConnection(
-		context.Background(),
-		cfg.DBPath,
+	if err := sqliterepo.RequireDataKeyForInspectedConnection(
+		databaseLock.ConnectionStorage,
 		cfg.DataKey,
 		cfg.DataKeyPath,
 	); err != nil {
-		log.Fatalf("validate data key availability: %v", err)
+		failStartup("validate data key availability: %v", err)
 	}
 	dataKey, dataKeyCreated, err := security.LoadOrCreateDataKey(cfg.DataKey, cfg.DataKeyPath)
 	if err != nil {
-		log.Fatalf("load data key: %v", err)
+		failStartup("load data key: %v", err)
 	}
 	protector, err := security.NewProtector(dataKey)
 	if err != nil {
-		log.Fatalf("initialize secret protector: %v", err)
+		failStartup("initialize secret protector: %v", err)
 	}
 	db, err := store.Open(cfg.DBPath, protector)
 	if err != nil {
-		log.Fatalf("open sqlite: %v", err)
+		failStartup("open sqlite: %v", err)
 	}
+	databaseLock.RetainMarker()
 	defer func() {
 		if err := db.Close(); err != nil {
 			log.Printf("close sqlite: %v", err)

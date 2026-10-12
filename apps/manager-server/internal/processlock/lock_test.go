@@ -8,6 +8,225 @@ import (
 	"testing"
 )
 
+func TestAcquireNewCreatesOnceAndPreservesExistingOwnershipMarker(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data", "usage.sqlite")
+	first, err := AcquireNew(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if err := first.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if lock, err := AcquireNew(path); lock != nil || !errors.Is(err, os.ErrExist) {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		t.Fatalf("existing held marker accepted as new: lock=%v err=%v", lock, err)
+	}
+	if lock, err := Acquire(path); lock != nil || !errors.Is(err, ErrLocked) {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		t.Fatalf("new marker lost ownership fence: lock=%v err=%v", lock, err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Lstat(first.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lock, err := AcquireNew(path); lock != nil || !errors.Is(err, os.ErrExist) {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		t.Fatalf("existing released marker accepted as new: lock=%v err=%v", lock, err)
+	}
+	after, err := os.Lstat(first.Path())
+	if err != nil || !os.SameFile(before, after) || before.Size() != after.Size() || before.Mode() != after.Mode() || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("exclusive creation changed existing marker")
+	}
+	// Existing native-v2 owners retain the normal reusable-lock behavior.
+	reopened, err := Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatal("lock acquisition created database")
+	}
+}
+
+func TestDiscardNewMarkerRejectsStaleOpeners(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.sqlite")
+	owner, err := AcquireNew(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	// A contender opened the old inode before cleanup, but has not locked it.
+	stale, err := openLockFile(owner.Path(), os.O_RDWR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stale.Close()
+	if err := owner.DiscardNew(); err != nil {
+		t.Fatal(err)
+	}
+	if err := lockFile(stale); err == nil {
+		staleLock := &Lock{file: stale, databasePath: path, lockPath: owner.Path()}
+		if err := staleLock.Validate(); err == nil {
+			t.Fatal("unlinked opener retained ownership authority")
+		}
+		_ = unlockFile(stale)
+	}
+	// Windows delete-pending ends when the final stale handle is closed.
+	if err := stale.Close(); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := AcquireNew(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer retry.Close()
+	if err := owner.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := retry.Validate(); err != nil {
+		t.Fatal("repeated old close removed the new owner's marker")
+	}
+}
+
+func TestAcquireNewAndDiscardSupportLongPaths(t *testing.T) {
+	path := t.TempDir()
+	for len(path) < 280 {
+		path = filepath.Join(path, "long-manager-directory")
+	}
+	path = filepath.Join(path, "usage.sqlite")
+	lock, err := AcquireNew(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lock.DiscardNew(); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := AcquireNew(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := retry.DiscardNew(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDiscardNewPreservesUnownedAndChangedMarkers(t *testing.T) {
+	for _, kind := range []string{"existing", "closed", "database", "replacement"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "usage.sqlite")
+			acquire := AcquireNew
+			if kind == "existing" {
+				acquire = Acquire
+			}
+			owner, err := acquire(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer owner.Close()
+			switch kind {
+			case "closed":
+				if err := owner.Close(); err != nil {
+					t.Fatal(err)
+				}
+			case "database":
+				if err := os.WriteFile(path, nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "replacement":
+				if err := os.Rename(owner.Path(), owner.Path()+".old"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(owner.Path(), []byte("replacement"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.Lstat(owner.Path())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = owner.DiscardNew()
+			after, err := os.Lstat(owner.Path())
+			if err != nil || !os.SameFile(before, after) || before.Size() != after.Size() {
+				t.Fatal("cleanup removed or changed unowned source evidence")
+			}
+		})
+	}
+}
+
+func TestAcquireExistingNeverCreatesSourceAndRetainsNormalOwnership(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "missing", "usage.sqlite")
+	lock, err := AcquireExisting(path)
+	if lock != nil || !errors.Is(err, ErrNoExistingLock) {
+		t.Fatalf("missing lock=%v err=%v", lock, err)
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Fatal("inspection created directory")
+	}
+	first, err := Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(first.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err = AcquireExisting(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := lock.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if second, err := Acquire(path); second != nil || !errors.Is(err, ErrLocked) {
+		t.Fatalf("second=%v err=%v", second, err)
+	}
+	after, err := os.Stat(first.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(after.ModTime()) || info.Size() != after.Size() {
+		t.Fatal("inspection changed persistent lock")
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := lock.Validate(); err == nil {
+		t.Fatal("closed lock retained authority")
+	}
+}
+
+func TestAcquireExistingRejectsLockSymlinksWithoutFollowingThem(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	target := filepath.Join(dir, "owned-lock")
+	if err := os.WriteFile(target, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path+".manager.lock"); err != nil {
+		t.Skip(err)
+	}
+	if lock, err := AcquireExisting(path); lock != nil || err == nil {
+		t.Fatal("symbolic ownership accepted")
+	}
+}
+
 func TestAcquireSerializesDatabaseOwnersAndReleasesOnClose(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "data", "usage.sqlite")
 	first, err := Acquire(databasePath)
