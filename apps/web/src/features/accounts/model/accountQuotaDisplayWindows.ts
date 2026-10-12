@@ -24,6 +24,7 @@ import {
 import type { AccountRow } from './accountRows';
 import {
   hasConfirmedXaiBillingEntitlement,
+  isExplicitFreeXaiPlan,
   type AccountQuotaStores,
 } from './accountQuotaSummary';
 
@@ -149,12 +150,7 @@ export const getAccountQuotaSemanticGroup = (
     return 'other';
   }
 
-  if (
-    kind === 'five_hour' ||
-    kind === 'daily' ||
-    kind === 'weekly' ||
-    kind === 'monthly'
-  ) {
+  if (kind === 'five_hour' || kind === 'daily' || kind === 'weekly' || kind === 'monthly') {
     return isModelScopedAccountQuotaWindow(window) ? 'model' : 'standard';
   }
 
@@ -646,10 +642,28 @@ const buildXaiQuotaDisplayWindows = (
 ): AccountQuotaDisplayWindow[] => {
   const quota = getCredentialScopedQuotaState(options.stores.xaiQuota, row.raw);
   const billing = quota?.billing;
+  if (!billing || billing.officialApiHealth || isExplicitFreeXaiPlan(row.planType)) {
+    return [];
+  }
+
+  const confirmedBillingEntitlement = hasConfirmedXaiBillingEntitlement(billing, row.planType);
+  const hasObservedWeeklyUsage =
+    billing.periodType === 'weekly' &&
+    typeof billing.usagePercent === 'number' &&
+    Number.isFinite(billing.usagePercent);
+  const hasObservedWeeklyPeriod =
+    billing.periodType === 'weekly' &&
+    (resolveAbsoluteQuotaReset(billing.periodStart).resetAtMs !== null ||
+      resolveAbsoluteQuotaReset(billing.periodEnd).resetAtMs !== null);
+  const hasObservedProductUsage = billing.productUsage?.some(
+    (product) => typeof product.usagePercent === 'number' && Number.isFinite(product.usagePercent)
+  );
+
   if (
-    !billing ||
-    billing.officialApiHealth ||
-    !hasConfirmedXaiBillingEntitlement(billing, row.planType)
+    !confirmedBillingEntitlement &&
+    !hasObservedWeeklyUsage &&
+    !hasObservedWeeklyPeriod &&
+    !hasObservedProductUsage
   ) {
     return [];
   }
@@ -658,7 +672,7 @@ const buildXaiQuotaDisplayWindows = (
     ? formatDisplayResetTime(billing.billingPeriodEnd)
     : '-';
   const billingReset = resolveAbsoluteQuotaReset(billing.billingPeriodEnd);
-  const periodResetValue = billing.periodEnd ?? billing.billingPeriodEnd;
+  const periodResetValue = billing.periodEnd;
   const periodResetLabel = periodResetValue ? formatDisplayResetTime(periodResetValue) : '-';
   const periodReset = resolveAbsoluteQuotaReset(periodResetValue);
   const periodStart = resolveAbsoluteQuotaReset(billing.periodStart);
@@ -676,9 +690,16 @@ const buildXaiQuotaDisplayWindows = (
     typeof billing.usedPercent === 'number' && Number.isFinite(billing.usedPercent)
       ? clampDisplayPercent(billing.usedPercent)
       : null;
-  const hasLegacyMonthlyWindow = monthlyUsedPercent !== null || billing.monthlyLimitCents !== null;
+  const hasPositiveMonthlyLimit =
+    typeof billing.monthlyLimitCents === 'number' &&
+    Number.isFinite(billing.monthlyLimitCents) &&
+    billing.monthlyLimitCents > 0;
+  const hasLegacyMonthlyWindow = monthlyUsedPercent !== null || hasPositiveMonthlyLimit;
+  const showCreditsPeriod = confirmedBillingEntitlement
+    ? billing.periodType === 'weekly' || (billing.productUsage?.length ?? 0) > 0
+    : hasObservedWeeklyUsage || hasObservedWeeklyPeriod;
 
-  if (billing.periodType === 'weekly' || (billing.productUsage?.length ?? 0) > 0) {
+  if (showCreditsPeriod) {
     windows.push(
       buildAccountQuotaDisplayWindow({
         key: 'credits-period',
@@ -700,7 +721,7 @@ const buildXaiQuotaDisplayWindows = (
     );
   }
 
-  if (hasLegacyMonthlyWindow) {
+  if (confirmedBillingEntitlement && hasLegacyMonthlyWindow) {
     windows.push(
       buildAccountQuotaDisplayWindow({
         key: 'billing',
@@ -720,7 +741,7 @@ const buildXaiQuotaDisplayWindows = (
   }
 
   const onDemandCap = billing.onDemandCapCents ?? 0;
-  if (onDemandCap > 0) {
+  if (confirmedBillingEntitlement && onDemandCap > 0) {
     const paygUsedPercent =
       typeof billing.onDemandUsedPercent === 'number' &&
       Number.isFinite(billing.onDemandUsedPercent)
@@ -749,6 +770,7 @@ const buildXaiQuotaDisplayWindows = (
       typeof product.usagePercent === 'number' && Number.isFinite(product.usagePercent)
         ? clampDisplayPercent(product.usagePercent)
         : null;
+    if (!confirmedBillingEntitlement && productUsedPercent === null) return;
     windows.push(
       buildAccountQuotaDisplayWindow({
         key: `product-${index}-${product.product
