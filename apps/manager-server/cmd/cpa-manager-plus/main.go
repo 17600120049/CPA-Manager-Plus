@@ -27,6 +27,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/adminreset"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/cpaconnection"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/derivedmaintenance"
+	legacyartifactcommand "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/legacyartifact"
 	legacypreflightcommand "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/legacypreflight"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/managerdatasnapshot"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/runtimeconfig"
@@ -77,6 +78,17 @@ func main() {
 					return
 				}
 				log.Printf("legacy preflight: %v", err)
+				os.Exit(1)
+			}
+			return
+		case "legacy-writer-artifact":
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			if err := legacyartifactcommand.Run(ctx, os.Args[2:], os.Stdout, os.Stderr); err != nil {
+				if legacyartifactcommand.IsHelp(err) {
+					return
+				}
+				log.Printf("verify legacy writer artifact: %v", err)
 				os.Exit(1)
 			}
 			return
