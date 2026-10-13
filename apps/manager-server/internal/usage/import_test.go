@@ -2058,3 +2058,87 @@ func TestParseImportPayloadJSONLRoundTripsFalseBooleans(t *testing.T) {
 		t.Fatalf("imported fields mismatch: %+v", imported)
 	}
 }
+
+func TestArchiveDerivedFieldsAcceptsReadIncludedCreationSeparate(t *testing.T) {
+	record := map[string]any{
+		"cache_input_mode":                 CacheInputModeReadIncludedCreationSeparate,
+		"normalized_uncached_input_tokens": json.Number("100"),
+		"normalized_total_input_tokens":    json.Number("125"),
+		"normalized_cache_read_tokens":     json.Number("20"),
+		"normalized_cache_creation_tokens": json.Number("5"),
+		"total_tokens":                     json.Number("135"),
+		"header_quota_recover_at_ms":       json.Number("0"),
+		"header_quota_used_percent":        nil,
+	}
+	accounting, totalTokens, _, _, err := archiveDerivedFieldsFromRecord(record)
+	if err != nil {
+		t.Fatalf("archive derived fields: %v", err)
+	}
+	if accounting.Mode != CacheInputModeReadIncludedCreationSeparate ||
+		accounting.UncachedInputTokens != 100 ||
+		accounting.TotalInputTokens != 125 ||
+		accounting.CacheReadTokens != 20 ||
+		accounting.CacheCreationTokens != 5 ||
+		totalTokens != 135 {
+		t.Fatalf("archive accounting = %+v total=%d", accounting, totalTokens)
+	}
+
+	event := Event{
+		PreserveArchiveDerivedFields:  true,
+		CacheInputMode:                accounting.Mode,
+		NormalizedUncachedInputTokens: accounting.UncachedInputTokens,
+		NormalizedTotalInputTokens:    accounting.TotalInputTokens,
+		NormalizedCacheReadTokens:     accounting.CacheReadTokens,
+		NormalizedCacheCreationTokens: accounting.CacheCreationTokens,
+		TotalTokens:                   totalTokens,
+	}
+	if err := ValidateArchiveDerivedFields(event); err != nil {
+		t.Fatalf("validate mixed archive accounting: %v", err)
+	}
+}
+
+func TestImportPersistsDerivedCacheModeWithoutExplicitProvenance(t *testing.T) {
+	for _, mode := range []string{CacheInputModeIncluded, CacheInputModeSeparate, CacheInputModeReadIncludedCreationSeparate} {
+		t.Run(mode, func(t *testing.T) {
+			record := map[string]any{
+				"event_hash": strings.Repeat("a", 64), "timestamp": "2026-10-12T00:00:00Z",
+				"model": "custom-model", "provider": "unknown-provider",
+				"derived_cache_input_mode": mode, "input_tokens": 120, "output_tokens": 10,
+				"cached_tokens": 25, "cache_read_tokens": 20, "cache_creation_tokens": 5, "total_tokens": 135,
+			}
+			payload, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := ParseImportPayload(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(parsed.Events) != 1 {
+				t.Fatalf("events=%d, want 1", len(parsed.Events))
+			}
+			event := parsed.Events[0]
+			hints := RawCacheAccountingHintsFromJSON(event.RawJSON)
+			if hints.ExplicitMode != "" || hints.ImportedDerivedMode != mode || event.CacheInputMode != mode {
+				t.Fatalf("imported mode=%q provenance=%+v", event.CacheInputMode, hints)
+			}
+			// A repeated import of the marked raw envelope must not keep nesting it.
+			record["raw_json"] = event.RawJSON
+			if raw := importCacheAccountingRawJSON(record); raw != event.RawJSON {
+				t.Fatalf("repeated provenance changed: before=%s after=%s", event.RawJSON, raw)
+			}
+			record["cache_input_mode"] = CacheInputModeSeparate
+			payload, err = json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err = ParseImportPayload(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.Events[0].CacheInputMode != CacheInputModeSeparate || RawCacheAccountingHintsFromJSON(parsed.Events[0].RawJSON).ExplicitMode != CacheInputModeSeparate {
+				t.Fatal("explicit import mode lost priority over derived evidence")
+			}
+		})
+	}
+}
