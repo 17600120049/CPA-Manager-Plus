@@ -530,7 +530,12 @@ const codexMainQuotaWindows = (quota: CodexQuotaState) =>
   quota.windows.filter(isCodexMainQuotaWindow);
 
 const normalizeXaiPlanType = (planType?: string | null): string =>
-  planType ? planType.trim().toLowerCase().replace(/[\s\-_]+/g, '') : '';
+  planType
+    ? planType
+        .trim()
+        .toLowerCase()
+        .replace(/[\s\-_]+/g, '')
+    : '';
 
 export const isExplicitFreeXaiPlan = (planType?: string | null): boolean => {
   const normalized = normalizeXaiPlanType(planType);
@@ -579,9 +584,9 @@ const quotaFromXaiBilling = (
   }
 
   const resetLabel = billing.billingPeriodEnd ?? '-';
-  const periodResetLabel = billing.periodEnd ?? resetLabel;
+  const periodResetLabel = billing.periodEnd ?? '-';
   const billingReset = resolveAbsoluteQuotaReset(billing.billingPeriodEnd);
-  const periodReset = resolveAbsoluteQuotaReset(billing.periodEnd ?? billing.billingPeriodEnd);
+  const periodReset = resolveAbsoluteQuotaReset(billing.periodEnd);
   const billingResetFields = {
     resetLabel,
     resetAtMs: billingReset.resetAtMs,

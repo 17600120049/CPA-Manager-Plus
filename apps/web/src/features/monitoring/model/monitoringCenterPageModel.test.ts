@@ -16,7 +16,12 @@ import {
 } from '@/utils/quota';
 import zhCN from '@/i18n/locales/zh-CN.json';
 import zhTW from '@/i18n/locales/zh-TW.json';
-import type { AntigravityQuotaState, ClaudeQuotaState, CodexQuotaState } from '@/types';
+import type {
+  AntigravityQuotaState,
+  ClaudeQuotaState,
+  CodexQuotaState,
+  XaiBillingSummary,
+} from '@/types';
 import { getQuotaCredentialStoreKey } from '@/utils/quota/credentialScope';
 import type { MonitoringAccountQuotaTarget } from '@/features/monitoring/accountOverviewQuotaTargets';
 import type {
@@ -1813,6 +1818,83 @@ describe('monitoringCenterPageModel account quota', () => {
         },
       ],
     });
+  });
+
+  it.each([
+    { limit: 0, usedPercent: null, hasMonthly: false },
+    { limit: null, usedPercent: null, hasMonthly: false },
+    { limit: NaN, usedPercent: NaN, hasMonthly: false },
+    { limit: 0, usedPercent: 0, hasMonthly: true },
+    { limit: 100, usedPercent: null, hasMonthly: true },
+  ])(
+    'uses actual monthly evidence instead of zero/missing limits ($limit, $usedPercent)',
+    ({ limit, usedPercent, hasMonthly }) => {
+      const billing: XaiBillingSummary = {
+        periodType: 'weekly',
+        usagePercent: 0,
+        productUsage: [],
+        monthlyLimitCents: limit,
+        usedCents: null,
+        includedUsedCents: null,
+        onDemandCapCents: null,
+        onDemandUsedCents: null,
+        onDemandUsedPercent: null,
+        usedPercent,
+      };
+      const target = createTarget({ provider: 'xai', fileName: 'xai-observed.json' });
+      const entry = buildAccountQuotaEntryFromProviderState(
+        target,
+        XAI_CONFIG.buildSuccessState(billing, target.file),
+        t
+      );
+      expect(entry?.windows?.map((window) => window.id)).toEqual(
+        hasMonthly ? ['weekly-limit', 'monthly-limit'] : ['weekly-limit']
+      );
+      if (usedPercent === 0)
+        expect(
+          entry?.windows?.find((window) => window.id === 'monthly-limit')?.remainingPercent
+        ).toBe(100);
+    }
+  );
+
+  it('shows a weekly period with only a valid period start and leaves reset unknown', () => {
+    const billing: XaiBillingSummary = {
+      periodType: 'weekly',
+      usagePercent: null,
+      periodStart: '2026-07-01T00:00:00Z',
+      productUsage: [],
+      monthlyLimitCents: 0,
+      usedCents: null,
+      includedUsedCents: null,
+      onDemandCapCents: null,
+      onDemandUsedCents: null,
+      onDemandUsedPercent: null,
+      billingPeriodEnd: '2026-08-01T00:00:00Z',
+      usedPercent: null,
+    };
+    const target = createTarget({ provider: 'xai', fileName: 'xai-start-only.json' });
+    const entry = buildAccountQuotaEntryFromProviderState(
+      target,
+      XAI_CONFIG.buildSuccessState(billing, target.file),
+      t
+    );
+    expect(entry?.windows).toHaveLength(1);
+    expect(entry?.windows?.[0]).toMatchObject({
+      id: 'weekly-limit',
+      remainingPercent: null,
+      resetLabel: '-',
+      resetAtMs: null,
+      resetAccuracy: 'unknown',
+    });
+    const invalid = buildAccountQuotaEntryFromProviderState(
+      target,
+      XAI_CONFIG.buildSuccessState(
+        { ...billing, periodStart: 'invalid', usagePercent: NaN },
+        target.file
+      ),
+      t
+    );
+    expect(invalid?.windows).toEqual([]);
   });
 
   it('maps xAI weekly and product usage into account quota entries', async () => {

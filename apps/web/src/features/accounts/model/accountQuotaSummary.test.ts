@@ -32,6 +32,59 @@ const makeXaiBilling = (overrides: Partial<XaiBillingSummary> = {}): XaiBillingS
 });
 
 describe('resolveAccountQuota', () => {
+  it.each(['weekly', 'product'] as const)(
+    'does not substitute monthly reset for observed %s quota',
+    (observation) => {
+      const file = {
+        name: 'xai-paid-reset.json',
+        type: 'xai',
+        planType: 'SuperGrok',
+      } as AuthFileItem;
+      const stores = emptyStores();
+      stores.xaiQuota[file.name] = {
+        ...buildQuotaCredentialIdentity(file),
+        status: 'success',
+        billing: makeXaiBilling({
+          usagePercent: observation === 'weekly' ? 100 : null,
+          productUsage: observation === 'product' ? [{ product: 'Grok', usagePercent: 100 }] : [],
+          monthlyLimitCents: 10_000,
+          includedUsedCents: 0,
+          usedPercent: 0,
+          billingPeriodEnd: '2026-08-01T00:00:00Z',
+        }),
+      };
+      expect(resolveAccountQuota(file, stores)).toMatchObject({
+        remainingPercent: 0,
+        usedPercent: 100,
+        resetLabel: '-',
+        resetAtMs: null,
+        resetAccuracy: 'unknown',
+      });
+    }
+  );
+
+  it('keeps the genuine weekly reset separate from monthly reset', () => {
+    const file = {
+      name: 'xai-paid-weekly.json',
+      type: 'xai',
+      planType: 'SuperGrok',
+    } as AuthFileItem;
+    const stores = emptyStores();
+    stores.xaiQuota[file.name] = {
+      ...buildQuotaCredentialIdentity(file),
+      status: 'success',
+      billing: makeXaiBilling({
+        usagePercent: 100,
+        periodEnd: '2026-07-08T00:00:00Z',
+        billingPeriodEnd: '2026-08-01T00:00:00Z',
+      }),
+    };
+    expect(resolveAccountQuota(file, stores)).toMatchObject({
+      resetAtMs: Date.parse('2026-07-08T00:00:00Z'),
+      resetAccuracy: 'exact',
+    });
+  });
+
   it.each([
     {
       label: 'weekly current-period data',
@@ -477,4 +530,3 @@ describe('hasConfirmedXaiBillingEntitlement', () => {
     expect(hasConfirmedXaiBillingEntitlement(withOnDemandLimit, 'unknown')).toBe(false);
   });
 });
-

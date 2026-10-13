@@ -1220,10 +1220,15 @@ const buildXaiAccountQuotaWindows = (
   const productReset = weeklyReset;
   const hasWeeklyData =
     billing.periodType === 'weekly' &&
-    (billing.usagePercent !== null ||
-      Boolean(billing.periodEnd) ||
+    ((typeof billing.usagePercent === 'number' && Number.isFinite(billing.usagePercent)) ||
+      resolveAbsoluteQuotaReset(billing.periodStart).resetAtMs !== null ||
+      weeklyReset.resetAtMs !== null ||
       billing.productUsage.length > 0);
-  const hasMonthlyData = billing.usedPercent !== null || billing.monthlyLimitCents !== null;
+  const hasMonthlyData =
+    (typeof billing.usedPercent === 'number' && Number.isFinite(billing.usedPercent)) ||
+    (typeof billing.monthlyLimitCents === 'number' &&
+      Number.isFinite(billing.monthlyLimitCents) &&
+      billing.monthlyLimitCents > 0);
 
   if (hasWeeklyData) {
     windows.push({
@@ -1422,11 +1427,7 @@ export const buildAccountQuotaEntryFromProviderState = (
       }
       return applyProviderQuotaStateMetadata(
         {
-          ...buildBaseAccountQuotaEntry(
-            { ...target, planType },
-            t,
-            metaLabels
-          ),
+          ...buildBaseAccountQuotaEntry({ ...target, planType }, t, metaLabels),
           planType,
           windows: buildClaudeAccountQuotaWindows(quota.windows, t),
         },

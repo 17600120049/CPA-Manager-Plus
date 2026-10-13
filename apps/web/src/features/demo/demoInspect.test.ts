@@ -6,6 +6,7 @@ import {
   resetDemoEvidenceEpoch,
 } from './demoFixtures';
 import { buildAccountRows } from '@/features/accounts/model/accountRows';
+import { resolveAccountQuota } from '@/features/accounts/model/accountQuotaSummary';
 import {
   buildAccountQuotaDisplayWindows,
   type BuildAccountQuotaDisplayWindowsOptions,
@@ -128,9 +129,23 @@ describe('Demo accounts quota & usage presentation regression', () => {
     checkProviderPresentation('antigravity', 'antigravity-builder.json');
     checkProviderPresentation('kimi', 'kimi-coding.json');
 
-    const xaiFreeRow = rows.find((r) => r.fileName === 'xai-ops.json');
-    expect(xaiFreeRow).toBeDefined();
-    expect(buildAccountQuotaDisplayWindows(xaiFreeRow!, options)).toEqual([]);
+    const xaiUnknownRow = rows.find((r) => r.fileName === 'xai-ops.json');
+    expect(xaiUnknownRow).toBeDefined();
+    const xaiObservedWindows = buildAccountQuotaDisplayWindows(xaiUnknownRow!, options);
+    expect(xaiObservedWindows.map((window) => window.key)).toEqual([
+      'credits-period',
+      'product-0-grok-code-fast',
+      'product-1-grok-code-thinking',
+    ]);
+    expect(xaiObservedWindows[0]).toMatchObject({ remainingPercent: 58, usedPercent: 42 });
+    expect(xaiObservedWindows.slice(1).map((window) => window.remainingPercent)).toEqual([63, 48]);
+    expect(xaiUnknownRow!.quota).toMatchObject({ status: 'disabled', remainingPercent: null });
+    expect(
+      resolveAccountQuota({ ...xaiUnknownRow!.raw, disabled: false }, quotaState)
+    ).toMatchObject({
+      status: 'unknown',
+      remainingPercent: null,
+    });
   });
 
   it('provides verifiable rate limit reset credits across demo codex accounts', () => {

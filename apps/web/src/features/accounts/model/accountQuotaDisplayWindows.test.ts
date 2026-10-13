@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import type { AuthFileItem, CodexQuotaState, CredentialScopedQuotaState } from '@/types';
+import type {
+  AuthFileItem,
+  CodexQuotaState,
+  CredentialScopedQuotaState,
+  XaiBillingSummary,
+} from '@/types';
 import type { MonitoringAccountWindowUsageItem } from '@/services/api';
 import { buildAccountRows, type AccountQuotaStores } from './accountRows';
 import {
@@ -19,6 +24,8 @@ import {
   getQuotaCredentialStoreKey,
 } from '@/utils/quota/credentialScope';
 import { buildAccountDetailViewModel } from './accountDetailViewModel';
+import { buildAccountListItem } from './accountListPresentation';
+import { buildAccountRecommendation } from './quotaRecommendations';
 import { buildAccountQuotaWindowDefinitions } from './accountQuotaWindowDefinitions';
 import { accountWindowUsageRequestKey } from './accountWindowUsageRows';
 
@@ -65,6 +72,32 @@ const buildRow = (file: AuthFileItem, stores: AccountQuotaStores = emptyStores()
     record[storeKey] = { ...legacy, ...identity, authFileKey: storeKey };
   });
   return buildAccountRows([file], stores)[0];
+};
+
+const makeXaiBilling = (overrides: Partial<XaiBillingSummary> = {}): XaiBillingSummary => ({
+  periodType: 'weekly',
+  usagePercent: null,
+  productUsage: [],
+  monthlyLimitCents: null,
+  usedCents: null,
+  includedUsedCents: null,
+  onDemandCapCents: null,
+  onDemandUsedCents: null,
+  onDemandUsedPercent: null,
+  usedPercent: null,
+  ...overrides,
+});
+
+const buildXaiObservedWindows = (billing: XaiBillingSummary, planType?: string) => {
+  const stores = emptyStores();
+  const file = { name: 'xai-observed.json', type: 'xai', authIndex: '1', planType } as AuthFileItem;
+  stores.xaiQuota[file.name] = { status: 'success', billing };
+  const row = buildRow(file, stores);
+  return {
+    row,
+    stores,
+    windows: buildAccountQuotaDisplayWindows(row, { stores, translateQuotaWindowLabel, t }),
+  };
 };
 
 describe('accountQuotaDisplayWindows', () => {
@@ -792,6 +825,7 @@ describe('accountQuotaDisplayWindows', () => {
             periodType: 'weekly',
             usagePercent: 42,
             periodStart: '2026-07-01T00:00:00Z',
+            periodEnd: '2026-07-08T00:00:00Z',
             billingPeriodEnd: String(billingPeriodEndMs / 1000),
             productUsage: [{ product: 'Grok Code Fast', usagePercent: 37 }],
             monthlyLimitCents: 10_000,
@@ -883,6 +917,198 @@ describe('accountQuotaDisplayWindows', () => {
     expect(windows.map((window) => window.key)).toEqual(['credits-period', 'pay-as-you-go']);
   });
 
+  it.each([0, 42])(
+    'shows observed weekly usage %s while unknown plan remains ineligible',
+    (usagePercent) => {
+      const { row, windows } = buildXaiObservedWindows(
+        makeXaiBilling({
+          usagePercent,
+          monthlyLimitCents: 10_000,
+          usedPercent: 20,
+          onDemandCapCents: 5_000,
+        })
+      );
+      expect(windows.map((window) => window.key)).toEqual(['credits-period']);
+      expect(windows[0]).toMatchObject({
+        remainingPercent: 100 - usagePercent,
+        usedPercent: usagePercent,
+      });
+      expect(row.quota).toMatchObject({ status: 'unknown', remainingPercent: null });
+    }
+  );
+
+  it.each([undefined, 'unknown'])(
+    'keeps observed windows separate from list and drawer health for plan %s',
+    (planType) => {
+      for (const usagePercent of [0, 42, 100]) {
+        const { row, windows } = buildXaiObservedWindows(
+          makeXaiBilling({
+            usagePercent,
+            periodStart: '2026-07-01T00:00:00Z',
+            periodEnd: '2026-07-08T00:00:00Z',
+            productUsage: [{ product: 'Grok', usagePercent }],
+          }),
+          planType
+        );
+        expect(windows.map((window) => window.kind)).toEqual(['weekly', 'product']);
+        expect(row.quota.status).toBe('unknown');
+        expect(buildAccountListItem(row, { t, quotaWindows: windows }).health.status).toBe('raw');
+        const detail = buildAccountDetailViewModel(row, { t, quotaWindows: windows });
+        expect(detail.health.status).toBe('raw');
+        expect(detail.quota.windows).toHaveLength(2);
+        expect(buildAccountRecommendation(row)).toBeNull();
+      }
+    }
+  );
+
+  it.each([
+    [42, 'available'],
+    [100, 'weekly_exhausted'],
+  ] as const)('retains confirmed paid xAI health for observed usage %s', (usagePercent, health) => {
+    const { row, windows } = buildXaiObservedWindows(makeXaiBilling({ usagePercent }), 'SuperGrok');
+    expect(buildAccountListItem(row, { t, quotaWindows: windows }).health.status).toBe(health);
+    expect(buildAccountDetailViewModel(row, { t, quotaWindows: windows }).health.status).toBe(
+      health
+    );
+  });
+
+  it.each(['periodStart', 'periodEnd'] as const)(
+    'shows unknown-plan weekly period with only valid %s',
+    (field) => {
+      const { windows } = buildXaiObservedWindows(
+        makeXaiBilling({ [field]: '2026-07-01T00:00:00Z' })
+      );
+      expect(windows).toHaveLength(1);
+      expect(windows[0]).toMatchObject({ key: 'credits-period', usedPercent: null });
+      if (field === 'periodStart')
+        expect(windows[0]).toMatchObject({ resetAtMs: null, resetAccuracy: 'unknown' });
+    }
+  );
+
+  it('shows only finite product observations for an unknown plan', () => {
+    const { row, windows } = buildXaiObservedWindows(
+      makeXaiBilling({
+        periodType: 'unknown',
+        productUsage: [
+          { product: 'observed', usagePercent: 0 },
+          { product: 'unobserved', usagePercent: null },
+          { product: 'invalid', usagePercent: NaN },
+        ],
+        billingPeriodEnd: '2026-08-01T00:00:00Z',
+      })
+    );
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({
+      kind: 'product',
+      usedPercent: 0,
+      resetLabel: '-',
+      resetAtMs: null,
+      resetAccuracy: 'unknown',
+    });
+    expect(row.quota.status).toBe('unknown');
+  });
+
+  it.each(['free', 'Free Tier'])(
+    'does not expose observed OAuth quota for explicit %s plan',
+    (planType) => {
+      expect(
+        buildXaiObservedWindows(
+          makeXaiBilling({
+            usagePercent: 42,
+            productUsage: [{ product: 'Grok', usagePercent: 37 }],
+          }),
+          planType
+        ).windows
+      ).toEqual([]);
+    }
+  );
+
+  it('does not expose OAuth windows from official API health', () => {
+    expect(
+      buildXaiObservedWindows(
+        makeXaiBilling({
+          usagePercent: 42,
+          officialApiHealth: {
+            source: 'api.x.ai/v1/me',
+            userId: 'u',
+            teamId: 't',
+            teamBlocked: false,
+          },
+        }),
+        'SuperGrok'
+      ).windows
+    ).toEqual([]);
+  });
+
+  it('does not turn malformed weekly evidence into an unknown-plan window', () => {
+    expect(
+      buildXaiObservedWindows(
+        makeXaiBilling({
+          usagePercent: NaN,
+          periodStart: 'invalid',
+          periodEnd: 'invalid',
+          productUsage: [{ product: 'Grok', usagePercent: Infinity }],
+        })
+      ).windows
+    ).toEqual([]);
+  });
+
+  it('keeps weekly and product resets unknown when only the monthly boundary exists', () => {
+    const { windows } = buildXaiObservedWindows(
+      makeXaiBilling({
+        usagePercent: 25,
+        productUsage: [{ product: 'Grok', usagePercent: 37 }],
+        monthlyLimitCents: 10_000,
+        onDemandCapCents: 5_000,
+        billingPeriodEnd: '2026-08-01T00:00:00Z',
+      }),
+      'SuperGrok'
+    );
+    for (const window of windows.filter(
+      (entry) => entry.key === 'credits-period' || entry.kind === 'product'
+    )) {
+      expect(window).toMatchObject({
+        resetLabel: '-',
+        resetAtMs: null,
+        resetAccuracy: 'unknown',
+        cycleEndMs: null,
+      });
+    }
+    for (const window of windows.filter(
+      (entry) => entry.key === 'billing' || entry.key === 'pay-as-you-go'
+    )) {
+      expect(window.resetAtMs).toBe(Date.parse('2026-08-01T00:00:00Z'));
+    }
+  });
+
+  it.each([0, null, NaN])(
+    'does not synthesize monthly quota from monthly limit %s without usage',
+    (monthlyLimitCents) => {
+      const { windows } = buildXaiObservedWindows(
+        makeXaiBilling({ periodType: 'monthly', monthlyLimitCents }),
+        'SuperGrok'
+      );
+      expect(windows).toEqual([]);
+    }
+  );
+
+  it('preserves genuinely observed zero monthly usage even with a zero limit', () => {
+    const { windows } = buildXaiObservedWindows(
+      makeXaiBilling({ periodType: 'monthly', monthlyLimitCents: 0, usedPercent: 0 }),
+      'SuperGrok'
+    );
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({ key: 'billing', usedPercent: 0, remainingPercent: 100 });
+  });
+
+  it('does not reuse observed xAI quota after credential identity changes', () => {
+    const { row, stores } = buildXaiObservedWindows(makeXaiBilling({ usagePercent: 42 }));
+    const changed = buildAccountRows([{ ...row.raw, authIndex: '2' }], stores)[0];
+    expect(
+      buildAccountQuotaDisplayWindows(changed, { stores, translateQuotaWindowLabel, t })
+    ).toEqual([]);
+  });
+
   it('does not create quota windows for unknown plan even when positive limits exist', () => {
     const stores = {
       ...emptyStores(),
@@ -916,7 +1142,7 @@ describe('accountQuotaDisplayWindows', () => {
     ).toEqual([]);
   });
 
-  it('does not create xAI quota windows from weekly protobuf zero placeholders', () => {
+  it('shows observed weekly zero without creating monthly quota from protobuf placeholders', () => {
     const stores = {
       ...emptyStores(),
       xaiQuota: {
@@ -948,10 +1174,16 @@ describe('accountQuotaDisplayWindows', () => {
       t,
     });
 
-    expect(windows).toEqual([]);
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({
+      key: 'credits-period',
+      remainingPercent: 100,
+      usedPercent: 0,
+    });
+    expect(row.quota.status).toBe('unknown');
   });
 
-  it('does not create xAI quota windows from unknown weekly usage or monthly billing reset', () => {
+  it('shows an observed weekly period without granting unknown-plan monthly quota', () => {
     const stores = {
       ...emptyStores(),
       xaiQuota: {
@@ -984,7 +1216,13 @@ describe('accountQuotaDisplayWindows', () => {
       t,
     });
 
-    expect(windows).toEqual([]);
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({
+      key: 'credits-period',
+      usedPercent: null,
+      remainingPercent: null,
+    });
+    expect(row.quota.status).toBe('unknown');
   });
 
   it('does not create xAI quota windows for an explicit Free plan', () => {

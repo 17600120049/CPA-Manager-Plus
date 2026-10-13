@@ -3,6 +3,7 @@ import type { QuotaCooldownInfo } from '@/services/api';
 import type { AuthFileCodexStatusSummary } from '@/features/authFiles/model/credentialStatus';
 import type { AccountRow } from './accountRows';
 import {
+  isConfirmedPaidXaiPlan,
   summarizeGroupedQuotaAvailability,
   type AccountGroupedQuotaAvailabilitySummary,
 } from './accountQuotaSummary';
@@ -1175,7 +1176,11 @@ export const buildAccountListItem = (
     }
   );
   const accountQuotaWindows =
-    row.provider === 'codex' ? quotaWindows.filter(isCodexMainQuotaWindow) : quotaWindows;
+    row.provider === 'codex'
+      ? quotaWindows.filter(isCodexMainQuotaWindow)
+      : row.provider === 'xai' && !isConfirmedPaidXaiPlan(row.planType)
+        ? []
+        : quotaWindows;
   const health = resolveHealthStatus(
     row,
     quotaCooldown,
