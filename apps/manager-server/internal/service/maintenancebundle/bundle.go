@@ -534,10 +534,11 @@ func validateArchiveEvidence(ctx context.Context, db *sql.DB, l Layout) error {
 	} else if l.RequireArchives {
 		return errors.New("required archive root is missing")
 	}
-	if err := validateArchiveSegments(ctx, db, l.ArchivesPath); err != nil {
+	segments := make(map[string]archiveSegmentEvidence)
+	if err := validateArchiveSegments(ctx, db, l.ArchivesPath, segments); err != nil {
 		return err
 	}
-	return validateArchiveRunManifests(ctx, db, l.ArchivesPath)
+	return validateArchiveRunManifests(ctx, db, l.ArchivesPath, segments)
 }
 
 func archiveEvidencePath(root, runID, fileName string) (string, error) {
@@ -560,7 +561,12 @@ func archiveEvidencePath(root, runID, fileName string) (string, error) {
 	return filePath, nil
 }
 
-func validateArchiveSegments(ctx context.Context, db *sql.DB, root string) error {
+type archiveSegmentEvidence struct {
+	published int
+	verified  int
+}
+
+func validateArchiveSegments(ctx context.Context, db *sql.DB, root string, segments map[string]archiveSegmentEvidence) error {
 	hasSegments, err := tableExists(ctx, db, "usage_archive_segments")
 	if err != nil {
 		return err
@@ -604,6 +610,13 @@ func validateArchiveSegments(ctx context.Context, db *sql.DB, root string) error
 		if entry.SHA256 != expectedSHA || entry.Size != expectedSize {
 			return errors.New("archive segment does not match database digest or byte count")
 		}
+		evidence := segments[runID]
+		if status == usagearchive.SegmentStatusPublished {
+			evidence.published++
+		} else {
+			evidence.verified++
+		}
+		segments[runID] = evidence
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("read archive matching evidence: %w", err)
@@ -614,7 +627,34 @@ func validateArchiveSegments(ctx context.Context, db *sql.DB, root string) error
 	return ctx.Err()
 }
 
-func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string) error {
+// The production state machine publishes manifest metadata in MarkArchived and
+// atomically changes all segment statuses in MarkVerified. Failed runs retain
+// the evidence required by their resume stage. Cancellation can retain files,
+// so recorded references are still checked even when publication is optional.
+func archiveRunSegmentStatus(status, resumeStatus string) (string, error) {
+	if status == usagearchive.StatusFailed {
+		switch resumeStatus {
+		case usagearchive.StatusArchiving, usagearchive.StatusVerifying, usagearchive.StatusDeleting:
+			status = resumeStatus
+		default:
+			return "", errors.New("invalid archive run resume status")
+		}
+	} else if resumeStatus != "" {
+		return "", errors.New("archive run resume status requires failed state")
+	}
+	switch status {
+	case usagearchive.StatusPreviewed, usagearchive.StatusArchiving, usagearchive.StatusCancelled:
+		return "", nil
+	case usagearchive.StatusArchived, usagearchive.StatusVerifying:
+		return usagearchive.SegmentStatusPublished, nil
+	case usagearchive.StatusVerified, usagearchive.StatusDeleting, usagearchive.StatusCompleted:
+		return usagearchive.SegmentStatusVerified, nil
+	default:
+		return "", errors.New("invalid archive run status")
+	}
+}
+
+func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, segments map[string]archiveSegmentEvidence) error {
 	hasRuns, err := tableExists(ctx, db, "usage_archive_runs")
 	if err != nil {
 		return err
@@ -622,9 +662,8 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string) e
 	if !hasRuns {
 		return nil
 	}
-	// Read all runs regardless of lifecycle status. NULL/empty pairs are valid
-	// before manifest publication; either recorded field makes both mandatory.
-	rows, err := db.QueryContext(ctx, "SELECT id, manifest_file, manifest_sha256 FROM usage_archive_runs")
+	// Segment rows are already closed: inspection uses a single DB connection.
+	rows, err := db.QueryContext(ctx, "SELECT id, status, resume_status, manifest_file, manifest_sha256 FROM usage_archive_runs")
 	if err != nil {
 		return fmt.Errorf("query archive run manifest evidence: %w", err)
 	}
@@ -633,10 +672,27 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var runID string
-		var fileName, expectedSHA sql.NullString
-		if err := rows.Scan(&runID, &fileName, &expectedSHA); err != nil {
+		var runID, status string
+		var resumeStatus, fileName, expectedSHA sql.NullString
+		if err := rows.Scan(&runID, &status, &resumeStatus, &fileName, &expectedSHA); err != nil {
 			return fmt.Errorf("scan archive run manifest evidence: %w", err)
+		}
+		expectedSegmentStatus, err := archiveRunSegmentStatus(status, resumeStatus.String)
+		if err != nil {
+			return err
+		}
+		if expectedSegmentStatus != "" {
+			if fileName.String == "" || expectedSHA.String == "" {
+				return errors.New("published archive run requires manifest file and digest")
+			}
+			evidence := segments[runID]
+			if evidence.published+evidence.verified == 0 {
+				return errors.New("published archive run requires segment evidence")
+			}
+			if (expectedSegmentStatus == usagearchive.SegmentStatusPublished && evidence.verified != 0) ||
+				(expectedSegmentStatus == usagearchive.SegmentStatusVerified && evidence.published != 0) {
+				return errors.New("archive segment status does not match run lifecycle")
+			}
 		}
 		if fileName.String == "" && expectedSHA.String == "" {
 			continue

@@ -109,12 +109,22 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   fail even if the manifest was recomputed. Optional archive absence cannot
   bypass a segment reference.
 - Independently reads all `usage_archive_runs` manifest references, including
-  when the segment table is absent. If either `manifest_file` or `manifest_sha256`
-  is recorded, both are required. The manifest path must remain inside its run
+  when the segment table is absent, and binds required evidence to the production
+  run lifecycle. `archived`/`verifying` require a manifest and at least one
+  corresponding segment, all `published`; `verified`/`deleting`/`completed`
+  require a manifest and corresponding segments, all `verified`. Failed runs
+  apply these requirements according to their `verifying`/`deleting` resume
+  stage. Missing segment tables or rows cannot bypass post-publication evidence.
+  Unknown run/resume states, missing failed resume stages, and resume stages on
+  non-failed runs fail closed.
+  `previewed`/`archiving`/`cancelled` and failed runs resuming `archiving` allow
+  paired NULL/empty manifest fields. Cancellation can retain published files;
+  if either `manifest_file` or `manifest_sha256` is recorded in any state, both
+  are required and their file is checked. The path must remain inside its run
   directory under the archive root, and its file must be regular, single-linked,
   non-empty and at most 4 MiB, with full-file SHA-256 matching the database.
-  Paired NULL/empty fields remain optional before publication. This check does
-  not decode the archive manifest or validate event/run metadata semantics.
+  This check does not decode the archive manifest or validate event contents,
+  hash chains or complete historical coverage.
 - Inspection query, scan, row-iteration, filesystem and context cancellation
   errors fail closed; an absent optional table is distinct from inspection failure.
 - Detects asset mismatches supported by these checks and bundle modifications
