@@ -17,11 +17,14 @@ by the operator or inferred from an archive's name or executable `--version`.
 The JSON status is `verified-artifact-only`. `writerEvidence` and
 `upgradeAuthorized` remain false. This diagnostic JSON is not a trusted
 execution handle, receipt, database release identity or support allowlist.
-Nothing here changes legacy preflight or writable startup admission. A future
-Manager-owned offline executor must independently verify the bytes it actually
-executes, constrain access to its controlled full bundle, wait/reap, check
-required migrations, seal output and establish private execution-record
-authenticity and replay rules. Supervisor does not own Manager data.
+Nothing here changes legacy preflight or writable startup admission.
+
+Under Phase4A-03B-2b, `ExecuteHop` and `ValidateHop` implement the Manager-owned
+controlled forward-hop execution and verification pipeline. The executor verifies
+the executable bytes, executes in an isolated output workspace, cleanly waits and
+reaps the process, verifies required migration checkpoints, seals the output bundle,
+and signs an authenticated `ExecutionReceipt` with anti-replay journal protection.
+Supervisor does not own Manager data, and `UpgradeAuthorized` strictly remains false.
 
 For actual published-byte qualification, download an immutable asset separately
 and run the package tests with `CPAMP_LEGACY_ARTIFACT_ARCHIVE` and
