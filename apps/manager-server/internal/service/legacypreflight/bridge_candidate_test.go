@@ -1,14 +1,23 @@
 package legacypreflight
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
 
+	_ "modernc.org/sqlite"
+
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
 )
 
 func TestPlannedBridgeCandidateDoesNotIdentifyHistoricalSource(t *testing.T) {
@@ -96,5 +105,62 @@ func TestPlannedBridgeCandidateOmittedWithoutRecognizedLegacy(t *testing.T) {
 				t.Fatal("omitted target inspection changed source")
 			}
 		})
+	}
+}
+
+func TestCallerOwnedReceiptCannotMintProvenance(t *testing.T) {
+	paths := buildLegacyProfileFixture(t, loadLegacyProfileFixtures(t)[6])
+	receipt := &legacyartifact.ExecutionReceipt{
+		Version: legacyartifact.ReceiptVersion, OperationID: "caller-owned",
+		Release: legacyartifact.Release, SourceCommit: legacyartifact.SourceCommit,
+		Asset:               "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		ExecutableSHA256:    "a91ae73b46e0db6b953031ba94c6c4d404e26d438aca6854a8a7855e84011ecc",
+		InputManifestDigest: "input", OutputManifestDigest: "output",
+		InputFamily: "LegacySchemaA", OutputFamily: "LegacySchemaC", IssuedAtMS: 1500,
+		ProcessEvidence: legacyartifact.ProcessEvidence{PID: 1234, StartedAtMS: 1000, FinishedAtMS: 1500, DurationMS: 500},
+	}
+	// HMAC bytes are public mathematics. Even a correctly self-signed receipt
+	// plus caller-owned private files cannot establish a Manager owner.
+	key := bytes.Repeat([]byte{42}, 32)
+	payload, err := receipt.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write(payload)
+	receipt.Signature = hex.EncodeToString(mac.Sum(nil))
+	dir := filepath.Join(t.TempDir(), ".legacy-hop")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptPath := filepath.Join(dir, "receipt.json")
+	canonicalDigest := sha256.Sum256(payload)
+	record, err := json.Marshal([]map[string]any{{"operationId": receipt.OperationID, "receiptVersion": receipt.Version, "canonicalReceiptSHA256": hex.EncodeToString(canonicalDigest[:])}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string][]byte{"authority.key": key, "journal.json": record, "receipt.json": data} {
+		if err := os.WriteFile(filepath.Join(dir, name), content, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, opts := range []legacyartifact.ValidateOptions{{Receipt: receipt}, {ReceiptPath: receiptPath}} {
+		result, err := legacyartifact.ValidateHop(context.Background(), opts)
+		if !errors.Is(err, legacyartifact.ErrValidationNotQualified) || result != nil {
+			t.Fatalf("caller minted evidence: %+v %v", result, err)
+		}
+	}
+	for _, evidence := range []*legacyartifact.ValidatedHopEvidence{nil, {}} {
+		report, err := Inspect(context.Background(), paths, Options{SourceStopped: true, ValidatedHop: evidence})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.ForwardHopEvidence != nil || report.UpgradeAuthorized || startupAllowed(report) || !slices.Contains(report.Unknown, "forward-hop-evidence") {
+			t.Fatalf("unqualified authority attached: %+v", report)
+		}
 	}
 }
