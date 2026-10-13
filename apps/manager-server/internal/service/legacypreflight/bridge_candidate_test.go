@@ -1,8 +1,13 @@
 package legacypreflight
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,7 +18,6 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
-	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
 func TestPlannedBridgeCandidateDoesNotIdentifyHistoricalSource(t *testing.T) {
@@ -104,174 +108,59 @@ func TestPlannedBridgeCandidateOmittedWithoutRecognizedLegacy(t *testing.T) {
 	}
 }
 
-func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
-	fixture := loadLegacyProfileFixtures(t)[0]
-	paths := buildLegacyProfileFixture(t, fixture)
-	if err := os.WriteFile(paths.DataKey, []byte("test-data-key-12345678901234567890\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	// Signed fixture tests validator-to-preflight projection only. Producer
-	// simulation lives inside legacyartifact and has no exported test API.
-	candidatePaths := buildLegacyProfileFixture(t, loadLegacyProfileFixtures(t)[6])
-	if err := os.WriteFile(candidatePaths.DataKey, []byte("candidate-data-key-1234567890123456"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	execLegacyFixture(t, candidatePaths.Database, `INSERT INTO usage_data_migrations (name,status) VALUES ('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','completed')`)
-	inputLayout := maintenancebundle.Layout{DatabasePath: paths.Database, DataKeyPath: paths.DataKey, ConfigPath: paths.Config, ArchivesPath: paths.Archives}
-	out := maintenancebundle.Layout{DatabasePath: candidatePaths.Database, DataKeyPath: candidatePaths.DataKey, ConfigPath: candidatePaths.Config, ArchivesPath: candidatePaths.Archives}
-	digest := func(layout maintenancebundle.Layout) string {
-		t.Helper()
-		for _, path := range []*string{&layout.DatabasePath, &layout.DataKeyPath, &layout.ConfigPath, &layout.ArchivesPath} {
-			parent, err := filepath.EvalSymlinks(filepath.Dir(*path))
-			if err != nil {
-				t.Fatal(err)
-			}
-			*path = filepath.Join(parent, filepath.Base(*path))
-		}
-		manifest, err := maintenancebundle.Inspect(context.Background(), layout)
-		if err != nil {
-			t.Fatal(err)
-		}
-		digest, err := legacyartifact.ComputeManifestDigest(manifest)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return digest
-	}
-	authKey, err := legacyartifact.GenerateAuthorityKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	authority, err := legacyartifact.NewAuthority(authKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkpoints, err := legacyartifact.InspectCheckpoints(context.Background(), candidatePaths.Database)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestCallerOwnedReceiptCannotMintProvenance(t *testing.T) {
+	paths := buildLegacyProfileFixture(t, loadLegacyProfileFixtures(t)[6])
 	receipt := &legacyartifact.ExecutionReceipt{
-		Version: legacyartifact.ReceiptVersion, OperationID: "signed-projection-fixture",
+		Version: legacyartifact.ReceiptVersion, OperationID: "caller-owned",
 		Release: legacyartifact.Release, SourceCommit: legacyartifact.SourceCommit,
-		Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", ExecutableSHA256: "fixture-executable-digest",
-		InputManifestDigest: digest(inputLayout), OutputManifestDigest: digest(out),
+		Asset:               "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		ExecutableSHA256:    "a91ae73b46e0db6b953031ba94c6c4d404e26d438aca6854a8a7855e84011ecc",
+		InputManifestDigest: "input", OutputManifestDigest: "output",
 		InputFamily: "LegacySchemaA", OutputFamily: "LegacySchemaC", IssuedAtMS: 1500,
-		ProcessEvidence:    legacyartifact.ProcessEvidence{PID: 9999, StartedAtMS: 1000, FinishedAtMS: 1500, DurationMS: 500},
-		CheckpointEvidence: checkpoints,
+		ProcessEvidence: legacyartifact.ProcessEvidence{PID: 1234, StartedAtMS: 1000, FinishedAtMS: 1500, DurationMS: 500},
 	}
-	if err := receipt.Sign(authority); err != nil {
-		t.Fatal(err)
-	}
-	journal := legacyartifact.NewMemoryJournal()
-	if err := journal.RecordOperation(legacyartifact.OperationRecord{
-		OperationID: receipt.OperationID, Release: receipt.Release, Asset: receipt.Asset,
-		ExecutableSHA256: receipt.ExecutableSHA256, InputManifestDigest: receipt.InputManifestDigest,
-		OutputManifestDigest: receipt.OutputManifestDigest, IssuedAtMS: receipt.IssuedAtMS,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	// Validate to produce non-forgeable ValidatedHopEvidence
-	valResult, err := legacyartifact.ValidateHop(context.Background(), legacyartifact.ValidateOptions{
-		Receipt:      receipt,
-		BundleLayout: out,
-		Authority:    authority,
-		Journal:      journal,
-	})
-	if err != nil {
-		t.Fatalf("ValidateHop failed: %v", err)
-	}
-	if valResult.Evidence == nil || !valResult.Evidence.IsValid() {
-		t.Fatalf("expected valid non-forgeable ValidatedHopEvidence")
-	}
-
-	if receipt.InputManifestDigest == receipt.OutputManifestDigest {
-		t.Fatal("candidate must differ from original input")
-	}
-	oldReport, err := Inspect(context.Background(), paths, Options{SourceStopped: true, ValidatedHop: valResult.Evidence})
+	// HMAC bytes are public mathematics. Even a correctly self-signed receipt
+	// plus caller-owned private files cannot establish a Manager owner.
+	key := bytes.Repeat([]byte{42}, 32)
+	payload, err := receipt.CanonicalBytes()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if oldReport.ForwardHopEvidence != nil || !slices.Contains(oldReport.Unknown, "forward-hop-evidence") {
-		t.Fatal("old input acquired output writer evidence")
+	mac := hmac.New(sha256.New, key)
+	mac.Write(payload)
+	receipt.Signature = hex.EncodeToString(mac.Sum(nil))
+	dir := filepath.Join(t.TempDir(), ".legacy-hop")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
 	}
-	// Case 1: with verified forward hop evidence from validator
-	report, err := Inspect(context.Background(), candidatePaths, Options{
-		SourceStopped: true,
-		ValidatedHop:  valResult.Evidence,
-	})
+	data, err := json.Marshal(receipt)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// 1. Planned target stays planned
-	if report.PlannedBridgeCandidate == nil || report.PlannedBridgeCandidate.Status != "planned" || report.PlannedBridgeCandidate.Release != "v1.14.4" {
-		t.Fatalf("planned bridge candidate corrupted: %+v", report.PlannedBridgeCandidate)
-	}
-	// 2. Exact source release stays unknown
-	if report.ExactSourceRelease == nil || report.ExactSourceRelease.Status != "unknown" {
-		t.Fatalf("exact source release falsely identified: %+v", report.ExactSourceRelease)
-	}
-	// 3. ForwardHopEvidence is attached and contains validated operation ID
-	if report.ForwardHopEvidence == nil || report.ForwardHopEvidence.Status != "verified-hop-evidence" || report.ForwardHopEvidence.OperationID != receipt.OperationID {
-		t.Fatalf("forward hop evidence missing or corrupted: %+v", report.ForwardHopEvidence)
-	}
-	// 4. "forward-hop-evidence" is removed from unknown
-	if slices.Contains(report.Unknown, "forward-hop-evidence") {
-		t.Fatalf("forward-hop-evidence still in unknown: %v", report.Unknown)
-	}
-	// 5. Readiness remains independent
-	if report.BridgeReadiness == nil {
-		t.Fatalf("bridge readiness missing: %+v", report.BridgeReadiness)
-	}
-	// 6. UpgradeAuthorized MUST remain false
-	if report.UpgradeAuthorized {
-		t.Fatalf("UpgradeAuthorized became true upon hop evidence!")
-	}
-	// 7. Startup is still NOT allowed for legacy source
-	if startupAllowed(report) {
-		t.Fatalf("startupAllowed became true upon hop evidence!")
-	}
-
-	// Case 2: with nil ValidatedHop (no evidence)
-	report2, err := Inspect(context.Background(), paths, Options{
-		SourceStopped: true,
-		ValidatedHop:  nil,
-	})
+	receiptPath := filepath.Join(dir, "receipt.json")
+	canonicalDigest := sha256.Sum256(payload)
+	record, err := json.Marshal([]map[string]any{{"operationId": receipt.OperationID, "receiptVersion": receipt.Version, "canonicalReceiptSHA256": hex.EncodeToString(canonicalDigest[:])}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report2.ForwardHopEvidence != nil {
-		t.Fatalf("nil ValidatedHop evidence should not attach ForwardHopEvidence: %+v", report2.ForwardHopEvidence)
+	for name, content := range map[string][]byte{"authority.key": key, "journal.json": record, "receipt.json": data} {
+		if err := os.WriteFile(filepath.Join(dir, name), content, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if !slices.Contains(report2.Unknown, "forward-hop-evidence") {
-		t.Fatalf("forward-hop-evidence should remain unknown: %v", report2.Unknown)
+	for _, opts := range []legacyartifact.ValidateOptions{{Receipt: receipt}, {ReceiptPath: receiptPath}} {
+		result, err := legacyartifact.ValidateHop(context.Background(), opts)
+		if !errors.Is(err, legacyartifact.ErrValidationNotQualified) || result != nil {
+			t.Fatalf("caller minted evidence: %+v %v", result, err)
+		}
 	}
-	if report2.UpgradeAuthorized {
-		t.Fatalf("UpgradeAuthorized must remain false!")
-	}
-
-	// Case 3: with ValidatedHop evidence generated for source A, but passed to different source B
-	otherFixture := loadLegacyProfileFixtures(t)[1]
-	otherPaths := buildLegacyProfileFixture(t, otherFixture)
-	if err := os.WriteFile(otherPaths.DataKey, []byte("other-data-key-12345678901234567890\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	report3, err := Inspect(context.Background(), otherPaths, Options{
-		SourceStopped: true,
-		ValidatedHop:  valResult.Evidence,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report3.ForwardHopEvidence != nil {
-		t.Fatalf("cross-source ValidatedHop evidence must not attach to mismatched source: %+v", report3.ForwardHopEvidence)
-	}
-	if !slices.Contains(report3.Unknown, "forward-hop-evidence") {
-		t.Fatalf("forward-hop-evidence must remain unknown for mismatched source: %v", report3.Unknown)
-	}
-	if report3.UpgradeAuthorized {
-		t.Fatalf("UpgradeAuthorized must remain false!")
+	for _, evidence := range []*legacyartifact.ValidatedHopEvidence{nil, {}} {
+		report, err := Inspect(context.Background(), paths, Options{SourceStopped: true, ValidatedHop: evidence})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.ForwardHopEvidence != nil || report.UpgradeAuthorized || startupAllowed(report) || !slices.Contains(report.Unknown, "forward-hop-evidence") {
+			t.Fatalf("unqualified authority attached: %+v", report)
+		}
 	}
 }

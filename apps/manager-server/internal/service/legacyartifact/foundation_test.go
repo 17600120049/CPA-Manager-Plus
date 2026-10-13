@@ -16,21 +16,21 @@ func validProcessFixture() ProcessEvidence {
 	return ProcessEvidence{PID: 1234, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}
 }
 
-func hopValidationFixture(t *testing.T) ValidateOptions {
+func hopValidationFixture(t *testing.T) validateOptions {
 	t.Helper()
 	temp := testTempDir(t)
 	input := createTestInputBundle(t, filepath.Join(temp, "input"), "LegacySchemaA")
 	auth, _ := setupTestAuthority(t)
-	journal, err := OpenOrCreateJournal(DefaultJournalPath(temp))
+	journal, err := openOrCreateJournal(DefaultJournalPath(temp))
 	if err != nil {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(temp, "writer")
 	createFakeExecutable(t, exe)
 	out := filepath.Join(temp, "output")
-	receipt, err := executeHopInternal(context.Background(), HopOptions{
-		Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: input,
-		OutputRoot: out, Authority: auth, Journal: journal,
+	receipt, err := executeHopInternal(context.Background(), hopOptions{
+		Asset: testNativeAsset, InputLayout: input,
+		OutputRoot: out, authority: auth, journal: journal,
 	}, exe, func(_ context.Context, _ string, layout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, layout.DatabasePath, "completed", "completed", false)
 		return validProcessFixture(), nil
@@ -38,8 +38,8 @@ func hopValidationFixture(t *testing.T) ValidateOptions {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := ValidateOptions{Receipt: receipt, BundleLayout: maintenancebundle.BundleLayout(out), Authority: auth, Journal: journal}
-	if _, err := ValidateHop(context.Background(), opts); err != nil {
+	opts := validateOptions{Receipt: receipt, BundleLayout: maintenancebundle.BundleLayout(out), authority: auth, journal: journal}
+	if _, err := validateReceiptInternal(context.Background(), opts); err != nil {
 		t.Fatal(err)
 	}
 	return opts
@@ -79,7 +79,7 @@ func TestJournalPermissionChangesFailClosed(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			opts := hopValidationFixture(t)
-			path := opts.Journal.Path()
+			path := opts.journal.Path()
 			target := path
 			if test.target == "directory" {
 				target = filepath.Dir(path)
@@ -90,22 +90,22 @@ func TestJournalPermissionChangesFailClosed(t *testing.T) {
 			if err := os.Chmod(target, test.mode); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := OpenJournal(path); !errors.Is(err, ErrInsecureJournal) {
+			if _, err := openJournal(path); !errors.Is(err, ErrInsecureJournal) {
 				t.Fatalf("open: %v", err)
 			}
-			if _, err := OpenOrCreateJournal(path); !errors.Is(err, ErrInsecureJournal) {
+			if _, err := openOrCreateJournal(path); !errors.Is(err, ErrInsecureJournal) {
 				t.Fatalf("create: %v", err)
 			}
-			if result, err := ValidateHop(context.Background(), opts); !errors.Is(err, ErrInsecureJournal) || result != nil {
+			if result, err := validateReceiptInternal(context.Background(), opts); !errors.Is(err, ErrInsecureJournal) || result != nil {
 				t.Fatalf("validate: %+v %v", result, err)
 			}
-			if _, ok, err := opts.Journal.GetOperation(opts.Receipt.OperationID); !errors.Is(err, ErrInsecureJournal) || ok {
+			if _, ok, err := opts.journal.getOperation(opts.Receipt.OperationID); !errors.Is(err, ErrInsecureJournal) || ok {
 				t.Fatalf("cached read: %v %v", ok, err)
 			}
-			if err := opts.Journal.RevokeOperation(opts.Receipt.OperationID); !errors.Is(err, ErrInsecureJournal) {
+			if err := opts.journal.revokeOperation(opts.Receipt.OperationID); !errors.Is(err, ErrInsecureJournal) {
 				t.Fatalf("revoke: %v", err)
 			}
-			if err := opts.Journal.RecordOperation(OperationRecord{OperationID: "other", Release: Release, Asset: "asset", ExecutableSHA256: "exe", InputManifestDigest: "in", OutputManifestDigest: "out", IssuedAtMS: 1000}); !errors.Is(err, ErrInsecureJournal) {
+			if err := opts.journal.recordOperation(testOperationRecord("other")); !errors.Is(err, ErrInsecureJournal) {
 				t.Fatalf("write: %v", err)
 			}
 			info, err := os.Lstat(target)
@@ -125,17 +125,17 @@ func TestDefaultPrivatePathsPreserveManagerDirectory(t *testing.T) {
 	if filepath.Dir(keyPath) != filepath.Join(dataDir, ".legacy-hop") || filepath.Dir(journalPath) != filepath.Dir(keyPath) {
 		t.Fatal("private paths do not share dedicated directory")
 	}
-	if _, err := LoadOrCreateAuthority(keyPath); err != nil {
+	if _, err := loadOrCreateAuthority(keyPath); err != nil {
 		t.Fatal(err)
 	}
-	journal, err := OpenOrCreateJournal(journalPath)
+	journal, err := openOrCreateJournal(journalPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadAuthority(keyPath); err != nil {
+	if _, err := loadAuthority(keyPath); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := OpenJournal(journal.Path()); err != nil {
+	if _, err := openJournal(journal.Path()); err != nil {
 		t.Fatal(err)
 	}
 	if runtime.GOOS != "windows" {
@@ -168,17 +168,17 @@ func TestInvalidLifecycleRejectedByProducerAndValidator(t *testing.T) {
 			process := validProcessFixture()
 			test.mutate(&process)
 			opts.Receipt.ProcessEvidence = process
-			if err := opts.Receipt.Sign(opts.Authority); err != nil {
+			if err := opts.Receipt.sign(opts.authority); err != nil {
 				t.Fatal(err)
 			}
-			if result, err := ValidateHop(context.Background(), opts); !errors.Is(err, ErrProcessExecutionFailed) || result != nil {
+			if result, err := validateReceiptInternal(context.Background(), opts); !errors.Is(err, ErrProcessExecutionFailed) || result != nil {
 				t.Fatalf("validator: %+v %v", result, err)
 			}
 			temp := testTempDir(t)
 			exe := filepath.Join(temp, "writer")
 			createFakeExecutable(t, exe)
-			journal := NewMemoryJournal()
-			receipt, err := executeHopInternal(context.Background(), HopOptions{Asset: opts.Receipt.Asset, InputLayout: opts.BundleLayout, OutputRoot: filepath.Join(temp, "out"), Authority: opts.Authority, Journal: journal}, exe,
+			journal := openTestJournal(t)
+			receipt, err := executeHopInternal(context.Background(), hopOptions{Asset: opts.Receipt.Asset, InputLayout: opts.BundleLayout, OutputRoot: filepath.Join(temp, "out"), authority: opts.authority, journal: journal}, exe,
 				func(context.Context, string, maintenancebundle.Layout) (ProcessEvidence, error) { return process, nil })
 			if !errors.Is(err, ErrProcessExecutionFailed) || receipt != nil || len(journal.records) != 0 {
 				t.Fatalf("producer: %+v %v", receipt, err)
@@ -197,11 +197,11 @@ func TestInvalidLifecycleRejectedByProducerAndValidator(t *testing.T) {
 func TestReceiptAuthenticatesPIDAndRejectsOldVersion(t *testing.T) {
 	opts := hopValidationFixture(t)
 	opts.Receipt.ProcessEvidence.PID++
-	if _, err := ValidateHop(context.Background(), opts); !errors.Is(err, ErrForgedReceipt) {
+	if _, err := validateReceiptInternal(context.Background(), opts); !errors.Is(err, ErrForgedReceipt) {
 		t.Fatalf("unsigned PID accepted: %v", err)
 	}
 	opts.Receipt.Version = 1
-	if _, err := ValidateHop(context.Background(), opts); !errors.Is(err, ErrInvalidReceipt) {
+	if _, err := validateReceiptInternal(context.Background(), opts); !errors.Is(err, ErrInvalidReceipt) {
 		t.Fatalf("old receipt accepted: %v", err)
 	}
 }
@@ -237,19 +237,22 @@ func TestValidatorReappliesCurrentOutputSemantics(t *testing.T) {
 				t.Fatal(err)
 			}
 			// Simulate an authentic receipt issued under older semantic rules.
-			if err := opts.Receipt.Sign(opts.Authority); err != nil {
+			if err := opts.Receipt.sign(opts.authority); err != nil {
 				t.Fatal(err)
 			}
-			record, ok, err := opts.Journal.GetOperation(opts.Receipt.OperationID)
+			record, ok, err := opts.journal.getOperation(opts.Receipt.OperationID)
 			if err != nil || !ok {
 				t.Fatalf("journal: %v %v", ok, err)
 			}
-			record.OutputManifestDigest = opts.Receipt.OutputManifestDigest
-			opts.Journal = NewMemoryJournal()
-			if err := opts.Journal.RecordOperation(record); err != nil {
+			record, err = recordForReceipt(opts.Receipt)
+			if err != nil {
 				t.Fatal(err)
 			}
-			if result, err := ValidateHop(context.Background(), opts); !errors.Is(err, test.want) || result != nil {
+			opts.journal = openTestJournal(t)
+			if err := opts.journal.recordOperation(record); err != nil {
+				t.Fatal(err)
+			}
+			if result, err := validateReceiptInternal(context.Background(), opts); !errors.Is(err, test.want) || result != nil {
 				t.Fatalf("semantics: %+v %v", result, err)
 			}
 		})
@@ -268,7 +271,7 @@ func TestHopProducerRejectsUnresolvedLegacyProfiles(t *testing.T) {
 			execOutputFixture(t, input.DatabasePath, query)
 			auth, _ := setupTestAuthority(t)
 			called := false
-			receipt, err := executeHopInternal(context.Background(), HopOptions{Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: input, OutputRoot: filepath.Join(temp, "out"), Authority: auth, Journal: NewMemoryJournal()}, filepath.Join(temp, "absent-writer"),
+			receipt, err := executeHopInternal(context.Background(), hopOptions{Asset: testNativeAsset, InputLayout: input, OutputRoot: filepath.Join(temp, "out"), authority: auth, journal: openTestJournal(t)}, filepath.Join(temp, "absent-writer"),
 				func(context.Context, string, maintenancebundle.Layout) (ProcessEvidence, error) {
 					called = true
 					return validProcessFixture(), nil

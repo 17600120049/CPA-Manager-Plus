@@ -214,3 +214,37 @@ func TestPublishedNativeArchiveQualification(t *testing.T) {
 		t.Fatalf("published artifact qualification: %+v %v", report, err)
 	}
 }
+
+// Optional six-platform byte/extraction verification. It never launches a
+// published executable and provides no runtime writer qualification.
+func TestAllPublishedNativeArchivePins(t *testing.T) {
+	dir := os.Getenv("CPAMP_LEGACY_ARTIFACT_DIR")
+	if dir == "" {
+		t.Skip("requires separately downloaded immutable archives")
+	}
+	for asset, pin := range nativePins {
+		if asset == testNativeAsset {
+			continue
+		}
+		t.Run(asset, func(t *testing.T) {
+			archive := filepath.Join(dir, asset)
+			report, err := Verify(context.Background(), archive, asset)
+			if err != nil || report.ArchiveSHA256 != pin.ArchiveSHA256 || report.ExecutableSHA256 != pin.ExecutableSHA256 || report.WriterEvidence || report.UpgradeAuthorized {
+				t.Fatalf("published pin: %+v %v", report, err)
+			}
+			target := filepath.Join(t.TempDir(), "writer")
+			digest, size, err := ExtractExecutable(context.Background(), archive, asset, target)
+			if err != nil || digest != pin.ExecutableSHA256 || size != report.ExecutableBytes {
+				t.Fatalf("published extraction: %s %d %v", digest, size, err)
+			}
+			data, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256(data)
+			if hex.EncodeToString(sum[:]) != pin.ExecutableSHA256 {
+				t.Fatal("extracted bytes differ from independent pin")
+			}
+		})
+	}
+}

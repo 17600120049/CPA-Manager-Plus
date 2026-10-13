@@ -14,15 +14,15 @@ var (
 	ErrEmptyPayload        = errors.New("cannot sign empty payload")
 )
 
-// Authority provides operation-scoped HMAC-SHA256 signing and verification
-// owned by the Manager. It prevents untrusted JSON receipts, forging, and tampering.
-type Authority struct {
+// authority provides package-private HMAC-SHA256 signing and verification for
+// foundation checks. A key alone does not establish a qualified Manager owner.
+type authority struct {
 	key []byte
 }
 
-// GenerateAuthorityKey generates 32 cryptographically secure random bytes
+// generateAuthorityKey generates 32 cryptographically secure random bytes
 // suitable for operation-scoped signing.
-func GenerateAuthorityKey() ([]byte, error) {
+func generateAuthorityKey() ([]byte, error) {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		return nil, err
@@ -30,18 +30,18 @@ func GenerateAuthorityKey() ([]byte, error) {
 	return key, nil
 }
 
-// NewAuthority creates an Authority with the given private secret key.
-func NewAuthority(secret []byte) (*Authority, error) {
+// newAuthority creates an authority with the given private secret key.
+func newAuthority(secret []byte) (*authority, error) {
 	if len(secret) < 32 {
 		return nil, ErrInvalidAuthorityKey
 	}
 	k := make([]byte, len(secret))
 	copy(k, secret)
-	return &Authority{key: k}, nil
+	return &authority{key: k}, nil
 }
 
-// Sign signs the canonical bytes with HMAC-SHA256 and returns a hex string.
-func (a *Authority) Sign(canonicalBytes []byte) (string, error) {
+// sign signs the canonical bytes with HMAC-SHA256 and returns a hex string.
+func (a *authority) sign(canonicalBytes []byte) (string, error) {
 	if a == nil || len(a.key) == 0 {
 		return "", ErrInvalidAuthorityKey
 	}
@@ -54,7 +54,7 @@ func (a *Authority) Sign(canonicalBytes []byte) (string, error) {
 }
 
 // Verify verifies the HMAC-SHA256 signature in constant time.
-func (a *Authority) Verify(canonicalBytes []byte, signatureHex string) bool {
+func (a *authority) Verify(canonicalBytes []byte, signatureHex string) bool {
 	if a == nil || len(a.key) == 0 || len(canonicalBytes) == 0 {
 		return false
 	}

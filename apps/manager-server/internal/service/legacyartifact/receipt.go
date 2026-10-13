@@ -2,9 +2,11 @@ package legacyartifact
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Version 2 authenticates PID as part of the lifecycle evidence. Version 1
@@ -22,6 +24,25 @@ type ProcessEvidence struct {
 	StartedAtMS  int64 `json:"startedAtMs"`
 	FinishedAtMS int64 `json:"finishedAtMs"`
 	DurationMS   int64 `json:"durationMs"`
+}
+
+func (r *ExecutionReceipt) validateLifecycle() error {
+	if err := r.ProcessEvidence.Validate(); err != nil {
+		return err
+	}
+	if r.IssuedAtMS < r.ProcessEvidence.FinishedAtMS {
+		return ErrProcessExecutionFailed
+	}
+	return nil
+}
+
+func (r *ExecutionReceipt) canonicalDigest() (string, error) {
+	payload, err := r.CanonicalBytes()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // Validate checks lifecycle consistency; a trusted, qualified runner is still
@@ -47,9 +68,9 @@ type CheckpointEvidence struct {
 	MaintenanceLock          string `json:"maintenanceLock"`
 }
 
-// ExecutionReceipt binds an authenticated v1.14.4 execution operation to its
-// input and output bundles, process lifecycle, and verified migration checkpoints.
-// It is signed by a Manager-owned private authority to prevent forgery or replay.
+// ExecutionReceipt is a foundation data format for input/output bundles,
+// process observations and checkpoints. A signature does not establish Manager
+// ownership or real execution; public trusted validation remains unavailable.
 type ExecutionReceipt struct {
 	Version              int                `json:"version"`
 	OperationID          string             `json:"operationId"`
@@ -84,6 +105,16 @@ func (r *ExecutionReceipt) CanonicalBytes() ([]byte, error) {
 		r.InputManifestDigest == "" || r.OutputManifestDigest == "" {
 		return nil, ErrInvalidReceipt
 	}
+	// Delimiters cannot appear inside values: otherwise distinct receipts could
+	// have identical canonical bytes and defeat complete journal binding.
+	for _, value := range []string{r.OperationID, r.Release, r.SourceCommit, r.Asset,
+		r.ExecutableSHA256, r.InputManifestDigest, r.OutputManifestDigest,
+		r.InputFamily, r.OutputFamily, r.CheckpointEvidence.CacheAccountingV2,
+		r.CheckpointEvidence.QuotaSnapshotLifecycleV1, r.CheckpointEvidence.MaintenanceLock} {
+		if strings.Contains(value, "|") {
+			return nil, ErrInvalidReceipt
+		}
+	}
 	s := fmt.Sprintf("v%d|op:%s|rel:%s|sc:%s|asset:%s|exe:%s|in:%s|out:%s|inf:%s|outf:%s|pid:%d|exit:%d|start:%d|fin:%d|dur:%d|cac:%s|qsl:%s|mlock:%s|ts:%d",
 		r.Version,
 		r.OperationID,
@@ -108,13 +139,13 @@ func (r *ExecutionReceipt) CanonicalBytes() ([]byte, error) {
 	return []byte(s), nil
 }
 
-// Sign signs this receipt with the given Authority and attaches the hex signature.
-func (r *ExecutionReceipt) Sign(auth *Authority) error {
+// sign signs this receipt with the given authority and attaches the hex signature.
+func (r *ExecutionReceipt) sign(auth *authority) error {
 	payload, err := r.CanonicalBytes()
 	if err != nil {
 		return err
 	}
-	sig, err := auth.Sign(payload)
+	sig, err := auth.sign(payload)
 	if err != nil {
 		return err
 	}
@@ -122,8 +153,8 @@ func (r *ExecutionReceipt) Sign(auth *Authority) error {
 	return nil
 }
 
-// VerifyAuthenticity checks the signature against the canonical payload.
-func (r *ExecutionReceipt) VerifyAuthenticity(auth *Authority) error {
+// verifyAuthenticity checks the signature against the canonical payload.
+func (r *ExecutionReceipt) verifyAuthenticity(auth *authority) error {
 	if r == nil || r.Signature == "" {
 		return ErrInvalidReceipt
 	}

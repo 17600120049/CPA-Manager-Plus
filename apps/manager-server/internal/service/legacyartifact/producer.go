@@ -30,13 +30,23 @@ var (
 
 type commandRunner func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error)
 
+// HopOptions carries artifact and bundle locations only. Callers cannot inject
+// signing authority or an operation journal into a production entry point.
 type HopOptions struct {
 	ArchivePath string
 	Asset       string
 	InputLayout maintenancebundle.Layout
 	OutputRoot  string
-	Authority   *Authority
-	Journal     *Journal
+	Timeout     time.Duration
+}
+
+type hopOptions struct {
+	ArchivePath string
+	Asset       string
+	InputLayout maintenancebundle.Layout
+	OutputRoot  string
+	authority   *authority
+	journal     *journal
 	Timeout     time.Duration
 }
 
@@ -54,11 +64,11 @@ func ExecuteHop(context.Context, HopOptions) (*ExecutionReceipt, error) {
 }
 
 // Package-private foundation seam exercised by this package's tests only.
-func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string, testRunner commandRunner) (*ExecutionReceipt, error) {
-	if opts.Authority == nil || opts.Asset == "" || opts.OutputRoot == "" || testRunner == nil {
+func executeHopInternal(ctx context.Context, opts hopOptions, testExePath string, testRunner commandRunner) (*ExecutionReceipt, error) {
+	if opts.authority == nil || opts.Asset == "" || opts.OutputRoot == "" || testRunner == nil {
 		return nil, ErrInvalidHopOptions
 	}
-	if opts.Journal == nil {
+	if opts.journal == nil || opts.journal.Path() == "" {
 		return nil, ErrJournalRequired
 	}
 	if _, ok := nativePins[opts.Asset]; !ok {
@@ -169,6 +179,9 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 		return nil, ErrExecutableMismatch
 	}
 	actualExeDigest := hex.EncodeToString(sha256Hex(exeBytes))
+	if actualExeDigest != nativePins[opts.Asset].ExecutableSHA256 {
+		return nil, ErrExecutableMismatch
+	}
 	if expectedExeDigest != "" && actualExeDigest != expectedExeDigest {
 		return nil, ErrExecutableMismatch
 	}
@@ -220,7 +233,7 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 		return nil, err
 	}
 
-	// 7. Generate and Sign Receipt
+	// 7. Generate and sign Receipt
 	opID, err := GenerateOperationID()
 	if err != nil {
 		return nil, err
@@ -240,21 +253,19 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 		CheckpointEvidence:   checkpointEvidence,
 		IssuedAtMS:           time.Now().UnixMilli(),
 	}
-	if err := receipt.Sign(opts.Authority); err != nil {
+	if err := receipt.validateLifecycle(); err != nil {
+		return nil, err
+	}
+	if err := receipt.sign(opts.authority); err != nil {
 		return nil, err
 	}
 
-	// 8. Commit into Private Journal atomically (mandatory)
-	rec := OperationRecord{
-		OperationID:          opID,
-		Release:              Release,
-		Asset:                opts.Asset,
-		ExecutableSHA256:     actualExeDigest,
-		InputManifestDigest:  inputManifestDigest,
-		OutputManifestDigest: outputManifestDigest,
-		IssuedAtMS:           receipt.IssuedAtMS,
+	// 8. Commit into Private journal atomically (mandatory)
+	rec, err := recordForReceipt(receipt)
+	if err != nil {
+		return nil, err
 	}
-	if err := opts.Journal.RecordOperation(rec); err != nil {
+	if err := opts.journal.recordOperation(rec); err != nil {
 		return nil, fmt.Errorf("persist operation in journal: %w", err)
 	}
 

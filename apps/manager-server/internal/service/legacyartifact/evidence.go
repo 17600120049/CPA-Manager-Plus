@@ -1,8 +1,8 @@
 package legacyartifact
 
-// ValidatedHopEvidence is an immutable, non-forgeable internal evidence produced
-// exclusively by ValidateHop. Because all state fields are unexported, callers outside
-// this package cannot synthesize valid evidence from JSON or struct literals.
+// ValidatedHopEvidence reserves the future Manager-owner-qualified capability.
+// No production path in this foundation creates a valid instance. Package-private
+// receipt validation provides diagnostics only; HMAC files cannot mint provenance.
 type ValidatedHopEvidence struct {
 	operationID          string
 	release              string
@@ -106,7 +106,7 @@ func (e *ValidatedHopEvidence) CheckpointEvidence() CheckpointEvidence {
 	return e.checkpointEvidence
 }
 
-// IsValid checks whether this evidence is non-nil and was authenticated by ValidateHop.
+// IsValid checks the reserved capability state. Production issuance is unavailable.
 func (e *ValidatedHopEvidence) IsValid() bool {
 	return e != nil && e.validated
 }

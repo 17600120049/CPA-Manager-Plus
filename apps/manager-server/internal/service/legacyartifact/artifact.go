@@ -31,13 +31,18 @@ const (
 // A user-provided checksum, release string, or executable --version cannot
 // replace this deployment-owned pin. Pins include the exact published archive
 // bytes; the executable digest is derived from those authenticated bytes.
-var nativePins = map[string]string{
-	"cpa-manager-plus_v1.14.4_darwin_amd64.tar.gz": "ea55a5e85ceeaf63f430d965727bff5de7c85c4305f6e4d3d1eb9c87af6410d1",
-	"cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz": "1ae54030965ea850195d6e0c62a1f2a2e319b220524fbccb60de36cb046f5a14",
-	"cpa-manager-plus_v1.14.4_linux_amd64.tar.gz":  "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
-	"cpa-manager-plus_v1.14.4_linux_arm64.tar.gz":  "9290e986cff0867b8348c1f1ef0a685354f86cb51e9724aef60060ecca6446ee",
-	"cpa-manager-plus_v1.14.4_windows_amd64.zip":   "42b5ddafdbee6eee9d67cecfaf575be02e7ae74cb145443720c17b8120904bb1",
-	"cpa-manager-plus_v1.14.4_windows_arm64.zip":   "a9c7b75d3b6d994a012c001a627bb2d11773dc7c73ab362441cb9bbc0cbef4a4",
+type nativePin struct {
+	ArchiveSHA256    string
+	ExecutableSHA256 string
+}
+
+var nativePins = map[string]nativePin{
+	"cpa-manager-plus_v1.14.4_darwin_amd64.tar.gz": {ArchiveSHA256: "ea55a5e85ceeaf63f430d965727bff5de7c85c4305f6e4d3d1eb9c87af6410d1", ExecutableSHA256: "7c320f6109768a76c8ca93e2db62238fd99442cb1687f76c433b37b8a98ec4ce"},
+	"cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz": {ArchiveSHA256: "1ae54030965ea850195d6e0c62a1f2a2e319b220524fbccb60de36cb046f5a14", ExecutableSHA256: "a91ae73b46e0db6b953031ba94c6c4d404e26d438aca6854a8a7855e84011ecc"},
+	"cpa-manager-plus_v1.14.4_linux_amd64.tar.gz":  {ArchiveSHA256: "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033", ExecutableSHA256: "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98"},
+	"cpa-manager-plus_v1.14.4_linux_arm64.tar.gz":  {ArchiveSHA256: "9290e986cff0867b8348c1f1ef0a685354f86cb51e9724aef60060ecca6446ee", ExecutableSHA256: "8b487e20642916aefcd70abc7da2c8cc25fd82c2f157382398694e45f36c1922"},
+	"cpa-manager-plus_v1.14.4_windows_amd64.zip":   {ArchiveSHA256: "42b5ddafdbee6eee9d67cecfaf575be02e7ae74cb145443720c17b8120904bb1", ExecutableSHA256: "6fdff929d387ef405ce746a58188032ee8e4833d73f5cc30e76b106ed7b5d96a"},
+	"cpa-manager-plus_v1.14.4_windows_arm64.zip":   {ArchiveSHA256: "a9c7b75d3b6d994a012c001a627bb2d11773dc7c73ab362441cb9bbc0cbef4a4", ExecutableSHA256: "46643e19447b50b5b7409bbfa0d638e5d41489dacfe9b470cd68803bbff0b9d7"},
 }
 
 var ErrUnverified = errors.New("legacy writer artifact could not be verified")
@@ -83,17 +88,17 @@ func Verify(ctx context.Context, archivePath, asset string) (Report, error) {
 		return Report{}, ErrUnverified
 	}
 	digest := sha256.Sum256(data)
-	if hex.EncodeToString(digest[:]) != pin {
+	if hex.EncodeToString(digest[:]) != pin.ArchiveSHA256 {
 		return Report{}, ErrUnverified
 	}
 	// Parse exactly the in-memory bytes that passed the deployment-owned pin,
 	// never reopen a mutable path after verification.
 	executableDigest, executableSize, err := inspectArchive(ctx, data, asset)
-	if err != nil || ctx.Err() != nil {
+	if err != nil || ctx.Err() != nil || executableDigest != pin.ExecutableSHA256 {
 		return Report{}, ErrUnverified
 	}
 	return Report{Status: "verified-artifact-only", Release: Release, SourceCommit: SourceCommit, Asset: asset,
-		ArchiveSHA256: pin, ExecutableSHA256: executableDigest, ExecutableBytes: executableSize}, nil
+		ArchiveSHA256: pin.ArchiveSHA256, ExecutableSHA256: executableDigest, ExecutableBytes: executableSize}, nil
 }
 
 type contextReader struct {

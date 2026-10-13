@@ -112,13 +112,13 @@ func mockMigrateToV1144(t *testing.T, dbPath string, cacheStatus, quotaStatus st
 	}
 }
 
-func setupTestAuthority(t *testing.T) (*Authority, []byte) {
+func setupTestAuthority(t *testing.T) (*authority, []byte) {
 	t.Helper()
-	key, err := GenerateAuthorityKey()
+	key, err := generateAuthorityKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth, err := NewAuthority(key)
+	auth, err := newAuthority(key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,11 +146,11 @@ func TestHopProducerAndValidatorHappyPath(t *testing.T) {
 	inLayout := createTestInputBundle(t, inRoot, "LegacySchemaA")
 
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
-	asset := "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz"
+	asset := testNativeAsset
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, outputLayout.DatabasePath, "completed", "completed", false)
@@ -163,12 +163,12 @@ func TestHopProducerAndValidatorHappyPath(t *testing.T) {
 		}, nil
 	}
 
-	receipt, err := executeHopInternal(context.Background(), HopOptions{
+	receipt, err := executeHopInternal(context.Background(), hopOptions{
 		Asset:       asset,
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatalf("ExecuteHop failed: %v", err)
@@ -184,29 +184,26 @@ func TestHopProducerAndValidatorHappyPath(t *testing.T) {
 		t.Errorf("empty signature on receipt")
 	}
 
-	// Validate using ValidateHop
+	// Validate using validateReceiptInternal
 	outLayout := maintenancebundle.BundleLayout(outRoot)
-	res, err := ValidateHop(context.Background(), ValidateOptions{
+	res, err := validateReceiptInternal(context.Background(), validateOptions{
 		Receipt:      receipt,
 		BundleLayout: outLayout,
-		Authority:    auth,
-		Journal:      journal,
+		authority:    auth,
+		journal:      journal,
 	})
 	if err != nil {
-		t.Fatalf("ValidateHop failed: %v", err)
+		t.Fatalf("validateReceiptInternal failed: %v", err)
 	}
-	if !res.Valid || res.Status != "verified-hop-evidence" {
+	if !res.Valid || res.Status != "verified-receipt-only" {
 		t.Fatalf("unexpected validation result: %+v", res)
 	}
-	if res.Evidence == nil || !res.Evidence.IsValid() {
-		t.Fatalf("expected valid non-forgeable ValidatedHopEvidence, got %+v", res.Evidence)
-	}
-	if res.Evidence.OperationID() != receipt.OperationID {
-		t.Errorf("evidence operation ID mismatch: got %s, want %s", res.Evidence.OperationID(), receipt.OperationID)
+	if res.Evidence != nil {
+		t.Fatal("receipt diagnostics minted trusted evidence")
 	}
 }
 
-// 2. Missing Journal in ExecuteHop must fail closed
+// 2. Missing journal in ExecuteHop must fail closed
 func TestHopProducerRejectsMissingJournal(t *testing.T) {
 	temp := testTempDir(t)
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
@@ -218,25 +215,25 @@ func TestHopProducerRejectsMissingJournal(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	_, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	_, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
-		Authority:   auth,
-		Journal:     nil, // missing journal
+		authority:   auth,
+		journal:     nil, // missing journal
 	}, fakeExePath, runner)
 	if !errors.Is(err, ErrJournalRequired) {
 		t.Fatalf("expected ErrJournalRequired, got %v", err)
 	}
 }
 
-// 3. Missing Journal in ValidateHop must fail closed
+// 3. Missing journal in validateReceiptInternal must fail closed
 func TestHopValidatorRejectsMissingJournal(t *testing.T) {
 	temp := testTempDir(t)
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	outRoot := filepath.Join(temp, "out")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -245,25 +242,25 @@ func TestHopValidatorRejectsMissingJournal(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	receipt, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	receipt, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = ValidateHop(context.Background(), ValidateOptions{
+	_, err = validateReceiptInternal(context.Background(), validateOptions{
 		Receipt:      receipt,
 		BundleLayout: maintenancebundle.BundleLayout(outRoot),
-		Authority:    auth,
-		Journal:      nil, // missing journal in validator
+		authority:    auth,
+		journal:      nil, // missing journal in validator
 	})
 	if !errors.Is(err, ErrJournalRequired) {
-		t.Fatalf("expected ErrJournalRequired in ValidateHop, got %v", err)
+		t.Fatalf("expected ErrJournalRequired in validateReceiptInternal, got %v", err)
 	}
 }
 
@@ -272,7 +269,7 @@ func TestHopProducerRejectsWrongArtifact(t *testing.T) {
 	temp := testTempDir(t)
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -280,12 +277,12 @@ func TestHopProducerRejectsWrongArtifact(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	_, err := executeHopInternal(context.Background(), HopOptions{
+	_, err := executeHopInternal(context.Background(), hopOptions{
 		Asset:       "unsupported_asset_v1.14.4.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if err == nil {
 		t.Fatal("expected failure on wrong artifact, got nil")
@@ -308,7 +305,7 @@ func TestHopProducerRejectsNewerSourceDowngrade(t *testing.T) {
 	}
 
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -316,12 +313,12 @@ func TestHopProducerRejectsNewerSourceDowngrade(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	_, err = executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	_, err = executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if !errors.Is(err, ErrDowngradeProhibited) {
 		t.Fatalf("expected ErrDowngradeProhibited, got %v", err)
@@ -337,7 +334,7 @@ func TestHopProducerRejectsUnrecognizedSource(t *testing.T) {
 	_ = os.WriteFile(inLayout.DataKeyPath, []byte("key"), 0o600)
 
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -345,12 +342,12 @@ func TestHopProducerRejectsUnrecognizedSource(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	_, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	_, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if !errors.Is(err, ErrInvalidSource) {
 		t.Fatalf("expected ErrInvalidSource, got %v", err)
@@ -362,7 +359,7 @@ func TestHopProducerRejectsProcessFailureOrDirtyExit(t *testing.T) {
 	temp := testTempDir(t)
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -370,12 +367,12 @@ func TestHopProducerRejectsProcessFailureOrDirtyExit(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 1}, errors.New("exit status 1")
 	}
 
-	_, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	_, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if !errors.Is(err, ErrProcessExecutionFailed) {
 		t.Fatalf("expected ErrProcessExecutionFailed, got %v", err)
@@ -387,7 +384,7 @@ func TestHopProducerRejectsIncompleteCheckpoints(t *testing.T) {
 	temp := testTempDir(t)
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -397,12 +394,12 @@ func TestHopProducerRejectsIncompleteCheckpoints(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	_, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	_, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out1"),
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runnerIncompleteCache)
 	if !errors.Is(err, ErrCheckpointFailed) {
 		t.Fatalf("expected ErrCheckpointFailed for incomplete cache, got %v", err)
@@ -414,12 +411,12 @@ func TestHopProducerRejectsIncompleteCheckpoints(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	_, err = executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	_, err = executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out2"),
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runnerWithLock)
 	if !errors.Is(err, ErrMaintenanceLockActive) {
 		t.Fatalf("expected ErrMaintenanceLockActive, got %v", err)
@@ -432,7 +429,7 @@ func TestHopProducerRejectsInsecureWorkspace(t *testing.T) {
 	inDir := filepath.Join(temp, "source")
 	inLayout := createTestInputBundle(t, inDir, "LegacySchemaA")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -441,12 +438,12 @@ func TestHopProducerRejectsInsecureWorkspace(t *testing.T) {
 	}
 
 	// Case A: outputRoot is same as input root
-	_, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	_, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  inDir,
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if !errors.Is(err, ErrInsecureWorkspace) {
 		t.Fatalf("expected ErrInsecureWorkspace for same dir, got %v", err)
@@ -460,12 +457,12 @@ func TestHopProducerRejectsInsecureWorkspace(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(nonEmptyOut, "rogue.txt"), []byte("data"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	_, err = executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  nonEmptyOut,
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if !errors.Is(err, ErrInsecureWorkspace) {
 		t.Fatalf("expected ErrInsecureWorkspace for non-empty dir, got %v", err)
@@ -478,7 +475,7 @@ func TestHopValidatorRejectsForgedSignature(t *testing.T) {
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	outRoot := filepath.Join(temp, "out")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -487,12 +484,12 @@ func TestHopValidatorRejectsForgedSignature(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	receipt, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
@@ -500,11 +497,11 @@ func TestHopValidatorRejectsForgedSignature(t *testing.T) {
 
 	// Forge signature
 	receipt.Signature = "0000000000000000000000000000000000000000000000000000000000000000"
-	_, err = ValidateHop(context.Background(), ValidateOptions{
+	_, err = validateReceiptInternal(context.Background(), validateOptions{
 		Receipt:      receipt,
 		BundleLayout: maintenancebundle.BundleLayout(outRoot),
-		Authority:    auth,
-		Journal:      journal,
+		authority:    auth,
+		journal:      journal,
 	})
 	if !errors.Is(err, ErrForgedReceipt) {
 		t.Fatalf("expected ErrForgedReceipt, got %v", err)
@@ -517,7 +514,7 @@ func TestHopValidatorRejectsCopiedReceiptToDifferentBundle(t *testing.T) {
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	outRoot := filepath.Join(temp, "out")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -526,12 +523,12 @@ func TestHopValidatorRejectsCopiedReceiptToDifferentBundle(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	receipt, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
@@ -541,11 +538,11 @@ func TestHopValidatorRejectsCopiedReceiptToDifferentBundle(t *testing.T) {
 	otherLayout := createTestInputBundle(t, otherRoot, "LegacySchemaC")
 	mockMigrateToV1144(t, otherLayout.DatabasePath, "completed", "completed", false)
 
-	_, err = ValidateHop(context.Background(), ValidateOptions{
+	_, err = validateReceiptInternal(context.Background(), validateOptions{
 		Receipt:      receipt,
 		BundleLayout: otherLayout,
-		Authority:    auth,
-		Journal:      journal,
+		authority:    auth,
+		journal:      journal,
 	})
 	if !errors.Is(err, ErrBundleMismatch) {
 		t.Fatalf("expected ErrBundleMismatch when receipt is copied, got %v", err)
@@ -558,7 +555,7 @@ func TestHopValidatorRejectsOutputBundleContentChange(t *testing.T) {
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	outRoot := filepath.Join(temp, "out")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -567,12 +564,12 @@ func TestHopValidatorRejectsOutputBundleContentChange(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	receipt, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
@@ -587,24 +584,24 @@ func TestHopValidatorRejectsOutputBundleContentChange(t *testing.T) {
 	_, _ = f.WriteString("modified-byte")
 	f.Close()
 
-	_, err = ValidateHop(context.Background(), ValidateOptions{
+	_, err = validateReceiptInternal(context.Background(), validateOptions{
 		Receipt:      receipt,
 		BundleLayout: outLayout,
-		Authority:    auth,
-		Journal:      journal,
+		authority:    auth,
+		journal:      journal,
 	})
 	if !errors.Is(err, ErrBundleMismatch) {
 		t.Fatalf("expected ErrBundleMismatch on altered bundle content, got %v", err)
 	}
 }
 
-// 13. Validator rejects revoked operation in Journal
+// 13. Validator rejects revoked operation in journal
 func TestHopValidatorRejectsRevokedOperationInJournal(t *testing.T) {
 	temp := testTempDir(t)
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	outRoot := filepath.Join(temp, "out")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -613,40 +610,40 @@ func TestHopValidatorRejectsRevokedOperationInJournal(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	receipt, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Revoke operation in journal
-	if err := journal.RevokeOperation(receipt.OperationID); err != nil {
+	if err := journal.revokeOperation(receipt.OperationID); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = ValidateHop(context.Background(), ValidateOptions{
+	_, err = validateReceiptInternal(context.Background(), validateOptions{
 		Receipt:      receipt,
 		BundleLayout: maintenancebundle.BundleLayout(outRoot),
-		Authority:    auth,
-		Journal:      journal,
+		authority:    auth,
+		journal:      journal,
 	})
 	if !errors.Is(err, ErrOperationRevoked) {
 		t.Fatalf("expected ErrOperationRevoked, got %v", err)
 	}
 }
 
-// 14. Validator rejects mismatch between Journal record and receipt fields
+// 14. Validator rejects mismatch between journal record and receipt fields
 func TestHopValidatorRejectsRecordMismatch(t *testing.T) {
 	temp := testTempDir(t)
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	outRoot := filepath.Join(temp, "out")
 	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
+	journal := openTestJournal(t)
 	fakeExePath := filepath.Join(temp, "bin", "cpa-manager-plus")
 	createFakeExecutable(t, fakeExePath)
 
@@ -655,37 +652,40 @@ func TestHopValidatorRejectsRecordMismatch(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := executeHopInternal(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+	receipt, err := executeHopInternal(context.Background(), hopOptions{
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
-		Authority:   auth,
-		Journal:     journal,
+		authority:   auth,
+		journal:     journal,
 	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Corrupt journal record in-memory
-	rec, _, err := journal.GetOperation(receipt.OperationID)
+	rec, _, err := journal.getOperation(receipt.OperationID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec.ExecutableSHA256 = "mismatched-exe-digest"
+	rec.CanonicalReceiptSHA256 = strings.Repeat("f", 64)
 	journal.records[receipt.OperationID] = rec
+	if err := journal.persistLocked(); err != nil {
+		t.Fatal(err)
+	}
 
-	_, err = ValidateHop(context.Background(), ValidateOptions{
+	_, err = validateReceiptInternal(context.Background(), validateOptions{
 		Receipt:      receipt,
 		BundleLayout: maintenancebundle.BundleLayout(outRoot),
-		Authority:    auth,
-		Journal:      journal,
+		authority:    auth,
+		journal:      journal,
 	})
 	if !errors.Is(err, ErrRecordMismatch) {
 		t.Fatalf("expected ErrRecordMismatch, got %v", err)
 	}
 }
 
-// 15. Journal corruption fails closed
+// 15. journal corruption fails closed
 func TestJournalCorruptionFailsClosed(t *testing.T) {
 	temp := testTempDir(t)
 	journalPath := filepath.Join(temp, "corrupt-journal.json")
@@ -694,20 +694,20 @@ func TestJournalCorruptionFailsClosed(t *testing.T) {
 	if err := os.WriteFile(journalPath, []byte("{not valid json}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := OpenJournal(journalPath)
+	_, err := openJournal(journalPath)
 	if !errors.Is(err, ErrCorruptJournal) {
 		t.Fatalf("expected ErrCorruptJournal on malformed JSON, got %v", err)
 	}
 
 	// Case B: Duplicate operation IDs
 	dupJSON := `[
-		{"operationId": "op-1", "release": "v1.14.4", "asset": "a", "executableSHA256": "h", "inputManifestDigest": "i", "outputManifestDigest": "o", "issuedAtMs": 1000},
-		{"operationId": "op-1", "release": "v1.14.4", "asset": "a", "executableSHA256": "h", "inputManifestDigest": "i", "outputManifestDigest": "o", "issuedAtMs": 2000}
+		{"operationId":"op-1","receiptVersion":2,"canonicalReceiptSHA256":"1111111111111111111111111111111111111111111111111111111111111111"},
+		{"operationId":"op-1","receiptVersion":2,"canonicalReceiptSHA256":"1111111111111111111111111111111111111111111111111111111111111111"}
 	]`
 	if err := os.WriteFile(journalPath, []byte(dupJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = OpenJournal(journalPath)
+	_, err = openJournal(journalPath)
 	if !errors.Is(err, ErrCorruptJournal) {
 		t.Fatalf("expected ErrCorruptJournal on duplicate IDs, got %v", err)
 	}
@@ -719,21 +719,21 @@ func TestJournalCorruptionFailsClosed(t *testing.T) {
 	if err := os.WriteFile(journalPath, []byte(incompleteJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = OpenJournal(journalPath)
+	_, err = openJournal(journalPath)
 	if !errors.Is(err, ErrCorruptJournal) {
 		t.Fatalf("expected ErrCorruptJournal on missing release, got %v", err)
 	}
 }
 
-// 16. Authority Store: 0600 file permission, key persistence and reload
+// 16. authority Store: 0600 file permission, key persistence and reload
 func TestAuthorityStorePermissionsAndReload(t *testing.T) {
 	temp := testTempDir(t)
 	keyPath := filepath.Join(temp, "secrets", ".legacy-authority.key")
 
 	// 1. Initial generation
-	auth1, err := LoadOrCreateAuthority(keyPath)
+	auth1, err := loadOrCreateAuthority(keyPath)
 	if err != nil {
-		t.Fatalf("LoadOrCreateAuthority failed: %v", err)
+		t.Fatalf("loadOrCreateAuthority failed: %v", err)
 	}
 
 	// Verify file mode
@@ -746,13 +746,13 @@ func TestAuthorityStorePermissionsAndReload(t *testing.T) {
 	}
 
 	// 2. Reloading loads identical key
-	auth2, err := LoadOrCreateAuthority(keyPath)
+	auth2, err := loadOrCreateAuthority(keyPath)
 	if err != nil {
 		t.Fatalf("reload failed: %v", err)
 	}
 
 	payload := []byte("canonical-test-payload")
-	sig1, err := auth1.Sign(payload)
+	sig1, err := auth1.sign(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,7 +765,7 @@ func TestAuthorityStorePermissionsAndReload(t *testing.T) {
 	if err := os.Symlink(keyPath, symPath); err != nil {
 		t.Fatal(err)
 	}
-	_, err = LoadOrCreateAuthority(symPath)
+	_, err = loadOrCreateAuthority(symPath)
 	if !errors.Is(err, ErrInsecureKeyFile) {
 		t.Fatalf("expected ErrInsecureKeyFile on symlink, got %v", err)
 	}
@@ -775,15 +775,11 @@ func TestAuthorityStorePermissionsAndReload(t *testing.T) {
 func TestExecuteHopRejectsUnqualifiedExecution(t *testing.T) {
 	temp := testTempDir(t)
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
-	auth, _ := setupTestAuthority(t)
-	journal := NewMemoryJournal()
 
 	_, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		Asset:       testNativeAsset,
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
-		Authority:   auth,
-		Journal:     journal,
 	})
 	if !errors.Is(err, ErrExecutionNotQualified) {
 		t.Fatalf("expected ErrExecutionNotQualified in production, got %v", err)
@@ -795,55 +791,39 @@ func TestHopJournalCrossProcessConcurrency(t *testing.T) {
 	temp := testTempDir(t)
 	journalPath := filepath.Join(temp, "concurrent-journal.json")
 
-	j1, err := OpenOrCreateJournal(journalPath)
+	j1, err := openOrCreateJournal(journalPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	j2, err := OpenJournal(journalPath)
+	j2, err := openJournal(journalPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	rec1 := OperationRecord{
-		OperationID:          "op-concur-1",
-		Release:              Release,
-		Asset:                "asset1",
-		ExecutableSHA256:     "sha1",
-		InputManifestDigest:  "in1",
-		OutputManifestDigest: "out1",
-		IssuedAtMS:           1000,
-	}
-	rec2 := OperationRecord{
-		OperationID:          "op-concur-2",
-		Release:              Release,
-		Asset:                "asset2",
-		ExecutableSHA256:     "sha2",
-		InputManifestDigest:  "in2",
-		OutputManifestDigest: "out2",
-		IssuedAtMS:           2000,
-	}
+	rec1 := testOperationRecord("op-concur-1")
+	rec2 := testOperationRecord("op-concur-2")
 
-	if err := j1.RecordOperation(rec1); err != nil {
-		t.Fatalf("j1.RecordOperation failed: %v", err)
+	if err := j1.recordOperation(rec1); err != nil {
+		t.Fatalf("j1.recordOperation failed: %v", err)
 	}
-	if err := j2.RecordOperation(rec2); err != nil {
-		t.Fatalf("j2.RecordOperation failed: %v", err)
+	if err := j2.recordOperation(rec2); err != nil {
+		t.Fatalf("j2.recordOperation failed: %v", err)
 	}
 
 	// Try replaying rec1 through j2: must be rejected!
-	if err := j2.RecordOperation(rec1); !errors.Is(err, ErrOperationReplayed) {
+	if err := j2.recordOperation(rec1); !errors.Is(err, ErrOperationReplayed) {
 		t.Fatalf("expected ErrOperationReplayed when replaying rec1 via j2, got %v", err)
 	}
 
 	// Read from fresh journal instance
-	jFresh, err := OpenJournal(journalPath)
+	jFresh, err := openJournal(journalPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := jFresh.GetOperation("op-concur-1"); !ok || err != nil {
+	if _, ok, err := jFresh.getOperation("op-concur-1"); !ok || err != nil {
 		t.Errorf("expected op-concur-1 in journal")
 	}
-	if _, ok, err := jFresh.GetOperation("op-concur-2"); !ok || err != nil {
+	if _, ok, err := jFresh.getOperation("op-concur-2"); !ok || err != nil {
 		t.Errorf("expected op-concur-2 in journal")
 	}
 }
@@ -895,14 +875,14 @@ func TestJournalRuntimeFailuresRejectValidationAndWrites(t *testing.T) {
 			input := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 			auth, _ := setupTestAuthority(t)
 			path := filepath.Join(temp, "journal.json")
-			journal, err := OpenOrCreateJournal(path)
+			journal, err := openOrCreateJournal(path)
 			if err != nil {
 				t.Fatal(err)
 			}
 			exe := filepath.Join(temp, "writer")
 			createFakeExecutable(t, exe)
 			out := filepath.Join(temp, "out")
-			receipt, err := executeHopInternal(context.Background(), HopOptions{Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: input, OutputRoot: out, Authority: auth, Journal: journal}, exe,
+			receipt, err := executeHopInternal(context.Background(), hopOptions{Asset: testNativeAsset, InputLayout: input, OutputRoot: out, authority: auth, journal: journal}, exe,
 				func(ctx context.Context, exe string, layout maintenancebundle.Layout) (ProcessEvidence, error) {
 					mockMigrateToV1144(t, layout.DatabasePath, "completed", "completed", false)
 					return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
@@ -910,11 +890,11 @@ func TestJournalRuntimeFailuresRejectValidationAndWrites(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			opts := ValidateOptions{Receipt: receipt, BundleLayout: maintenancebundle.BundleLayout(out), Authority: auth, Journal: journal}
-			if _, err := ValidateHop(context.Background(), opts); err != nil {
+			opts := validateOptions{Receipt: receipt, BundleLayout: maintenancebundle.BundleLayout(out), authority: auth, journal: journal}
+			if _, err := validateReceiptInternal(context.Background(), opts); err != nil {
 				t.Fatal(err)
 			}
-			record, ok, err := journal.GetOperation(receipt.OperationID)
+			record, ok, err := journal.getOperation(receipt.OperationID)
 			if err != nil || !ok {
 				t.Fatalf("initial journal read: %v %v", ok, err)
 			}
@@ -946,20 +926,20 @@ func TestJournalRuntimeFailuresRejectValidationAndWrites(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result, err := ValidateHop(context.Background(), opts); err == nil || result != nil {
+			if result, err := validateReceiptInternal(context.Background(), opts); err == nil || result != nil {
 				t.Fatalf("runtime %s journal validated: %+v %v", mode, result, err)
 			}
-			if rec, ok, err := journal.GetOperation(receipt.OperationID); err == nil || ok || rec.OperationID != "" {
+			if rec, ok, err := journal.getOperation(receipt.OperationID); err == nil || ok || rec.OperationID != "" {
 				t.Fatalf("runtime %s returned cached authority: %+v %v %v", mode, rec, ok, err)
 			}
 			record.OperationID = "new-operation"
-			if err := journal.RecordOperation(record); err == nil {
+			if err := journal.recordOperation(record); err == nil {
 				t.Fatalf("runtime %s accepted write", mode)
 			}
-			if err := journal.RevokeOperation(receipt.OperationID); err == nil {
+			if err := journal.revokeOperation(receipt.OperationID); err == nil {
 				t.Fatalf("runtime %s accepted revocation", mode)
 			}
-			if _, err := OpenJournal(path); err == nil {
+			if _, err := openJournal(path); err == nil {
 				t.Fatalf("runtime %s reopened authority", mode)
 			}
 		})
@@ -969,35 +949,35 @@ func TestJournalRuntimeFailuresRejectValidationAndWrites(t *testing.T) {
 func TestDeletedJournalCannotResurrectRevokedOperation(t *testing.T) {
 	temp := testTempDir(t)
 	path := filepath.Join(temp, "journal.json")
-	stale, err := OpenOrCreateJournal(path)
+	stale, err := openOrCreateJournal(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := OperationRecord{OperationID: "old", Release: Release, Asset: "asset", ExecutableSHA256: "exe", InputManifestDigest: "input", OutputManifestDigest: "output", IssuedAtMS: 1000}
-	if err := stale.RecordOperation(record); err != nil {
+	record := testOperationRecord("old")
+	if err := stale.recordOperation(record); err != nil {
 		t.Fatal(err)
 	}
-	current, err := OpenJournal(path)
+	current, err := openJournal(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := current.RevokeOperation("old"); err != nil {
+	if err := current.revokeOperation("old"); err != nil {
 		t.Fatal(err)
 	}
-	if rec, ok, err := current.GetOperation("old"); err != nil || !ok || !rec.Revoked {
+	if rec, ok, err := current.getOperation("old"); err != nil || !ok || !rec.Revoked {
 		t.Fatalf("revocation not observed: %+v %v %v", rec, ok, err)
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
 	record.OperationID = "new"
-	if err := stale.RecordOperation(record); !errors.Is(err, ErrJournalUnavailable) {
+	if err := stale.recordOperation(record); !errors.Is(err, ErrJournalUnavailable) {
 		t.Fatalf("lost authority write: %v", err)
 	}
-	if err := current.RevokeOperation("old"); !errors.Is(err, ErrJournalUnavailable) {
+	if err := current.revokeOperation("old"); !errors.Is(err, ErrJournalUnavailable) {
 		t.Fatalf("lost authority revoke: %v", err)
 	}
-	if _, err := OpenJournal(path); !errors.Is(err, ErrJournalUnavailable) {
+	if _, err := openJournal(path); !errors.Is(err, ErrJournalUnavailable) {
 		t.Fatalf("lost authority open: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -1013,7 +993,7 @@ func TestRelativeHopPathsIdentifyStagedBundle(t *testing.T) {
 	createFakeExecutable(t, exe)
 	t.Chdir(temp)
 	called := false
-	receipt, err := executeHopInternal(context.Background(), HopOptions{Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: maintenancebundle.BundleLayout("in"), OutputRoot: "out", Authority: auth, Journal: NewMemoryJournal()}, exe,
+	receipt, err := executeHopInternal(context.Background(), hopOptions{Asset: testNativeAsset, InputLayout: maintenancebundle.BundleLayout("in"), OutputRoot: "out", authority: auth, journal: openTestJournal(t)}, exe,
 		func(ctx context.Context, exe string, layout maintenancebundle.Layout) (ProcessEvidence, error) {
 			called = true
 			want := maintenancebundle.BundleLayout(filepath.Join(temp, "out"))
@@ -1039,7 +1019,7 @@ func TestProductionExecutionRefusesBeforeAnySideEffect(t *testing.T) {
 	if evidence, err := DefaultCommandRunner(context.Background(), exe, maintenancebundle.BundleLayout(output)); !errors.Is(err, ErrExecutionNotQualified) || evidence.PID != 0 {
 		t.Fatalf("default runner executed: %+v %v", evidence, err)
 	}
-	if receipt, err := ExecuteHop(context.Background(), HopOptions{ArchivePath: filepath.Join(temp, "absent-archive"), Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: maintenancebundle.BundleLayout(filepath.Join(temp, "absent-input")), OutputRoot: output}); !errors.Is(err, ErrExecutionNotQualified) || receipt != nil {
+	if receipt, err := ExecuteHop(context.Background(), HopOptions{ArchivePath: filepath.Join(temp, "absent-archive"), Asset: testNativeAsset, InputLayout: maintenancebundle.BundleLayout(filepath.Join(temp, "absent-input")), OutputRoot: output}); !errors.Is(err, ErrExecutionNotQualified) || receipt != nil {
 		t.Fatalf("producer executed: %+v %v", receipt, err)
 	}
 	for _, path := range []string{marker, output} {
@@ -1053,17 +1033,17 @@ func TestAuthorityConcurrentInitialCreation(t *testing.T) {
 	temp := testTempDir(t)
 	path := filepath.Join(temp, "secrets", "key")
 	const count = 16
-	results := make([]*Authority, count)
+	results := make([]*authority, count)
 	errs := make([]error, count)
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := range results {
 		wg.Add(1)
-		go func(i int) { defer wg.Done(); <-start; results[i], errs[i] = LoadOrCreateAuthority(path) }(i)
+		go func(i int) { defer wg.Done(); <-start; results[i], errs[i] = loadOrCreateAuthority(path) }(i)
 	}
 	close(start)
 	wg.Wait()
-	persisted, err := LoadAuthority(path)
+	persisted, err := loadAuthority(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1071,7 +1051,7 @@ func TestAuthorityConcurrentInitialCreation(t *testing.T) {
 		if errs[i] != nil {
 			t.Fatal(errs[i])
 		}
-		signature, err := a.Sign([]byte("authority-create"))
+		signature, err := a.sign([]byte("authority-create"))
 		if err != nil || !persisted.Verify([]byte("authority-create"), signature) {
 			t.Fatalf("creator %d returned a different authority: %v", i, err)
 		}
@@ -1094,11 +1074,11 @@ func TestAuthorityCreationAcrossProcesses(t *testing.T) {
 			}
 			time.Sleep(time.Millisecond)
 		}
-		auth, err := LoadOrCreateAuthority(keyPath)
+		auth, err := loadOrCreateAuthority(keyPath)
 		if err != nil {
 			t.Fatal(err)
 		}
-		signature, err := auth.Sign([]byte("authority-create"))
+		signature, err := auth.sign([]byte("authority-create"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1153,7 +1133,7 @@ func TestAuthorityCreationAcrossProcesses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	persisted, err := LoadAuthority(path)
+	persisted, err := loadAuthority(path)
 	if err != nil {
 		t.Fatal(err)
 	}

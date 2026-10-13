@@ -1,6 +1,7 @@
 package legacyartifact
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,68 +19,53 @@ var (
 	ErrJournalUnavailable = errors.New("private journal is missing or unreadable")
 )
 
-type OperationRecord struct {
-	OperationID          string `json:"operationId"`
-	Release              string `json:"release"`
-	Asset                string `json:"asset"`
-	ExecutableSHA256     string `json:"executableSHA256"`
-	InputManifestDigest  string `json:"inputManifestDigest"`
-	OutputManifestDigest string `json:"outputManifestDigest"`
-	IssuedAtMS           int64  `json:"issuedAtMs"`
-	Revoked              bool   `json:"revoked,omitempty"`
+type operationRecord struct {
+	OperationID            string `json:"operationId"`
+	ReceiptVersion         int    `json:"receiptVersion"`
+	CanonicalReceiptSHA256 string `json:"canonicalReceiptSHA256"`
+	Revoked                bool   `json:"revoked,omitempty"`
 }
 
-// Validate verifies that an OperationRecord contains all critical authority fields.
-func (r OperationRecord) Validate() error {
+// Validate verifies that an operationRecord contains all critical authority fields.
+func (r operationRecord) Validate() error {
 	if strings.TrimSpace(r.OperationID) == "" {
 		return errors.New("operationId is required in journal record")
 	}
-	if strings.TrimSpace(r.Release) == "" {
-		return errors.New("release is required in journal record")
+	if r.ReceiptVersion != ReceiptVersion {
+		return errors.New("unsupported journal receipt version")
 	}
-	if strings.TrimSpace(r.Asset) == "" {
-		return errors.New("asset is required in journal record")
-	}
-	if strings.TrimSpace(r.ExecutableSHA256) == "" {
-		return errors.New("executableSHA256 is required in journal record")
-	}
-	if strings.TrimSpace(r.InputManifestDigest) == "" {
-		return errors.New("inputManifestDigest is required in journal record")
-	}
-	if strings.TrimSpace(r.OutputManifestDigest) == "" {
-		return errors.New("outputManifestDigest is required in journal record")
-	}
-	if r.IssuedAtMS <= 0 {
-		return errors.New("issuedAtMs must be positive in journal record")
+	if digest, err := hex.DecodeString(r.CanonicalReceiptSHA256); err != nil || len(digest) != 32 {
+		return errors.New("canonical receipt SHA256 is required in journal record")
 	}
 	return nil
 }
 
-// Journal maintains a private, Manager-owned record of executed forward-hop operations.
-// It serves as an anti-replay store to ensure that an operation receipt corresponds
-// to an actual operation issued by this authority.
-type Journal struct {
+// journal retains private receipt records for the foundation's replay and
+// revocation checks. Persistent storage alone does not qualify Manager ownership
+// or prove actual execution.
+type journal struct {
 	mu      sync.RWMutex
 	path    string
-	records map[string]OperationRecord
+	records map[string]operationRecord
 }
 
-// NewMemoryJournal creates an in-memory Journal for transient or testing operations.
-func NewMemoryJournal() *Journal {
-	return &Journal{
-		records: make(map[string]OperationRecord),
+func recordForReceipt(receipt *ExecutionReceipt) (operationRecord, error) {
+	digest, err := receipt.canonicalDigest()
+	if err != nil {
+		return operationRecord{}, err
 	}
+	return operationRecord{OperationID: receipt.OperationID, ReceiptVersion: receipt.Version, CanonicalReceiptSHA256: digest}, nil
 }
 
-// OpenJournal opens an existing JSON-backed Journal. Validation never creates
+// openJournal opens an existing JSON-backed journal. Validation never creates
 // a missing authority file or restores records from an in-memory cache.
 // If the journal exists but is corrupt, malformed, contains duplicate records,
 // or is an insecure symlink, it fails closed with an error.
-func OpenJournal(path string) (*Journal, error) {
+func openJournal(path string) (*journal, error) {
 	path = strings.TrimSpace(path)
-	j := &Journal{
+	j := &journal{
 		path:    path,
-		records: make(map[string]OperationRecord),
+		records: make(map[string]operationRecord),
 	}
 	if path == "" {
 		return nil, ErrJournalRequired
@@ -92,9 +78,9 @@ func OpenJournal(path string) (*Journal, error) {
 	return j, nil
 }
 
-// OpenOrCreateJournal explicitly initializes a new private journal under the
+// openOrCreateJournal explicitly initializes a new private journal under the
 // same cross-process lock used by writers. Runtime reloads never initialize it.
-func OpenOrCreateJournal(path string) (*Journal, error) {
+func openOrCreateJournal(path string) (*journal, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil, ErrJournalRequired
@@ -102,7 +88,7 @@ func OpenOrCreateJournal(path string) (*Journal, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	j := &Journal{path: path, records: make(map[string]OperationRecord)}
+	j := &journal{path: path, records: make(map[string]operationRecord)}
 	lock, err := j.acquireDiskLock()
 	if err != nil {
 		return nil, err
@@ -121,10 +107,10 @@ func OpenOrCreateJournal(path string) (*Journal, error) {
 	return j, nil
 }
 
-func (j *Journal) loadFromDiskLocked() (loadErr error) {
+func (j *journal) loadFromDiskLocked() (loadErr error) {
 	defer func() {
 		if loadErr != nil {
-			j.records = make(map[string]OperationRecord)
+			j.records = make(map[string]operationRecord)
 		}
 	}()
 	if j.path == "" {
@@ -148,13 +134,13 @@ func (j *Journal) loadFromDiskLocked() (loadErr error) {
 		return errors.Join(ErrJournalUnavailable, fmt.Errorf("read journal file %s: %w", j.path, err))
 	}
 
-	var list []OperationRecord
+	var list []operationRecord
 	if err := json.Unmarshal(data, &list); err != nil {
 		return errors.Join(ErrCorruptJournal, fmt.Errorf("unmarshal journal %s: %w", j.path, err))
 	}
 
 	seenIDs := make(map[string]bool, len(list))
-	newRecords := make(map[string]OperationRecord, len(list))
+	newRecords := make(map[string]operationRecord, len(list))
 	for i, rec := range list {
 		if err := rec.Validate(); err != nil {
 			return errors.Join(ErrCorruptJournal, fmt.Errorf("record %d invalid: %w", i, err))
@@ -170,10 +156,10 @@ func (j *Journal) loadFromDiskLocked() (loadErr error) {
 	return nil
 }
 
-func (j *Journal) acquireDiskLock() (*fileLock, error) {
+func (j *journal) acquireDiskLock() (*fileLock, error) {
 	lock, err := acquireFileLock(j.path + ".lock")
 	if err != nil {
-		j.records = make(map[string]OperationRecord)
+		j.records = make(map[string]operationRecord)
 		if errors.Is(err, errInsecurePrivateStorage) {
 			return nil, errors.Join(ErrInsecureJournal, err)
 		}
@@ -183,16 +169,16 @@ func (j *Journal) acquireDiskLock() (*fileLock, error) {
 }
 
 // Path returns the path of the journal file.
-func (j *Journal) Path() string {
+func (j *journal) Path() string {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
 	return j.path
 }
 
-// RecordOperation records a new completed operation. If the operationID is already present,
+// recordOperation records a new completed operation. If the operationID is already present,
 // it returns ErrOperationReplayed. Cross-process file locking ensures mutual exclusion.
 // Persistence failures cause the entire record operation to fail and not be committed to memory.
-func (j *Journal) RecordOperation(rec OperationRecord) error {
+func (j *journal) recordOperation(rec operationRecord) error {
 	if err := rec.Validate(); err != nil {
 		return err
 	}
@@ -224,19 +210,19 @@ func (j *Journal) RecordOperation(rec OperationRecord) error {
 	return nil
 }
 
-// GetOperation returns the record for an operationID if present.
-func (j *Journal) GetOperation(operationID string) (OperationRecord, bool, error) {
+// getOperation returns the record for an operationID if present.
+func (j *journal) getOperation(operationID string) (operationRecord, bool, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
 	if j.path != "" {
 		lock, err := j.acquireDiskLock()
 		if err != nil {
-			return OperationRecord{}, false, errors.Join(ErrJournalUnavailable, err)
+			return operationRecord{}, false, errors.Join(ErrJournalUnavailable, err)
 		}
 		defer lock.Release()
 		if err := j.loadFromDiskLocked(); err != nil {
-			return OperationRecord{}, false, err
+			return operationRecord{}, false, err
 		}
 	}
 
@@ -244,8 +230,8 @@ func (j *Journal) GetOperation(operationID string) (OperationRecord, bool, error
 	return rec, ok, nil
 }
 
-// RevokeOperation marks an operation as revoked.
-func (j *Journal) RevokeOperation(operationID string) error {
+// revokeOperation marks an operation as revoked.
+func (j *journal) revokeOperation(operationID string) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
@@ -277,7 +263,7 @@ func (j *Journal) RevokeOperation(operationID string) error {
 	return nil
 }
 
-func (j *Journal) persistLocked() error {
+func (j *journal) persistLocked() error {
 	if j.path == "" {
 		return nil
 	}
@@ -286,7 +272,7 @@ func (j *Journal) persistLocked() error {
 		return errors.Join(ErrInsecureJournal, err)
 	}
 
-	list := make([]OperationRecord, 0, len(j.records))
+	list := make([]operationRecord, 0, len(j.records))
 	for _, rec := range j.records {
 		list = append(list, rec)
 	}

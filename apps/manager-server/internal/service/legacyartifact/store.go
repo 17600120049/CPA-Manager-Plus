@@ -16,7 +16,8 @@ var (
 	errInsecurePrivateStorage = errors.New("private storage requires a regular 0600 file and a non-symlink 0700 directory")
 )
 
-// DefaultAuthorityKeyPath returns the canonical path to the Manager-owned private authority key.
+// DefaultAuthorityKeyPath reserves private foundation storage. A caller-selected
+// path does not establish Manager ownership and is never accepted by ValidateHop.
 func DefaultAuthorityKeyPath(dataDir string) string {
 	if strings.TrimSpace(dataDir) == "" {
 		dataDir = "data"
@@ -24,7 +25,7 @@ func DefaultAuthorityKeyPath(dataDir string) string {
 	return filepath.Join(dataDir, ".legacy-hop", "authority.key")
 }
 
-// DefaultJournalPath returns the canonical path to the Manager-owned operation journal.
+// DefaultJournalPath reserves private foundation journal storage.
 func DefaultJournalPath(dataDir string) string {
 	if strings.TrimSpace(dataDir) == "" {
 		dataDir = "data"
@@ -32,9 +33,9 @@ func DefaultJournalPath(dataDir string) string {
 	return filepath.Join(dataDir, ".legacy-hop", "journal.json")
 }
 
-// LoadAuthority reads an existing private key. Receipt verification must not
+// loadAuthority reads an existing private key. Receipt verification must not
 // generate a replacement key when its authority has been lost.
-func LoadAuthority(keyPath string) (*Authority, error) {
+func loadAuthority(keyPath string) (*authority, error) {
 	keyPath = strings.TrimSpace(keyPath)
 	if keyPath == "" {
 		return nil, errors.New("authority key path is required")
@@ -59,11 +60,11 @@ func LoadAuthority(keyPath string) (*Authority, error) {
 	raw := strings.TrimSpace(string(data))
 	if len(raw) >= 64 {
 		if decoded, err := hex.DecodeString(raw); err == nil && len(decoded) >= 32 {
-			return NewAuthority(decoded)
+			return newAuthority(decoded)
 		}
 	}
 	if len(data) >= 32 {
-		return NewAuthority(data[:32])
+		return newAuthority(data[:32])
 	}
 	return nil, ErrInvalidAuthorityKey
 }
@@ -126,9 +127,9 @@ func checkOpenedPrivateLock(file *os.File, path string) error {
 	return checkPrivateDirectory(filepath.Dir(path))
 }
 
-// LoadOrCreateAuthority serializes initial creation across processes and
+// loadOrCreateAuthority serializes initial creation across processes and
 // goroutines, rechecks the key under lock, and never replaces an existing key.
-func LoadOrCreateAuthority(keyPath string) (*Authority, error) {
+func loadOrCreateAuthority(keyPath string) (*authority, error) {
 	keyPath = strings.TrimSpace(keyPath)
 	if keyPath == "" {
 		return nil, errors.New("authority key path is required")
@@ -150,7 +151,7 @@ func LoadOrCreateAuthority(keyPath string) (*Authority, error) {
 		return nil, fmt.Errorf("lock authority creation: %w", err)
 	}
 	defer lock.Release()
-	authority, err := LoadAuthority(keyPath)
+	authority, err := loadAuthority(keyPath)
 	if err == nil {
 		return authority, nil
 	}
@@ -179,5 +180,5 @@ func LoadOrCreateAuthority(keyPath string) (*Authority, error) {
 	if err := os.Rename(tmp.Name(), keyPath); err != nil {
 		return nil, err
 	}
-	return NewAuthority(key)
+	return newAuthority(key)
 }

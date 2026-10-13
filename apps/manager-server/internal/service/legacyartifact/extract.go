@@ -45,14 +45,18 @@ func ExtractExecutable(ctx context.Context, archivePath, asset, targetExePath st
 		return "", 0, ErrUnverified
 	}
 	digest := sha256.Sum256(data)
-	if hex.EncodeToString(digest[:]) != pin {
+	if hex.EncodeToString(digest[:]) != pin.ArchiveSHA256 {
+		return "", 0, ErrUnverified
+	}
+	verifiedDigest, _, err := inspectArchive(ctx, data, asset)
+	if err != nil || verifiedDigest != pin.ExecutableSHA256 {
 		return "", 0, ErrUnverified
 	}
 
 	exeDigest, exeSize, err := extractExecutableFromData(ctx, data, asset, targetExePath)
-	if err != nil {
+	if err != nil || exeDigest != pin.ExecutableSHA256 {
 		_ = os.Remove(targetExePath)
-		return "", 0, err
+		return "", 0, errors.Join(ErrExecutableMismatch, err)
 	}
 	return exeDigest, exeSize, nil
 }
