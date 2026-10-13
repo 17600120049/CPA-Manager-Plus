@@ -881,19 +881,7 @@ func (r *Repository) Records(ctx context.Context, runID string, afterEventID int
 	if err := validateRunContract(run); err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, `select
-		e.id,
-		e.event_hash,
-		e.timestamp_ms,
-		`+archiveRecordExpression+` as payload
-	from usage_events e
-	where e.id > ? and e.id <= ? and e.timestamp_ms < ?
-		and not exists (
-			select 1 from usage_archive_event_refs archived
-			where archived.event_hash = e.event_hash
-		)
-	order by e.id asc
-	limit ?`, run.SchemaVersion, afterEventID, run.TargetEventID, run.CutoffTimestampMS, limit)
+	rows, err := r.db.QueryContext(ctx, archiveRecordsSQL, run.SchemaVersion, afterEventID, run.TargetEventID, run.CutoffTimestampMS, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -994,29 +982,10 @@ func (r *Repository) RecordSegment(ctx context.Context, runID string, segment Se
 		return Run{}, err
 	}
 	for _, ref := range refs {
-		if _, err := tx.ExecContext(ctx, `insert or ignore into usage_event_identity_ledger (
-			event_hash, raw_event_id, timestamp_ms, bucket_ms, aggregate_schema_version,
-			first_seen_at_ms, updated_at_ms
-		)
-		select
-			e.event_hash,
-			e.id,
-			e.timestamp_ms,
-			e.timestamp_ms - (e.timestamp_ms % 3600000),
-			0,
-			case when e.created_at_ms > 0 then e.created_at_ms else ? end,
-			?
-		from usage_events e
-		where e.id = ? and e.event_hash = ?`, nowMS, nowMS, ref.EventID, ref.EventHash); err != nil {
+		if _, err := tx.ExecContext(ctx, recordSegmentLedgerInsertSQL, nowMS, nowMS, ref.EventID, ref.EventHash); err != nil {
 			return Run{}, err
 		}
-		result, err := tx.ExecContext(ctx, `update usage_event_identity_ledger set
-			raw_event_id = ?,
-			timestamp_ms = (select timestamp_ms from usage_events where id = ? and event_hash = ?),
-			bucket_ms = (select timestamp_ms - (timestamp_ms % 3600000)
-				from usage_events where id = ? and event_hash = ?),
-			updated_at_ms = ?
-		where event_hash = ? and (raw_event_id is null or raw_event_id = ?)`,
+		result, err := tx.ExecContext(ctx, recordSegmentLedgerUpdateSQL,
 			ref.EventID,
 			ref.EventID,
 			ref.EventHash,
@@ -1036,13 +1005,7 @@ func (r *Repository) RecordSegment(ctx context.Context, runID string, segment Se
 		if updated != 1 {
 			return Run{}, fmt.Errorf("%w: identity ledger missing archive event %d", ErrCoverageIncomplete, ref.EventID)
 		}
-		result, err = tx.ExecContext(ctx, `insert into usage_archive_event_refs (
-			event_hash, run_id, segment_sequence, raw_event_id, timestamp_ms,
-			archived_at_ms, raw_deleted_at_ms
-		)
-		select event_hash, ?, ?, raw_event_id, timestamp_ms, ?, null
-		from usage_event_identity_ledger
-		where event_hash = ? and raw_event_id = ?`,
+		result, err = tx.ExecContext(ctx, recordSegmentRefsInsertSQL,
 			runID,
 			segment.Sequence,
 			nowMS,

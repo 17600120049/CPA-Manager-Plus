@@ -568,6 +568,9 @@ func validateProductionSQLiteOpen(ctx context.Context, sourceDB, scratch string)
 	if _, err := repo.Segments(ctx, ""); err != nil {
 		return fmt.Errorf("production SQLite open/migration archive segment reader: %w", err)
 	}
+	if err := repo.ValidateDataPlaneSchema(ctx); err != nil {
+		return fmt.Errorf("production SQLite open/migration archive data-plane: %w", err)
+	}
 	if err := db.Close(); err != nil {
 		return fmt.Errorf("close production SQLite open/migration: %w", err)
 	}

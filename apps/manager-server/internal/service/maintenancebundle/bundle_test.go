@@ -106,7 +106,7 @@ func rewriteManifest(t *testing.T, bundle string) {
 
 func saveConnections(t *testing.T, db *sql.DB, protector *security.Protector, which string) {
 	t.Helper()
-	if _, err := db.Exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at_ms INTEGER NOT NULL)`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at_ms INTEGER NOT NULL)`); err != nil {
 		t.Fatal(err)
 	}
 	repo := setting.New(db, protector)
@@ -218,19 +218,25 @@ func TestRealSQLiteWALAndMatchingEncryptedKeyRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedPath := filepath.Join(root, "seed.sqlite")
-	seed, err := sql.Open("sqlite", seedPath)
+	seed, err := managersqlite.Open(seedPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	seed.SetMaxOpenConns(1)
 	defer seed.Close()
-	for _, statement := range []string{"PRAGMA journal_mode=WAL", "PRAGMA wal_autocheckpoint=0", "CREATE TABLE usage_events (id INTEGER PRIMARY KEY, raw_json TEXT)"} {
+	for _, statement := range []string{"PRAGMA journal_mode=WAL", "PRAGMA wal_autocheckpoint=0"} {
 		if _, err := seed.Exec(statement); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := seed.Exec("INSERT INTO usage_events VALUES (1, ?)", `{"immutable-history":true}`); err != nil {
-		t.Fatal(err)
+	eventHash := sha256.Sum256([]byte("bundle-production-wal-event"))
+	result, err := store.New(seed).InsertEvents(context.Background(), []usageparser.Event{{
+		EventHash: hex.EncodeToString(eventHash[:]), TimestampMS: 1000,
+		Timestamp: time.UnixMilli(1000).UTC().Format(time.RFC3339Nano),
+		Model:     "gpt-test", RawJSON: `{"immutable-history":true}`, CreatedAtMS: 1000,
+	}})
+	if err != nil || result.Inserted != 1 {
+		t.Fatalf("insert production WAL event: %#v %v", result, err)
 	}
 	saveConnections(t, seed, protector, "both")
 	// Clone actual committed WAL bytes to an offline input. The seed writer never
@@ -1158,6 +1164,61 @@ func TestRestoreRequiresProductionSQLiteOpen(t *testing.T) {
 			noPublished(t, root, dest)
 			if err := Revalidate(context.Background(), BundleLayout(bundle), before); err != nil {
 				t.Fatalf("production open qualification changed bundle: %v", err)
+			}
+		})
+	}
+}
+
+func TestRestoreRequiresArchiveDataPlaneSchema(t *testing.T) {
+	for _, tc := range []struct {
+		name, ddl, runtimeError string
+	}{
+		{"refs-missing-event-hash", `DROP TABLE usage_archive_event_refs;
+			CREATE TABLE usage_archive_event_refs (run_id TEXT, raw_deleted_at_ms INTEGER,
+				raw_event_id INTEGER, timestamp_ms INTEGER)`, "event_hash"},
+		{"refs-missing-segment-sequence", `ALTER TABLE usage_archive_event_refs RENAME TO old_refs;
+			CREATE TABLE usage_archive_event_refs (event_hash TEXT PRIMARY KEY, run_id TEXT,
+				raw_event_id INTEGER, timestamp_ms INTEGER, archived_at_ms INTEGER, raw_deleted_at_ms INTEGER);
+			DROP TABLE old_refs`, "segment_sequence"},
+		{"refs-missing-archived-at", `ALTER TABLE usage_archive_event_refs RENAME TO old_refs;
+			CREATE TABLE usage_archive_event_refs (event_hash TEXT PRIMARY KEY, run_id TEXT,
+				segment_sequence INTEGER, raw_event_id INTEGER, timestamp_ms INTEGER, raw_deleted_at_ms INTEGER);
+			DROP TABLE old_refs`, "archived_at_ms"},
+		{"identity-ledger", `DROP TABLE usage_event_identity_ledger;
+			CREATE TABLE usage_event_identity_ledger (event_hash TEXT PRIMARY KEY)`, "raw_event_id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l, root, lock := archiveLifecycleFixture(t, "previewed", "")
+			bundle, _ := mustCreate(t, l, root, lock)
+			mutateBundleDB(t, bundle, tc.ddl)
+			rewriteManifest(t, bundle)
+			before, err := Inspect(context.Background(), BundleLayout(bundle))
+			if err != nil {
+				t.Fatal(err)
+			}
+			controlPath := filepath.Join(root, "production-control.sqlite")
+			if err := copyFile(context.Background(), filepath.Join(bundle, "database"), controlPath); err != nil {
+				t.Fatal(err)
+			}
+			control, err := managersqlite.Open(controlPath)
+			if err != nil {
+				t.Fatalf("counterexample must pass production migration: %v", err)
+			}
+			st := store.New(control)
+			defer st.Close()
+			service := usageService.New(st, usageService.WithArchive(usageService.ArchiveConfig{
+				Directory: filepath.Join(root, "control-archives"), SegmentEventLimit: 1,
+			}))
+			if _, err := service.ResumeArchive(context.Background(), "00000000000000000000000000000001"); err == nil || !strings.Contains(err.Error(), tc.runtimeError) {
+				t.Fatalf("production archive must fail on missing data-plane column %s: %v", tc.runtimeError, err)
+			}
+			dest := filepath.Join(root, "restored")
+			if _, err := RestoreNew(context.Background(), bundle, dest); err == nil || !strings.Contains(err.Error(), "production SQLite open/migration archive data-plane") {
+				t.Fatalf("unexecutable archive data-plane must fail after Verify passes: %v", err)
+			}
+			noPublished(t, root, dest)
+			if err := Revalidate(context.Background(), BundleLayout(bundle), before); err != nil {
+				t.Fatalf("data-plane qualification changed original bundle: %v", err)
 			}
 		})
 	}

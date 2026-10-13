@@ -104,7 +104,11 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   uses the foreign keys declared in the database schema.
 - Requires real production SQLite open/migration on a second private writable
   copy of DB + WAL/SHM, followed by foreign-key inspection and the production
-  archive run/segment reader queries. Same-name incomplete archive tables cannot
+  archive run/segment reader queries. Also compiles the shared production
+  Records and RecordSegment SQL with `EXPLAIN`, including the event refs and
+  identity ledger data path. No payloads are read or statements executed by this
+  compilation; it does not check coverage or ledger contents.
+  Same-name incomplete archive tables cannot
   pass merely because the matching validator's smaller query succeeds. This
   reuses maintained migrations/adapters without comparing full schema definitions.
   Original evidence is inspected on the read-only copy; migrations never change
