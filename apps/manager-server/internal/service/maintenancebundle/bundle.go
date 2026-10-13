@@ -368,6 +368,19 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 	if pageSize < 512 || pageSize > 65536 || pageSize&(pageSize-1) != 0 {
 		return errors.New("database header contains invalid page size")
 	}
+	// A nonempty rollback journal can change the logical DB on its first open.
+	// This slice qualifies offline WAL inputs, not rollback-journal recovery;
+	// never validate only the DB bytes and later publish an ignored journal.
+	if journalInfo, err := os.Lstat(l.DatabasePath + "-journal"); err == nil {
+		if !journalInfo.Mode().IsRegular() {
+			return errors.New("database rollback journal is not a regular file")
+		}
+		if journalInfo.Size() > 0 {
+			return errors.New("rollback journal recovery is not qualified for maintenance bundle")
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect database rollback journal: %w", err)
+	}
 
 	walPath := l.DatabasePath + "-wal"
 	if walInfo, err := os.Lstat(walPath); err == nil {
@@ -602,7 +615,7 @@ func validateArchiveSegments(ctx context.Context, db *sql.DB, root string, segme
 		return nil
 	}
 	// Do not filter by status: an invalid value must not hide a recorded file.
-	rows, err := db.QueryContext(ctx, `SELECT run_id, status, file_name, content_sha256, compressed_bytes
+	rows, err := db.QueryContext(ctx, `SELECT run_id, status, file_name, content_sha256, compressed_bytes, verified_at_ms
 		FROM usage_archive_segments`)
 	if err != nil {
 		return fmt.Errorf("query archive matching evidence: %w", err)
@@ -614,11 +627,19 @@ func validateArchiveSegments(ctx context.Context, db *sql.DB, root string, segme
 		}
 		var runID, status, fileName, expectedSHA string
 		var expectedSize int64
-		if err := rows.Scan(&runID, &status, &fileName, &expectedSHA, &expectedSize); err != nil {
+		var verifiedAt sql.NullInt64
+		if err := rows.Scan(&runID, &status, &fileName, &expectedSHA, &expectedSize, &verifiedAt); err != nil {
 			return fmt.Errorf("scan archive matching evidence: %w", err)
 		}
 		switch status {
-		case usagearchive.SegmentStatusPublished, usagearchive.SegmentStatusVerified:
+		case usagearchive.SegmentStatusPublished:
+			if verifiedAt.Valid {
+				return errors.New("published archive segment must not have verification timestamp")
+			}
+		case usagearchive.SegmentStatusVerified:
+			if !verifiedAt.Valid || verifiedAt.Int64 <= 0 {
+				return errors.New("verified archive segment requires positive verified_at_ms")
+			}
 		default:
 			return errors.New("invalid archive segment status")
 		}
@@ -705,7 +726,8 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, s
 	}
 	// Segment rows are already closed: inspection uses a single DB connection.
 	rows, err := db.QueryContext(ctx, `SELECT id, status, resume_status, manifest_file, manifest_sha256,
-		deleted_event_count, last_deleted_event_id, delete_started_at_ms, completed_at_ms FROM usage_archive_runs`)
+		deleted_event_count, last_deleted_event_id, delete_started_at_ms, completed_at_ms,
+		archive_digest, archived_at_ms, verified_at_ms FROM usage_archive_runs`)
 	if err != nil {
 		return fmt.Errorf("query archive run manifest evidence: %w", err)
 	}
@@ -715,11 +737,11 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, s
 			return err
 		}
 		var runID, status string
-		var resumeStatus, fileName, expectedSHA sql.NullString
+		var resumeStatus, fileName, expectedSHA, archiveDigest sql.NullString
 		var deletedCount, lastDeletedID int64
-		var deleteStarted, completed sql.NullInt64
+		var deleteStarted, completed, archivedAt, verifiedAt sql.NullInt64
 		if err := rows.Scan(&runID, &status, &resumeStatus, &fileName, &expectedSHA,
-			&deletedCount, &lastDeletedID, &deleteStarted, &completed); err != nil {
+			&deletedCount, &lastDeletedID, &deleteStarted, &completed, &archiveDigest, &archivedAt, &verifiedAt); err != nil {
 			return fmt.Errorf("scan archive run manifest evidence: %w", err)
 		}
 		policy, err := archiveRunPolicy(status, resumeStatus.String)
@@ -744,11 +766,32 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, s
 			(policy.segmentStatus == usagearchive.SegmentStatusVerified && evidence.published != 0) {
 			return errors.New("archive segment status does not match run lifecycle")
 		}
-		if policy.manifestForbidden && (fileName.String != "" || expectedSHA.String != "") {
+		publicationRecorded := archiveDigest.String != "" || archivedAt.Valid || fileName.String != "" || expectedSHA.String != ""
+		if policy.manifestForbidden && publicationRecorded {
 			return errors.New("archive run lifecycle forbids manifest metadata")
 		}
-		if policy.manifestRequired && (fileName.String == "" || expectedSHA.String == "") {
+		if (policy.manifestRequired || publicationRecorded) && (fileName.String == "" || expectedSHA.String == "") {
 			return errors.New("published archive run requires manifest file and digest")
+		}
+		// MarkArchived and MarkVerified publish these fields atomically with the
+		// run/segment statuses. Bind the snapshot to those transition receipts,
+		// without importing coverage, manifest decoding or historical validation.
+		if (policy.manifestRequired || publicationRecorded) &&
+			(strings.TrimSpace(archiveDigest.String) == "" || !archivedAt.Valid || archivedAt.Int64 <= 0) {
+			return errors.New("archive publication requires archive_digest and positive archived_at_ms")
+		}
+		if policy.segmentStatus == usagearchive.SegmentStatusVerified {
+			if !verifiedAt.Valid || verifiedAt.Int64 <= 0 {
+				return errors.New("verified archive run requires positive verified_at_ms")
+			}
+		} else if verifiedAt.Valid {
+			return errors.New("archive verification evidence does not match run lifecycle")
+		}
+		if policy.deletionAllowed && (!deleteStarted.Valid || deleteStarted.Int64 <= 0) {
+			return errors.New("archive deletion stage requires positive delete_started_at_ms")
+		}
+		if status == usagearchive.StatusCompleted && (!completed.Valid || completed.Int64 <= 0) {
+			return errors.New("completed archive run requires positive completed_at_ms")
 		}
 		if policy.segmentsRequired && evidence.published+evidence.verified == 0 {
 			return errors.New("published archive run requires segment evidence")

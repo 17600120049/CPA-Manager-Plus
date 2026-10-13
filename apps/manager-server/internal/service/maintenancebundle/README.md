@@ -38,6 +38,11 @@ The inventory always includes database, WAL, SHM, rollback journal, data key,
 config and archive root. Nested archives include every directory (even empty
 directories) and every regular file. SHA-256 covers full file contents, with
 explicit absence; file permissions and timestamps are not release identity.
+Non-empty rollback journals fail matching evidence with
+`rollback journal recovery is not qualified for maintenance bundle`. SQLite
+could roll back database pages on first open, so these inputs are never
+published by create/restore. Absent or empty regular journals remain supported;
+rollback-journal recovery qualification is deferred to Phase4A-07.
 Manifest format **version 2** requires a deterministic aggregate `sourceRevision`
 across all inventory entries. Version 1 bundles from the earlier offline
 primitives (including v1 manifests with an added revision) are explicitly
@@ -105,6 +110,8 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
 - Detects and rejects malformed config (invalid JSON).
 - Reads every archive segment and rejects any status other than `published` or
   `verified`; an invalid status cannot filter a record out of matching evidence.
+  Published segments must have no verification timestamp; verified segments
+  require positive `verified_at_ms`, as written atomically by `MarkVerified`.
   For supported segments, rechecks the recorded
   `run_id/file_name` invariant and root containment, rejects non-regular files,
   and compares full-file SHA-256 and size with `content_sha256` and
@@ -118,15 +125,23 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   require a manifest and corresponding segments, all `verified`. Failed runs
   apply these requirements according to their `verifying`/`deleting` resume
   stage. Missing segment tables or rows cannot bypass post-publication evidence.
+  Publication requires a non-blank `archive_digest` and positive
+  `archived_at_ms`. Verified stages additionally require positive run
+  `verified_at_ms`; deleting stages (including failed resuming deletion) require
+  positive `delete_started_at_ms`, and completed runs require positive
+  `completed_at_ms`. These checks bind the snapshot to the fields written by
+  the production transitions; they do not recompute archive coverage or digests.
   Unknown run/resume states, missing failed resume stages, and resume stages on
   non-failed runs fail closed.
   `previewed` forbids segment records and manifest metadata. `archiving` and
   failed runs resuming `archiving` allow optional segments, all `published`,
   and forbid manifest metadata. `cancelled` permits optional `published`
-  segments and optional manifest metadata because cancellation can retain
-  published files. Where manifest metadata is optional, either recorded field
-  makes both mandatory and their file is checked; paired NULL/empty fields
-  remain absent. The path must remain inside its run
+  segments and optional publication metadata because cancellation can retain
+  published files. Any recorded publication field requires the complete
+  manifest pair, archive digest and positive publication timestamp. Run
+  verification timestamps are forbidden before verification or on cancelled
+  runs. When no publication evidence is recorded, paired NULL/empty manifest
+  fields remain absent. The path must remain inside its run
   directory under the archive root, and its file must be regular, single-linked,
   non-empty and at most 4 MiB, with full-file SHA-256 matching the database.
   This check does not decode the archive manifest or validate event contents,

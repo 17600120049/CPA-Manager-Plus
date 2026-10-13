@@ -1,6 +1,7 @@
 package maintenancebundle
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -8,18 +9,23 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/setting"
 	managersqlite "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
+	usageService "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/usage"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
+	usageparser "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
 	_ "modernc.org/sqlite"
 )
 
@@ -683,7 +689,7 @@ func TestRestoreArchiveMatchingEvidence(t *testing.T) {
 		for _, change := range []string{"none", "missing", "root-missing", "foreign-content", "wrong-size", "traversal", "absolute", "wrong-run", "backslash", "directory"} {
 			t.Run(status+"/"+change, func(t *testing.T) {
 				l, root, lock := fixture(t)
-				fileName := "run-1/segment.jsonl.gz"
+				fileName := "00000000000000000000000000000001/segment-000001-00000000000000000001-00000000000000000001.jsonl.gz"
 				segPath := filepath.Join(l.ArchivesPath, filepath.FromSlash(fileName))
 				if err := os.MkdirAll(filepath.Dir(segPath), 0o700); err != nil {
 					t.Fatal(err)
@@ -698,10 +704,10 @@ func TestRestoreArchiveMatchingEvidence(t *testing.T) {
 				// These are the production columns consumed by bundle inspection.
 				if _, err := db.Exec(`CREATE TABLE usage_archive_segments (
 					run_id TEXT NOT NULL, sequence INTEGER NOT NULL, status TEXT NOT NULL,
-					file_name TEXT NOT NULL, content_sha256 TEXT NOT NULL, compressed_bytes INTEGER NOT NULL,
+					file_name TEXT NOT NULL, content_sha256 TEXT NOT NULL, compressed_bytes INTEGER NOT NULL, verified_at_ms INTEGER,
 					PRIMARY KEY (run_id, sequence));
-					INSERT INTO usage_archive_segments VALUES ('run-1', 1, ?, ?, ?, ?)`,
-					status, fileName, hex.EncodeToString(digest[:]), len(payload)); err != nil {
+					INSERT INTO usage_archive_segments VALUES ('00000000000000000000000000000001', 1, ?, ?, ?, ?, CASE WHEN ? = 'verified' THEN 1 ELSE NULL END)`,
+					status, fileName, hex.EncodeToString(digest[:]), len(payload), status); err != nil {
 					t.Fatal(err)
 				}
 				if err := db.Close(); err != nil {
@@ -740,7 +746,7 @@ func TestRestoreArchiveMatchingEvidence(t *testing.T) {
 					case "wrong-run":
 						query, value = "UPDATE usage_archive_segments SET run_id = ?", "other-run"
 					case "backslash":
-						value = `run-1\segment.jsonl.gz`
+						value = `00000000000000000000000000000001\segment-000001-00000000000000000001-00000000000000000001.jsonl.gz`
 					}
 					if _, err := db.Exec(query, value); err != nil {
 						t.Fatal(err)
@@ -768,44 +774,161 @@ func TestRestoreArchiveMatchingEvidence(t *testing.T) {
 }
 
 func archiveRunFixture(t *testing.T) (Layout, string, *processlock.Lock) {
+	return archiveLifecycleFixture(t, "completed", "")
+}
+
+func archiveLifecycleFixture(t *testing.T, status, resume string) (Layout, string, *processlock.Lock) {
 	t.Helper()
 	l, root, lock := fixture(t)
 	db, err := managersqlite.Open(l.DatabasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	runDir := filepath.Join(l.ArchivesPath, "run-1")
-	if err := os.Mkdir(runDir, 0o700); err != nil {
+	st := store.New(db)
+	defer st.Close()
+	ctx := context.Background()
+	eventHash := sha256.Sum256([]byte("bundle-production-archive-event"))
+	result, err := st.InsertEvents(ctx, []usageparser.Event{{
+		RequestID: "bundle-production-event", EventHash: hex.EncodeToString(eventHash[:]),
+		TimestampMS: 1000, Timestamp: time.UnixMilli(1000).UTC().Format(time.RFC3339Nano),
+		Provider: "codex", ExecutorType: "CodexExecutor", Model: "gpt-test",
+		Endpoint: "POST /v1/responses", Method: "POST", Path: "/v1/responses",
+		AuthIndex: "auth-1", Source: "account@example.com", AccountSnapshot: "account@example.com",
+		InputTokens: 100, OutputTokens: 20, TotalTokens: 120,
+		RawJSON: `{"request":{"model":"gpt-test"}}`, CreatedAtMS: 1000,
+	}})
+	if err != nil || result.Inserted != 1 {
+		t.Fatalf("insert production archive event: %#v %v", result, err)
+	}
+	const runID = "00000000000000000000000000000001"
+	if _, err := st.UsageArchives.CreateRun(ctx, runID, 2000, time.Now().UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
-	segment := []byte("instance A archive bytes")
-	manifest := []byte(`{"instance":"A"}`)
-	put(t, filepath.Join(runDir, "segment.jsonl.gz"), segment)
-	put(t, filepath.Join(runDir, "manifest.json"), manifest)
-	segmentSHA, manifestSHA := sha256.Sum256(segment), sha256.Sum256(manifest)
-	// Use the migrated production schema, including nullable run manifest fields.
-	// Completed history has no remaining raw usage_events in this fixture.
-	if _, err := db.Exec(`INSERT INTO usage_archive_runs (
-		id, schema_version, format, status, cutoff_timestamp_ms, target_event_id,
-		event_count, created_at_ms, updated_at_ms, manifest_file, manifest_sha256,
-		last_deleted_event_id, deleted_event_count
-	) VALUES ('run-1', 1, 'gzip-jsonl-v1', 'completed', 2, 1, 1, 1, 1,
-		'run-1/manifest.json', ?, 1, 1)`, hex.EncodeToString(manifestSHA[:])); err != nil {
-		t.Fatal(err)
+	service := usageService.New(st, usageService.WithArchive(usageService.ArchiveConfig{
+		Directory: l.ArchivesPath, SegmentEventLimit: 1, DeleteBatchSize: 1, AggregateReadsEnabled: true,
+	}))
+	stage := status
+	if status == "failed" {
+		stage = resume
 	}
-	if _, err := db.Exec(`INSERT INTO usage_archive_segments (
-		run_id, sequence, status, file_name, first_event_id, last_event_id,
-		min_timestamp_ms, max_timestamp_ms, event_count, uncompressed_bytes,
-		compressed_bytes, content_sha256, event_hash_digest, created_at_ms
-	) VALUES ('run-1', 1, 'verified', 'run-1/segment.jsonl.gz', 1, 1, 1, 1, 1, 1, ?, ?, 'fixture-event-digest', 1)`,
-		len(segment), hex.EncodeToString(segmentSHA[:])); err != nil {
-		t.Fatal(err)
+	switch stage {
+	case "previewed":
+	case "archiving":
+		_, err = st.UsageArchives.BeginArchive(ctx, runID, time.Now().UnixMilli())
+	case "cancelled":
+		_, err = service.CancelArchive(ctx, runID)
+	default:
+		if _, err := service.ResumeArchive(ctx, runID); err != nil {
+			t.Fatalf("publish production archive: %v", err)
+		}
+		if stage == "verifying" {
+			_, err = st.UsageArchives.BeginVerification(ctx, runID, time.Now().UnixMilli())
+		} else if stage != "archived" {
+			catchUpArchiveFixture(t, st)
+			if _, err := service.VerifyArchive(ctx, runID); err != nil {
+				t.Fatalf("verify production archive: %v", err)
+			}
+			if stage == "deleting" {
+				_, err = st.UsageArchives.BeginDelete(ctx, runID, time.Now().UnixMilli())
+			} else if stage == "completed" {
+				_, err = service.DeleteArchive(ctx, runID)
+			}
+		}
 	}
-	if err := db.Close(); err != nil {
+	if err != nil {
+		t.Fatalf("enter production archive stage %s: %v", stage, err)
+	}
+	if status == "failed" {
+		if _, err := st.UsageArchives.RecordFailure(ctx, runID, resume, errors.New("fixture stage interruption"), time.Now().UnixMilli()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	actual, err := service.ArchiveStatus(ctx, runID)
+	if err != nil || actual.Run.Status != status || actual.Run.ResumeStatus != resume {
+		t.Fatalf("production snapshot status: %#v %v", actual.Run, err)
+	}
+	if status == "completed" {
+		if actual.Run.ArchiveDigest == "" || actual.Run.ArchivedAtMS <= 0 || actual.Run.VerifiedAtMS <= 0 ||
+			actual.Run.DeleteStartedAtMS <= 0 || actual.Run.CompletedAtMS <= 0 || actual.Run.DeletedEventCount != 1 ||
+			len(actual.Segments) != 1 || actual.Segments[0].VerifiedAtMS <= 0 {
+			t.Fatalf("production completed evidence missing: %#v", actual)
+		}
+		var rawCount int
+		if err := db.QueryRow("SELECT count(*) FROM usage_events").Scan(&rawCount); err != nil || rawCount != 0 {
+			t.Fatalf("completed snapshot must have deleted raw usage: %d %v", rawCount, err)
+		}
+	}
+	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
 	return l, root, lock
+}
+
+func catchUpArchiveFixture(t *testing.T, st *store.Store) {
+	t.Helper()
+	ctx, nowMS := context.Background(), time.Now().UnixMilli()
+	catchUp := func(name string, run func() (bool, error)) {
+		t.Helper()
+		for i := 0; i < 10; i++ {
+			pending, err := run()
+			if err != nil {
+				t.Fatalf("catch up production fixture %s: %v", name, err)
+			}
+			if !pending {
+				return
+			}
+		}
+		t.Fatalf("production fixture %s did not catch up", name)
+	}
+	catchUp("identity", func() (bool, error) { r, e := st.CatchUpIdentityProjection(ctx, 16, nowMS); return r.Pending, e })
+	catchUp("aggregate", func() (bool, error) { r, e := st.CatchUpUsageHourlyAggregate(ctx, 16, nowMS); return r.Pending, e })
+	catchUp("pricing", func() (bool, error) { r, e := st.CatchUpUsagePricing(ctx, 16, nowMS); return r.Pending, e })
+	for _, run := range []func(context.Context, int, int64) (store.UsageMonitoringCatchUpResult, error){
+		st.CatchUpUsageMonitoringStats, st.CatchUpUsageMonitoringMetadata,
+		st.CatchUpUsageMonitoringProjection, st.CatchUpCodexLegacyIdentityEvidence,
+	} {
+		catchUp("monitoring", func() (bool, error) { r, e := run(ctx, 16, nowMS); return r.Pending, e })
+	}
+	catchUp("account history", func() (bool, error) { r, e := st.CatchUpAccountHistoryRollups(ctx, 16, nowMS); return r.Pending, e })
+}
+
+func TestRestoreProductionArchiveSnapshot(t *testing.T) {
+	for _, status := range []string{"verified", "completed"} {
+		t.Run(status, func(t *testing.T) {
+			l, root, lock := archiveLifecycleFixture(t, status, "")
+			bundle, _ := mustCreate(t, l, root, lock)
+			dest := filepath.Join(root, "restored")
+			if _, err := RestoreNew(context.Background(), bundle, dest); err != nil {
+				t.Fatal(err)
+			}
+			restored := BundleLayout(dest)
+			st, err := store.Open(restored.DatabasePath)
+			if err != nil {
+				t.Fatalf("first production open of restored snapshot: %v", err)
+			}
+			defer st.Close()
+			service := usageService.New(st, usageService.WithArchive(usageService.ArchiveConfig{
+				Directory: restored.ArchivesPath, SegmentEventLimit: 1, DeleteBatchSize: 1, AggregateReadsEnabled: true,
+			}))
+			ctx := context.Background()
+			const runID = "00000000000000000000000000000001"
+			if status == "verified" {
+				// This executes production manifest decoding and archive/delete safety
+				// on the restored files, rather than only inspecting bundle metadata.
+				if _, err := service.DeleteArchive(ctx, runID); err != nil {
+					t.Fatalf("production delete guard rejected restored verified archive: %v", err)
+				}
+			}
+			actual, err := service.ArchiveStatus(ctx, runID)
+			if err != nil || actual.Run.Status != "completed" || actual.Run.DeletedEventCount != 1 {
+				t.Fatalf("restored production archive did not complete: %#v %v", actual, err)
+			}
+			rawCount, _, err := st.Counts(ctx)
+			if err != nil || rawCount != 0 {
+				t.Fatalf("restored archive raw usage count: %d %v", rawCount, err)
+			}
+		})
+	}
 }
 
 func TestRestoreInvalidArchiveSegmentStatus(t *testing.T) {
@@ -824,7 +947,7 @@ func TestRestoreInvalidArchiveSegmentStatus(t *testing.T) {
 				if err := db.Close(); err != nil {
 					t.Fatal(err)
 				}
-				segPath := filepath.Join(bundle, "usage-archives", "run-1", "segment.jsonl.gz")
+				segPath := filepath.Join(bundle, "usage-archives", "00000000000000000000000000000001", "segment-000001-00000000000000000001-00000000000000000001.jsonl.gz")
 				if change == "missing" {
 					if err := os.Remove(segPath); err != nil {
 						t.Fatal(err)
@@ -848,7 +971,7 @@ func TestRestoreArchiveRunManifestMatchingEvidence(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			l, root, lock := archiveRunFixture(t)
 			bundle, _ := mustCreate(t, l, root, lock)
-			manifestPath := filepath.Join(bundle, "usage-archives", "run-1", "manifest.json")
+			manifestPath := filepath.Join(bundle, "usage-archives", "00000000000000000000000000000001", "manifest.json")
 			switch change {
 			case "missing", "directory", "segments-table-absent":
 				if err := os.Remove(manifestPath); err != nil {
@@ -860,7 +983,12 @@ func TestRestoreArchiveRunManifestMatchingEvidence(t *testing.T) {
 					}
 				}
 			case "foreign-content":
-				put(t, manifestPath, []byte(`{"instance":"B"}`))
+				payload, err := os.ReadFile(manifestPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				payload[0] ^= 1 // Same filename and size; DB SHA must reject replacement.
+				put(t, manifestPath, payload)
 			case "empty":
 				put(t, manifestPath, nil)
 			case "oversize":
@@ -871,9 +999,9 @@ func TestRestoreArchiveRunManifestMatchingEvidence(t *testing.T) {
 				"missing-file":          "UPDATE usage_archive_runs SET manifest_file = ''",
 				"invalid-sha":           "UPDATE usage_archive_runs SET manifest_sha256 = 'invalid'",
 				"traversal":             "UPDATE usage_archive_runs SET manifest_file = '../database'",
-				"backslash":             `UPDATE usage_archive_runs SET manifest_file = 'run-1\manifest.json'`,
+				"backslash":             `UPDATE usage_archive_runs SET manifest_file = '00000000000000000000000000000001\manifest.json'`,
 				"wrong-run":             "UPDATE usage_archive_runs SET manifest_file = 'other-run/manifest.json'",
-				"segments-table-absent": "DROP TABLE usage_archive_segments",
+				"segments-table-absent": "DELETE FROM usage_archive_event_refs; DROP TABLE usage_archive_segments",
 			}
 			if query, ok := queries[change]; ok || change == "absolute" {
 				db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
@@ -924,24 +1052,11 @@ func TestRestoreArchiveRelationalAndDowngradeEvidence(t *testing.T) {
 			}
 			switch change {
 			case "orphan-segment":
-				_, err = db.Exec("DELETE FROM usage_archive_runs WHERE id = 'run-1'")
+				_, err = db.Exec("DELETE FROM usage_archive_runs WHERE id = '00000000000000000000000000000001'")
 			case "orphan-ref-ledger":
-				_, err = db.Exec(`INSERT INTO usage_archive_event_refs
-					(event_hash, run_id, segment_sequence, raw_event_id, timestamp_ms, archived_at_ms)
-					VALUES ('missing-ledger', 'run-1', 1, 1, 1, 1)`)
-			case "matching-ref", "orphan-ref-segment":
-				if _, err := db.Exec(`INSERT INTO usage_event_identity_ledger
-					(event_hash, timestamp_ms, bucket_ms, first_seen_at_ms, updated_at_ms)
-					VALUES ('known-event', 1, 0, 1, 1)`); err != nil {
-					t.Fatal(err)
-				}
-				sequence := 1
-				if change == "orphan-ref-segment" {
-					sequence = 99
-				}
-				_, err = db.Exec(`INSERT INTO usage_archive_event_refs
-					(event_hash, run_id, segment_sequence, raw_event_id, timestamp_ms, archived_at_ms)
-					VALUES ('known-event', 'run-1', ?, 1, 1, 1)`, sequence)
+				_, err = db.Exec("UPDATE usage_archive_event_refs SET event_hash = 'missing-ledger'")
+			case "orphan-ref-segment":
+				_, err = db.Exec("UPDATE usage_archive_event_refs SET segment_sequence = 99")
 			case "completed-to-previewed":
 				_, err = db.Exec("UPDATE usage_archive_runs SET status = 'previewed', manifest_file = NULL, manifest_sha256 = NULL")
 			}
@@ -956,7 +1071,7 @@ func TestRestoreArchiveRelationalAndDowngradeEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			if change == "completed-to-previewed" {
-				if err := os.Remove(filepath.Join(bundle, "usage-archives", "run-1", "manifest.json")); err != nil {
+				if err := os.Remove(filepath.Join(bundle, "usage-archives", "00000000000000000000000000000001", "manifest.json")); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -981,6 +1096,193 @@ func TestRestoreArchiveRelationalAndDowngradeEvidence(t *testing.T) {
 	}
 }
 
+func TestRestoreArchiveAtomicTransitionEvidence(t *testing.T) {
+	for _, state := range []struct{ status, resume string }{
+		{"archived", ""}, {"verifying", ""}, {"failed", "verifying"},
+		{"verified", ""}, {"deleting", ""}, {"failed", "deleting"}, {"completed", ""},
+	} {
+		stage := state.status
+		if stage == "failed" {
+			stage = state.resume
+		}
+		fields := []string{"archive_digest", "archived_at_ms"}
+		if stage == "verified" || stage == "deleting" || stage == "completed" {
+			fields = append(fields, "verified_at_ms", "segment_verified_at_ms")
+		}
+		if stage == "deleting" || stage == "completed" {
+			fields = append(fields, "delete_started_at_ms")
+		}
+		if stage == "completed" {
+			fields = append(fields, "completed_at_ms")
+		}
+		for _, field := range fields {
+			values := []string{"NULL", "0", "-1"}
+			if field == "archive_digest" {
+				values = []string{"NULL", "''", "'   '"}
+			}
+			for _, value := range values {
+				t.Run(state.status+"/"+state.resume+"/"+field+"/"+value, func(t *testing.T) {
+					l, root, lock := archiveLifecycleFixture(t, state.status, state.resume)
+					bundle, _ := mustCreate(t, l, root, lock)
+					db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					query := "UPDATE usage_archive_runs SET " + field + " = " + value
+					if field == "segment_verified_at_ms" {
+						query = "UPDATE usage_archive_segments SET verified_at_ms = " + value
+					}
+					if _, err := db.Exec(query); err != nil {
+						t.Fatal(err)
+					}
+					if err := db.Close(); err != nil {
+						t.Fatal(err)
+					}
+					rewriteManifest(t, bundle)
+					dest := filepath.Join(root, "restored")
+					if _, err := RestoreNew(context.Background(), bundle, dest); err == nil || !strings.Contains(err.Error(), "archive") {
+						t.Fatalf("missing atomic transition evidence %s must fail: %v", field, err)
+					}
+					noPublished(t, root, dest)
+				})
+			}
+		}
+	}
+}
+
+func TestRollbackJournalMatchingPolicy(t *testing.T) {
+	for _, payload := range [][]byte{nil, {}, []byte("unqualified rollback journal")} {
+		name := "absent"
+		if payload != nil {
+			name = "empty"
+			if len(payload) > 0 {
+				name = "nonempty"
+			}
+		}
+		t.Run(name, func(t *testing.T) {
+			l, root, lock := fixture(t)
+			if payload != nil {
+				put(t, l.DatabasePath+"-journal", payload)
+			}
+			before, err := Inspect(context.Background(), l)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bundle := filepath.Join(root, "bundle")
+			_, err = Create(context.Background(), l, bundle, lock)
+			if len(payload) > 0 {
+				if err == nil || !strings.Contains(err.Error(), "rollback journal recovery is not qualified") {
+					t.Fatalf("nonempty journal must fail before publication: %v", err)
+				}
+				noPublished(t, root, bundle)
+			} else if err != nil {
+				t.Fatalf("absent/empty journal remains supported: %v", err)
+			} else if _, err := RestoreNew(context.Background(), bundle, filepath.Join(root, "restored")); err != nil {
+				t.Fatal(err)
+			}
+			if err := Revalidate(context.Background(), l, before); err != nil {
+				t.Fatalf("journal policy inspection changed source: %v", err)
+			}
+		})
+	}
+}
+
+func TestRestoreHotRollbackJournal(t *testing.T) {
+	if helperDB := os.Getenv("CPAMP_BUNDLE_HOT_JOURNAL_DB"); helperDB != "" {
+		db, err := sql.Open("sqlite", helperDB)
+		if err != nil {
+			t.Fatal(err)
+		}
+		db.SetMaxOpenConns(1)
+		if _, err := db.Exec(`PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;
+			PRAGMA cache_size=2; PRAGMA cache_spill=ON; BEGIN IMMEDIATE;
+			UPDATE journal_test SET note = CAST(hex(zeroblob(2000)) AS BLOB)`); err != nil {
+			t.Fatal(err)
+		}
+		// Exit without Close/Rollback: spilled uncommitted pages and a real hot
+		// journal survive exactly as after a writer crash, in task-owned test data.
+		os.Exit(0)
+	}
+	l, root, lock := fixture(t)
+	bundle, _ := mustCreate(t, l, root, lock)
+	seedPath := filepath.Join(root, "rollback.sqlite")
+	seed, err := sql.Open("sqlite", seedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seed.Exec(`PRAGMA journal_mode=DELETE; CREATE TABLE journal_test (id INTEGER PRIMARY KEY, note BLOB);
+		WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<64)
+		INSERT INTO journal_test SELECT n, zeroblob(4000) FROM seq`); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	committed, err := os.ReadFile(seedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(os.Args[0], "-test.run=^TestRestoreHotRollbackJournal$")
+	child.Env = append(os.Environ(), "CPAMP_BUNDLE_HOT_JOURNAL_DB="+seedPath)
+	if output, err := child.CombinedOutput(); err != nil {
+		t.Fatalf("crash fixture writer: %v %s", err, output)
+	}
+	dirty, err := os.ReadFile(seedPath)
+	if err != nil || bytes.Equal(committed, dirty) {
+		t.Fatalf("fixture did not spill uncommitted pages: %v", err)
+	}
+	journal, err := os.ReadFile(seedPath + "-journal")
+	if err != nil || len(journal) < 28 || !bytes.Equal(journal[:8], []byte{0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7}) {
+		t.Fatalf("fixture did not leave a hot rollback journal: %v", err)
+	}
+	controlPath := filepath.Join(root, "recovery-control.sqlite")
+	put(t, controlPath, dirty)
+	put(t, controlPath+"-journal", journal)
+	control, err := sql.Open("sqlite", sqliteURI(controlPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value string
+	err = control.QueryRow("SELECT hex(substr(note,1,1)) FROM journal_test WHERE id=1").Scan(&value)
+	_ = control.Close()
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "readonly") {
+		t.Fatalf("read-only open must require journal recovery: %v", err)
+	}
+	control, err = sql.Open("sqlite", controlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := control.QueryRow("SELECT hex(substr(note,1,1)) FROM journal_test WHERE id=1").Scan(&value); err != nil || value != "00" {
+		t.Fatalf("writable control must roll back to committed bytes: %q %v", value, err)
+	}
+	if err := control.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(controlPath + "-journal"); !os.IsNotExist(err) {
+		t.Fatalf("recovery control did not consume journal: %v", err)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if err := os.Remove(filepath.Join(bundle, "database") + suffix); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	put(t, filepath.Join(bundle, "database"), dirty)
+	put(t, filepath.Join(bundle, "database-journal"), journal)
+	rewriteManifest(t, bundle)
+	before, err := Inspect(context.Background(), BundleLayout(bundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(root, "restored")
+	if _, err := RestoreNew(context.Background(), bundle, dest); err == nil || !strings.Contains(err.Error(), "rollback journal recovery is not qualified") {
+		t.Fatalf("hot journal bundle must fail matching after Verify passes: %v", err)
+	}
+	noPublished(t, root, dest)
+	if err := Revalidate(context.Background(), BundleLayout(bundle), before); err != nil {
+		t.Fatalf("rejected hot journal bundle was mutated: %v", err)
+	}
+}
+
 func TestRestoreArchiveLifecycleRequiredEvidence(t *testing.T) {
 	states := []struct{ status, resume, segment string }{
 		{"archived", "", "published"}, {"verifying", "", "published"},
@@ -990,29 +1292,17 @@ func TestRestoreArchiveLifecycleRequiredEvidence(t *testing.T) {
 	for _, state := range states {
 		for _, change := range []string{"none", "manifest-cleared", "manifest-empty", "segment-status-mismatch", "mixed-segment-statuses", "segments-table-absent", "segments-empty"} {
 			t.Run(state.status+"/"+state.resume+"/"+change, func(t *testing.T) {
-				l, root, lock := archiveRunFixture(t)
+				l, root, lock := archiveLifecycleFixture(t, state.status, state.resume)
 				bundle, _ := mustCreate(t, l, root, lock)
 				db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := db.Exec("UPDATE usage_archive_runs SET status = ?, resume_status = ?", state.status, state.resume); err != nil {
-					t.Fatal(err)
-				}
-				if state.segment == "published" || state.status == "verified" {
-					if _, err := db.Exec(`UPDATE usage_archive_runs SET deleted_event_count = 0,
-						last_deleted_event_id = 0, delete_started_at_ms = NULL, completed_at_ms = NULL`); err != nil {
-						t.Fatal(err)
-					}
-				}
-				if _, err := db.Exec("UPDATE usage_archive_segments SET status = ?", state.segment); err != nil {
-					t.Fatal(err)
-				}
 				queries := map[string]string{
 					"manifest-cleared":      "UPDATE usage_archive_runs SET manifest_file = NULL, manifest_sha256 = NULL",
 					"manifest-empty":        "UPDATE usage_archive_runs SET manifest_file = '', manifest_sha256 = ''",
-					"segments-table-absent": "DROP TABLE usage_archive_segments",
-					"segments-empty":        "DELETE FROM usage_archive_segments",
+					"segments-table-absent": "DELETE FROM usage_archive_event_refs; DROP TABLE usage_archive_segments",
+					"segments-empty":        "DELETE FROM usage_archive_event_refs; DELETE FROM usage_archive_segments",
 				}
 				if query, ok := queries[change]; ok {
 					if _, err := db.Exec(query); err != nil {
@@ -1025,22 +1315,23 @@ func TestRestoreArchiveLifecycleRequiredEvidence(t *testing.T) {
 						otherStatus = "verified"
 					}
 					if change == "mixed-segment-statuses" {
-						payload, err := os.ReadFile(filepath.Join(bundle, "usage-archives", "run-1", "segment.jsonl.gz"))
+						payload, err := os.ReadFile(filepath.Join(bundle, "usage-archives", "00000000000000000000000000000001", "segment-000001-00000000000000000001-00000000000000000001.jsonl.gz"))
 						if err != nil {
 							t.Fatal(err)
 						}
-						put(t, filepath.Join(bundle, "usage-archives", "run-1", "second-segment.jsonl.gz"), payload)
+						put(t, filepath.Join(bundle, "usage-archives", "00000000000000000000000000000001", "second-segment-000001-00000000000000000001-00000000000000000001.jsonl.gz"), payload)
 						if _, err := db.Exec(`INSERT INTO usage_archive_segments (
 						run_id, sequence, status, file_name, first_event_id, last_event_id,
 						min_timestamp_ms, max_timestamp_ms, event_count, uncompressed_bytes,
-						compressed_bytes, content_sha256, event_hash_digest, created_at_ms
-						) SELECT run_id, 2, ?, 'run-1/second-segment.jsonl.gz', first_event_id, last_event_id,
+						compressed_bytes, content_sha256, event_hash_digest, created_at_ms, verified_at_ms
+						) SELECT run_id, 2, ?, '00000000000000000000000000000001/second-segment-000001-00000000000000000001-00000000000000000001.jsonl.gz', first_event_id, last_event_id,
 						min_timestamp_ms, max_timestamp_ms, event_count, uncompressed_bytes,
-						compressed_bytes, content_sha256, event_hash_digest, created_at_ms
-					FROM usage_archive_segments WHERE sequence = 1`, otherStatus); err != nil {
+						compressed_bytes, content_sha256, event_hash_digest, created_at_ms,
+						CASE WHEN ? = 'verified' THEN 2 ELSE NULL END
+					FROM usage_archive_segments WHERE sequence = 1`, otherStatus, otherStatus); err != nil {
 							t.Fatal(err)
 						}
-					} else if _, err := db.Exec("UPDATE usage_archive_segments SET status = ?", otherStatus); err != nil {
+					} else if _, err := db.Exec("UPDATE usage_archive_segments SET status = ?, verified_at_ms = CASE WHEN ? = 'verified' THEN 2 ELSE NULL END", otherStatus, otherStatus); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -1048,7 +1339,7 @@ func TestRestoreArchiveLifecycleRequiredEvidence(t *testing.T) {
 					t.Fatal(err)
 				}
 				if change == "manifest-cleared" || change == "manifest-empty" {
-					if err := os.Remove(filepath.Join(bundle, "usage-archives", "run-1", "manifest.json")); err != nil {
+					if err := os.Remove(filepath.Join(bundle, "usage-archives", "00000000000000000000000000000001", "manifest.json")); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -1083,31 +1374,35 @@ func TestRestorePrepublicationArchivePolicy(t *testing.T) {
 		for _, segment := range []string{"none", "published", "verified"} {
 			for _, manifest := range []string{"absent", "present"} {
 				t.Run(state.status+"/"+state.resume+"/"+segment+"/"+manifest, func(t *testing.T) {
-					l, root, lock := archiveRunFixture(t)
+					l, root, lock := archiveLifecycleFixture(t, "archived", "")
 					bundle, _ := mustCreate(t, l, root, lock)
 					db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
 					if err != nil {
 						t.Fatal(err)
 					}
-					// Clear irreversible markers to isolate the segment/manifest policy.
+					// Keep raw usage intact while forging prepublication/cancelled metadata.
 					if _, err := db.Exec(`UPDATE usage_archive_runs SET status = ?, resume_status = ?,
-						deleted_event_count = 0, last_deleted_event_id = 0,
-						delete_started_at_ms = NULL, completed_at_ms = NULL`, state.status, state.resume); err != nil {
+						verified_at_ms = NULL`, state.status, state.resume); err != nil {
 						t.Fatal(err)
+					}
+					if state.status == "cancelled" || segment == "none" {
+						if _, err := db.Exec("DELETE FROM usage_archive_event_refs"); err != nil {
+							t.Fatal(err)
+						}
 					}
 					if segment == "none" {
 						_, err = db.Exec("DELETE FROM usage_archive_segments")
 					} else {
-						_, err = db.Exec("UPDATE usage_archive_segments SET status = ?", segment)
+						_, err = db.Exec("UPDATE usage_archive_segments SET status = ?, verified_at_ms = CASE WHEN ? = 'verified' THEN 2 ELSE NULL END", segment, segment)
 					}
 					if err != nil {
 						t.Fatal(err)
 					}
 					if manifest == "absent" {
-						if _, err := db.Exec("UPDATE usage_archive_runs SET manifest_file = NULL, manifest_sha256 = NULL"); err != nil {
+						if _, err := db.Exec("UPDATE usage_archive_runs SET manifest_file = NULL, manifest_sha256 = NULL, archive_digest = NULL, archived_at_ms = NULL"); err != nil {
 							t.Fatal(err)
 						}
-						if err := os.Remove(filepath.Join(bundle, "usage-archives", "run-1", "manifest.json")); err != nil {
+						if err := os.Remove(filepath.Join(bundle, "usage-archives", "00000000000000000000000000000001", "manifest.json")); err != nil {
 							t.Fatal(err)
 						}
 					}
@@ -1148,32 +1443,13 @@ func TestRestoreArchiveDeletionEvidence(t *testing.T) {
 	for _, state := range states {
 		for _, marker := range markers {
 			t.Run(state.status+"/"+state.resume+"/"+marker.name, func(t *testing.T) {
-				l, root, lock := archiveRunFixture(t)
+				l, root, lock := archiveLifecycleFixture(t, state.status, state.resume)
 				bundle, _ := mustCreate(t, l, root, lock)
 				db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := db.Exec(`UPDATE usage_archive_runs SET status = ?, resume_status = ?,
-					deleted_event_count = 0, last_deleted_event_id = 0,
-					delete_started_at_ms = NULL, completed_at_ms = NULL`, state.status, state.resume); err != nil {
-					t.Fatal(err)
-				}
 				if _, err := db.Exec("UPDATE usage_archive_runs SET " + marker.assignment); err != nil {
-					t.Fatal(err)
-				}
-				prepublication := state.status == "previewed" || state.status == "archiving" || state.status == "cancelled" || state.resume == "archiving"
-				if prepublication {
-					if _, err := db.Exec("UPDATE usage_archive_runs SET manifest_file = NULL, manifest_sha256 = NULL"); err != nil {
-						t.Fatal(err)
-					}
-				}
-				if state.status == "previewed" {
-					_, err = db.Exec("DELETE FROM usage_archive_segments")
-				} else if prepublication || state.status == "archived" || state.status == "verifying" || state.resume == "verifying" {
-					_, err = db.Exec("UPDATE usage_archive_segments SET status = 'published'")
-				}
-				if err != nil {
 					t.Fatal(err)
 				}
 				if err := db.Close(); err != nil {
@@ -1240,19 +1516,9 @@ func TestUnpublishedArchiveRunManifestFieldsAreOptional(t *testing.T) {
 		for _, pair := range []string{"null", "empty"} {
 			for _, segments := range []string{"present", "absent"} {
 				t.Run(state.status+"/"+state.resume+"/"+pair+"/segments-"+segments, func(t *testing.T) {
-					l, root, lock := fixture(t)
-					db, err := managersqlite.Open(l.DatabasePath)
+					l, root, lock := archiveLifecycleFixture(t, state.status, state.resume)
+					db, err := sql.Open("sqlite", l.DatabasePath)
 					if err != nil {
-						t.Fatal(err)
-					}
-					defer db.Close()
-					if _, err := db.Exec(`INSERT INTO usage_archive_runs (
-				id, schema_version, format, status, cutoff_timestamp_ms, target_event_id,
-				event_count, created_at_ms, updated_at_ms
-			) VALUES ('run-1', 1, 'gzip-jsonl-v1', 'previewed', 2, 1, 1, 1, 1)`); err != nil {
-						t.Fatal(err)
-					}
-					if _, err := db.Exec("UPDATE usage_archive_runs SET status = ?, resume_status = ?", state.status, state.resume); err != nil {
 						t.Fatal(err)
 					}
 					if segments == "absent" {
@@ -1295,20 +1561,21 @@ func TestRestoreInspectionErrorsFailClosed(t *testing.T) {
 			INSERT INTO settings VALUES ('setup', '{"managementKey":"enc:v1:broken"}')`, "not a valid encrypted envelope"},
 		{"archive-query", `CREATE TABLE usage_archive_segments (file_name TEXT, status TEXT)`, "query archive matching evidence"},
 		{"archive-view", `CREATE VIEW usage_archive_segments AS SELECT 'published' AS status`, "not a table"},
-		{"archive-scan", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT);
-			INSERT INTO usage_archive_segments VALUES ('run-1', NULL, '', 1, 'published')`, "scan archive matching evidence"},
-		{"archive-size-scan", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT);
-			INSERT INTO usage_archive_segments VALUES ('run-1', 'run-1/segment.gz', '', 'invalid', 'verified')`, "scan archive matching evidence"},
-		{"archive-digest", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT);
-			INSERT INTO usage_archive_segments VALUES ('run-1', 'run-1/segment.gz', 'invalid', 1, 'verified')`, "invalid archive segment digest"},
+		{"archive-scan", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT, verified_at_ms INTEGER);
+			INSERT INTO usage_archive_segments VALUES ('00000000000000000000000000000001', NULL, '', 1, 'published', NULL)`, "scan archive matching evidence"},
+		{"archive-size-scan", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT, verified_at_ms INTEGER);
+			INSERT INTO usage_archive_segments VALUES ('00000000000000000000000000000001', '00000000000000000000000000000001/segment.gz', '', 'invalid', 'verified', 1)`, "scan archive matching evidence"},
+		{"archive-digest", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT, verified_at_ms INTEGER);
+			INSERT INTO usage_archive_segments VALUES ('00000000000000000000000000000001', '00000000000000000000000000000001/segment.gz', 'invalid', 1, 'verified', 1)`, "invalid archive segment digest"},
 		{"archive-run-query", `CREATE TABLE usage_archive_runs (id TEXT)`, "query archive run manifest evidence"},
 		{"foreign-key-schema", `CREATE TABLE fk_parent (id TEXT);
 			CREATE TABLE fk_child (parent_id TEXT REFERENCES fk_parent(id));
 			INSERT INTO fk_child VALUES ('orphan')`, "foreign_key_check"},
-		{"archive-run-view", `CREATE VIEW usage_archive_runs AS SELECT 'run-1' AS id`, "not a table"},
+		{"archive-run-view", `CREATE VIEW usage_archive_runs AS SELECT '00000000000000000000000000000001' AS id`, "not a table"},
 		{"archive-run-scan", `CREATE TABLE usage_archive_runs (id TEXT, status TEXT, resume_status TEXT, manifest_file TEXT, manifest_sha256 TEXT,
-			deleted_event_count INTEGER, last_deleted_event_id INTEGER, delete_started_at_ms INTEGER, completed_at_ms INTEGER);
-			INSERT INTO usage_archive_runs VALUES (NULL, 'completed', NULL, 'run-1/manifest.json', 'invalid', 0, 0, NULL, NULL)`, "scan archive run manifest evidence"},
+			deleted_event_count INTEGER, last_deleted_event_id INTEGER, delete_started_at_ms INTEGER, completed_at_ms INTEGER,
+			archive_digest TEXT, archived_at_ms INTEGER, verified_at_ms INTEGER);
+			INSERT INTO usage_archive_runs VALUES (NULL, 'completed', NULL, '00000000000000000000000000000001/manifest.json', 'invalid', 0, 0, NULL, NULL, NULL, NULL, NULL)`, "scan archive run manifest evidence"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
