@@ -558,15 +558,12 @@ func validateProductionSQLiteOpen(ctx context.Context, sourceDB, scratch string)
 	if err := validateForeignKeys(ctx, db); err != nil {
 		return fmt.Errorf("production SQLite open/migration integrity: %w", err)
 	}
-	// Compile the production archive readers even for an empty archive. Some
-	// missing columns are not used by migration indexes; use the maintained
-	// adapters rather than duplicating archive table definitions here.
+	// Decode real persisted rows with production scanners, including all fields
+	// outside the smaller matching-evidence queries. Empty tables still compile
+	// the maintained reader SQL rather than a separate schema definition.
 	repo := usagearchive.New(db)
-	if _, err := repo.Run(ctx, ""); err != nil && !errors.Is(err, usagearchive.ErrNotFound) {
-		return fmt.Errorf("production SQLite open/migration archive run reader: %w", err)
-	}
-	if _, err := repo.Segments(ctx, ""); err != nil {
-		return fmt.Errorf("production SQLite open/migration archive segment reader: %w", err)
+	if err := repo.ValidatePersistedRows(ctx); err != nil {
+		return fmt.Errorf("production SQLite open/migration archive persisted rows: %w", err)
 	}
 	if err := repo.ValidateDataPlaneSchema(ctx); err != nil {
 		return fmt.Errorf("production SQLite open/migration archive data-plane: %w", err)

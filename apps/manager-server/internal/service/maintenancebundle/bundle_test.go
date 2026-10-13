@@ -1224,6 +1224,96 @@ func TestRestoreRequiresArchiveDataPlaneSchema(t *testing.T) {
 	}
 }
 
+func TestRestoreRequiresProductionPersistedRows(t *testing.T) {
+	for _, tc := range []struct{ stage, query, readerError string }{
+		{"previewed", "UPDATE usage_archive_runs SET event_count = 'garbage'", "event_count"},
+		{"previewed", "UPDATE usage_archive_runs SET progress_current = 'garbage'", "progress_current"},
+		{"verified", "UPDATE usage_archive_segments SET first_event_id = 'garbage'", "first_event_id"},
+	} {
+		t.Run(tc.readerError, func(t *testing.T) {
+			l, root, lock := archiveLifecycleFixture(t, tc.stage, "")
+			bundle, _ := mustCreate(t, l, root, lock)
+			mutateBundleDB(t, bundle, tc.query)
+			rewriteManifest(t, bundle)
+			before, err := Inspect(context.Background(), BundleLayout(bundle))
+			if err != nil {
+				t.Fatal(err)
+			}
+			controlPath := filepath.Join(root, "production-control.sqlite")
+			if err := copyFile(context.Background(), filepath.Join(bundle, "database"), controlPath); err != nil {
+				t.Fatal(err)
+			}
+			control, err := managersqlite.Open(controlPath)
+			if err != nil {
+				t.Fatalf("counterexample must pass production migration: %v", err)
+			}
+			defer control.Close()
+			repo := usagearchive.New(control)
+			if _, err := repo.Run(context.Background(), ""); !errors.Is(err, usagearchive.ErrNotFound) {
+				t.Fatalf("empty-ID run qualification must pass: %v", err)
+			}
+			if _, err := repo.Segments(context.Background(), ""); err != nil {
+				t.Fatalf("empty-ID segment qualification must pass: %v", err)
+			}
+			if err := repo.ValidateDataPlaneSchema(context.Background()); err != nil {
+				t.Fatalf("schema compilation must pass with malformed persisted values: %v", err)
+			}
+			service := usageService.New(store.New(control), usageService.WithArchive(usageService.ArchiveConfig{
+				Directory: filepath.Join(root, "control-archives"),
+			}))
+			if _, err := service.ArchiveStatus(context.Background(), "00000000000000000000000000000001"); err == nil || !strings.Contains(err.Error(), tc.readerError) {
+				t.Fatalf("real production scanner must fail on %s: %v", tc.readerError, err)
+			}
+			dest := filepath.Join(root, "restored")
+			if _, err := RestoreNew(context.Background(), bundle, dest); err == nil || !strings.Contains(err.Error(), "archive persisted rows") {
+				t.Fatalf("unreadable persisted rows must fail after Verify passes: %v", err)
+			}
+			noPublished(t, root, dest)
+			if err := Revalidate(context.Background(), BundleLayout(bundle), before); err != nil {
+				t.Fatalf("persisted-row qualification changed original bundle: %v", err)
+			}
+		})
+	}
+}
+
+func TestRestoreRequiresProductionDeleteSchema(t *testing.T) {
+	l, root, lock := archiveLifecycleFixture(t, "verified", "")
+	bundle, _ := mustCreate(t, l, root, lock)
+	mutateBundleDB(t, bundle, `DROP TABLE usage_archive_deleted_coverage_daily;
+		CREATE TABLE usage_archive_deleted_coverage_daily (utc_day INTEGER PRIMARY KEY)`)
+	rewriteManifest(t, bundle)
+	before, err := Inspect(context.Background(), BundleLayout(bundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlRoot := filepath.Join(root, "production-control")
+	if err := os.Mkdir(controlRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := materialize(context.Background(), BundleLayout(bundle), controlRoot, before, copyFile); err != nil {
+		t.Fatal(err)
+	}
+	control, err := store.Open(BundleLayout(controlRoot).DatabasePath)
+	if err != nil {
+		t.Fatalf("counterexample must pass production open: %v", err)
+	}
+	defer control.Close()
+	service := usageService.New(control, usageService.WithArchive(usageService.ArchiveConfig{
+		Directory: BundleLayout(controlRoot).ArchivesPath, DeleteBatchSize: 1, AggregateReadsEnabled: true,
+	}))
+	if _, err := service.DeleteArchive(context.Background(), "00000000000000000000000000000001"); err == nil || !strings.Contains(err.Error(), "deleted_event_count") {
+		t.Fatalf("production delete must fail on incomplete daily persistence table: %v", err)
+	}
+	dest := filepath.Join(root, "restored")
+	if _, err := RestoreNew(context.Background(), bundle, dest); err == nil || !strings.Contains(err.Error(), "archive data-plane") {
+		t.Fatalf("unexecutable delete schema must fail after Verify passes: %v", err)
+	}
+	noPublished(t, root, dest)
+	if err := Revalidate(context.Background(), BundleLayout(bundle), before); err != nil {
+		t.Fatalf("delete-schema qualification changed original bundle: %v", err)
+	}
+}
+
 func TestRestoreInvalidArchiveSegmentStatus(t *testing.T) {
 	for _, status := range []string{"garbage", "archived", "completed", ""} {
 		for _, change := range []string{"missing", "foreign-content"} {

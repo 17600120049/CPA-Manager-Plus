@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// These statements are shared with Records and RecordSegment so offline schema
+// These statements are shared with Records, RecordSegment and DeleteBatch so offline schema
 // qualification compiles the production data path rather than a column list.
 const archiveRecordsSQL = `select
 	e.id,
@@ -53,7 +53,38 @@ select event_hash, ?, ?, raw_event_id, timestamp_ms, ?, null
 from usage_event_identity_ledger
 where event_hash = ? and raw_event_id = ?`
 
-// ValidateDataPlaneSchema compiles the archive records/ref/ledger statements.
+const deleteCandidatesSQL = `select e.id, archived.event_hash, e.timestamp_ms
+from usage_events e
+join usage_archive_event_refs archived
+	on archived.raw_event_id = e.id and archived.event_hash = e.event_hash
+join usage_event_identity_ledger l
+	on l.event_hash = archived.event_hash and l.raw_event_id = e.id
+where e.id > ? and e.id <= ? and e.timestamp_ms < ?
+	and archived.run_id = ? and archived.raw_deleted_at_ms is null
+	and l.aggregate_schema_version = ?
+	and l.aggregate_structure_revision = ?
+order by e.id asc limit ?`
+
+const deleteRawEventSQL = `delete from usage_events where id = ? and event_hash = ?`
+
+const deleteDetachLedgerSQL = `update usage_event_identity_ledger set
+	raw_event_id = null, updated_at_ms = ?
+	where event_hash = ? and raw_event_id = ?`
+
+const deleteMarkRefSQL = `update usage_archive_event_refs set
+	raw_deleted_at_ms = ?
+	where run_id = ? and event_hash = ? and raw_event_id = ?
+		and raw_deleted_at_ms is null`
+
+const deleteDailyCoverageUpsertSQL = `insert into usage_archive_deleted_coverage_daily (
+	utc_day, deleted_event_count, min_timestamp_ms, max_timestamp_ms
+) values (?, ?, ?, ?)
+on conflict(utc_day) do update set
+	deleted_event_count = deleted_event_count + excluded.deleted_event_count,
+	min_timestamp_ms = min(min_timestamp_ms, excluded.min_timestamp_ms),
+	max_timestamp_ms = max(max_timestamp_ms, excluded.max_timestamp_ms)`
+
+// ValidateDataPlaneSchema compiles archive read/write and delete persistence SQL.
 // EXPLAIN returns bytecode without reading event payloads or executing writes;
 // this does not qualify coverage, ledger contents, or historical compatibility.
 func (r *Repository) ValidateDataPlaneSchema(ctx context.Context) error {
@@ -62,6 +93,11 @@ func (r *Repository) ValidateDataPlaneSchema(ctx context.Context) error {
 		{"identity ledger insert", recordSegmentLedgerInsertSQL},
 		{"identity ledger update", recordSegmentLedgerUpdateSQL},
 		{"event refs insert", recordSegmentRefsInsertSQL},
+		{"delete candidates", deleteCandidatesSQL},
+		{"raw event delete", deleteRawEventSQL},
+		{"delete ledger detach", deleteDetachLedgerSQL},
+		{"delete event ref update", deleteMarkRefSQL},
+		{"deleted coverage upsert", deleteDailyCoverageUpsertSQL},
 	} {
 		// The shared statements use only anonymous positional placeholders.
 		args := make([]any, strings.Count(query.sql, "?"))

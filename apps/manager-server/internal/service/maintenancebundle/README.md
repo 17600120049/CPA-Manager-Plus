@@ -104,9 +104,12 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   uses the foreign keys declared in the database schema.
 - Requires real production SQLite open/migration on a second private writable
   copy of DB + WAL/SHM, followed by foreign-key inspection and the production
-  archive run/segment reader queries. Also compiles the shared production
-  Records and RecordSegment SQL with `EXPLAIN`, including the event refs and
-  identity ledger data path. No payloads are read or statements executed by this
+  archive run/segment readers: every persisted row is streamed through the full
+  production `scanRun`/`scanSegment`, without paging or an empty-ID shortcut.
+  Also compiles shared Records, RecordSegment and DeleteBatch persistence SQL
+  with `EXPLAIN`, including event refs/identity ledger, delete candidates,
+  raw deletion, ledger detach, ref updates and deleted daily coverage upsert.
+  No event payloads are read or underlying statements executed by this
   compilation; it does not check coverage or ledger contents.
   Same-name incomplete archive tables cannot
   pass merely because the matching validator's smaller query succeeds. This
@@ -138,6 +141,8 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   mode must be `manual` or `retention`, and schema version/format must equal the
   production archive constants. Unknown `requested_stage` values fail closed;
   known queued stages may be satisfied/stale and handled by the production runner.
+  Cross-stage runner self-healing and the broader active-run uniqueness predicate
+  remain separate hardening work; this slice does not qualify those behaviors.
   `archived`/`verifying` require a manifest and at least one
   corresponding segment, all `published`; `verified`/`deleting`/`completed`
   require a manifest and corresponding segments, all `verified`. Failed runs
