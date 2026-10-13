@@ -98,3 +98,78 @@ func TestPlannedBridgeCandidateOmittedWithoutRecognizedLegacy(t *testing.T) {
 		})
 	}
 }
+
+func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
+	fixture := loadLegacyProfileFixtures(t)[0]
+	paths := buildLegacyProfileFixture(t, fixture)
+
+	// Case 1: with verified forward hop evidence
+	verifiedEvidence := &ForwardHopEvidence{
+		Status:               "verified",
+		OperationID:          "op-12345",
+		Release:              "v1.14.4",
+		SourceCommit:         "166262365d506157b99968105c890f480cc7c07c",
+		Asset:                "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		ExecutableSHA256:     "exe-sha-12345",
+		OutputManifestDigest: "out-manifest-12345",
+	}
+
+	report, err := Inspect(context.Background(), paths, Options{
+		SourceStopped:      true,
+		ForwardHopEvidence: verifiedEvidence,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Planned target stays planned
+	if report.PlannedBridgeCandidate == nil || report.PlannedBridgeCandidate.Status != "planned" || report.PlannedBridgeCandidate.Release != "v1.14.4" {
+		t.Fatalf("planned bridge candidate corrupted: %+v", report.PlannedBridgeCandidate)
+	}
+	// 2. Exact source release stays unknown
+	if report.ExactSourceRelease == nil || report.ExactSourceRelease.Status != "unknown" {
+		t.Fatalf("exact source release falsely identified: %+v", report.ExactSourceRelease)
+	}
+	// 3. ForwardHopEvidence is attached
+	if report.ForwardHopEvidence == nil || report.ForwardHopEvidence.Status != "verified" || report.ForwardHopEvidence.OperationID != "op-12345" {
+		t.Fatalf("forward hop evidence missing or corrupted: %+v", report.ForwardHopEvidence)
+	}
+	// 4. "forward-hop-evidence" is removed from unknown
+	if slices.Contains(report.Unknown, "forward-hop-evidence") {
+		t.Fatalf("forward-hop-evidence still in unknown: %v", report.Unknown)
+	}
+	// 5. Readiness remains independent
+	if report.BridgeReadiness == nil {
+		t.Fatalf("bridge readiness missing: %+v", report.BridgeReadiness)
+	}
+	// 6. UpgradeAuthorized MUST remain false
+	if report.UpgradeAuthorized {
+		t.Fatalf("UpgradeAuthorized became true upon hop evidence!")
+	}
+	// 7. Startup is still NOT allowed for legacy source
+	if startupAllowed(report) {
+		t.Fatalf("startupAllowed became true upon hop evidence!")
+	}
+
+	// Case 2: with unverified hop evidence
+	unverifiedEvidence := &ForwardHopEvidence{
+		Status: "unverified",
+	}
+	report2, err := Inspect(context.Background(), paths, Options{
+		SourceStopped:      true,
+		ForwardHopEvidence: unverifiedEvidence,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report2.ForwardHopEvidence != nil {
+		t.Fatalf("unverified forward hop evidence should not be attached: %+v", report2.ForwardHopEvidence)
+	}
+	if !slices.Contains(report2.Unknown, "forward-hop-evidence") {
+		t.Fatalf("forward-hop-evidence should remain unknown: %v", report2.Unknown)
+	}
+	if report2.UpgradeAuthorized {
+		t.Fatalf("UpgradeAuthorized must remain false!")
+	}
+}
+

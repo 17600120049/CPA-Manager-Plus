@@ -44,3 +44,23 @@ func TestCommandRedactsInvalidArgumentValues(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandVerifyReceiptValidAndInvalid(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Missing flags
+	for _, args := range [][]string{
+		{"--verify-receipt", filepath.Join(dir, "r.json")},
+		{"--verify-receipt", filepath.Join(dir, "r.json"), "--bundle", dir},
+		{"--verify-receipt", filepath.Join(dir, "r.json"), "--bundle", dir, "--authority-key", "short"},
+	} {
+		var out, stderr bytes.Buffer
+		err := Run(context.Background(), args, &out, &stderr)
+		if err == nil || out.Len() != 0 {
+			t.Fatalf("expected error on missing verify-receipt args: %v", err)
+		}
+	}
+}

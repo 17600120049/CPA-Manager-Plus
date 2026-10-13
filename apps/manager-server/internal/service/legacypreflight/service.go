@@ -25,14 +25,13 @@ type Report struct {
 	ExactSourceRelease     *ProfileObservation     `json:"exactSourceRelease,omitempty"`
 	BridgeReadiness        *BridgeReadiness        `json:"bridgeReadiness,omitempty"`
 	PlannedBridgeCandidate *PlannedBridgeCandidate `json:"plannedBridgeCandidate,omitempty"`
+	ForwardHopEvidence     *ForwardHopEvidence     `json:"forwardHopEvidence,omitempty"`
 }
 
 type Options struct {
-	SourceStopped bool
-	// Explicit new-installation intent may accept a pre-created config only.
-	// Config fields cannot establish freshness. Database, sidecar, key, archive
-	// and pre-existing process-lock evidence is never bypassed by this option.
-	Initialize bool
+	SourceStopped      bool
+	Initialize         bool
+	ForwardHopEvidence *ForwardHopEvidence
 }
 
 type Admission struct {
@@ -83,7 +82,7 @@ func (a *Admission) Close() error {
 func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options) (report Report, err error) {
 	// Diagnostic projection only. Startup admission uses inspect directly and
 	// never consumes the planned target as source identity or authority.
-	defer func() { addPlannedBridgeCandidate(&report) }()
+	defer func() { addPlannedBridgeCandidate(&report, options.ForwardHopEvidence) }()
 	lock, err := processlock.AcquireExisting(paths.Database)
 	if err != nil && !errors.Is(err, processlock.ErrNoExistingLock) {
 		report := Report{SourceKind: "unknown", Unknown: []string{"source-consistency", "compatibility-profile", "exact-source-release"}, Blocked: []string{"source-ownership-unavailable"}}
