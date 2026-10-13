@@ -34,6 +34,9 @@ import (
 const Version = 2
 const CooperatingFence = "cooperating-manager-lock"
 const maxManifestBytes = 16 * 1024 * 1024
+
+// Matches the production usage archive manifest bound; decoding is deferred.
+const maxArchiveManifestBytes = 4 * 1024 * 1024
 const maxEntries = 10000
 
 // Layout makes external config and archive requirements explicit. Database and
@@ -324,8 +327,10 @@ func sqliteURI(path string) string {
 //  4. Data key decrypts both persisted CPA connection JSON settings, subject to
 //     their existing connection-storage migration invariant.
 //  5. Config is valid JSON if present.
-//  6. Published/verified archive segments have safe paths and match DB-recorded
-//     SHA-256 and compressed byte counts. This does not authenticate provenance.
+//  6. Every archive segment has a supported status, safe path, and matches its
+//     DB-recorded SHA-256 and compressed byte count. Recorded run manifests also
+//     match their DB digest within the production size bound. No provenance is
+//     authenticated, and archive decoding/event validation is deferred.
 func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -529,6 +534,33 @@ func validateArchiveEvidence(ctx context.Context, db *sql.DB, l Layout) error {
 	} else if l.RequireArchives {
 		return errors.New("required archive root is missing")
 	}
+	if err := validateArchiveSegments(ctx, db, l.ArchivesPath); err != nil {
+		return err
+	}
+	return validateArchiveRunManifests(ctx, db, l.ArchivesPath)
+}
+
+func archiveEvidencePath(root, runID, fileName string) (string, error) {
+	// SQLite bytes are untrusted. Re-establish the run/file invariant for both
+	// segment and run manifest references, including portable Windows constraints.
+	if runID == "" || runID == "." || runID == ".." || path.IsAbs(fileName) ||
+		path.Clean(fileName) != fileName || strings.Count(fileName, "/") != 1 ||
+		path.Dir(fileName) != runID || path.Base(fileName) == "." || path.Base(fileName) == ".." ||
+		strings.ContainsAny(fileName, `\:`) {
+		return "", errors.New("invalid archive file name")
+	}
+	if strings.TrimSpace(root) == "" {
+		return "", errors.New("archive path is required for recorded files")
+	}
+	filePath := filepath.Join(root, filepath.FromSlash(fileName))
+	rel, err := filepath.Rel(root, filePath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", errors.New("archive file escapes archive root")
+	}
+	return filePath, nil
+}
+
+func validateArchiveSegments(ctx context.Context, db *sql.DB, root string) error {
 	hasSegments, err := tableExists(ctx, db, "usage_archive_segments")
 	if err != nil {
 		return err
@@ -536,9 +568,9 @@ func validateArchiveEvidence(ctx context.Context, db *sql.DB, l Layout) error {
 	if !hasSegments {
 		return nil
 	}
-	rows, err := db.QueryContext(ctx, `SELECT run_id, file_name, content_sha256, compressed_bytes
-		FROM usage_archive_segments WHERE status IN (?, ?)`,
-		usagearchive.SegmentStatusPublished, usagearchive.SegmentStatusVerified)
+	// Do not filter by status: an invalid value must not hide a recorded file.
+	rows, err := db.QueryContext(ctx, `SELECT run_id, status, file_name, content_sha256, compressed_bytes
+		FROM usage_archive_segments`)
 	if err != nil {
 		return fmt.Errorf("query archive matching evidence: %w", err)
 	}
@@ -547,26 +579,19 @@ func validateArchiveEvidence(ctx context.Context, db *sql.DB, l Layout) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var runID, fileName, expectedSHA string
+		var runID, status, fileName, expectedSHA string
 		var expectedSize int64
-		if err := rows.Scan(&runID, &fileName, &expectedSHA, &expectedSize); err != nil {
+		if err := rows.Scan(&runID, &status, &fileName, &expectedSHA, &expectedSize); err != nil {
 			return fmt.Errorf("scan archive matching evidence: %w", err)
 		}
-		// Restore inspects untrusted SQLite bytes, so re-establish RecordSegment's
-		// run/filename invariant and reject portable Windows separators/drive names.
-		if runID == "" || runID == "." || runID == ".." || path.IsAbs(fileName) ||
-			path.Clean(fileName) != fileName || strings.Count(fileName, "/") != 1 ||
-			path.Dir(fileName) != runID || path.Base(fileName) == "." || path.Base(fileName) == ".." ||
-			strings.ContainsAny(fileName, `\:`) {
-			return errors.New("invalid archive segment file name")
+		switch status {
+		case usagearchive.SegmentStatusPublished, usagearchive.SegmentStatusVerified:
+		default:
+			return errors.New("invalid archive segment status")
 		}
-		if strings.TrimSpace(l.ArchivesPath) == "" {
-			return errors.New("archive path is required for recorded segments")
-		}
-		segPath := filepath.Join(l.ArchivesPath, filepath.FromSlash(fileName))
-		rel, err := filepath.Rel(l.ArchivesPath, segPath)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-			return errors.New("archive segment escapes archive root")
+		segPath, err := archiveEvidencePath(root, runID, fileName)
+		if err != nil {
+			return err
 		}
 		decodedSHA, err := hex.DecodeString(expectedSHA)
 		if err != nil || len(decodedSHA) != sha256.Size || expectedSize <= 0 {
@@ -585,6 +610,70 @@ func validateArchiveEvidence(ctx context.Context, db *sql.DB, l Layout) error {
 	}
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("close archive matching evidence: %w", err)
+	}
+	return ctx.Err()
+}
+
+func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string) error {
+	hasRuns, err := tableExists(ctx, db, "usage_archive_runs")
+	if err != nil {
+		return err
+	}
+	if !hasRuns {
+		return nil
+	}
+	// Read all runs regardless of lifecycle status. NULL/empty pairs are valid
+	// before manifest publication; either recorded field makes both mandatory.
+	rows, err := db.QueryContext(ctx, "SELECT id, manifest_file, manifest_sha256 FROM usage_archive_runs")
+	if err != nil {
+		return fmt.Errorf("query archive run manifest evidence: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var runID string
+		var fileName, expectedSHA sql.NullString
+		if err := rows.Scan(&runID, &fileName, &expectedSHA); err != nil {
+			return fmt.Errorf("scan archive run manifest evidence: %w", err)
+		}
+		if fileName.String == "" && expectedSHA.String == "" {
+			continue
+		}
+		if fileName.String == "" || expectedSHA.String == "" {
+			return errors.New("archive manifest file and digest must be recorded together")
+		}
+		manifestPath, err := archiveEvidencePath(root, runID, fileName.String)
+		if err != nil {
+			return fmt.Errorf("invalid archive manifest path: %w", err)
+		}
+		decodedSHA, err := hex.DecodeString(expectedSHA.String)
+		if err != nil || len(decodedSHA) != sha256.Size {
+			return errors.New("invalid archive manifest digest")
+		}
+		info, err := os.Lstat(manifestPath)
+		if err != nil {
+			return fmt.Errorf("inspect archive manifest: %w", err)
+		}
+		if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxArchiveManifestBytes {
+			return errors.New("archive manifest must be a non-empty regular file within 4 MiB")
+		}
+		// digestFile also rejects symlink ancestors/hard links and checks that
+		// the same file remains published throughout the context-aware read.
+		entry, err := digestFile(ctx, manifestPath, nil)
+		if err != nil {
+			return fmt.Errorf("read archive manifest evidence: %w", err)
+		}
+		if entry.Size <= 0 || entry.Size > maxArchiveManifestBytes || entry.SHA256 != expectedSHA.String {
+			return errors.New("archive manifest does not match database digest or size bound")
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read archive run manifest evidence: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close archive run manifest evidence: %w", err)
 	}
 	return ctx.Err()
 }

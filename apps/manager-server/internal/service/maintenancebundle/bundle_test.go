@@ -18,6 +18,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/setting"
+	managersqlite "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	_ "modernc.org/sqlite"
 )
@@ -766,6 +767,179 @@ func TestRestoreArchiveMatchingEvidence(t *testing.T) {
 	}
 }
 
+func archiveRunFixture(t *testing.T) (Layout, string, *processlock.Lock) {
+	t.Helper()
+	l, root, lock := fixture(t)
+	db, err := managersqlite.Open(l.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	runDir := filepath.Join(l.ArchivesPath, "run-1")
+	if err := os.Mkdir(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	segment := []byte("instance A archive bytes")
+	manifest := []byte(`{"instance":"A"}`)
+	put(t, filepath.Join(runDir, "segment.jsonl.gz"), segment)
+	put(t, filepath.Join(runDir, "manifest.json"), manifest)
+	segmentSHA, manifestSHA := sha256.Sum256(segment), sha256.Sum256(manifest)
+	// Use the migrated production schema, including nullable run manifest fields.
+	// Completed history has no remaining raw usage_events in this fixture.
+	if _, err := db.Exec(`INSERT INTO usage_archive_runs (
+		id, schema_version, format, status, cutoff_timestamp_ms, target_event_id,
+		event_count, created_at_ms, updated_at_ms, manifest_file, manifest_sha256,
+		last_deleted_event_id, deleted_event_count
+	) VALUES ('run-1', 1, 'gzip-jsonl-v1', 'completed', 2, 1, 1, 1, 1,
+		'run-1/manifest.json', ?, 1, 1)`, hex.EncodeToString(manifestSHA[:])); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO usage_archive_segments (
+		run_id, sequence, status, file_name, first_event_id, last_event_id,
+		min_timestamp_ms, max_timestamp_ms, event_count, uncompressed_bytes,
+		compressed_bytes, content_sha256, event_hash_digest, created_at_ms
+	) VALUES ('run-1', 1, 'verified', 'run-1/segment.jsonl.gz', 1, 1, 1, 1, 1, 1, ?, ?, 'fixture-event-digest', 1)`,
+		len(segment), hex.EncodeToString(segmentSHA[:])); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return l, root, lock
+}
+
+func TestRestoreInvalidArchiveSegmentStatus(t *testing.T) {
+	for _, status := range []string{"garbage", "archived", "completed", ""} {
+		for _, change := range []string{"missing", "foreign-content"} {
+			t.Run(status+"/"+change, func(t *testing.T) {
+				l, root, lock := archiveRunFixture(t)
+				bundle, _ := mustCreate(t, l, root, lock)
+				db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec("UPDATE usage_archive_segments SET status = ?", status); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+				segPath := filepath.Join(bundle, "usage-archives", "run-1", "segment.jsonl.gz")
+				if change == "missing" {
+					if err := os.Remove(segPath); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					put(t, segPath, []byte("instance B archive bytes"))
+				}
+				rewriteManifest(t, bundle)
+				dest := filepath.Join(root, "restored")
+				if _, err := RestoreNew(context.Background(), bundle, dest); err == nil || !strings.Contains(err.Error(), "archive segment status") {
+					t.Fatalf("invalid status must fail before a record can escape matching: %v", err)
+				}
+				noPublished(t, root, dest)
+			})
+		}
+	}
+}
+
+func TestRestoreArchiveRunManifestMatchingEvidence(t *testing.T) {
+	for _, change := range []string{"none", "missing", "foreign-content", "missing-sha", "missing-file", "invalid-sha", "traversal", "absolute", "backslash", "wrong-run", "empty", "oversize", "directory", "segments-table-absent"} {
+		t.Run(change, func(t *testing.T) {
+			l, root, lock := archiveRunFixture(t)
+			bundle, _ := mustCreate(t, l, root, lock)
+			manifestPath := filepath.Join(bundle, "usage-archives", "run-1", "manifest.json")
+			switch change {
+			case "missing", "directory", "segments-table-absent":
+				if err := os.Remove(manifestPath); err != nil {
+					t.Fatal(err)
+				}
+				if change == "directory" {
+					if err := os.Mkdir(manifestPath, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+			case "foreign-content":
+				put(t, manifestPath, []byte(`{"instance":"B"}`))
+			case "empty":
+				put(t, manifestPath, nil)
+			case "oversize":
+				put(t, manifestPath, make([]byte, 4*1024*1024+1))
+			}
+			queries := map[string]string{
+				"missing-sha":           "UPDATE usage_archive_runs SET manifest_sha256 = NULL",
+				"missing-file":          "UPDATE usage_archive_runs SET manifest_file = ''",
+				"invalid-sha":           "UPDATE usage_archive_runs SET manifest_sha256 = 'invalid'",
+				"traversal":             "UPDATE usage_archive_runs SET manifest_file = '../database'",
+				"backslash":             `UPDATE usage_archive_runs SET manifest_file = 'run-1\manifest.json'`,
+				"wrong-run":             "UPDATE usage_archive_runs SET id = 'other-run'",
+				"segments-table-absent": "DROP TABLE usage_archive_segments",
+			}
+			if query, ok := queries[change]; ok || change == "absolute" {
+				db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if change == "absolute" {
+					_, err = db.Exec("UPDATE usage_archive_runs SET manifest_file = ?", filepath.ToSlash(manifestPath))
+				} else {
+					_, err = db.Exec(query)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rewriteManifest(t, bundle)
+			dest := filepath.Join(root, "restored")
+			_, err := RestoreNew(context.Background(), bundle, dest)
+			if change == "none" {
+				if err != nil {
+					t.Fatalf("matching run manifest must restore: %v", err)
+				}
+			} else {
+				if err == nil || !strings.Contains(err.Error(), "archive") {
+					t.Fatalf("invalid run manifest must fail matching evidence: %v", err)
+				}
+				noPublished(t, root, dest)
+			}
+		})
+	}
+}
+
+func TestUnpublishedArchiveRunManifestFieldsAreOptional(t *testing.T) {
+	for _, pair := range []string{"null", "empty"} {
+		t.Run(pair, func(t *testing.T) {
+			l, root, lock := fixture(t)
+			db, err := managersqlite.Open(l.DatabasePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if _, err := db.Exec(`INSERT INTO usage_archive_runs (
+				id, schema_version, format, status, cutoff_timestamp_ms, target_event_id,
+				event_count, created_at_ms, updated_at_ms
+			) VALUES ('run-1', 1, 'gzip-jsonl-v1', 'previewed', 2, 1, 1, 1, 1)`); err != nil {
+				t.Fatal(err)
+			}
+			if pair == "empty" {
+				if _, err := db.Exec("UPDATE usage_archive_runs SET manifest_file = '', manifest_sha256 = ''"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			bundle, _ := mustCreate(t, l, root, lock)
+			if _, err := RestoreNew(context.Background(), bundle, filepath.Join(root, "restored")); err != nil {
+				t.Fatalf("unpublished runs need not have manifest evidence: %v", err)
+			}
+		})
+	}
+}
+
 func TestRestoreInspectionErrorsFailClosed(t *testing.T) {
 	cases := []struct {
 		name, sql, want string
@@ -789,6 +963,10 @@ func TestRestoreInspectionErrorsFailClosed(t *testing.T) {
 			INSERT INTO usage_archive_segments VALUES ('run-1', 'run-1/segment.gz', '', 'invalid', 'verified')`, "scan archive matching evidence"},
 		{"archive-digest", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT);
 			INSERT INTO usage_archive_segments VALUES ('run-1', 'run-1/segment.gz', 'invalid', 1, 'verified')`, "invalid archive segment digest"},
+		{"archive-run-query", `CREATE TABLE usage_archive_runs (id TEXT)`, "query archive run manifest evidence"},
+		{"archive-run-view", `CREATE VIEW usage_archive_runs AS SELECT 'run-1' AS id`, "not a table"},
+		{"archive-run-scan", `CREATE TABLE usage_archive_runs (id TEXT, manifest_file TEXT, manifest_sha256 TEXT);
+			INSERT INTO usage_archive_runs VALUES (NULL, 'run-1/manifest.json', 'invalid')`, "scan archive run manifest evidence"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

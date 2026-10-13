@@ -100,12 +100,21 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   migration v2, while retaining pre-migration plaintext compatibility. A database
   without encrypted connection fields cannot establish key correspondence.
 - Detects and rejects malformed config (invalid JSON).
-- For `published` and `verified` archive segments, rechecks the recorded
+- Reads every archive segment and rejects any status other than `published` or
+  `verified`; an invalid status cannot filter a record out of matching evidence.
+  For supported segments, rechecks the recorded
   `run_id/file_name` invariant and root containment, rejects non-regular files,
   and compares full-file SHA-256 and size with `content_sha256` and
   `compressed_bytes` in SQLite. Missing segments and same-name foreign content
   fail even if the manifest was recomputed. Optional archive absence cannot
   bypass a segment reference.
+- Independently reads all `usage_archive_runs` manifest references, including
+  when the segment table is absent. If either `manifest_file` or `manifest_sha256`
+  is recorded, both are required. The manifest path must remain inside its run
+  directory under the archive root, and its file must be regular, single-linked,
+  non-empty and at most 4 MiB, with full-file SHA-256 matching the database.
+  Paired NULL/empty fields remain optional before publication. This check does
+  not decode the archive manifest or validate event/run metadata semantics.
 - Inspection query, scan, row-iteration, filesystem and context cancellation
   errors fail closed; an absent optional table is distinct from inspection failure.
 - Detects asset mismatches supported by these checks and bundle modifications
@@ -127,3 +136,8 @@ Phase4A-04/07 obligations. Abrupt termination before rename may leave a private
 `*-unpublished-*` directory, which is not a published bundle. Cancellation,
 disk-full (ENOSPC), and ordinary failures remove the temporary directory and
 never publish an incomplete bundle.
+
+Windows amd64 cross-compilation establishes build compatibility only. The
+existing `Manager Server SQLite (Windows)` CI job exercises SQLite/preflight
+paths, not `maintenancebundle` or `managerdatabundle`; bundle create/restore,
+SQLite URI and archive path checks still lack Windows runtime qualification.
