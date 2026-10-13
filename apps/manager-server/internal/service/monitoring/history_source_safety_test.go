@@ -3,6 +3,7 @@ package monitoring
 import (
 	"context"
 	"errors"
+	"math"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/modelprice"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usagepricing"
 	usageservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/usage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
@@ -43,6 +45,8 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 		},
 		"zero-model": {
 			Prompt: 0.0, Completion: 0.0, Cache: 0.0,
+			PromptConfigured: true, CompletionConfigured: true,
+			CacheReadConfigured: true, CacheCreationConfigured: true,
 		},
 	}
 	if err := db.SaveModelPrices(ctx, initialPrices); err != nil {
@@ -58,87 +62,87 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 	events := []usage.Event{
 		// Account A events
 		{
-			EventHash:             testCanonicalHash("hash-a-1"),
-			TimestampMS:           baseTime + 10_000,
-			Timestamp:             time.UnixMilli(baseTime + 10_000).UTC().Format(time.RFC3339),
-			Model:                 "tiered-model",
-			AnalyticsModel:        "tiered-model",
-			Endpoint:              "POST /v1/chat/completions",
-			AuthFileSnapshot:      "coverage-a.json",
-			AuthIndex:             "index_a",
-			AuthProviderSnapshot:  "openai",
-			AccountSnapshot:       "acc_a@example.com",
-			InputTokens:           150_000,
-			OutputTokens:          100,
-			CachedTokens:          10,
-			CacheReadTokens:       10,
-			TotalTokens:           150_100,
-			SessionID:             "sess-a-1",
-			ParentSessionID:       "parent-a-1",
-			ResponseModel:         "tiered-model-resp",
-			AccessTokenSHA256:     "sha-token-a-1",
-			Generate:              &genTrue,
-			Stream:                &streamFalse,
-			LatencyMS:             &latency,
+			EventHash:            testCanonicalHash("hash-a-1"),
+			TimestampMS:          baseTime + 10_000,
+			Timestamp:            time.UnixMilli(baseTime + 10_000).UTC().Format(time.RFC3339),
+			Model:                "tiered-model",
+			AnalyticsModel:       "tiered-model",
+			Endpoint:             "POST /v1/chat/completions",
+			AuthFileSnapshot:     "coverage-a.json",
+			AuthIndex:            "index_a",
+			AuthProviderSnapshot: "openai",
+			AccountSnapshot:      "acc_a@example.com",
+			InputTokens:          150_000,
+			OutputTokens:         100,
+			CachedTokens:         10,
+			CacheReadTokens:      10,
+			TotalTokens:          150_100,
+			SessionID:            "sess-a-1",
+			ParentSessionID:      "parent-a-1",
+			ResponseModel:        "tiered-model-resp",
+			AccessTokenSHA256:    "sha-token-a-1",
+			Generate:             &genTrue,
+			Stream:               &streamFalse,
+			LatencyMS:            &latency,
 		},
 		{
-			EventHash:             testCanonicalHash("hash-a-zero"),
-			TimestampMS:           baseTime + 20_000,
-			Timestamp:             time.UnixMilli(baseTime + 20_000).UTC().Format(time.RFC3339),
-			Model:                 "zero-model",
-			AnalyticsModel:        "zero-model",
-			Endpoint:              "POST /v1/chat/completions",
-			AuthFileSnapshot:      "coverage-a.json",
-			AuthIndex:             "index_a",
-			AuthProviderSnapshot:  "openai",
-			AccountSnapshot:       "acc_a@example.com",
-			InputTokens:           50_000,
-			OutputTokens:          50,
-			TotalTokens:           50_050,
-			SessionID:             "sess-a-2",
-			Generate:              &genTrue,
-			Stream:                &streamFalse,
-			LatencyMS:             &latency,
+			EventHash:            testCanonicalHash("hash-a-zero"),
+			TimestampMS:          baseTime + 20_000,
+			Timestamp:            time.UnixMilli(baseTime + 20_000).UTC().Format(time.RFC3339),
+			Model:                "zero-model",
+			AnalyticsModel:       "zero-model",
+			Endpoint:             "POST /v1/chat/completions",
+			AuthFileSnapshot:     "coverage-a.json",
+			AuthIndex:            "index_a",
+			AuthProviderSnapshot: "openai",
+			AccountSnapshot:      "acc_a@example.com",
+			InputTokens:          50_000,
+			OutputTokens:         50,
+			TotalTokens:          50_050,
+			SessionID:            "sess-a-2",
+			Generate:             &genTrue,
+			Stream:               &streamFalse,
+			LatencyMS:            &latency,
 		},
 		// Account B events
 		{
-			EventHash:             testCanonicalHash("hash-b-priority"),
-			TimestampMS:           baseTime + hour + 10_000,
-			Timestamp:             time.UnixMilli(baseTime + hour + 10_000).UTC().Format(time.RFC3339),
-			Model:                 "service-model",
-			AnalyticsModel:        "service-model",
-			ServiceTier:           "priority",
-			Endpoint:              "POST /v1/chat/completions",
-			AuthFileSnapshot:      "coverage-b.json",
-			AuthIndex:             "index_b",
-			AuthProviderSnapshot:  "openai",
-			AccountSnapshot:       "acc_b@example.com",
-			InputTokens:           200_000,
-			OutputTokens:          200,
-			TotalTokens:           200_200,
-			SessionID:             "sess-b-1",
-			Generate:              &genTrue,
-			Stream:                &streamFalse,
-			LatencyMS:             &latency,
+			EventHash:            testCanonicalHash("hash-b-priority"),
+			TimestampMS:          baseTime + hour + 10_000,
+			Timestamp:            time.UnixMilli(baseTime + hour + 10_000).UTC().Format(time.RFC3339),
+			Model:                "service-model",
+			AnalyticsModel:       "service-model",
+			ServiceTier:          "priority",
+			Endpoint:             "POST /v1/chat/completions",
+			AuthFileSnapshot:     "coverage-b.json",
+			AuthIndex:            "index_b",
+			AuthProviderSnapshot: "openai",
+			AccountSnapshot:      "acc_b@example.com",
+			InputTokens:          200_000,
+			OutputTokens:         200,
+			TotalTokens:          200_200,
+			SessionID:            "sess-b-1",
+			Generate:             &genTrue,
+			Stream:               &streamFalse,
+			LatencyMS:            &latency,
 		},
 		{
-			EventHash:             testCanonicalHash("hash-b-standard"),
-			TimestampMS:           baseTime + hour + 20_000,
-			Timestamp:             time.UnixMilli(baseTime + hour + 20_000).UTC().Format(time.RFC3339),
-			Model:                 "service-model",
-			AnalyticsModel:        "service-model",
-			Endpoint:              "POST /v1/chat/completions",
-			AuthFileSnapshot:      "coverage-b.json",
-			AuthIndex:             "index_b",
-			AuthProviderSnapshot:  "openai",
-			AccountSnapshot:       "acc_b@example.com",
-			InputTokens:           80_000,
-			OutputTokens:          100,
-			TotalTokens:           80_100,
-			SessionID:             "sess-b-2",
-			Generate:              &genTrue,
-			Stream:                &streamFalse,
-			LatencyMS:             &latency,
+			EventHash:            testCanonicalHash("hash-b-standard"),
+			TimestampMS:          baseTime + hour + 20_000,
+			Timestamp:            time.UnixMilli(baseTime + hour + 20_000).UTC().Format(time.RFC3339),
+			Model:                "service-model",
+			AnalyticsModel:       "service-model",
+			Endpoint:             "POST /v1/chat/completions",
+			AuthFileSnapshot:     "coverage-b.json",
+			AuthIndex:            "index_b",
+			AuthProviderSnapshot: "openai",
+			AccountSnapshot:      "acc_b@example.com",
+			InputTokens:          80_000,
+			OutputTokens:         100,
+			TotalTokens:          80_100,
+			SessionID:            "sess-b-2",
+			Generate:             &genTrue,
+			Stream:               &streamFalse,
+			LatencyMS:            &latency,
 		},
 	}
 
@@ -153,6 +157,35 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 
 	if _, err := db.InsertEvents(ctx, events); err != nil {
 		t.Fatalf("insert initial events: %v", err)
+	}
+	// Expected costs are computed from the fixture rates, independently of the
+	// pricing implementation: A uses the context tier; B uses priority + base.
+	const wantCostA = (149_990*3.0 + 10*0.1 + 100*2.0) / 1_000_000
+	const wantCostB = (200_000*7.0 + 200*4.0 + 80_000*2.0 + 100*4.0) / 1_000_000
+	assertCost := func(t *testing.T, got *float64, want float64) {
+		t.Helper()
+		if got == nil || math.Abs(*got-want) > 1e-12 {
+			t.Fatalf("cost=%v, want %.12f", got, want)
+		}
+	}
+	var fullRawHistory []AccountHistoryItem
+	assertHistoricalTotals := func(t *testing.T, got []AccountHistoryItem) {
+		t.Helper()
+		before := append([]AccountHistoryItem(nil), fullRawHistory...)
+		after := append([]AccountHistoryItem(nil), got...)
+		// Latest/recent request details are served from live raw rows. Retained
+		// history guarantees lifetime totals, not raw-deleted request details.
+		for i := range before {
+			before[i].LatestRequest = nil
+			before[i].RecentRequests = nil
+		}
+		for i := range after {
+			after[i].LatestRequest = nil
+			after[i].RecentRequests = nil
+		}
+		if !reflect.DeepEqual(before, after) {
+			t.Fatalf("historical totals changed: before=%+v after=%+v", before, after)
+		}
 	}
 
 	// ------------------------------------------------------------------------
@@ -194,9 +227,7 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 		if itemA.TotalRequests != 2 || itemA.TotalTokens != 200_150 {
 			t.Fatalf("item A stats mismatch: %#v", itemA)
 		}
-		if itemA.TotalCost == nil || *itemA.TotalCost <= 0 {
-			t.Fatalf("item A total cost = %v, expected positive", itemA.TotalCost)
-		}
+		assertCost(t, itemA.TotalCost, wantCostA)
 
 		// 验证 explicit zero 保持：zero-model 的 cost 绝不为 nil 也绝不把整体成本搞坏
 		// Account B: 2 requests, 200_200 + 80_100 = 280_300 tokens
@@ -204,11 +235,10 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 		if itemB.TotalRequests != 2 || itemB.TotalTokens != 280_300 {
 			t.Fatalf("item B stats mismatch: %#v", itemB)
 		}
-		if itemB.TotalCost == nil || *itemB.TotalCost <= 0 {
-			t.Fatalf("item B total cost = %v, expected positive", itemB.TotalCost)
-		}
+		assertCost(t, itemB.TotalCost, wantCostB)
+		fullRawHistory = hist.Items
 
-		// 验证 historical request/response/session metadata 连续性
+		// AccountHistory exposes latest/recent request timestamps, not session metadata.
 		if itemA.LatestRequest == nil || itemA.LatestRequest.TimestampMS != baseTime+20_000 {
 			t.Fatalf("item A latest request metadata missing or timestamp mismatch: %#v", itemA.LatestRequest)
 		}
@@ -227,6 +257,19 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 		}
 		if analyticsResp.Summary.TotalCalls != 4 {
 			t.Fatalf("analytics total calls = %d, want 4", analyticsResp.Summary.TotalCalls)
+		}
+		assertCost(t, &analyticsResp.Summary.TotalCost, wantCostA+wantCostB)
+		zeroModelFound := false
+		for _, stat := range analyticsResp.ModelStats {
+			if stat.Model == "zero-model" {
+				zeroModelFound = true
+				if stat.Calls != 1 || stat.Cost != 0 {
+					t.Fatalf("explicit zero pricing changed: %+v", stat)
+				}
+			}
+		}
+		if !zeroModelFound {
+			t.Fatal("explicit zero model is missing from analytics")
 		}
 
 		// 验证 pricing rebuild 确定性与幂等性
@@ -301,6 +344,11 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 		if hist.Items[0].TotalRequests != 2 || hist.Items[1].TotalRequests != 2 {
 			t.Fatalf("double-counting detected! calls = %d, %d, want 2, 2", hist.Items[0].TotalRequests, hist.Items[1].TotalRequests)
 		}
+		assertCost(t, hist.Items[0].TotalCost, wantCostA)
+		assertCost(t, hist.Items[1].TotalCost, wantCostB)
+		if !reflect.DeepEqual(hist.Items, fullRawHistory) {
+			t.Fatalf("archiving changed historical results: before=%+v after=%+v", fullRawHistory, hist.Items)
+		}
 
 		// 即使重新执行 pricing rebuild，权威来源依然是 usage_events，不会双重计数
 		if _, err := sqlDB.ExecContext(ctx, `delete from usage_pricing_hourly_rollups_v1;
@@ -368,11 +416,14 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 		if err != nil || len(hist.Items) != 2 {
 			t.Fatalf("account history query in state 3 failed: %#v, %v", hist, err)
 		}
-		if hist.Items[0].TotalCost == nil || *hist.Items[0].TotalCost <= 0 {
-			t.Fatalf("Account A total cost in state 3 must be recovered and positive, got: %v", hist.Items[0].TotalCost)
+		assertCost(t, hist.Items[0].TotalCost, wantCostA)
+		assertCost(t, hist.Items[1].TotalCost, wantCostB)
+		assertHistoricalTotals(t, hist.Items)
+		if hist.Items[0].LatestRequest != nil || len(hist.Items[0].RecentRequests) != 0 {
+			t.Fatal("raw-deleted request details should be unavailable")
 		}
-		if hist.Items[1].TotalCost == nil || *hist.Items[1].TotalCost <= 0 {
-			t.Fatalf("Account B total cost in state 3 must be positive, got: %v", hist.Items[1].TotalCost)
+		if !reflect.DeepEqual(hist.Items[1].RecentRequests, fullRawHistory[1].RecentRequests) {
+			t.Fatal("live raw request details changed after archive deletion")
 		}
 		if hist.Items[0].TotalRequests != 2 || hist.Items[1].TotalRequests != 2 {
 			t.Fatalf("requests mismatch: %d, %d, want 2, 2", hist.Items[0].TotalRequests, hist.Items[1].TotalRequests)
@@ -428,16 +479,59 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 		}
 
 		// 断言 2: Destructive rebuild 必须 block (Fail Closed)
-		// 清空 pricing rollups 并请求 rebuild
-		if _, err := sqlDB.ExecContext(ctx, `delete from usage_pricing_hourly_rollups_v1;
-			delete from usage_pricing_account_rollups_v1;
-			update usage_pricing_rollup_state set status = 'rebuilding', coverage_event_id = 0, backfill_last_event_id = 0`); err != nil {
+		// Keep the valid rows. Request the destructive clearing phase and prove
+		// source verification fails before any row or checkpoint is modified.
+		if _, err := sqlDB.ExecContext(ctx, `update usage_pricing_rollup_state set status = 'clearing'`); err != nil {
 			t.Fatal(err)
 		}
+		snapshotPricing := func() [][][]any {
+			t.Helper()
+			var snapshot [][][]any
+			for _, table := range []string{"usage_pricing_hourly_rollups_v1", "usage_pricing_account_rollups_v1", "usage_pricing_rollup_state"} {
+				rows, err := sqlDB.QueryContext(ctx, `select * from `+table+` order by rowid`)
+				if err != nil {
+					t.Fatal(err)
+				}
+				columns, err := rows.Columns()
+				if err != nil {
+					_ = rows.Close()
+					t.Fatal(err)
+				}
+				var entries [][]any
+				for rows.Next() {
+					values := make([]any, len(columns))
+					targets := make([]any, len(columns))
+					for i := range values {
+						targets[i] = &values[i]
+					}
+					if err := rows.Scan(targets...); err != nil {
+						_ = rows.Close()
+						t.Fatal(err)
+					}
+					entries = append(entries, values)
+				}
+				if err := rows.Err(); err != nil {
+					_ = rows.Close()
+					t.Fatal(err)
+				}
+				if err := rows.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if len(entries) == 0 {
+					t.Fatalf("missing pre-existing pricing rows in %s", table)
+				}
+				snapshot = append(snapshot, entries)
+			}
+			return snapshot
+		}
+		beforeFailedRebuild := snapshotPricing()
 		// 此时如果尝试重算，必须失败，不能清空或伪造历史
 		_, catchUpErr := db.CatchUpUsagePricing(ctx, 100, time.Now().UnixMilli())
-		if catchUpErr == nil {
-			t.Fatal("CatchUpUsagePricing must fail when retained source is missing for raw-deleted rows")
+		if !errors.Is(catchUpErr, usagepricing.ErrRetainedPricingHistoryIncomplete) {
+			t.Fatalf("CatchUpUsagePricing error=%v, want retained history incomplete", catchUpErr)
+		}
+		if after := snapshotPricing(); !reflect.DeepEqual(beforeFailedRebuild, after) {
+			t.Fatal("failed rebuild modified existing pricing rows or checkpoint")
 		}
 
 		// 断言 3: 受影响账号的历史成本为 unavailable / indeterminate (TotalCost == nil)，绝不能返回 0！
@@ -465,9 +559,7 @@ func TestHistoricalDataSafetyLifecycle_Phase4A05(t *testing.T) {
 		}
 
 		// Account B: 证据完整，TotalCost 正常计算并返回，绝不被 Account A 污染！
-		if itemB.TotalCost == nil || *itemB.TotalCost <= 0 {
-			t.Fatalf("Account B total cost must remain valid and positive, got: %v", itemB.TotalCost)
-		}
+		assertCost(t, itemB.TotalCost, wantCostB)
 		if itemB.TotalRequests != 2 || itemB.TotalTokens != 280_300 {
 			t.Fatalf("Account B stats corrupted: requests=%d tokens=%d", itemB.TotalRequests, itemB.TotalTokens)
 		}
