@@ -1852,7 +1852,7 @@ func eventFromExportedRecord(record map[string]any) (Event, bool, error) {
 	if explicitMode == "" {
 		explicitMode = rawHints.ExplicitMode
 	}
-	accounting := NormalizeCacheAccounting(CacheInputContext{
+	accounting := NormalizeCacheAccountingWithRawJSON(CacheInputContext{
 		ExplicitMode:     explicitMode,
 		ExecutorType:     executorType,
 		Provider:         provider,
@@ -1860,7 +1860,7 @@ func eventFromExportedRecord(record map[string]any) (Event, bool, error) {
 		ResolvedModel:    resolvedModel,
 		RequestedModel:   requestedModel,
 		DisplayModel:     model,
-	}, inputTokens, cachedTokens, cacheTokens, cacheReadTokens, cacheCreationTokens)
+	}, rawJSON, inputTokens, outputTokens, reasoningTokens, totalTokens, cachedTokens, cacheTokens, cacheReadTokens, cacheCreationTokens)
 	headerQuotaRecoverAtMS := readInt(record, "header_quota_recover_at_ms", "headerQuotaRecoverAtMs")
 	headerQuotaUsedPercent := readOptionalFloat(record, "header_quota_used_percent", "headerQuotaUsedPercent")
 	headerQuotaPlanType := readString(record, "header_quota_plan_type", "headerQuotaPlanType")
@@ -2084,7 +2084,10 @@ func archiveDerivedFieldsFromRecord(record map[string]any) (CacheAccounting, int
 	rawMode, present := record["cache_input_mode"]
 	mode, ok := rawMode.(string)
 	mode = normalizeCacheInputMode(mode)
-	if !present || !ok || (mode != CacheInputModeIncluded && mode != CacheInputModeSeparate) {
+	if !present || !ok ||
+		(mode != CacheInputModeIncluded &&
+			mode != CacheInputModeSeparate &&
+			mode != CacheInputModeReadIncludedCreationSeparate) {
 		return CacheAccounting{}, 0, 0, nil, fmt.Errorf("%w: cache_input_mode is required and must be supported", ErrInvalidArchiveRecord)
 	}
 	read := func(key string) (int64, error) {
@@ -2409,14 +2412,23 @@ func importCacheAccountingRawJSON(record map[string]any) string {
 		recordHints.HasExplicitTotal = true
 	}
 	existingHints := RawCacheAccountingHintsFromJSON(existing)
+	derivedMode := derivedCacheInputModeFromRecord(record)
+	if recordHints.ExplicitMode != "" || existingHints.ExplicitMode != "" {
+		derivedMode = ""
+	}
 	modeCovered := recordHints.ExplicitMode == "" || existingHints.ExplicitMode == recordHints.ExplicitMode
+	derivedModeCovered := derivedMode == "" || existingHints.ImportedDerivedMode == derivedMode
 	totalCovered := !recordHints.HasExplicitTotal || (existingHints.HasExplicitTotal && existingHints.ExplicitTotal == recordHints.ExplicitTotal)
-	if modeCovered && totalCovered {
+	if modeCovered && derivedModeCovered && totalCovered {
 		return existing
 	}
 	provenance := map[string]any{}
 	if recordHints.ExplicitMode != "" {
 		provenance["cache_input_mode"] = recordHints.ExplicitMode
+	}
+	if derivedMode != "" {
+		provenance["format"] = importedCacheAccountingFormat
+		provenance["derived_cache_input_mode"] = derivedMode
 	}
 	if recordHints.HasExplicitTotal {
 		provenance["total_tokens"] = recordHints.ExplicitTotal

@@ -471,3 +471,340 @@ func TestDevinRepositoryRoundTrip(t *testing.T) {
 
 	}
 }
+
+func TestNormalizeRawUsesCanonicalV2BreakdownForIssue941(t *testing.T) {
+	event, err := NormalizeRaw([]byte(`{
+		"timestamp":"2026-10-12T00:00:00Z",
+		"provider":"workbuddy",
+		"executor_type":"executorAdapter",
+		"model":"Deepseek-V4.1-Flash",
+		"endpoint":"POST /v1/chat/completions",
+		"tokens":{
+			"input_tokens":233705,
+			"output_tokens":1148,
+			"reasoning_tokens":458,
+			"cached_tokens":232576,
+			"cache_read_tokens":232576,
+			"cache_creation_tokens":0,
+			"total_tokens":234853
+		},
+		"accounting_version":2,
+		"token_breakdown":{
+			"schema_version":2,
+			"quality":"complete",
+			"total_tokens":234853,
+			"input":{
+				"total_tokens":233705,
+				"uncached_tokens":1129,
+				"cache_read_tokens":232576,
+				"cache_write_tokens":0
+			},
+			"output":{
+				"total_tokens":1148,
+				"non_reasoning_tokens":690,
+				"reasoning_tokens":458
+			},
+			"unclassified_tokens":0
+		}
+	}`))
+	if err != nil {
+		t.Fatalf("normalize #941 fixture: %v", err)
+	}
+	if event.CacheInputMode != CacheInputModeIncluded {
+		t.Fatalf("cache input mode = %q, want %q", event.CacheInputMode, CacheInputModeIncluded)
+	}
+	if event.NormalizedUncachedInputTokens != 1129 ||
+		event.NormalizedTotalInputTokens != 233705 ||
+		event.NormalizedCacheReadTokens != 232576 ||
+		event.NormalizedCacheCreationTokens != 0 {
+		t.Fatalf("normalized #941 accounting = (%d, %d, %d, %d), want (1129, 233705, 232576, 0)",
+			event.NormalizedUncachedInputTokens,
+			event.NormalizedTotalInputTokens,
+			event.NormalizedCacheReadTokens,
+			event.NormalizedCacheCreationTokens,
+		)
+	}
+	if event.TotalTokens != 234853 {
+		t.Fatalf("total tokens = %d, want 234853", event.TotalTokens)
+	}
+	if IsLongContextInput(event.NormalizedTotalInputTokens) {
+		t.Fatalf("normalized input %d must stay below the long-context threshold", event.NormalizedTotalInputTokens)
+	}
+}
+
+func TestNormalizeCacheAccountingWithRawJSONRequiresCanonicalV2Proof(t *testing.T) {
+	subset := `{
+		"accounting_version":2,
+		"token_breakdown":{
+			"schema_version":2,
+			"quality":"complete",
+			"total_tokens":110,
+			"input":{"total_tokens":100,"uncached_tokens":20,"cache_read_tokens":80,"cache_write_tokens":0},
+			"output":{"total_tokens":10,"non_reasoning_tokens":10,"reasoning_tokens":0},
+			"unclassified_tokens":0
+		}
+	}`
+	independent := subset
+	mixed := `{
+		"accounting_version":2,
+		"token_breakdown":{
+			"schema_version":2,
+			"quality":"complete",
+			"total_tokens":135,
+			"input":{"total_tokens":125,"uncached_tokens":100,"cache_read_tokens":20,"cache_write_tokens":5},
+			"output":{"total_tokens":10,"non_reasoning_tokens":10,"reasoning_tokens":0},
+			"unclassified_tokens":0
+		}
+	}`
+	separateReasoning := `{
+		"accounting_version":2,
+		"token_breakdown":{
+			"schema_version":2,
+			"quality":"complete",
+			"total_tokens":110,
+			"input":{"total_tokens":100,"uncached_tokens":20,"cache_read_tokens":80,"cache_write_tokens":0},
+			"output":{"total_tokens":10,"non_reasoning_tokens":7,"reasoning_tokens":3},
+			"unclassified_tokens":0
+		}
+	}`
+
+	tests := []struct {
+		name         string
+		context      CacheInputContext
+		raw          string
+		input        int64
+		output       int64
+		reasoning    int64
+		total        int64
+		cached       int64
+		read         int64
+		creation     int64
+		wantMode     string
+		wantUncached int64
+		wantTotal    int64
+	}{
+		{
+			name:         "unknown subset maps to included",
+			raw:          subset,
+			input:        100,
+			output:       10,
+			total:        110,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeIncluded,
+			wantUncached: 20,
+			wantTotal:    100,
+		},
+		{
+			name:         "unknown independent maps to separate",
+			raw:          independent,
+			input:        20,
+			output:       10,
+			total:        110,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeSeparate,
+			wantUncached: 20,
+			wantTotal:    100,
+		},
+		{
+			name:         "unknown read included write separate maps to mixed mode",
+			raw:          mixed,
+			input:        120,
+			output:       10,
+			total:        135,
+			cached:       25,
+			read:         20,
+			creation:     5,
+			wantMode:     CacheInputModeReadIncludedCreationSeparate,
+			wantUncached: 100,
+			wantTotal:    125,
+		},
+		{
+			name:         "unknown separate reasoning output is accepted",
+			raw:          separateReasoning,
+			input:        100,
+			output:       7,
+			reasoning:    3,
+			total:        110,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeIncluded,
+			wantUncached: 20,
+			wantTotal:    100,
+		},
+		{
+			name:         "unclassified quality fails closed",
+			raw:          replaceCacheAccountingTestString(subset, `"quality":"complete"`, `"quality":"unclassified"`),
+			input:        100,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeSeparate,
+			wantUncached: 100,
+			wantTotal:    180,
+		},
+		{
+			name:         "future accounting version fails closed",
+			raw:          replaceCacheAccountingTestString(subset, `"accounting_version":2`, `"accounting_version":3`),
+			input:        100,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeSeparate,
+			wantUncached: 100,
+			wantTotal:    180,
+		},
+		{
+			name:         "missing zero bucket fails closed",
+			raw:          replaceCacheAccountingTestString(subset, `,"cache_write_tokens":0`, ""),
+			input:        100,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeSeparate,
+			wantUncached: 100,
+			wantTotal:    180,
+		},
+		{
+			name:         "raw cache mismatch fails closed",
+			raw:          subset,
+			input:        100,
+			cached:       79,
+			read:         79,
+			wantMode:     CacheInputModeSeparate,
+			wantUncached: 100,
+			wantTotal:    179,
+		},
+		{
+			name:         "canonical total mismatch fails closed",
+			raw:          subset,
+			input:        100,
+			output:       10,
+			total:        111,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeSeparate,
+			wantUncached: 100,
+			wantTotal:    180,
+		},
+		{
+			name:         "canonical output mismatch fails closed",
+			raw:          subset,
+			input:        100,
+			output:       9,
+			total:        110,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeSeparate,
+			wantUncached: 100,
+			wantTotal:    180,
+		},
+		{
+			name:         "canonical reasoning mismatch fails closed",
+			raw:          subset,
+			input:        100,
+			output:       10,
+			reasoning:    1,
+			total:        110,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeSeparate,
+			wantUncached: 100,
+			wantTotal:    180,
+		},
+		{
+			name:         "known provider remains authoritative",
+			context:      CacheInputContext{Provider: "openai"},
+			raw:          independent,
+			input:        20,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeIncluded,
+			wantUncached: 0,
+			wantTotal:    20,
+		},
+		{
+			name:         "explicit mode remains authoritative",
+			context:      CacheInputContext{ExplicitMode: CacheInputModeSeparate},
+			raw:          subset,
+			input:        100,
+			cached:       80,
+			read:         80,
+			wantMode:     CacheInputModeSeparate,
+			wantUncached: 100,
+			wantTotal:    180,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := tt.output
+			if output == 0 {
+				output = 10
+			}
+			total := tt.total
+			if total == 0 {
+				total = 110
+			}
+			got := NormalizeCacheAccountingWithRawJSON(
+				tt.context,
+				tt.raw,
+				tt.input,
+				output,
+				tt.reasoning,
+				total,
+				tt.cached,
+				0,
+				tt.read,
+				tt.creation,
+			)
+			if got.Mode != tt.wantMode ||
+				got.UncachedInputTokens != tt.wantUncached ||
+				got.TotalInputTokens != tt.wantTotal {
+				t.Fatalf("accounting = %+v, want mode=%q uncached=%d total=%d",
+					got, tt.wantMode, tt.wantUncached, tt.wantTotal)
+			}
+		})
+	}
+}
+
+func replaceCacheAccountingTestString(input, old, replacement string) string {
+	if old == "" {
+		return input
+	}
+	for offset := 0; offset+len(old) <= len(input); offset++ {
+		if input[offset:offset+len(old)] == old {
+			return input[:offset] + replacement + input[offset+len(old):]
+		}
+	}
+	return input
+}
+
+func TestImportedDerivedCacheAccountingRequiresMarkedProvenance(t *testing.T) {
+	tests := []struct {
+		name                    string
+		raw                     string
+		context                 CacheInputContext
+		wantMode                string
+		wantUncached, wantTotal int64
+	}{
+		{"marked mixed", `{"format":"cpamp_usage_export","derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{}, CacheInputModeReadIncludedCreationSeparate, 100, 125},
+		{"marked included", `{"format":"cpamp_usage_export","derived_cache_input_mode":"included_in_input"}`, CacheInputContext{}, CacheInputModeIncluded, 95, 120},
+		{"marked separate", `{"format":"cpamp_usage_export","derived_cache_input_mode":"separate_from_input"}`, CacheInputContext{}, CacheInputModeSeparate, 120, 145},
+		{"unmarked mode ignored", `{"derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{}, CacheInputModeSeparate, 120, 145},
+		{"unknown format ignored", `{"format":"unknown","derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{}, CacheInputModeSeparate, 120, 145},
+		{"unsupported mode ignored", `{"format":"cpamp_usage_export","derived_cache_input_mode":"future-mode"}`, CacheInputContext{}, CacheInputModeSeparate, 120, 145},
+		{"explicit evidence wins", `{"format":"cpamp_usage_export","derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{ExplicitMode: CacheInputModeSeparate}, CacheInputModeSeparate, 120, 145},
+		{"known provider wins", `{"format":"cpamp_usage_export","derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{Provider: "openai"}, CacheInputModeIncluded, 95, 120},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hints := RawCacheAccountingHintsFromJSON(tt.raw)
+			if hints.ExplicitMode != "" {
+				t.Fatalf("imported derived mode became explicit: %q", hints.ExplicitMode)
+			}
+			got := NormalizeCacheAccountingWithRawJSON(tt.context, tt.raw, 120, 10, 0, 135, 25, 0, 20, 5)
+			if got.Mode != tt.wantMode || got.UncachedInputTokens != tt.wantUncached || got.TotalInputTokens != tt.wantTotal {
+				t.Fatalf("accounting=%+v, want mode=%s uncached=%d total=%d", got, tt.wantMode, tt.wantUncached, tt.wantTotal)
+			}
+		})
+	}
+}
