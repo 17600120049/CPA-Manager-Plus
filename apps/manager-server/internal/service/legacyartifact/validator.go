@@ -6,13 +6,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
 var (
-	ErrBundleMismatch   = errors.New("output bundle contents do not match execution receipt manifest digest")
-	ErrOperationRevoked = errors.New("operation was revoked in private journal")
+	ErrBundleMismatch    = errors.New("output bundle contents do not match execution receipt manifest digest")
+	ErrOperationRevoked  = errors.New("operation was revoked in private journal")
+	ErrRecordMismatch    = errors.New("journal operation record does not match receipt authority fields")
 )
 
 type ValidateOptions struct {
@@ -24,24 +26,26 @@ type ValidateOptions struct {
 }
 
 type ValidationResult struct {
-	Valid                bool               `json:"valid"`
-	Status               string             `json:"status"`
-	OperationID          string             `json:"operationId"`
-	Release              string             `json:"release"`
-	SourceCommit         string             `json:"sourceCommit"`
-	Asset                string             `json:"asset"`
-	ExecutableSHA256     string             `json:"executableSHA256"`
-	InputManifestDigest  string             `json:"inputManifestDigest"`
-	OutputManifestDigest string             `json:"outputManifestDigest"`
-	InputFamily          string             `json:"inputFamily"`
-	OutputFamily         string             `json:"outputFamily"`
-	CheckpointEvidence   CheckpointEvidence `json:"checkpointEvidence"`
-	ProcessEvidence      ProcessEvidence    `json:"processEvidence"`
+	Valid                bool                  `json:"valid"`
+	Status               string                `json:"status"`
+	OperationID          string                `json:"operationId"`
+	Release              string                `json:"release"`
+	SourceCommit         string                `json:"sourceCommit"`
+	Asset                string                `json:"asset"`
+	ExecutableSHA256     string                `json:"executableSHA256"`
+	InputManifestDigest  string                `json:"inputManifestDigest"`
+	OutputManifestDigest string                `json:"outputManifestDigest"`
+	InputFamily          string                `json:"inputFamily"`
+	OutputFamily         string                `json:"outputFamily"`
+	CheckpointEvidence   CheckpointEvidence    `json:"checkpointEvidence"`
+	ProcessEvidence      ProcessEvidence       `json:"processEvidence"`
+	Evidence             *ValidatedHopEvidence `json:"-"`
 }
 
 // ValidateHop validates that an execution receipt was genuinely issued by the Manager's
 // private authority, binds exactly to the target bundle layout without any changes or copies,
-// verifies that the operation was not revoked, and re-inspects that required migration
+// verifies that the operation was committed into the private journal with identical authority
+// fields, ensures that the operation was not revoked, and re-inspects that required migration
 // checkpoints are satisfied.
 func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, error) {
 	receipt := opts.Receipt
@@ -58,6 +62,9 @@ func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, 
 	}
 	if receipt == nil || opts.Authority == nil {
 		return nil, ErrInvalidReceipt
+	}
+	if opts.Journal == nil {
+		return nil, ErrJournalRequired
 	}
 
 	// Resolve symlinks in BundleLayout paths
@@ -77,7 +84,7 @@ func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, 
 	opts.BundleLayout.ConfigPath = resolvePath(opts.BundleLayout.ConfigPath)
 	opts.BundleLayout.ArchivesPath = resolvePath(opts.BundleLayout.ArchivesPath)
 
-	// 1. Authenticity verification: check HMAC signature
+	// 1. Authenticity verification: check HMAC signature with constant time comparison
 	if err := receipt.VerifyAuthenticity(opts.Authority); err != nil {
 		return nil, err
 	}
@@ -89,24 +96,32 @@ func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, 
 	if _, ok := nativePins[receipt.Asset]; !ok {
 		return nil, ErrUnverified
 	}
+	if strings.TrimSpace(receipt.ExecutableSHA256) == "" {
+		return nil, ErrExecutableMismatch
+	}
 
 	// 3. Process execution evidence verification
 	if receipt.ProcessEvidence.ExitCode != 0 || receipt.ProcessEvidence.DurationMS <= 0 {
 		return nil, ErrProcessExecutionFailed
 	}
 
-	// 4. Anti-replay and journal verification if journal is configured
-	if opts.Journal != nil {
-		rec, ok := opts.Journal.GetOperation(receipt.OperationID)
-		if !ok {
-			return nil, ErrOperationNotFound
-		}
-		if rec.Revoked {
-			return nil, ErrOperationRevoked
-		}
-		if rec.OutputManifestDigest != receipt.OutputManifestDigest {
-			return nil, ErrBundleMismatch
-		}
+	// 4. Anti-replay and journal verification (mandatory)
+	rec, ok := opts.Journal.GetOperation(receipt.OperationID)
+	if !ok {
+		return nil, ErrOperationNotFound
+	}
+	if rec.Revoked {
+		return nil, ErrOperationRevoked
+	}
+	// Verify that ALL authority-critical fields match the journal record exactly
+	if rec.OperationID != receipt.OperationID ||
+		rec.Release != receipt.Release ||
+		rec.Asset != receipt.Asset ||
+		rec.ExecutableSHA256 != receipt.ExecutableSHA256 ||
+		rec.InputManifestDigest != receipt.InputManifestDigest ||
+		rec.OutputManifestDigest != receipt.OutputManifestDigest ||
+		rec.IssuedAtMS != receipt.IssuedAtMS {
+		return nil, ErrRecordMismatch
 	}
 
 	// 5. Output Bundle Binding Verification:
@@ -126,6 +141,21 @@ func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, 
 		return nil, err
 	}
 
+	evidence := &ValidatedHopEvidence{
+		operationID:          receipt.OperationID,
+		release:              receipt.Release,
+		sourceCommit:         receipt.SourceCommit,
+		asset:                receipt.Asset,
+		executableSHA256:     receipt.ExecutableSHA256,
+		inputManifestDigest:  receipt.InputManifestDigest,
+		outputManifestDigest: receipt.OutputManifestDigest,
+		inputFamily:          receipt.InputFamily,
+		outputFamily:         receipt.OutputFamily,
+		processEvidence:      receipt.ProcessEvidence,
+		checkpointEvidence:   checkpoints,
+		validated:            true,
+	}
+
 	return &ValidationResult{
 		Valid:                true,
 		Status:               "verified-hop-evidence",
@@ -140,5 +170,6 @@ func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, 
 		OutputFamily:         receipt.OutputFamily,
 		CheckpointEvidence:   checkpoints,
 		ProcessEvidence:      receipt.ProcessEvidence,
+		Evidence:             evidence,
 	}, nil
 }

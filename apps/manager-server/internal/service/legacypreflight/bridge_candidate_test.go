@@ -2,13 +2,19 @@ package legacypreflight
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
 
+	_ "modernc.org/sqlite"
+
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
 func TestPlannedBridgeCandidateDoesNotIdentifyHistoricalSource(t *testing.T) {
@@ -102,21 +108,103 @@ func TestPlannedBridgeCandidateOmittedWithoutRecognizedLegacy(t *testing.T) {
 func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 	fixture := loadLegacyProfileFixtures(t)[0]
 	paths := buildLegacyProfileFixture(t, fixture)
-
-	// Case 1: with verified forward hop evidence
-	verifiedEvidence := &ForwardHopEvidence{
-		Status:               "verified",
-		OperationID:          "op-12345",
-		Release:              "v1.14.4",
-		SourceCommit:         "166262365d506157b99968105c890f480cc7c07c",
-		Asset:                "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutableSHA256:     "exe-sha-12345",
-		OutputManifestDigest: "out-manifest-12345",
+	if err := os.WriteFile(paths.DataKey, []byte("test-data-key-12345678901234567890\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
+	// Step 1: Set up a genuine forward-hop execution closed-loop
+	tempDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	authKey, err := legacyartifact.GenerateAuthorityKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := legacyartifact.NewAuthority(authKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := legacyartifact.NewMemoryJournal()
+
+	// Fake executable for runner-injected test
+	fakeExePath := filepath.Join(tempDir, "bin", "cpa-manager-plus")
+	if err := os.MkdirAll(filepath.Dir(fakeExePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fakeExePath, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	outputRoot := filepath.Join(tempDir, "hop-output")
+	inputLayout := maintenancebundle.Layout{
+		DatabasePath: paths.Database,
+		DataKeyPath:  paths.DataKey,
+		ConfigPath:   paths.Config,
+		ArchivesPath: paths.Archives,
+	}
+
+	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (legacyartifact.ProcessEvidence, error) {
+		db, err := sql.Open("sqlite", outputLayout.DatabasePath)
+		if err != nil {
+			return legacyartifact.ProcessEvidence{}, err
+		}
+		defer db.Close()
+		_, err = db.Exec(`
+			CREATE TABLE IF NOT EXISTS usage_archive_runs (id TEXT PRIMARY KEY, status TEXT);
+			CREATE TABLE IF NOT EXISTS usage_archive_segments (run_id TEXT, sequence INTEGER, PRIMARY KEY (run_id, sequence));
+			CREATE TABLE IF NOT EXISTS usage_archive_event_refs (event_hash TEXT PRIMARY KEY);
+			CREATE TABLE IF NOT EXISTS usage_archive_deleted_coverage_daily (utc_day INTEGER PRIMARY KEY);
+			CREATE TABLE IF NOT EXISTS usage_maintenance_locks (name TEXT PRIMARY KEY);
+			DELETE FROM usage_data_migrations;
+			INSERT INTO usage_data_migrations (name, status) VALUES ('usage_cache_accounting_v2', 'completed');
+			INSERT INTO usage_data_migrations (name, status) VALUES ('quota_snapshot_lifecycle_v1', 'completed');
+			DELETE FROM usage_maintenance_locks;
+		`)
+		if err != nil {
+			return legacyartifact.ProcessEvidence{}, err
+		}
+		return legacyartifact.ProcessEvidence{
+			PID:          9999,
+			ExitCode:     0,
+			StartedAtMS:  1000,
+			FinishedAtMS: 1500,
+			DurationMS:   500,
+		}, nil
+	}
+
+	receipt, err := legacyartifact.ExecuteHop(context.Background(), legacyartifact.HopOptions{
+		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		ExecutablePath: fakeExePath,
+		InputLayout:    inputLayout,
+		OutputRoot:     outputRoot,
+		Authority:      authority,
+		Journal:        journal,
+		CommandRunner:  runner,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteHop failed: %v", err)
+	}
+
+	// Validate to produce non-forgeable ValidatedHopEvidence
+	valResult, err := legacyartifact.ValidateHop(context.Background(), legacyartifact.ValidateOptions{
+		Receipt:      receipt,
+		BundleLayout: maintenancebundle.BundleLayout(outputRoot),
+		Authority:    authority,
+		Journal:      journal,
+	})
+	if err != nil {
+		t.Fatalf("ValidateHop failed: %v", err)
+	}
+	if valResult.Evidence == nil || !valResult.Evidence.IsValid() {
+		t.Fatalf("expected valid non-forgeable ValidatedHopEvidence")
+	}
+
+	// Case 1: with verified forward hop evidence from validator
 	report, err := Inspect(context.Background(), paths, Options{
-		SourceStopped:      true,
-		ForwardHopEvidence: verifiedEvidence,
+		SourceStopped: true,
+		ValidatedHop:  valResult.Evidence,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -130,8 +218,8 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 	if report.ExactSourceRelease == nil || report.ExactSourceRelease.Status != "unknown" {
 		t.Fatalf("exact source release falsely identified: %+v", report.ExactSourceRelease)
 	}
-	// 3. ForwardHopEvidence is attached
-	if report.ForwardHopEvidence == nil || report.ForwardHopEvidence.Status != "verified" || report.ForwardHopEvidence.OperationID != "op-12345" {
+	// 3. ForwardHopEvidence is attached and contains validated operation ID
+	if report.ForwardHopEvidence == nil || report.ForwardHopEvidence.Status != "verified-hop-evidence" || report.ForwardHopEvidence.OperationID != receipt.OperationID {
 		t.Fatalf("forward hop evidence missing or corrupted: %+v", report.ForwardHopEvidence)
 	}
 	// 4. "forward-hop-evidence" is removed from unknown
@@ -151,19 +239,16 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 		t.Fatalf("startupAllowed became true upon hop evidence!")
 	}
 
-	// Case 2: with unverified hop evidence
-	unverifiedEvidence := &ForwardHopEvidence{
-		Status: "unverified",
-	}
+	// Case 2: with nil ValidatedHop (no evidence)
 	report2, err := Inspect(context.Background(), paths, Options{
-		SourceStopped:      true,
-		ForwardHopEvidence: unverifiedEvidence,
+		SourceStopped: true,
+		ValidatedHop:  nil,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report2.ForwardHopEvidence != nil {
-		t.Fatalf("unverified forward hop evidence should not be attached: %+v", report2.ForwardHopEvidence)
+		t.Fatalf("nil ValidatedHop evidence should not attach ForwardHopEvidence: %+v", report2.ForwardHopEvidence)
 	}
 	if !slices.Contains(report2.Unknown, "forward-hop-evidence") {
 		t.Fatalf("forward-hop-evidence should remain unknown: %v", report2.Unknown)
@@ -172,4 +257,3 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 		t.Fatalf("UpgradeAuthorized must remain false!")
 	}
 }
-

@@ -3,14 +3,19 @@ package legacyartifact
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 )
 
 var (
 	ErrOperationReplayed = errors.New("operation already recorded in private journal")
 	ErrOperationNotFound = errors.New("operation not found in private journal")
+	ErrCorruptJournal    = errors.New("journal file is corrupt, malformed, or contains duplicate records")
+	ErrInsecureJournal   = errors.New("journal file is insecure (symlink or non-regular file)")
 )
 
 type OperationRecord struct {
@@ -22,6 +27,32 @@ type OperationRecord struct {
 	OutputManifestDigest string `json:"outputManifestDigest"`
 	IssuedAtMS           int64  `json:"issuedAtMs"`
 	Revoked              bool   `json:"revoked,omitempty"`
+}
+
+// Validate verifies that an OperationRecord contains all critical authority fields.
+func (r OperationRecord) Validate() error {
+	if strings.TrimSpace(r.OperationID) == "" {
+		return errors.New("operationId is required in journal record")
+	}
+	if strings.TrimSpace(r.Release) == "" {
+		return errors.New("release is required in journal record")
+	}
+	if strings.TrimSpace(r.Asset) == "" {
+		return errors.New("asset is required in journal record")
+	}
+	if strings.TrimSpace(r.ExecutableSHA256) == "" {
+		return errors.New("executableSHA256 is required in journal record")
+	}
+	if strings.TrimSpace(r.InputManifestDigest) == "" {
+		return errors.New("inputManifestDigest is required in journal record")
+	}
+	if strings.TrimSpace(r.OutputManifestDigest) == "" {
+		return errors.New("outputManifestDigest is required in journal record")
+	}
+	if r.IssuedAtMS <= 0 {
+		return errors.New("issuedAtMs must be positive in journal record")
+	}
+	return nil
 }
 
 // Journal maintains a private, Manager-owned record of executed forward-hop operations.
@@ -41,7 +72,10 @@ func NewMemoryJournal() *Journal {
 }
 
 // OpenJournal opens or creates a JSON-backed Journal at the given path.
+// If the journal exists but is corrupt, malformed, contains duplicate records,
+// or is an insecure symlink, it fails closed with an error.
 func OpenJournal(path string) (*Journal, error) {
+	path = strings.TrimSpace(path)
 	j := &Journal{
 		path:    path,
 		records: make(map[string]OperationRecord),
@@ -49,31 +83,72 @@ func OpenJournal(path string) (*Journal, error) {
 	if path == "" {
 		return j, nil
 	}
-	data, err := os.ReadFile(path)
-	if err == nil {
-		var list []OperationRecord
-		if err := json.Unmarshal(data, &list); err == nil {
-			for _, rec := range list {
-				j.records[rec.OperationID] = rec
-			}
+
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return j, nil
 		}
-	} else if !os.IsNotExist(err) {
-		return nil, err
+		return nil, fmt.Errorf("inspect journal path %s: %w", path, err)
 	}
+
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, ErrInsecureJournal
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read journal file %s: %w", path, err)
+	}
+
+	var list []OperationRecord
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, errors.Join(ErrCorruptJournal, fmt.Errorf("unmarshal journal %s: %w", path, err))
+	}
+
+	seenIDs := make(map[string]bool, len(list))
+	for i, rec := range list {
+		if err := rec.Validate(); err != nil {
+			return nil, errors.Join(ErrCorruptJournal, fmt.Errorf("record %d invalid: %w", i, err))
+		}
+		if seenIDs[rec.OperationID] {
+			return nil, errors.Join(ErrCorruptJournal, fmt.Errorf("duplicate operation ID %s", rec.OperationID))
+		}
+		seenIDs[rec.OperationID] = true
+		j.records[rec.OperationID] = rec
+	}
+
 	return j, nil
 }
 
+// Path returns the path of the journal file.
+func (j *Journal) Path() string {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.path
+}
+
 // RecordOperation records a new completed operation. If the operationID is already present,
-// it returns ErrOperationReplayed.
+// it returns ErrOperationReplayed. Persistence failures cause the entire record operation
+// to fail and not be committed to memory.
 func (j *Journal) RecordOperation(rec OperationRecord) error {
+	if err := rec.Validate(); err != nil {
+		return err
+	}
+
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
 	if _, exists := j.records[rec.OperationID]; exists {
 		return ErrOperationReplayed
 	}
+
 	j.records[rec.OperationID] = rec
-	return j.persistLocked()
+	if err := j.persistLocked(); err != nil {
+		delete(j.records, rec.OperationID)
+		return err
+	}
+	return nil
 }
 
 // GetOperation returns the record for an operationID if present.
@@ -94,25 +169,68 @@ func (j *Journal) RevokeOperation(operationID string) error {
 	if !ok {
 		return ErrOperationNotFound
 	}
+	origRevoked := rec.Revoked
 	rec.Revoked = true
 	j.records[operationID] = rec
-	return j.persistLocked()
+
+	if err := j.persistLocked(); err != nil {
+		rec.Revoked = origRevoked
+		j.records[operationID] = rec
+		return err
+	}
+	return nil
 }
 
 func (j *Journal) persistLocked() error {
 	if j.path == "" {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(j.path), 0o700); err != nil {
-		return err
+	dir := filepath.Dir(j.path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create journal directory %s: %w", dir, err)
 	}
+
 	list := make([]OperationRecord, 0, len(j.records))
 	for _, rec := range j.records {
 		list = append(list, rec)
 	}
 	data, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal journal records: %w", err)
 	}
-	return os.WriteFile(j.path, data, 0o600)
+	data = append(data, '\n')
+
+	tmpPath := fmt.Sprintf("%s.tmp.%d.%d", j.path, os.Getpid(), time.Now().UnixNano())
+	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("create temporary journal file %s: %w", tmpPath, err)
+	}
+
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("write temporary journal file %s: %w", tmpPath, err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("sync temporary journal file %s: %w", tmpPath, err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("close temporary journal file %s: %w", tmpPath, err)
+	}
+
+	if err := os.Rename(tmpPath, j.path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("rename temporary journal file %s to %s: %w", tmpPath, j.path, err)
+	}
+
+	// Best-effort directory sync on platforms that support directory fsync
+	if dirFile, err := os.Open(dir); err == nil {
+		_ = dirFile.Sync()
+		_ = dirFile.Close()
+	}
+
+	return nil
 }

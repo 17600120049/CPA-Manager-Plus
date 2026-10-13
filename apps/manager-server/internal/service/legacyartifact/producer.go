@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
@@ -22,6 +23,8 @@ var (
 	ErrExecutableMismatch     = errors.New("executable bytes digest does not match verified release pin")
 	ErrProcessExecutionFailed = errors.New("process execution failed or did not reap cleanly")
 	ErrInvalidHopOptions      = errors.New("invalid forward-hop producer options")
+	ErrJournalRequired        = errors.New("private journal is mandatory for forward-hop execution")
+	ErrInsecureWorkspace      = errors.New("output root workspace is invalid, overlaps with input, or is not empty")
 )
 
 type CommandRunner func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error)
@@ -36,8 +39,6 @@ type HopOptions struct {
 	Journal        *Journal
 	Timeout        time.Duration
 	CommandRunner  CommandRunner
-	// ExpectedExecutableSHA256 allows specifying or overriding verified digest in tests
-	ExpectedExecutableSHA256 string
 }
 
 // DefaultCommandRunner executes the binary with controlled environment pointing
@@ -81,13 +82,22 @@ func DefaultCommandRunner(ctx context.Context, exePath string, outputLayout main
 
 // ExecuteHop performs a controlled, Manager-owned forward-hop operation.
 // It verifies the input bundle, ensures it is an eligible legacy source (prohibiting
-// downgrade of newer sources), executes the verified v1.14.4 executable in an isolated
-// output workspace, validates post-condition migration checkpoints, seals the output
-// bundle, and issues an operation-signed ExecutionReceipt.
+// downgrade of newer sources), validates release archive pins, extracts the authentic
+// v1.14.4 executable to an isolated temporary location, executes the process in an
+// isolated output workspace, validates post-condition migration checkpoints, seals the
+// output bundle, commits the operation atomically into the private journal, and issues
+// an operation-signed ExecutionReceipt.
 func ExecuteHop(ctx context.Context, opts HopOptions) (*ExecutionReceipt, error) {
 	if opts.Authority == nil || opts.Asset == "" || opts.OutputRoot == "" {
 		return nil, ErrInvalidHopOptions
 	}
+	if opts.Journal == nil {
+		return nil, ErrJournalRequired
+	}
+	if _, ok := nativePins[opts.Asset]; !ok {
+		return nil, ErrUnverified
+	}
+
 	if realOut, err := filepath.EvalSymlinks(opts.OutputRoot); err == nil {
 		opts.OutputRoot = realOut
 	} else if parent, err := filepath.EvalSymlinks(filepath.Dir(opts.OutputRoot)); err == nil {
@@ -115,6 +125,21 @@ func ExecuteHop(ctx context.Context, opts HopOptions) (*ExecutionReceipt, error)
 	opts.InputLayout.DataKeyPath = resolvePath(opts.InputLayout.DataKeyPath)
 	opts.InputLayout.ConfigPath = resolvePath(opts.InputLayout.ConfigPath)
 	opts.InputLayout.ArchivesPath = resolvePath(opts.InputLayout.ArchivesPath)
+
+	// Validate output workspace isolation
+	inDbDir := filepath.Dir(opts.InputLayout.DatabasePath)
+	if opts.OutputRoot == inDbDir || opts.OutputRoot == opts.InputLayout.DatabasePath {
+		return nil, errors.Join(ErrInsecureWorkspace, errors.New("output root cannot overlap with input source directory"))
+	}
+	if rel, err := filepath.Rel(opts.OutputRoot, inDbDir); err == nil && (rel == "." || !strings.HasPrefix(rel, "..")) {
+		return nil, errors.Join(ErrInsecureWorkspace, errors.New("output root cannot be a parent of input source"))
+	}
+	if rel, err := filepath.Rel(inDbDir, opts.OutputRoot); err == nil && (rel == "." || !strings.HasPrefix(rel, "..")) {
+		return nil, errors.Join(ErrInsecureWorkspace, errors.New("output root cannot be inside input source directory"))
+	}
+	if entries, err := os.ReadDir(opts.OutputRoot); err == nil && len(entries) > 0 {
+		return nil, errors.Join(ErrInsecureWorkspace, errors.New("output directory already exists and is not empty"))
+	}
 
 	// 1. Validate Input Source Pre-conditions
 	inputPaths := sqlite.InspectionPaths{
@@ -149,19 +174,33 @@ func ExecuteHop(ctx context.Context, opts HopOptions) (*ExecutionReceipt, error)
 	}
 
 	// 2. Resolve and Validate Executable
-	exePath := opts.ExecutablePath
-	expectedExeDigest := opts.ExpectedExecutableSHA256
-	if exePath == "" && opts.ArchivePath != "" {
-		tempExe := filepath.Join(opts.OutputRoot, ".tmp-bin", "cpa-manager-plus")
+	// In production, executable MUST be extracted from the authenticated pinned archive.
+	// opts.ExecutablePath is only allowed in test harnesses when CommandRunner is explicitly injected.
+	var exePath string
+	var expectedExeDigest string
+	if opts.ArchivePath != "" {
+		tempBinDir, err := os.MkdirTemp("", "cpamp-hop-bin-*")
+		if err != nil {
+			return nil, fmt.Errorf("create temporary binary directory: %w", err)
+		}
+		defer os.RemoveAll(tempBinDir)
+
+		binName := "cpa-manager-plus"
+		if strings.HasSuffix(opts.Asset, ".zip") {
+			binName += ".exe"
+		}
+		tempExe := filepath.Join(tempBinDir, binName)
 		extractedDigest, _, err := ExtractExecutable(ctx, opts.ArchivePath, opts.Asset, tempExe)
 		if err != nil {
 			return nil, err
 		}
 		exePath = tempExe
 		expectedExeDigest = extractedDigest
-	}
-	if exePath == "" {
-		return nil, ErrInvalidHopOptions
+	} else if opts.ExecutablePath != "" && opts.CommandRunner != nil {
+		// Test-only dependency injection mode
+		exePath = opts.ExecutablePath
+	} else {
+		return nil, errors.Join(ErrInvalidHopOptions, errors.New("archive path is required for forward hop"))
 	}
 
 	// Verify executable bytes on disk
@@ -240,20 +279,18 @@ func ExecuteHop(ctx context.Context, opts HopOptions) (*ExecutionReceipt, error)
 		return nil, err
 	}
 
-	// 8. Record in Private Journal if configured
-	if opts.Journal != nil {
-		rec := OperationRecord{
-			OperationID:          opID,
-			Release:              Release,
-			Asset:                opts.Asset,
-			ExecutableSHA256:     actualExeDigest,
-			InputManifestDigest:  inputManifestDigest,
-			OutputManifestDigest: outputManifestDigest,
-			IssuedAtMS:           receipt.IssuedAtMS,
-		}
-		if err := opts.Journal.RecordOperation(rec); err != nil {
-			return nil, err
-		}
+	// 8. Commit into Private Journal atomically (mandatory)
+	rec := OperationRecord{
+		OperationID:          opID,
+		Release:              Release,
+		Asset:                opts.Asset,
+		ExecutableSHA256:     actualExeDigest,
+		InputManifestDigest:  inputManifestDigest,
+		OutputManifestDigest: outputManifestDigest,
+		IssuedAtMS:           receipt.IssuedAtMS,
+	}
+	if err := opts.Journal.RecordOperation(rec); err != nil {
+		return nil, fmt.Errorf("persist operation in journal: %w", err)
 	}
 
 	return receipt, nil

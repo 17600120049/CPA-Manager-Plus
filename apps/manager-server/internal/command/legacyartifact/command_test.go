@@ -54,13 +54,24 @@ func TestCommandVerifyReceiptValidAndInvalid(t *testing.T) {
 	// 1. Missing flags
 	for _, args := range [][]string{
 		{"--verify-receipt", filepath.Join(dir, "r.json")},
-		{"--verify-receipt", filepath.Join(dir, "r.json"), "--bundle", dir},
-		{"--verify-receipt", filepath.Join(dir, "r.json"), "--bundle", dir, "--authority-key", "short"},
+		{"--verify-receipt", filepath.Join(dir, "r.json"), "--bundle", ""},
 	} {
 		var out, stderr bytes.Buffer
 		err := Run(context.Background(), args, &out, &stderr)
 		if err == nil || out.Len() != 0 {
 			t.Fatalf("expected error on missing verify-receipt args: %v", err)
+		}
+	}
+
+	// 2. Removed flags (--authority-key, --executable) must be rejected
+	for _, args := range [][]string{
+		{"--verify-receipt", filepath.Join(dir, "r.json"), "--bundle", dir, "--authority-key", "deadbeef"},
+		{"--execute-hop", "--executable", "/tmp/fake"},
+	} {
+		var out, stderr bytes.Buffer
+		err := Run(context.Background(), args, &out, &stderr)
+		if err == nil {
+			t.Fatalf("expected error on disallowed flag: %v", args)
 		}
 	}
 }
