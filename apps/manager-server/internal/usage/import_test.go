@@ -1959,19 +1959,19 @@ func TestParseImportPayloadRoundTripsRequestMetadataFields(t *testing.T) {
 	gen := true
 	stream := false
 	original := Event{
-		Timestamp:         "2026-08-12T10:00:00Z",
-		TimestampMS:       1_755_000_000_000,
-		Endpoint:          "POST /v1/chat/completions",
-		Model:             "gpt-4o",
-		RequestedModel:    "gpt-4o",
-		ResolvedModel:     "gpt-4o-2024-08-06",
-		ResponseModel:     "gpt-4o-mini",
-		SessionID:         "session-xyz",
-		ParentSessionID:   "parent-session-abc",
-		AccessTokenSHA256: "sha256-token-12345",
-		Generate:          &gen,
-		Stream:            &stream,
-		TotalTokens:       1,
+		Timestamp:          "2026-08-12T10:00:00Z",
+		TimestampMS:        1_755_000_000_000,
+		Endpoint:           "POST /v1/chat/completions",
+		Model:              "gpt-4o",
+		RequestedModel:     "gpt-4o",
+		ResolvedModel:      "gpt-4o-2024-08-06",
+		ResponseModel:      "gpt-4o-mini",
+		SessionID:          "session-xyz",
+		ParentSessionID:    "parent-session-abc",
+		AccessTokenSHA256:  "sha256-token-12345",
+		Generate:           &gen,
+		Stream:             &stream,
+		TotalTokens:        1,
 	}
 
 	payload, err := json.Marshal(BuildPayload([]Event{original}))
@@ -2011,19 +2011,19 @@ func TestParseImportPayloadJSONLRoundTripsFalseBooleans(t *testing.T) {
 	gen := false
 	stream := false
 	original := Event{
-		Timestamp:         "2026-08-12T10:00:00Z",
-		TimestampMS:       1_755_000_000_000,
-		Endpoint:          "POST /v1/chat/completions",
-		Model:             "gpt-4o",
-		RequestedModel:    "gpt-4o",
-		ResolvedModel:     "gpt-4o-2024-08-06",
-		ResponseModel:     "gpt-4o-mini",
-		SessionID:         "sess-test-false",
-		ParentSessionID:   "parent-sess-false",
-		AccessTokenSHA256: "sha256-test-hash",
-		Generate:          &gen,
-		Stream:            &stream,
-		TotalTokens:       1,
+		Timestamp:          "2026-08-12T10:00:00Z",
+		TimestampMS:        1_755_000_000_000,
+		Endpoint:           "POST /v1/chat/completions",
+		Model:              "gpt-4o",
+		RequestedModel:     "gpt-4o",
+		ResolvedModel:      "gpt-4o-2024-08-06",
+		ResponseModel:      "gpt-4o-mini",
+		SessionID:          "sess-test-false",
+		ParentSessionID:    "parent-sess-false",
+		AccessTokenSHA256:  "sha256-test-hash",
+		Generate:           &gen,
+		Stream:             &stream,
+		TotalTokens:        1,
 	}
 
 	line, err := json.Marshal(original)
@@ -2058,3 +2058,42 @@ func TestParseImportPayloadJSONLRoundTripsFalseBooleans(t *testing.T) {
 		t.Fatalf("imported fields mismatch: %+v", imported)
 	}
 }
+
+func TestArchiveDerivedFieldsAcceptsReadIncludedCreationSeparate(t *testing.T) {
+	record := map[string]any{
+		"cache_input_mode":                 CacheInputModeReadIncludedCreationSeparate,
+		"normalized_uncached_input_tokens": json.Number("100"),
+		"normalized_total_input_tokens":    json.Number("125"),
+		"normalized_cache_read_tokens":     json.Number("20"),
+		"normalized_cache_creation_tokens": json.Number("5"),
+		"total_tokens":                     json.Number("135"),
+		"header_quota_recover_at_ms":       json.Number("0"),
+		"header_quota_used_percent":        nil,
+	}
+	accounting, totalTokens, _, _, err := archiveDerivedFieldsFromRecord(record)
+	if err != nil {
+		t.Fatalf("archive derived fields: %v", err)
+	}
+	if accounting.Mode != CacheInputModeReadIncludedCreationSeparate ||
+		accounting.UncachedInputTokens != 100 ||
+		accounting.TotalInputTokens != 125 ||
+		accounting.CacheReadTokens != 20 ||
+		accounting.CacheCreationTokens != 5 ||
+		totalTokens != 135 {
+		t.Fatalf("archive accounting = %+v total=%d", accounting, totalTokens)
+	}
+
+	event := Event{
+		PreserveArchiveDerivedFields:      true,
+		CacheInputMode:                   accounting.Mode,
+		NormalizedUncachedInputTokens:    accounting.UncachedInputTokens,
+		NormalizedTotalInputTokens:       accounting.TotalInputTokens,
+		NormalizedCacheReadTokens:        accounting.CacheReadTokens,
+		NormalizedCacheCreationTokens:    accounting.CacheCreationTokens,
+		TotalTokens:                      totalTokens,
+	}
+	if err := ValidateArchiveDerivedFields(event); err != nil {
+		t.Fatalf("validate mixed archive accounting: %v", err)
+	}
+}
+
