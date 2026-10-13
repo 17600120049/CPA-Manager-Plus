@@ -321,7 +321,7 @@ func sqliteURI(path string) string {
 }
 
 // ValidateMatchingEvidence verifies cross-file coherence:
-//  1. Database is a valid SQLite database (header magic, page size, PRAGMA quick_check).
+//  1. Database passes header/page-size, quick_check and foreign_key_check gates.
 //  2. If WAL exists, WAL header and checksum match database page size.
 //  3. Data key is a valid 32-byte key.
 //  4. Data key decrypts both persisted CPA connection JSON settings, subject to
@@ -476,6 +476,9 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 	if quickCheck != "ok" {
 		return fmt.Errorf("SQLite integrity check failed: %s", quickCheck)
 	}
+	if err := validateForeignKeys(ctx, db); err != nil {
+		return err
+	}
 
 	// Reuse the production raw-storage guard on the scratch database before any
 	// protected read can reinterpret a malformed post-migration value as plaintext.
@@ -501,6 +504,30 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 	}
 	if err := validateArchiveEvidence(ctx, db, l); err != nil {
 		return err
+	}
+	return ctx.Err()
+}
+
+func validateForeignKeys(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		return fmt.Errorf("query SQLite foreign_key_check: %w", err)
+	}
+	defer rows.Close()
+	if rows.Next() {
+		var table, parent string
+		var rowID sql.NullInt64
+		var constraintID int64
+		if err := rows.Scan(&table, &rowID, &parent, &constraintID); err != nil {
+			return fmt.Errorf("scan SQLite foreign_key_check: %w", err)
+		}
+		return errors.New("SQLite foreign_key_check failed: foreign key violation")
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read SQLite foreign_key_check: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close SQLite foreign_key_check: %w", err)
 	}
 	return ctx.Err()
 }
@@ -631,26 +658,40 @@ func validateArchiveSegments(ctx context.Context, db *sql.DB, root string, segme
 // atomically changes all segment statuses in MarkVerified. Failed runs retain
 // the evidence required by their resume stage. Cancellation can retain files,
 // so recorded references are still checked even when publication is optional.
-func archiveRunSegmentStatus(status, resumeStatus string) (string, error) {
+type archiveLifecyclePolicy struct {
+	segmentStatus     string // Empty means segments are forbidden.
+	segmentsRequired  bool
+	manifestRequired  bool
+	manifestForbidden bool
+	deletionAllowed   bool
+}
+
+func archiveRunPolicy(status, resumeStatus string) (archiveLifecyclePolicy, error) {
 	if status == usagearchive.StatusFailed {
 		switch resumeStatus {
 		case usagearchive.StatusArchiving, usagearchive.StatusVerifying, usagearchive.StatusDeleting:
 			status = resumeStatus
 		default:
-			return "", errors.New("invalid archive run resume status")
+			return archiveLifecyclePolicy{}, errors.New("invalid archive run resume status")
 		}
 	} else if resumeStatus != "" {
-		return "", errors.New("archive run resume status requires failed state")
+		return archiveLifecyclePolicy{}, errors.New("archive run resume status requires failed state")
 	}
 	switch status {
-	case usagearchive.StatusPreviewed, usagearchive.StatusArchiving, usagearchive.StatusCancelled:
-		return "", nil
+	case usagearchive.StatusPreviewed:
+		return archiveLifecyclePolicy{manifestForbidden: true}, nil
+	case usagearchive.StatusArchiving:
+		return archiveLifecyclePolicy{segmentStatus: usagearchive.SegmentStatusPublished, manifestForbidden: true}, nil
+	case usagearchive.StatusCancelled:
+		return archiveLifecyclePolicy{segmentStatus: usagearchive.SegmentStatusPublished}, nil
 	case usagearchive.StatusArchived, usagearchive.StatusVerifying:
-		return usagearchive.SegmentStatusPublished, nil
-	case usagearchive.StatusVerified, usagearchive.StatusDeleting, usagearchive.StatusCompleted:
-		return usagearchive.SegmentStatusVerified, nil
+		return archiveLifecyclePolicy{segmentStatus: usagearchive.SegmentStatusPublished, segmentsRequired: true, manifestRequired: true}, nil
+	case usagearchive.StatusVerified:
+		return archiveLifecyclePolicy{segmentStatus: usagearchive.SegmentStatusVerified, segmentsRequired: true, manifestRequired: true}, nil
+	case usagearchive.StatusDeleting, usagearchive.StatusCompleted:
+		return archiveLifecyclePolicy{segmentStatus: usagearchive.SegmentStatusVerified, segmentsRequired: true, manifestRequired: true, deletionAllowed: true}, nil
 	default:
-		return "", errors.New("invalid archive run status")
+		return archiveLifecyclePolicy{}, errors.New("invalid archive run status")
 	}
 }
 
@@ -663,7 +704,8 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, s
 		return nil
 	}
 	// Segment rows are already closed: inspection uses a single DB connection.
-	rows, err := db.QueryContext(ctx, "SELECT id, status, resume_status, manifest_file, manifest_sha256 FROM usage_archive_runs")
+	rows, err := db.QueryContext(ctx, `SELECT id, status, resume_status, manifest_file, manifest_sha256,
+		deleted_event_count, last_deleted_event_id, delete_started_at_ms, completed_at_ms FROM usage_archive_runs`)
 	if err != nil {
 		return fmt.Errorf("query archive run manifest evidence: %w", err)
 	}
@@ -674,25 +716,42 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, s
 		}
 		var runID, status string
 		var resumeStatus, fileName, expectedSHA sql.NullString
-		if err := rows.Scan(&runID, &status, &resumeStatus, &fileName, &expectedSHA); err != nil {
+		var deletedCount, lastDeletedID int64
+		var deleteStarted, completed sql.NullInt64
+		if err := rows.Scan(&runID, &status, &resumeStatus, &fileName, &expectedSHA,
+			&deletedCount, &lastDeletedID, &deleteStarted, &completed); err != nil {
 			return fmt.Errorf("scan archive run manifest evidence: %w", err)
 		}
-		expectedSegmentStatus, err := archiveRunSegmentStatus(status, resumeStatus.String)
+		policy, err := archiveRunPolicy(status, resumeStatus.String)
 		if err != nil {
 			return err
 		}
-		if expectedSegmentStatus != "" {
-			if fileName.String == "" || expectedSHA.String == "" {
-				return errors.New("published archive run requires manifest file and digest")
-			}
-			evidence := segments[runID]
-			if evidence.published+evidence.verified == 0 {
-				return errors.New("published archive run requires segment evidence")
-			}
-			if (expectedSegmentStatus == usagearchive.SegmentStatusPublished && evidence.verified != 0) ||
-				(expectedSegmentStatus == usagearchive.SegmentStatusVerified && evidence.published != 0) {
-				return errors.New("archive segment status does not match run lifecycle")
-			}
+		if deletedCount < 0 || lastDeletedID < 0 {
+			return errors.New("invalid archive deletion counters")
+		}
+		hasDeletion := deletedCount > 0 || lastDeletedID > 0 || deleteStarted.Valid || completed.Valid
+		if hasDeletion && !policy.deletionAllowed {
+			return errors.New("archive deletion evidence does not match run lifecycle")
+		}
+		if completed.Valid && status != usagearchive.StatusCompleted {
+			return errors.New("archive completion evidence requires completed run")
+		}
+		evidence := segments[runID]
+		if policy.segmentStatus == "" && evidence.published+evidence.verified != 0 {
+			return errors.New("archive run lifecycle forbids segment evidence")
+		}
+		if (policy.segmentStatus == usagearchive.SegmentStatusPublished && evidence.verified != 0) ||
+			(policy.segmentStatus == usagearchive.SegmentStatusVerified && evidence.published != 0) {
+			return errors.New("archive segment status does not match run lifecycle")
+		}
+		if policy.manifestForbidden && (fileName.String != "" || expectedSHA.String != "") {
+			return errors.New("archive run lifecycle forbids manifest metadata")
+		}
+		if policy.manifestRequired && (fileName.String == "" || expectedSHA.String == "") {
+			return errors.New("published archive run requires manifest file and digest")
+		}
+		if policy.segmentsRequired && evidence.published+evidence.verified == 0 {
+			return errors.New("published archive run requires segment evidence")
 		}
 		if fileName.String == "" && expectedSHA.String == "" {
 			continue

@@ -62,8 +62,9 @@ external writer quiescence separately:
    observed by `Revalidate` fail closed).
 7. Revalidates the staged copy against the baseline manifest.
 8. Validates matching evidence on the staged copy in a temporary inspection sandbox
-   (SQLite driver `PRAGMA quick_check(1)`, production CPA connection JSON settings
-   decryption with the data key, config validity, DB-recorded archive hashes/sizes).
+   (SQLite driver `PRAGMA quick_check(1)` and `PRAGMA foreign_key_check`, production
+   CPA connection JSON settings decryption with the data key, config validity,
+   DB-recorded archive hashes/sizes).
 9. Writes `manifest.json` with `sourceRevision` and fence `cooperating-manager-lock`.
 10. Verifies destination is absent and atomically renames the temporary directory to
     the destination.
@@ -90,8 +91,10 @@ cannot pass verification.
 `RestoreNew` first verifies the bundle, stages the entire file set into a private
 temporary directory, revalidates file digests and `sourceRevision`, and executes
 `ValidateMatchingEvidence` on the staged copy:
-- Detects and rejects corrupt SQLite databases (fails SQLite magic header or
-  `PRAGMA quick_check(1)`).
+- Detects and rejects corrupt SQLite databases (fails SQLite magic header,
+  `PRAGMA quick_check(1)` or `PRAGMA foreign_key_check`). Any foreign key violation
+  fails even when quick_check and all recorded file digests pass; inspection
+  uses the foreign keys declared in the database schema.
 - Detects and rejects wrong data keys when encrypted CPA connection settings
   provide evidence: reads `setup.managementKey` and
   `manager_config_v1.cpaConnection.managementKey` through the production setting
@@ -117,14 +120,23 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   stage. Missing segment tables or rows cannot bypass post-publication evidence.
   Unknown run/resume states, missing failed resume stages, and resume stages on
   non-failed runs fail closed.
-  `previewed`/`archiving`/`cancelled` and failed runs resuming `archiving` allow
-  paired NULL/empty manifest fields. Cancellation can retain published files;
-  if either `manifest_file` or `manifest_sha256` is recorded in any state, both
-  are required and their file is checked. The path must remain inside its run
+  `previewed` forbids segment records and manifest metadata. `archiving` and
+  failed runs resuming `archiving` allow optional segments, all `published`,
+  and forbid manifest metadata. `cancelled` permits optional `published`
+  segments and optional manifest metadata because cancellation can retain
+  published files. Where manifest metadata is optional, either recorded field
+  makes both mandatory and their file is checked; paired NULL/empty fields
+  remain absent. The path must remain inside its run
   directory under the archive root, and its file must be regular, single-linked,
   non-empty and at most 4 MiB, with full-file SHA-256 matching the database.
   This check does not decode the archive manifest or validate event contents,
   hash chains or complete historical coverage.
+- Checks irreversible run deletion evidence: positive `deleted_event_count`
+  or `last_deleted_event_id`, non-NULL `delete_started_at_ms` or
+  `completed_at_ms` requires `deleting`/`completed` or failed resuming `deleting`.
+  `completed_at_ms` additionally requires the actual `completed` state. Negative
+  deletion counters fail closed. Changing only a completed run's status to a
+  pre-publication/cancelled state cannot discard this evidence.
 - Inspection query, scan, row-iteration, filesystem and context cancellation
   errors fail closed; an absent optional table is distinct from inspection failure.
 - Detects asset mismatches supported by these checks and bundle modifications

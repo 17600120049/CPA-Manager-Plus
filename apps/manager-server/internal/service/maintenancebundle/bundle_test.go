@@ -872,7 +872,7 @@ func TestRestoreArchiveRunManifestMatchingEvidence(t *testing.T) {
 				"invalid-sha":           "UPDATE usage_archive_runs SET manifest_sha256 = 'invalid'",
 				"traversal":             "UPDATE usage_archive_runs SET manifest_file = '../database'",
 				"backslash":             `UPDATE usage_archive_runs SET manifest_file = 'run-1\manifest.json'`,
-				"wrong-run":             "UPDATE usage_archive_runs SET id = 'other-run'",
+				"wrong-run":             "UPDATE usage_archive_runs SET manifest_file = 'other-run/manifest.json'",
 				"segments-table-absent": "DROP TABLE usage_archive_segments",
 			}
 			if query, ok := queries[change]; ok || change == "absolute" {
@@ -909,6 +909,78 @@ func TestRestoreArchiveRunManifestMatchingEvidence(t *testing.T) {
 	}
 }
 
+func TestRestoreArchiveRelationalAndDowngradeEvidence(t *testing.T) {
+	for _, change := range []string{"matching-ref", "orphan-segment", "orphan-ref-ledger", "orphan-ref-segment", "completed-to-previewed"} {
+		t.Run(change, func(t *testing.T) {
+			l, root, lock := archiveRunFixture(t)
+			bundle, _ := mustCreate(t, l, root, lock)
+			db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			db.SetMaxOpenConns(1)
+			if _, err := db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+				t.Fatal(err)
+			}
+			switch change {
+			case "orphan-segment":
+				_, err = db.Exec("DELETE FROM usage_archive_runs WHERE id = 'run-1'")
+			case "orphan-ref-ledger":
+				_, err = db.Exec(`INSERT INTO usage_archive_event_refs
+					(event_hash, run_id, segment_sequence, raw_event_id, timestamp_ms, archived_at_ms)
+					VALUES ('missing-ledger', 'run-1', 1, 1, 1, 1)`)
+			case "matching-ref", "orphan-ref-segment":
+				if _, err := db.Exec(`INSERT INTO usage_event_identity_ledger
+					(event_hash, timestamp_ms, bucket_ms, first_seen_at_ms, updated_at_ms)
+					VALUES ('known-event', 1, 0, 1, 1)`); err != nil {
+					t.Fatal(err)
+				}
+				sequence := 1
+				if change == "orphan-ref-segment" {
+					sequence = 99
+				}
+				_, err = db.Exec(`INSERT INTO usage_archive_event_refs
+					(event_hash, run_id, segment_sequence, raw_event_id, timestamp_ms, archived_at_ms)
+					VALUES ('known-event', 'run-1', ?, 1, 1, 1)`, sequence)
+			case "completed-to-previewed":
+				_, err = db.Exec("UPDATE usage_archive_runs SET status = 'previewed', manifest_file = NULL, manifest_sha256 = NULL")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result string
+			if err := db.QueryRow("PRAGMA quick_check(1)").Scan(&result); err != nil || result != "ok" {
+				t.Fatalf("counterexample must pass quick_check: %q %v", result, err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if change == "completed-to-previewed" {
+				if err := os.Remove(filepath.Join(bundle, "usage-archives", "run-1", "manifest.json")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rewriteManifest(t, bundle)
+			dest := filepath.Join(root, "restored")
+			_, err = RestoreNew(context.Background(), bundle, dest)
+			if change == "matching-ref" {
+				if err != nil {
+					t.Fatalf("valid foreign key relationships must restore: %v", err)
+				}
+				return
+			}
+			want := "foreign_key_check"
+			if change == "completed-to-previewed" {
+				want = "deletion evidence does not match run lifecycle"
+			}
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("relational corruption or completed-run downgrade must fail with %q: %v", want, err)
+			}
+			noPublished(t, root, dest)
+		})
+	}
+}
+
 func TestRestoreArchiveLifecycleRequiredEvidence(t *testing.T) {
 	states := []struct{ status, resume, segment string }{
 		{"archived", "", "published"}, {"verifying", "", "published"},
@@ -926,6 +998,12 @@ func TestRestoreArchiveLifecycleRequiredEvidence(t *testing.T) {
 				}
 				if _, err := db.Exec("UPDATE usage_archive_runs SET status = ?, resume_status = ?", state.status, state.resume); err != nil {
 					t.Fatal(err)
+				}
+				if state.segment == "published" || state.status == "verified" {
+					if _, err := db.Exec(`UPDATE usage_archive_runs SET deleted_event_count = 0,
+						last_deleted_event_id = 0, delete_started_at_ms = NULL, completed_at_ms = NULL`); err != nil {
+						t.Fatal(err)
+					}
 				}
 				if _, err := db.Exec("UPDATE usage_archive_segments SET status = ?", state.segment); err != nil {
 					t.Fatal(err)
@@ -993,6 +1071,133 @@ func TestRestoreArchiveLifecycleRequiredEvidence(t *testing.T) {
 					t.Fatalf("run lifecycle must fail closed with %q: %v", want, err)
 				}
 				noPublished(t, root, dest)
+			})
+		}
+	}
+}
+
+func TestRestorePrepublicationArchivePolicy(t *testing.T) {
+	for _, state := range []struct{ status, resume string }{
+		{"previewed", ""}, {"archiving", ""}, {"failed", "archiving"}, {"cancelled", ""},
+	} {
+		for _, segment := range []string{"none", "published", "verified"} {
+			for _, manifest := range []string{"absent", "present"} {
+				t.Run(state.status+"/"+state.resume+"/"+segment+"/"+manifest, func(t *testing.T) {
+					l, root, lock := archiveRunFixture(t)
+					bundle, _ := mustCreate(t, l, root, lock)
+					db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					// Clear irreversible markers to isolate the segment/manifest policy.
+					if _, err := db.Exec(`UPDATE usage_archive_runs SET status = ?, resume_status = ?,
+						deleted_event_count = 0, last_deleted_event_id = 0,
+						delete_started_at_ms = NULL, completed_at_ms = NULL`, state.status, state.resume); err != nil {
+						t.Fatal(err)
+					}
+					if segment == "none" {
+						_, err = db.Exec("DELETE FROM usage_archive_segments")
+					} else {
+						_, err = db.Exec("UPDATE usage_archive_segments SET status = ?", segment)
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if manifest == "absent" {
+						if _, err := db.Exec("UPDATE usage_archive_runs SET manifest_file = NULL, manifest_sha256 = NULL"); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Remove(filepath.Join(bundle, "usage-archives", "run-1", "manifest.json")); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if err := db.Close(); err != nil {
+						t.Fatal(err)
+					}
+					rewriteManifest(t, bundle)
+					allowed := segment != "verified" && (state.status == "cancelled" || manifest == "absent") &&
+						(state.status != "previewed" || segment == "none")
+					dest := filepath.Join(root, "restored")
+					_, err = RestoreNew(context.Background(), bundle, dest)
+					if allowed {
+						if err != nil {
+							t.Fatalf("reachable prepublication/cancelled snapshot must restore: %v", err)
+						}
+					} else {
+						if err == nil || !strings.Contains(err.Error(), "archive") {
+							t.Fatalf("unreachable segment/manifest combination must fail: %v", err)
+						}
+						noPublished(t, root, dest)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestRestoreArchiveDeletionEvidence(t *testing.T) {
+	states := []struct{ status, resume string }{
+		{"previewed", ""}, {"archiving", ""}, {"archived", ""}, {"verifying", ""},
+		{"verified", ""}, {"cancelled", ""}, {"failed", "archiving"}, {"failed", "verifying"},
+		{"deleting", ""}, {"failed", "deleting"}, {"completed", ""},
+	}
+	markers := []struct{ name, assignment string }{
+		{"count", "deleted_event_count = 1"}, {"last-id", "last_deleted_event_id = 1"},
+		{"started", "delete_started_at_ms = 2"}, {"completed", "completed_at_ms = 3"},
+	}
+	for _, state := range states {
+		for _, marker := range markers {
+			t.Run(state.status+"/"+state.resume+"/"+marker.name, func(t *testing.T) {
+				l, root, lock := archiveRunFixture(t)
+				bundle, _ := mustCreate(t, l, root, lock)
+				db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(`UPDATE usage_archive_runs SET status = ?, resume_status = ?,
+					deleted_event_count = 0, last_deleted_event_id = 0,
+					delete_started_at_ms = NULL, completed_at_ms = NULL`, state.status, state.resume); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec("UPDATE usage_archive_runs SET " + marker.assignment); err != nil {
+					t.Fatal(err)
+				}
+				prepublication := state.status == "previewed" || state.status == "archiving" || state.status == "cancelled" || state.resume == "archiving"
+				if prepublication {
+					if _, err := db.Exec("UPDATE usage_archive_runs SET manifest_file = NULL, manifest_sha256 = NULL"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if state.status == "previewed" {
+					_, err = db.Exec("DELETE FROM usage_archive_segments")
+				} else if prepublication || state.status == "archived" || state.status == "verifying" || state.resume == "verifying" {
+					_, err = db.Exec("UPDATE usage_archive_segments SET status = 'published'")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+				rewriteManifest(t, bundle)
+				deletionAllowed := state.status == "deleting" || state.status == "completed" || state.resume == "deleting"
+				allowed := deletionAllowed && (marker.name != "completed" || state.status == "completed")
+				dest := filepath.Join(root, "restored")
+				_, err = RestoreNew(context.Background(), bundle, dest)
+				if allowed {
+					if err != nil {
+						t.Fatalf("deletion-stage evidence must remain restorable: %v", err)
+					}
+				} else {
+					want := "deletion evidence does not match run lifecycle"
+					if deletionAllowed {
+						want = "completion evidence requires completed run"
+					}
+					if err == nil || !strings.Contains(err.Error(), want) {
+						t.Fatalf("irreversible marker must fail with %q: %v", want, err)
+					}
+					noPublished(t, root, dest)
+				}
 			})
 		}
 	}
@@ -1097,9 +1302,13 @@ func TestRestoreInspectionErrorsFailClosed(t *testing.T) {
 		{"archive-digest", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT);
 			INSERT INTO usage_archive_segments VALUES ('run-1', 'run-1/segment.gz', 'invalid', 1, 'verified')`, "invalid archive segment digest"},
 		{"archive-run-query", `CREATE TABLE usage_archive_runs (id TEXT)`, "query archive run manifest evidence"},
+		{"foreign-key-schema", `CREATE TABLE fk_parent (id TEXT);
+			CREATE TABLE fk_child (parent_id TEXT REFERENCES fk_parent(id));
+			INSERT INTO fk_child VALUES ('orphan')`, "foreign_key_check"},
 		{"archive-run-view", `CREATE VIEW usage_archive_runs AS SELECT 'run-1' AS id`, "not a table"},
-		{"archive-run-scan", `CREATE TABLE usage_archive_runs (id TEXT, status TEXT, resume_status TEXT, manifest_file TEXT, manifest_sha256 TEXT);
-			INSERT INTO usage_archive_runs VALUES (NULL, 'completed', NULL, 'run-1/manifest.json', 'invalid')`, "scan archive run manifest evidence"},
+		{"archive-run-scan", `CREATE TABLE usage_archive_runs (id TEXT, status TEXT, resume_status TEXT, manifest_file TEXT, manifest_sha256 TEXT,
+			deleted_event_count INTEGER, last_deleted_event_id INTEGER, delete_started_at_ms INTEGER, completed_at_ms INTEGER);
+			INSERT INTO usage_archive_runs VALUES (NULL, 'completed', NULL, 'run-1/manifest.json', 'invalid', 0, 0, NULL, NULL)`, "scan archive run manifest evidence"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
