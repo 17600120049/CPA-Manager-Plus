@@ -14,7 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/datamigration"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/pricing"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
 )
 
@@ -1228,8 +1231,6 @@ func TestWriteExportJSONLPreservesExplicitCacheModeProvenance(t *testing.T) {
 	}
 }
 
-
-
 func TestDerivedCacheModeJSONLRoundTripPersistsAsOneAccountingResult(t *testing.T) {
 	ctx := context.Background()
 	sourceDB, err := sqliterepo.Open(filepath.Join(t.TempDir(), "source.sqlite"))
@@ -1355,5 +1356,172 @@ func TestDerivedCacheModeJSONLRoundTripPersistsAsOneAccountingResult(t *testing.
 	}
 	if got := secondRecord["derived_cache_input_mode"]; got != usage.CacheInputModeIncluded {
 		t.Fatalf("re-exported derived_cache_input_mode = %v, want %q", got, usage.CacheInputModeIncluded)
+	}
+}
+
+func TestDerivedCacheModeJSONLRoundTripSurvivesRevisionUpgrade(t *testing.T) {
+	for _, fixture := range []struct {
+		name, mode                                         string
+		input, uncached, totalInput, read, creation, total int64
+	}{
+		{"included", usage.CacheInputModeIncluded, 100, 20, 100, 80, 0, 110},
+		{"mixed", usage.CacheInputModeReadIncludedCreationSeparate, 120, 100, 125, 20, 5, 135},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			ctx := context.Background()
+			_, sourceRepo := openCompatibleUsageStreamTestRepository(t)
+			raw := fmt.Sprintf(`{
+				"timestamp":"2026-10-12T00:00:00Z", "provider":"unknown-provider", "executor_type":"executorAdapter",
+				"model":"custom-model", "endpoint":"POST /v1/chat/completions",
+				"tokens":{"input_tokens":%d,"output_tokens":10,"cached_tokens":%d,"cache_read_tokens":%d,"cache_creation_tokens":%d,"total_tokens":%d},
+				"accounting_version":2, "token_breakdown":{
+					"schema_version":2,"quality":"complete","total_tokens":%d,"unclassified_tokens":0,
+					"input":{"total_tokens":%d,"uncached_tokens":%d,"cache_read_tokens":%d,"cache_write_tokens":%d},
+					"output":{"total_tokens":10,"non_reasoning_tokens":10,"reasoning_tokens":0}
+				}
+			}`, fixture.input, fixture.read+fixture.creation, fixture.read, fixture.creation, fixture.total,
+				fixture.total, fixture.totalInput, fixture.uncached, fixture.read, fixture.creation)
+			event, err := usage.NormalizeRaw([]byte(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := sourceRepo.InsertBatch(ctx, []usage.Event{event}); err != nil {
+				t.Fatal(err)
+			}
+			prices := map[string]model.ModelPrice{"custom-model": {Prompt: 1, Completion: 2, CacheRead: 0.1, CacheCreation: 1}}
+			cost := func(e usage.Event) float64 {
+				return pricing.CostForModel(e.Model, pricing.ModelTokens{
+					InputTokens: e.NormalizedTotalInputTokens, OutputTokens: e.OutputTokens,
+					CacheReadTokens: e.NormalizedCacheReadTokens, CacheCreationTokens: e.NormalizedCacheCreationTokens,
+				}, prices)
+			}
+			wantCost := cost(event)
+			assertAccounting := func(stage string, got usage.Event) {
+				t.Helper()
+				if got.CacheInputMode != fixture.mode || got.NormalizedUncachedInputTokens != fixture.uncached ||
+					got.NormalizedTotalInputTokens != fixture.totalInput || got.NormalizedCacheReadTokens != fixture.read ||
+					got.NormalizedCacheCreationTokens != fixture.creation || got.TotalTokens != fixture.total || cost(got) != wantCost {
+					t.Fatalf("%s accounting drift: mode=%s uncached=%d input=%d read=%d creation=%d total=%d cost=%g wantCost=%g",
+						stage, got.CacheInputMode, got.NormalizedUncachedInputTokens, got.NormalizedTotalInputTokens,
+						got.NormalizedCacheReadTokens, got.NormalizedCacheCreationTokens, got.TotalTokens, cost(got), wantCost)
+				}
+			}
+			var firstExport bytes.Buffer
+			if err := sourceRepo.WriteExportJSONL(ctx, &firstExport, 10); err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := usage.ParseImportPayload(firstExport.Bytes())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(parsed.Events) != 1 {
+				t.Fatalf("imported events=%d", len(parsed.Events))
+			}
+			assertAccounting("import", parsed.Events[0])
+			hints := usage.RawCacheAccountingHintsFromJSON(parsed.Events[0].RawJSON)
+			if hints.ExplicitMode != "" || hints.ImportedDerivedMode != fixture.mode {
+				t.Fatalf("import provenance=%+v", hints)
+			}
+
+			restoredDB, restoredRepo := openCompatibleUsageStreamTestRepository(t)
+			if _, err := restoredRepo.InsertBatch(ctx, parsed.Events); err != nil {
+				t.Fatal(err)
+			}
+			readRestored := func(stage string) {
+				rows, err := restoredRepo.ListRecent(ctx, 10)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, row := range rows {
+					if row.EventHash == event.EventHash {
+						assertAccounting(stage, row)
+						return
+					}
+				}
+				t.Fatal("restored event missing")
+			}
+			readRestored("persistence")
+			if _, err := restoredDB.Exec(`update usage_data_migrations set status='completed', target_event_id=1, last_event_id=1 where name=?`, datamigration.UsageCacheAccountingMigrationName); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := restoredDB.Exec(`insert into settings(key,value,updated_at_ms) values (?, '2', 1) on conflict(key) do update set value='2'`, datamigration.UsageCacheAccountingSemanticsRevisionKey); err != nil {
+				t.Fatal(err)
+			}
+			// A different legacy canonical row triggers the revision upgrade's full
+			// candidate scan. The sanitized imported row must keep its own evidence.
+			trigger := event
+			trigger.EventHash = strings.Repeat("f", 64)
+			if _, err := restoredRepo.InsertBatch(ctx, []usage.Event{trigger}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := restoredDB.Exec(`update usage_events set cache_input_mode='separate_from_input', normalized_uncached_input_tokens=?, normalized_total_input_tokens=? where event_hash=?`,
+				fixture.input, fixture.input+fixture.read+fixture.creation, trigger.EventHash); err != nil {
+				t.Fatal(err)
+			}
+			migration := datamigration.New(restoredDB)
+			state, err := migration.DiscoverUsageCacheAccounting(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.Status != datamigration.StatusPending || state.TargetEventID != 2 {
+				t.Fatalf("upgrade was not triggered: %+v", state)
+			}
+			for i := 0; state.Status != datamigration.StatusCompleted && i < 30; i++ {
+				batch, err := migration.RunUsageCacheAccountingBatch(ctx, 1)
+				if err != nil {
+					t.Fatal(err)
+				}
+				state = batch.State
+			}
+			if state.Status != datamigration.StatusCompleted {
+				t.Fatalf("upgrade did not complete: %+v", state)
+			}
+			readRestored("revision upgrade")
+			var persistedRaw, revision string
+			if err := restoredDB.QueryRow(`select raw_json from usage_events where event_hash=?`, event.EventHash).Scan(&persistedRaw); err != nil {
+				t.Fatal(err)
+			}
+			if persistedRaw != parsed.Events[0].RawJSON {
+				t.Fatal("migration rewrote raw import evidence")
+			}
+			if err := restoredDB.QueryRow(`select value from settings where key=?`, datamigration.UsageCacheAccountingSemanticsRevisionKey).Scan(&revision); err != nil || revision != "3" {
+				t.Fatalf("revision=%s err=%v", revision, err)
+			}
+			again, err := migration.DiscoverUsageCacheAccounting(ctx)
+			if err != nil || !reflect.DeepEqual(state, again) {
+				t.Fatalf("non-idempotent discovery: before=%+v after=%+v err=%v", state, again, err)
+			}
+
+			var secondExport bytes.Buffer
+			if err := restoredRepo.WriteExportJSONL(ctx, &secondExport, 10); err != nil {
+				t.Fatal(err)
+			}
+			decoder := json.NewDecoder(bytes.NewReader(secondExport.Bytes()))
+			for decoder.More() {
+				var record map[string]any
+				if err := decoder.Decode(&record); err != nil {
+					t.Fatal(err)
+				}
+				if record["event_hash"] == event.EventHash {
+					if _, explicit := record["cache_input_mode"]; explicit || record["derived_cache_input_mode"] != fixture.mode {
+						t.Fatalf("re-exported provenance=%v", record)
+					}
+				}
+			}
+			reimported, err := usage.ParseImportPayload(secondExport.Bytes())
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, row := range reimported.Events {
+				if row.EventHash == event.EventHash {
+					assertAccounting("re-export/re-import", row)
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("re-export lost imported event")
+			}
+		})
 	}
 }

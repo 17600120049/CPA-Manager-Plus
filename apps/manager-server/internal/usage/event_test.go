@@ -777,3 +777,34 @@ func replaceCacheAccountingTestString(input, old, replacement string) string {
 	}
 	return input
 }
+
+func TestImportedDerivedCacheAccountingRequiresMarkedProvenance(t *testing.T) {
+	tests := []struct {
+		name                    string
+		raw                     string
+		context                 CacheInputContext
+		wantMode                string
+		wantUncached, wantTotal int64
+	}{
+		{"marked mixed", `{"format":"cpamp_usage_export","derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{}, CacheInputModeReadIncludedCreationSeparate, 100, 125},
+		{"marked included", `{"format":"cpamp_usage_export","derived_cache_input_mode":"included_in_input"}`, CacheInputContext{}, CacheInputModeIncluded, 95, 120},
+		{"marked separate", `{"format":"cpamp_usage_export","derived_cache_input_mode":"separate_from_input"}`, CacheInputContext{}, CacheInputModeSeparate, 120, 145},
+		{"unmarked mode ignored", `{"derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{}, CacheInputModeSeparate, 120, 145},
+		{"unknown format ignored", `{"format":"unknown","derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{}, CacheInputModeSeparate, 120, 145},
+		{"unsupported mode ignored", `{"format":"cpamp_usage_export","derived_cache_input_mode":"future-mode"}`, CacheInputContext{}, CacheInputModeSeparate, 120, 145},
+		{"explicit evidence wins", `{"format":"cpamp_usage_export","derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{ExplicitMode: CacheInputModeSeparate}, CacheInputModeSeparate, 120, 145},
+		{"known provider wins", `{"format":"cpamp_usage_export","derived_cache_input_mode":"read_included_creation_separate"}`, CacheInputContext{Provider: "openai"}, CacheInputModeIncluded, 95, 120},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hints := RawCacheAccountingHintsFromJSON(tt.raw)
+			if hints.ExplicitMode != "" {
+				t.Fatalf("imported derived mode became explicit: %q", hints.ExplicitMode)
+			}
+			got := NormalizeCacheAccountingWithRawJSON(tt.context, tt.raw, 120, 10, 0, 135, 25, 0, 20, 5)
+			if got.Mode != tt.wantMode || got.UncachedInputTokens != tt.wantUncached || got.TotalInputTokens != tt.wantTotal {
+				t.Fatalf("accounting=%+v, want mode=%s uncached=%d total=%d", got, tt.wantMode, tt.wantUncached, tt.wantTotal)
+			}
+		})
+	}
+}

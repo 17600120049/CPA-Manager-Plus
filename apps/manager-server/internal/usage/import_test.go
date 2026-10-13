@@ -1959,19 +1959,19 @@ func TestParseImportPayloadRoundTripsRequestMetadataFields(t *testing.T) {
 	gen := true
 	stream := false
 	original := Event{
-		Timestamp:          "2026-08-12T10:00:00Z",
-		TimestampMS:        1_755_000_000_000,
-		Endpoint:           "POST /v1/chat/completions",
-		Model:              "gpt-4o",
-		RequestedModel:     "gpt-4o",
-		ResolvedModel:      "gpt-4o-2024-08-06",
-		ResponseModel:      "gpt-4o-mini",
-		SessionID:          "session-xyz",
-		ParentSessionID:    "parent-session-abc",
-		AccessTokenSHA256:  "sha256-token-12345",
-		Generate:           &gen,
-		Stream:             &stream,
-		TotalTokens:        1,
+		Timestamp:         "2026-08-12T10:00:00Z",
+		TimestampMS:       1_755_000_000_000,
+		Endpoint:          "POST /v1/chat/completions",
+		Model:             "gpt-4o",
+		RequestedModel:    "gpt-4o",
+		ResolvedModel:     "gpt-4o-2024-08-06",
+		ResponseModel:     "gpt-4o-mini",
+		SessionID:         "session-xyz",
+		ParentSessionID:   "parent-session-abc",
+		AccessTokenSHA256: "sha256-token-12345",
+		Generate:          &gen,
+		Stream:            &stream,
+		TotalTokens:       1,
 	}
 
 	payload, err := json.Marshal(BuildPayload([]Event{original}))
@@ -2011,19 +2011,19 @@ func TestParseImportPayloadJSONLRoundTripsFalseBooleans(t *testing.T) {
 	gen := false
 	stream := false
 	original := Event{
-		Timestamp:          "2026-08-12T10:00:00Z",
-		TimestampMS:        1_755_000_000_000,
-		Endpoint:           "POST /v1/chat/completions",
-		Model:              "gpt-4o",
-		RequestedModel:     "gpt-4o",
-		ResolvedModel:      "gpt-4o-2024-08-06",
-		ResponseModel:      "gpt-4o-mini",
-		SessionID:          "sess-test-false",
-		ParentSessionID:    "parent-sess-false",
-		AccessTokenSHA256:  "sha256-test-hash",
-		Generate:           &gen,
-		Stream:             &stream,
-		TotalTokens:        1,
+		Timestamp:         "2026-08-12T10:00:00Z",
+		TimestampMS:       1_755_000_000_000,
+		Endpoint:          "POST /v1/chat/completions",
+		Model:             "gpt-4o",
+		RequestedModel:    "gpt-4o",
+		ResolvedModel:     "gpt-4o-2024-08-06",
+		ResponseModel:     "gpt-4o-mini",
+		SessionID:         "sess-test-false",
+		ParentSessionID:   "parent-sess-false",
+		AccessTokenSHA256: "sha256-test-hash",
+		Generate:          &gen,
+		Stream:            &stream,
+		TotalTokens:       1,
 	}
 
 	line, err := json.Marshal(original)
@@ -2084,16 +2084,61 @@ func TestArchiveDerivedFieldsAcceptsReadIncludedCreationSeparate(t *testing.T) {
 	}
 
 	event := Event{
-		PreserveArchiveDerivedFields:      true,
-		CacheInputMode:                   accounting.Mode,
-		NormalizedUncachedInputTokens:    accounting.UncachedInputTokens,
-		NormalizedTotalInputTokens:       accounting.TotalInputTokens,
-		NormalizedCacheReadTokens:        accounting.CacheReadTokens,
-		NormalizedCacheCreationTokens:    accounting.CacheCreationTokens,
-		TotalTokens:                      totalTokens,
+		PreserveArchiveDerivedFields:  true,
+		CacheInputMode:                accounting.Mode,
+		NormalizedUncachedInputTokens: accounting.UncachedInputTokens,
+		NormalizedTotalInputTokens:    accounting.TotalInputTokens,
+		NormalizedCacheReadTokens:     accounting.CacheReadTokens,
+		NormalizedCacheCreationTokens: accounting.CacheCreationTokens,
+		TotalTokens:                   totalTokens,
 	}
 	if err := ValidateArchiveDerivedFields(event); err != nil {
 		t.Fatalf("validate mixed archive accounting: %v", err)
 	}
 }
 
+func TestImportPersistsDerivedCacheModeWithoutExplicitProvenance(t *testing.T) {
+	for _, mode := range []string{CacheInputModeIncluded, CacheInputModeSeparate, CacheInputModeReadIncludedCreationSeparate} {
+		t.Run(mode, func(t *testing.T) {
+			record := map[string]any{
+				"event_hash": strings.Repeat("a", 64), "timestamp": "2026-10-12T00:00:00Z",
+				"model": "custom-model", "provider": "unknown-provider",
+				"derived_cache_input_mode": mode, "input_tokens": 120, "output_tokens": 10,
+				"cached_tokens": 25, "cache_read_tokens": 20, "cache_creation_tokens": 5, "total_tokens": 135,
+			}
+			payload, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := ParseImportPayload(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(parsed.Events) != 1 {
+				t.Fatalf("events=%d, want 1", len(parsed.Events))
+			}
+			event := parsed.Events[0]
+			hints := RawCacheAccountingHintsFromJSON(event.RawJSON)
+			if hints.ExplicitMode != "" || hints.ImportedDerivedMode != mode || event.CacheInputMode != mode {
+				t.Fatalf("imported mode=%q provenance=%+v", event.CacheInputMode, hints)
+			}
+			// A repeated import of the marked raw envelope must not keep nesting it.
+			record["raw_json"] = event.RawJSON
+			if raw := importCacheAccountingRawJSON(record); raw != event.RawJSON {
+				t.Fatalf("repeated provenance changed: before=%s after=%s", event.RawJSON, raw)
+			}
+			record["cache_input_mode"] = CacheInputModeSeparate
+			payload, err = json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err = ParseImportPayload(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.Events[0].CacheInputMode != CacheInputModeSeparate || RawCacheAccountingHintsFromJSON(parsed.Events[0].RawJSON).ExplicitMode != CacheInputModeSeparate {
+				t.Fatal("explicit import mode lost priority over derived evidence")
+			}
+		})
+	}
+}

@@ -249,16 +249,20 @@ func EffectiveServiceTier(context CacheInputContext, requestTier, legacyTier, re
 }
 
 type RawCacheAccountingHints struct {
-	ExplicitMode     string
-	ExplicitTotal    int64
-	HasExplicitTotal bool
-	ValidPayload     bool
+	ExplicitMode string
+	// ImportedDerivedMode records a CPAMP export's accounting result, not
+	// upstream explicit provenance. Only marked import payloads supply it.
+	ImportedDerivedMode string
+	ExplicitTotal       int64
+	HasExplicitTotal    bool
+	ValidPayload        bool
 }
 
 const (
-	canonicalTokenAccountingSchemaVersion int64 = 2
-	maxCanonicalJSONInteger               int64 = (1 << 53) - 1
-	canonicalTokenAccountingQualityComplete      = "complete"
+	importedCacheAccountingFormat                 = "cpamp_usage_export"
+	canonicalTokenAccountingSchemaVersion   int64 = 2
+	maxCanonicalJSONInteger                 int64 = (1 << 53) - 1
+	canonicalTokenAccountingQualityComplete       = "complete"
 )
 
 type canonicalTokenInputBreakdown struct {
@@ -282,6 +286,10 @@ type canonicalTokenBreakdown struct {
 
 func NormalizeCacheAccounting(context CacheInputContext, inputTokens, cachedTokens, cacheTokens, cacheReadTokens, cacheCreationTokens int64) CacheAccounting {
 	mode := InferCacheInputMode(context, cacheReadTokens, cacheCreationTokens)
+	return normalizeCacheAccountingForMode(mode, inputTokens, cachedTokens, cacheTokens, cacheReadTokens, cacheCreationTokens)
+}
+
+func normalizeCacheAccountingForMode(mode string, inputTokens, cachedTokens, cacheTokens, cacheReadTokens, cacheCreationTokens int64) CacheAccounting {
 	input := maxInt64(inputTokens, 0)
 	cacheRead := CompatibleCachedTokens(cachedTokens, cacheTokens, cacheReadTokens, cacheCreationTokens) + maxInt64(cacheReadTokens, 0)
 	cacheCreation := maxInt64(cacheCreationTokens, 0)
@@ -321,25 +329,28 @@ func NormalizeCacheAccountingWithRawJSON(
 	if _, known := classifyCacheInputMode(context); known {
 		return accounting
 	}
-	breakdown, ok := canonicalTokenBreakdownFromJSON(raw)
-	if !ok {
-		return accounting
+	if breakdown, ok := canonicalTokenBreakdownFromJSON(raw); ok {
+		if canonical, valid := canonicalCacheAccounting(
+			breakdown,
+			inputTokens,
+			outputTokens,
+			reasoningTokens,
+			totalTokens,
+			cachedTokens,
+			cacheTokens,
+			cacheReadTokens,
+			cacheCreationTokens,
+		); valid {
+			return canonical
+		}
 	}
-	canonical, ok := canonicalCacheAccounting(
-		breakdown,
-		inputTokens,
-		outputTokens,
-		reasoningTokens,
-		totalTokens,
-		cachedTokens,
-		cacheTokens,
-		cacheReadTokens,
-		cacheCreationTokens,
-	)
-	if !ok {
-		return accounting
+	// Sanitized JSONL exports omit canonical raw evidence. Keep their marked
+	// derived result across migration without reclassifying it as raw explicit
+	// mode or trusting arbitrary persisted cache_input_mode columns.
+	if mode := RawCacheAccountingHintsFromJSON(raw).ImportedDerivedMode; mode != "" {
+		return normalizeCacheAccountingForMode(mode, inputTokens, cachedTokens, cacheTokens, cacheReadTokens, cacheCreationTokens)
 	}
-	return canonical
+	return accounting
 }
 
 func canonicalTokenBreakdownFromJSON(raw string) (canonicalTokenBreakdown, bool) {
@@ -642,6 +653,9 @@ func rawCacheAccountingHintsFromJSON(raw string, depth int) RawCacheAccountingHi
 		record = detail
 	}
 	hints := RawCacheAccountingHints{ExplicitMode: cacheInputModeFromRecord(record), ValidPayload: true}
+	if readString(record, "format") == importedCacheAccountingFormat {
+		hints.ImportedDerivedMode = derivedCacheInputModeFromRecord(record)
+	}
 	if total, ok := explicitPositiveTotalFromRecord(record); ok {
 		hints.ExplicitTotal = total
 		hints.HasExplicitTotal = true
@@ -651,12 +665,23 @@ func rawCacheAccountingHintsFromJSON(raw string, depth int) RawCacheAccountingHi
 		if hints.ExplicitMode == "" {
 			hints.ExplicitMode = nested.ExplicitMode
 		}
+		if hints.ImportedDerivedMode == "" {
+			hints.ImportedDerivedMode = nested.ImportedDerivedMode
+		}
 		if !hints.HasExplicitTotal && nested.HasExplicitTotal {
 			hints.ExplicitTotal = nested.ExplicitTotal
 			hints.HasExplicitTotal = true
 		}
 	}
 	return hints
+}
+
+func derivedCacheInputModeFromRecord(record map[string]any) string {
+	mode := normalizeCacheInputMode(readString(record, "derived_cache_input_mode", "derivedCacheInputMode"))
+	if mode == CacheInputModeIncluded || mode == CacheInputModeSeparate || mode == CacheInputModeReadIncludedCreationSeparate {
+		return mode
+	}
+	return ""
 }
 
 func cacheInputModeFromRecord(record map[string]any) string {
