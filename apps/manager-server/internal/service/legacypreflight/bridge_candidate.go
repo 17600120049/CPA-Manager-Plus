@@ -17,10 +17,9 @@ type PlannedBridgeCandidate struct {
 	SourceCommit string `json:"sourceCommit"`
 }
 
-// ForwardHopEvidence reflects proven forward-hop execution evidence produced
-// by a controlled, Manager-owned v1.14.4 execution. It is a diagnostic projection
-// constructed only from internal ValidatedHopEvidence, orthogonal to the planned target,
-// observed source, and upgrade authorization.
+// ForwardHopEvidence projects a validator-authenticated operation onto its
+// output candidate. This foundation does not qualify production execution.
+// The projection is orthogonal to target, historical source and upgrade grant.
 type ForwardHopEvidence struct {
 	Status               string `json:"status"`
 	OperationID          string `json:"operationId,omitempty"`
@@ -41,7 +40,7 @@ func addPlannedBridgeCandidate(ctx context.Context, report *Report, paths sqlite
 		SourceCommit: "166262365d506157b99968105c890f480cc7c07c",
 	}
 
-	matchesSource := false
+	matchesCandidate := false
 	if validatedHop != nil && validatedHop.IsValid() {
 		resolvePath := func(p string) string {
 			if p == "" {
@@ -62,14 +61,14 @@ func addPlannedBridgeCandidate(ctx context.Context, report *Report, paths sqlite
 		}
 		if manifest, err := maintenancebundle.Inspect(ctx, layout); err == nil {
 			if digest, err := legacyartifact.ComputeManifestDigest(manifest); err == nil {
-				if digest == validatedHop.InputManifestDigest() {
-					matchesSource = true
+				if digest == validatedHop.OutputManifestDigest() {
+					matchesCandidate = true
 				}
 			}
 		}
 	}
 
-	if matchesSource {
+	if matchesCandidate {
 		report.ForwardHopEvidence = &ForwardHopEvidence{
 			Status:               "verified-hop-evidence",
 			OperationID:          validatedHop.OperationID(),

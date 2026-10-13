@@ -5,13 +5,20 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyprofile"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
@@ -37,32 +44,17 @@ func createTestInputBundle(t *testing.T, root string, schemaFamily string) maint
 	}
 	defer db.Close()
 
-	// Base legacy tables
-	stmts := []string{
-		`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at_ms INTEGER);`,
-		`INSERT INTO settings VALUES ('manager_config_v1', '{}', 1000);`,
-		`CREATE TABLE usage_events (id INTEGER PRIMARY KEY, raw_json TEXT);`,
-		`INSERT INTO usage_events VALUES (1, '{}');`,
-		`CREATE TABLE usage_data_migrations (name TEXT PRIMARY KEY, status TEXT);`,
+	for _, ddl := range historicalDDL(t, schemaFamily) {
+		if _, err := db.Exec(ddl.SQL); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if schemaFamily == "LegacySchemaB" || schemaFamily == "LegacySchemaC" {
-		stmts = append(stmts,
-			`ALTER TABLE usage_events ADD COLUMN response_model TEXT;`,
-			`ALTER TABLE usage_events ADD COLUMN session_id TEXT;`,
-		)
-	}
-	if schemaFamily == "LegacySchemaC" {
-		stmts = append(stmts,
-			`CREATE TABLE usage_archive_runs (id TEXT PRIMARY KEY, status TEXT);`,
-			`CREATE TABLE usage_archive_segments (run_id TEXT, sequence INTEGER, PRIMARY KEY (run_id, sequence));`,
-			`CREATE TABLE usage_archive_event_refs (event_hash TEXT PRIMARY KEY);`,
-			`CREATE TABLE usage_archive_deleted_coverage_daily (utc_day INTEGER PRIMARY KEY);`,
-			`CREATE TABLE usage_maintenance_locks (name TEXT PRIMARY KEY);`,
-		)
-	}
-	for _, stmt := range stmts {
+	for _, stmt := range []string{
+		`INSERT INTO settings VALUES ('manager_config_v1', '{}', 1000)`,
+		`INSERT INTO usage_events (id,event_hash,timestamp_ms,timestamp,model,raw_json,created_at_ms) VALUES (1,'event-1',1000,'1970-01-01T00:00:01Z','test','{}',1000)`,
+	} {
 		if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("exec %s: %v", stmt, err)
+			t.Fatal(err)
 		}
 	}
 
@@ -81,18 +73,32 @@ func mockMigrateToV1144(t *testing.T, dbPath string, cacheStatus, quotaStatus st
 	}
 	defer db.Close()
 
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS usage_archive_runs (id TEXT PRIMARY KEY, status TEXT);`,
-		`CREATE TABLE IF NOT EXISTS usage_archive_segments (run_id TEXT, sequence INTEGER, PRIMARY KEY (run_id, sequence));`,
-		`CREATE TABLE IF NOT EXISTS usage_archive_event_refs (event_hash TEXT PRIMARY KEY);`,
-		`CREATE TABLE IF NOT EXISTS usage_archive_deleted_coverage_daily (utc_day INTEGER PRIMARY KEY);`,
-		`CREATE TABLE IF NOT EXISTS usage_maintenance_locks (name TEXT PRIMARY KEY);`,
-		`DELETE FROM usage_data_migrations;`,
-		`INSERT INTO usage_data_migrations VALUES ('usage_cache_accounting_v2', '` + cacheStatus + `');`,
-		`INSERT INTO usage_data_migrations VALUES ('quota_snapshot_lifecycle_v1', '` + quotaStatus + `');`,
+	// Use historical DDL shapes; this simulated migration is not execution qualification.
+	for _, ddl := range historicalDDL(t, "LegacySchemaC") {
+		if _, err := db.Exec(ddl.SQL); err != nil {
+			t.Fatal(err)
+		}
 	}
+	for _, spec := range strings.Fields(legacyprofile.MetadataColumnSpecs) {
+		parts := strings.Split(spec, ":")
+		var present int
+		if err := db.QueryRow(`select count(*) from pragma_table_info('usage_events') where name=?`, parts[0]).Scan(&present); err != nil {
+			t.Fatal(err)
+		}
+		if present == 0 {
+			if _, err := db.Exec("alter table usage_events add column " + parts[0] + " " + parts[1]); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	stmts := []string{
+		`DELETE FROM usage_data_migrations`,
+		`INSERT INTO usage_data_migrations (name,status) VALUES ('usage_cache_accounting_v2', '` + cacheStatus + `')`,
+		`INSERT INTO usage_data_migrations (name,status) VALUES ('quota_snapshot_lifecycle_v1', '` + quotaStatus + `')`,
+	}
+
 	if withLock {
-		stmts = append(stmts, `INSERT INTO usage_maintenance_locks VALUES ('active_lock');`)
+		stmts = append(stmts, `INSERT INTO usage_maintenance_locks (name,run_id,operation,acquired_at_ms,updated_at_ms) VALUES ('active_lock','test','test',1,1);`)
 	} else {
 		stmts = append(stmts, `DELETE FROM usage_maintenance_locks;`)
 	}
@@ -129,7 +135,7 @@ func createFakeExecutable(t *testing.T, path string) (string, []byte) {
 	return hex.EncodeToString(h[:]), body
 }
 
-// 1. Happy path: ExecuteHop -> Receipt -> ValidateHop with full evidence closed-loop
+// 1. Simulated producer/validator contract; not published writer qualification.
 func TestHopProducerAndValidatorHappyPath(t *testing.T) {
 	temp := testTempDir(t)
 	inRoot := filepath.Join(temp, "in")
@@ -658,7 +664,10 @@ func TestHopValidatorRejectsRecordMismatch(t *testing.T) {
 	}
 
 	// Corrupt journal record in-memory
-	rec, _ := journal.GetOperation(receipt.OperationID)
+	rec, _, err := journal.GetOperation(receipt.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rec.ExecutableSHA256 = "mismatched-exe-digest"
 	journal.records[receipt.OperationID] = rec
 
@@ -759,8 +768,8 @@ func TestAuthorityStorePermissionsAndReload(t *testing.T) {
 	}
 }
 
-// 17. Production ExecuteHop mandates ArchivePath
-func TestExecuteHopRejectsMissingArchivePathInProduction(t *testing.T) {
+// 17. Production execution is unavailable until offline qualification.
+func TestExecuteHopRejectsUnqualifiedExecution(t *testing.T) {
 	temp := testTempDir(t)
 	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
 	auth, _ := setupTestAuthority(t)
@@ -773,8 +782,8 @@ func TestExecuteHopRejectsMissingArchivePathInProduction(t *testing.T) {
 		Authority:   auth,
 		Journal:     journal,
 	})
-	if !errors.Is(err, ErrInvalidHopOptions) {
-		t.Fatalf("expected ErrInvalidHopOptions for missing ArchivePath in production, got %v", err)
+	if !errors.Is(err, ErrExecutionNotQualified) {
+		t.Fatalf("expected ErrExecutionNotQualified in production, got %v", err)
 	}
 }
 
@@ -783,7 +792,7 @@ func TestHopJournalCrossProcessConcurrency(t *testing.T) {
 	temp := testTempDir(t)
 	journalPath := filepath.Join(temp, "concurrent-journal.json")
 
-	j1, err := OpenJournal(journalPath)
+	j1, err := OpenOrCreateJournal(journalPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -828,10 +837,330 @@ func TestHopJournalCrossProcessConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := jFresh.GetOperation("op-concur-1"); !ok {
+	if _, ok, err := jFresh.GetOperation("op-concur-1"); !ok || err != nil {
 		t.Errorf("expected op-concur-1 in journal")
 	}
-	if _, ok := jFresh.GetOperation("op-concur-2"); !ok {
+	if _, ok, err := jFresh.GetOperation("op-concur-2"); !ok || err != nil {
 		t.Errorf("expected op-concur-2 in journal")
+	}
+}
+
+type historicalTableDDL struct {
+	Table string `json:"table"`
+	SQL   string `json:"sql"`
+}
+
+var historicalFixturePath, historicalFixturePathErr = filepath.Abs("../legacypreflight/testdata/legacy-profiles/schema-fixtures.json")
+
+func historicalDDL(t *testing.T, family string) []historicalTableDDL {
+	t.Helper()
+	if historicalFixturePathErr != nil {
+		t.Fatal(historicalFixturePathErr)
+	}
+	data, err := os.ReadFile(historicalFixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtureSet struct {
+		Fixtures []struct {
+			Family string               `json:"family"`
+			DDL    []historicalTableDDL `json:"ddl"`
+		} `json:"fixtures"`
+	}
+	if err := json.Unmarshal(data, &fixtureSet); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fixtureSet.Fixtures {
+		if f.Family == family {
+			return f.DDL
+		}
+	}
+	t.Fatalf("missing historical family %s", family)
+	return nil
+}
+
+func TestJournalRuntimeFailuresRejectValidationAndWrites(t *testing.T) {
+	for _, mode := range []string{"corrupt", "delete", "directory", "symlink", "unreadable"} {
+		t.Run(mode, func(t *testing.T) {
+			if mode == "unreadable" && (runtime.GOOS == "windows" || os.Geteuid() == 0) {
+				t.Skip("requires Unix permission enforcement")
+			}
+			if mode == "symlink" && runtime.GOOS == "windows" {
+				t.Skip("symlink creation requires Windows privileges")
+			}
+			temp := testTempDir(t)
+			input := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
+			auth, _ := setupTestAuthority(t)
+			path := filepath.Join(temp, "journal.json")
+			journal, err := OpenOrCreateJournal(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			exe := filepath.Join(temp, "writer")
+			createFakeExecutable(t, exe)
+			out := filepath.Join(temp, "out")
+			receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: input, OutputRoot: out, Authority: auth, Journal: journal}, exe,
+				func(ctx context.Context, exe string, layout maintenancebundle.Layout) (ProcessEvidence, error) {
+					mockMigrateToV1144(t, layout.DatabasePath, "completed", "completed", false)
+					return ProcessEvidence{ExitCode: 0, DurationMS: 100}, nil
+				})
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts := ValidateOptions{Receipt: receipt, BundleLayout: maintenancebundle.BundleLayout(out), Authority: auth, Journal: journal}
+			if _, err := ValidateHop(context.Background(), opts); err != nil {
+				t.Fatal(err)
+			}
+			record, ok, err := journal.GetOperation(receipt.OperationID)
+			if err != nil || !ok {
+				t.Fatalf("initial journal read: %v %v", ok, err)
+			}
+			switch mode {
+			case "corrupt":
+				err = os.WriteFile(path, []byte("{invalid"), 0600)
+			case "delete":
+				err = os.Remove(path)
+			case "directory":
+				if err = os.Remove(path); err == nil {
+					err = os.Mkdir(path, 0700)
+				}
+			case "symlink":
+				copy, readErr := os.ReadFile(path)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				target := filepath.Join(temp, "redirect.json")
+				if err = os.WriteFile(target, copy, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err = os.Remove(path); err == nil {
+					err = os.Symlink(target, path)
+				}
+			case "unreadable":
+				err = os.Chmod(path, 0000)
+				t.Cleanup(func() { _ = os.Chmod(path, 0600) })
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result, err := ValidateHop(context.Background(), opts); err == nil || result != nil {
+				t.Fatalf("runtime %s journal validated: %+v %v", mode, result, err)
+			}
+			if rec, ok, err := journal.GetOperation(receipt.OperationID); err == nil || ok || rec.OperationID != "" {
+				t.Fatalf("runtime %s returned cached authority: %+v %v %v", mode, rec, ok, err)
+			}
+			record.OperationID = "new-operation"
+			if err := journal.RecordOperation(record); err == nil {
+				t.Fatalf("runtime %s accepted write", mode)
+			}
+			if err := journal.RevokeOperation(receipt.OperationID); err == nil {
+				t.Fatalf("runtime %s accepted revocation", mode)
+			}
+			if _, err := OpenJournal(path); err == nil {
+				t.Fatalf("runtime %s reopened authority", mode)
+			}
+		})
+	}
+}
+
+func TestDeletedJournalCannotResurrectRevokedOperation(t *testing.T) {
+	temp := testTempDir(t)
+	path := filepath.Join(temp, "journal.json")
+	stale, err := OpenOrCreateJournal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := OperationRecord{OperationID: "old", Release: Release, Asset: "asset", ExecutableSHA256: "exe", InputManifestDigest: "input", OutputManifestDigest: "output", IssuedAtMS: 1000}
+	if err := stale.RecordOperation(record); err != nil {
+		t.Fatal(err)
+	}
+	current, err := OpenJournal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := current.RevokeOperation("old"); err != nil {
+		t.Fatal(err)
+	}
+	if rec, ok, err := current.GetOperation("old"); err != nil || !ok || !rec.Revoked {
+		t.Fatalf("revocation not observed: %+v %v %v", rec, ok, err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	record.OperationID = "new"
+	if err := stale.RecordOperation(record); !errors.Is(err, ErrJournalUnavailable) {
+		t.Fatalf("lost authority write: %v", err)
+	}
+	if err := current.RevokeOperation("old"); !errors.Is(err, ErrJournalUnavailable) {
+		t.Fatalf("lost authority revoke: %v", err)
+	}
+	if _, err := OpenJournal(path); !errors.Is(err, ErrJournalUnavailable) {
+		t.Fatalf("lost authority open: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("lost authority was recreated: %v", err)
+	}
+}
+
+func TestRelativeHopPathsIdentifyStagedBundle(t *testing.T) {
+	temp := testTempDir(t)
+	createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
+	auth, _ := setupTestAuthority(t)
+	exe := filepath.Join(temp, "writer")
+	createFakeExecutable(t, exe)
+	t.Chdir(temp)
+	called := false
+	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: maintenancebundle.BundleLayout("in"), OutputRoot: "out", Authority: auth, Journal: NewMemoryJournal()}, exe,
+		func(ctx context.Context, exe string, layout maintenancebundle.Layout) (ProcessEvidence, error) {
+			called = true
+			want := maintenancebundle.BundleLayout(filepath.Join(temp, "out"))
+			if layout != want {
+				t.Fatalf("writer layout %+v != staged layout %+v", layout, want)
+			}
+			mockMigrateToV1144(t, layout.DatabasePath, "completed", "completed", false)
+			return ProcessEvidence{ExitCode: 0, DurationMS: 100}, nil
+		})
+	if err != nil || receipt == nil || !called {
+		t.Fatalf("relative staging failed: %v %v", receipt, err)
+	}
+}
+
+func TestProductionExecutionRefusesBeforeAnySideEffect(t *testing.T) {
+	temp := testTempDir(t)
+	marker := filepath.Join(temp, "launched")
+	exe := filepath.Join(temp, "writer")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(temp, "out")
+	if evidence, err := DefaultCommandRunner(context.Background(), exe, maintenancebundle.BundleLayout(output)); !errors.Is(err, ErrExecutionNotQualified) || evidence.PID != 0 {
+		t.Fatalf("default runner executed: %+v %v", evidence, err)
+	}
+	if receipt, err := ExecuteHop(context.Background(), HopOptions{ArchivePath: filepath.Join(temp, "absent-archive"), Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: maintenancebundle.BundleLayout(filepath.Join(temp, "absent-input")), OutputRoot: output}); !errors.Is(err, ErrExecutionNotQualified) || receipt != nil {
+		t.Fatalf("producer executed: %+v %v", receipt, err)
+	}
+	for _, path := range []string{marker, output} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("unqualified execution touched %s: %v", path, err)
+		}
+	}
+}
+
+func TestAuthorityConcurrentInitialCreation(t *testing.T) {
+	temp := testTempDir(t)
+	path := filepath.Join(temp, "secrets", "key")
+	const count = 16
+	results := make([]*Authority, count)
+	errs := make([]error, count)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range results {
+		wg.Add(1)
+		go func(i int) { defer wg.Done(); <-start; results[i], errs[i] = LoadOrCreateAuthority(path) }(i)
+	}
+	close(start)
+	wg.Wait()
+	persisted, err := LoadAuthority(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, a := range results {
+		if errs[i] != nil {
+			t.Fatal(errs[i])
+		}
+		signature, err := a.Sign([]byte("authority-create"))
+		if err != nil || !persisted.Verify([]byte("authority-create"), signature) {
+			t.Fatalf("creator %d returned a different authority: %v", i, err)
+		}
+	}
+}
+
+func TestAuthorityCreationAcrossProcesses(t *testing.T) {
+	if keyPath := os.Getenv("CPAMP_TEST_AUTHORITY_CREATE_KEY"); keyPath != "" {
+		ready := os.Getenv("CPAMP_TEST_AUTHORITY_CREATE_READY")
+		if err := os.WriteFile(ready, []byte("ready"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			if _, err := os.Stat(os.Getenv("CPAMP_TEST_AUTHORITY_CREATE_START")); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("start barrier timed out")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		auth, err := LoadOrCreateAuthority(keyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signature, err := auth.Sign([]byte("authority-create"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(os.Getenv("CPAMP_TEST_AUTHORITY_CREATE_SIGNATURE"), []byte(signature), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	temp := testTempDir(t)
+	path := filepath.Join(temp, "secrets", "key")
+	start := filepath.Join(temp, "start")
+	const count = 4
+	commands := make([]*exec.Cmd, 0, count)
+	t.Cleanup(func() {
+		for _, cmd := range commands {
+			if cmd.ProcessState == nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+			}
+		}
+	})
+	for i := 0; i < count; i++ {
+		suffix := string(rune('a' + i))
+		cmd := exec.Command(os.Args[0], "-test.run=^TestAuthorityCreationAcrossProcesses$")
+		cmd.Env = append(os.Environ(), "CPAMP_TEST_AUTHORITY_CREATE_KEY="+path, "CPAMP_TEST_AUTHORITY_CREATE_START="+start, "CPAMP_TEST_AUTHORITY_CREATE_READY="+filepath.Join(temp, "ready-"+suffix), "CPAMP_TEST_AUTHORITY_CREATE_SIGNATURE="+filepath.Join(temp, "sig-"+suffix))
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		commands = append(commands, cmd)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		ready := 0
+		for i := 0; i < count; i++ {
+			if _, err := os.Stat(filepath.Join(temp, "ready-"+string(rune('a'+i)))); err == nil {
+				ready++
+			}
+		}
+		if ready == count {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("child readiness timed out")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := os.WriteFile(start, []byte("go"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range commands {
+		if err := cmd.Wait(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	persisted, err := LoadAuthority(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < count; i++ {
+		signature, err := os.ReadFile(filepath.Join(temp, "sig-"+string(rune('a'+i))))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !persisted.Verify([]byte("authority-create"), string(signature)) {
+			t.Fatalf("process %d returned a different authority", i)
+		}
 	}
 }

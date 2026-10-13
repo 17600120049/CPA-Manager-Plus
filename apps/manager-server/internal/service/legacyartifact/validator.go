@@ -5,16 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
 var (
-	ErrBundleMismatch    = errors.New("output bundle contents do not match execution receipt manifest digest")
-	ErrOperationRevoked  = errors.New("operation was revoked in private journal")
-	ErrRecordMismatch    = errors.New("journal operation record does not match receipt authority fields")
+	ErrBundleMismatch   = errors.New("output bundle contents do not match execution receipt manifest digest")
+	ErrOperationRevoked = errors.New("operation was revoked in private journal")
+	ErrRecordMismatch   = errors.New("journal operation record does not match receipt authority fields")
 )
 
 type ValidateOptions struct {
@@ -43,7 +42,7 @@ type ValidationResult struct {
 }
 
 // ValidateHop validates that an execution receipt was genuinely issued by the Manager's
-// private authority, binds exactly to the target bundle layout without any changes or copies,
+// private authority and matches the current output bundle contents,
 // verifies that the operation was committed into the private journal with identical authority
 // fields, ensures that the operation was not revoked, and re-inspects that required migration
 // checkpoints are satisfied.
@@ -67,22 +66,11 @@ func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, 
 		return nil, ErrJournalRequired
 	}
 
-	// Resolve symlinks in BundleLayout paths
-	resolvePath := func(p string) string {
-		if p == "" {
-			return ""
-		}
-		if real, err := filepath.EvalSymlinks(p); err == nil {
-			return real
-		} else if parent, err := filepath.EvalSymlinks(filepath.Dir(p)); err == nil {
-			return filepath.Join(parent, filepath.Base(p))
-		}
-		return p
+	var err error
+	opts.BundleLayout, err = normalizeHopLayout(opts.BundleLayout)
+	if err != nil {
+		return nil, errors.Join(ErrBundleMismatch, err)
 	}
-	opts.BundleLayout.DatabasePath = resolvePath(opts.BundleLayout.DatabasePath)
-	opts.BundleLayout.DataKeyPath = resolvePath(opts.BundleLayout.DataKeyPath)
-	opts.BundleLayout.ConfigPath = resolvePath(opts.BundleLayout.ConfigPath)
-	opts.BundleLayout.ArchivesPath = resolvePath(opts.BundleLayout.ArchivesPath)
 
 	// 1. Authenticity verification: check HMAC signature with constant time comparison
 	if err := receipt.VerifyAuthenticity(opts.Authority); err != nil {
@@ -106,7 +94,10 @@ func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, 
 	}
 
 	// 4. Anti-replay and journal verification (mandatory)
-	rec, ok := opts.Journal.GetOperation(receipt.OperationID)
+	rec, ok, err := opts.Journal.GetOperation(receipt.OperationID)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, ErrOperationNotFound
 	}

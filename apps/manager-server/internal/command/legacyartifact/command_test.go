@@ -3,10 +3,13 @@ package legacyartifact
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	artifactservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
 )
 
 func TestCommandCannotClaimWriterOrDiscoverManagerData(t *testing.T) {
@@ -73,5 +76,33 @@ func TestCommandVerifyReceiptValidAndInvalid(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error on disallowed flag: %v", args)
 		}
+	}
+}
+
+func TestCommandUnqualifiedExecutionHasNoSideEffects(t *testing.T) {
+	dir := t.TempDir()
+	for _, asset := range []string{"cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", "cpa-manager-plus_v1.14.4_windows_amd64.zip"} {
+		var out, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--execute-hop", "--archive", filepath.Join(dir, "archive"), "--asset", asset, "--input-bundle", filepath.Join(dir, "input"), "--output-bundle", filepath.Join(dir, "output"), "--data-dir", filepath.Join(dir, "authority")}, &out, &stderr)
+		if !errors.Is(err, artifactservice.ErrExecutionNotQualified) || out.Len() != 0 {
+			t.Fatalf("unqualified CLI execution: %q %v", out.String(), err)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("unqualified CLI touched files: %v %v", entries, err)
+	}
+}
+
+func TestReceiptVerificationDoesNotCreateLostAuthority(t *testing.T) {
+	dir := t.TempDir()
+	var out, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--verify-receipt", filepath.Join(dir, "receipt"), "--bundle", filepath.Join(dir, "bundle"), "--data-dir", filepath.Join(dir, "missing-authority")}, &out, &stderr)
+	if err == nil || out.Len() != 0 {
+		t.Fatalf("missing authority verification: %q %v", out.String(), err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("receipt verification initialized authority: %v %v", entries, err)
 	}
 }

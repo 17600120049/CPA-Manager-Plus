@@ -19,18 +19,49 @@ The JSON status is `verified-artifact-only`. `writerEvidence` and
 execution handle, receipt, database release identity or support allowlist.
 Nothing here changes legacy preflight or writable startup admission.
 
-Under Phase4A-03B-2b, `ExecuteHop` and `ValidateHop` implement the Manager-owned
-controlled forward-hop execution and verification pipeline:
-- Executable extraction strictly derives authentic binary bytes from verified immutable release archives.
-- Process execution runs in an isolated output workspace with parent environment pollution stripped, binding directly to isolated `USAGE_DB_PATH`, `USAGE_DATA_DIR`, and ephemeral loopback `HTTP_ADDR=127.0.0.1:0`.
-- Staging enforces double quiescence / consistency revalidation against input manifest digest before and after copying.
-- Controlled runner polls SQLite migration checkpoints (`usage_cache_accounting_v2` and `quota_snapshot_lifecycle_v1`) and gracefully interrupts and reaps the child process upon completion.
-- Post-condition inspection confirms required migration checkpoints, absence of maintenance locks, absence of pending archives, and zero inspection issues.
-- Atomic signing uses a Manager-owned private HMAC authority (`0600` key file in `0700` dir) recorded into an inter-process file-locked anti-replay journal.
-- `legacypreflight` consumes non-forgeable `ValidatedHopEvidence` strictly bound to the exact input manifest digest of the inspected source, rejecting cross-source mismatch.
-Supervisor does not own Manager data, exact source release strictly remains `"unknown"`, and `UpgradeAuthorized` strictly remains false.
+## Phase4A-03B-2b: producer/validator foundation
 
-For actual published-byte qualification, download an immutable asset separately
-and run the package tests with `CPAMP_LEGACY_ARTIFACT_ARCHIVE` and
-`CPAMP_LEGACY_ARTIFACT_ASSET` set. This opt-in test is skipped without those
-inputs; synthetic parser fixtures do not prove historical forward-hop safety.
+This slice is a foundation, not a qualified execution closed-loop.
+`ExecuteHop`, `DefaultCommandRunner` and CLI `--execute-hop` return
+`ErrExecutionNotQualified` on every platform before opening source data,
+creating authority files, staging output or starting a process.
+
+Exact v1.14.4 has no qualified offline writer entry point. Its full server
+normalizes `USAGE_COLLECTOR_MODE=none` to `auto`, can restore CPA connections
+from the copied database, and starts automation and unrelated maintenance.
+Changing environment variables or binding HTTP to loopback does not isolate
+these effects. Windows graceful shutdown/reaping is also unqualified.
+No successful real published-artifact execution is claimed here.
+
+The retained foundation provides:
+
+- Authenticated pinned archive extraction and canonical input/output digests.
+- Test-only simulated producer operations guarded by `testing.TB`, using the
+  same strict historical capability classifier as preflight. Their receipts
+  are fixtures, never real writer qualification.
+- Absolute bundle paths, input revalidation and staged-copy equivalence checks.
+- Private authority creation serialized across processes, with locked recheck,
+  unique temporary files and `0600` key files in `0700` directories.
+- Existing-journal-only validation. Missing, corrupt, unreadable or redirected
+  runtime journals fail closed for reads, writes and revocations; stale memory
+  never restores lost authority. New journal initialization is explicit.
+- Receipt authenticity, operation record, output digest and required checkpoint
+  validation. CLI verification reads an existing authority and never generates
+  a replacement key.
+- In-process preflight projection bound to the **output candidate** digest.
+  The input digest describes where an operation began and cannot prove that
+  the current candidate was written by v1.14.4.
+
+`ValidatedHopEvidence` is process-local and excluded from JSON. There is no
+production `ValidateHop -> preflight` consumer yet; diagnostic JSON must never
+be accepted as a trusted handle. Original historical release remains unknown,
+`UpgradeAuthorized` remains false, and Supervisor has no Manager DB/key access.
+
+Full 03B-2 and Phase4A-07 remain pending until an exact offline execution
+strategy, real published writer and historical matrix, platform-specific
+shutdown/reap behavior, and a production consumer have independent evidence.
+
+For published **artifact-byte verification only**, download an immutable asset
+separately and run the package tests with `CPAMP_LEGACY_ARTIFACT_ARCHIVE` and
+`CPAMP_LEGACY_ARTIFACT_ASSET` set. That opt-in test calls `Verify`, not
+`ExecuteHop`, and is skipped without those inputs.

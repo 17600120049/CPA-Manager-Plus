@@ -31,93 +31,105 @@ func DefaultJournalPath(dataDir string) string {
 	return filepath.Join(dataDir, "legacy-hop-journal.json")
 }
 
-// LoadOrCreateAuthority loads the private HMAC key from keyPath, or generates and stores
-// a new 32-byte cryptographically secure key with 0600 permissions in a 0700 directory.
-// Symlinks, non-regular files, and excessive permissions are rejected to prevent redirection attacks.
+// LoadAuthority reads an existing private key. Receipt verification must not
+// generate a replacement key when its authority has been lost.
+func LoadAuthority(keyPath string) (*Authority, error) {
+	keyPath = strings.TrimSpace(keyPath)
+	if keyPath == "" {
+		return nil, errors.New("authority key path is required")
+	}
+	info, err := os.Lstat(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("inspect authority key: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, ErrInsecureKeyFile
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		return nil, ErrInsecureKeyFile
+	}
+	if err := checkAuthorityDirectory(filepath.Dir(keyPath)); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read authority key: %w", err)
+	}
+	raw := strings.TrimSpace(string(data))
+	if len(raw) >= 64 {
+		if decoded, err := hex.DecodeString(raw); err == nil && len(decoded) >= 32 {
+			return NewAuthority(decoded)
+		}
+	}
+	if len(data) >= 32 {
+		return NewAuthority(data[:32])
+	}
+	return nil, ErrInvalidAuthorityKey
+}
+
+func checkAuthorityDirectory(dir string) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o700) {
+		return ErrInsecureKeyFile
+	}
+	return nil
+}
+
+// LoadOrCreateAuthority serializes initial creation across processes and
+// goroutines, rechecks the key under lock, and never replaces an existing key.
 func LoadOrCreateAuthority(keyPath string) (*Authority, error) {
 	keyPath = strings.TrimSpace(keyPath)
 	if keyPath == "" {
 		return nil, errors.New("authority key path is required")
 	}
-
-	info, err := os.Lstat(keyPath)
-	if err == nil {
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			return nil, ErrInsecureKeyFile
-		}
-		if runtime.GOOS != "windows" {
-			if info.Mode().Perm() != 0o600 {
-				return nil, errors.Join(ErrInsecureKeyFile, fmt.Errorf("authority key file permissions must be 0600, got %#o", info.Mode().Perm()))
-			}
-			parentInfo, err := os.Stat(filepath.Dir(keyPath))
-			if err != nil {
-				return nil, fmt.Errorf("inspect authority directory: %w", err)
-			}
-			if parentInfo.Mode().Perm() != 0o700 {
-				return nil, errors.Join(ErrInsecureKeyFile, fmt.Errorf("authority directory permissions must be 0700, got %#o", parentInfo.Mode().Perm()))
-			}
-		}
-		data, err := os.ReadFile(keyPath)
-		if err != nil {
-			return nil, fmt.Errorf("read authority key %s: %w", keyPath, err)
-		}
-		raw := strings.TrimSpace(string(data))
-		// Try hex decoding first if it looks like a hex string
-		if len(raw) >= 64 {
-			if decoded, err := hex.DecodeString(raw); err == nil && len(decoded) >= 32 {
-				return NewAuthority(decoded)
-			}
-		}
-		// Fallback to raw bytes
-		if len(data) >= 32 {
-			return NewAuthority(data[:32])
-		}
-		return nil, ErrInvalidAuthorityKey
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("inspect authority key %s: %w", keyPath, err)
+	absolute, err := filepath.Abs(keyPath)
+	if err != nil {
+		return nil, err
 	}
-
-	// Key file does not exist, generate new 32-byte key
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, fmt.Errorf("generate authority key: %w", err)
-	}
-
+	keyPath = absolute
 	dir := filepath.Dir(keyPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("create authority directory %s: %w", dir, err)
+		return nil, err
 	}
-	if runtime.GOOS != "windows" {
-		_ = os.Chmod(dir, 0o700)
+	if err := checkAuthorityDirectory(dir); err != nil {
+		return nil, err
 	}
-
-	content := []byte(hex.EncodeToString(key) + "\n")
-	tmpPath := fmt.Sprintf("%s.tmp.%d", keyPath, os.Getpid())
-	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	lock, err := acquireFileLock(keyPath + ".lock")
 	if err != nil {
-		return nil, fmt.Errorf("create temporary authority file %s: %w", tmpPath, err)
+		return nil, fmt.Errorf("lock authority creation: %w", err)
 	}
-	if runtime.GOOS != "windows" {
-		_ = os.Chmod(tmpPath, 0o600)
+	defer lock.Release()
+	authority, err := LoadAuthority(keyPath)
+	if err == nil {
+		return authority, nil
 	}
-	if _, err := tmpFile.Write(content); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
-		return nil, fmt.Errorf("write temporary authority file %s: %w", tmpPath, err)
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
-		return nil, fmt.Errorf("sync temporary authority file %s: %w", tmpPath, err)
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
 	}
-	if err := tmpFile.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return nil, fmt.Errorf("close temporary authority file %s: %w", tmpPath, err)
+	tmp, err := os.CreateTemp(dir, ".legacy-authority-key-*")
+	if err != nil {
+		return nil, err
 	}
-	if err := os.Rename(tmpPath, keyPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return nil, fmt.Errorf("persist authority file %s: %w", keyPath, err)
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	if _, err := tmp.Write([]byte(hex.EncodeToString(key) + "\n")); err != nil {
+		return nil, err
 	}
-
+	if err := tmp.Sync(); err != nil {
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmp.Name(), keyPath); err != nil {
+		return nil, err
+	}
 	return NewAuthority(key)
 }

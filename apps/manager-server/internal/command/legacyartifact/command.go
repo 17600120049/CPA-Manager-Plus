@@ -18,7 +18,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	// logs, just as artifact-read failures omit paths and payloads.
 	f.SetOutput(io.Discard)
 	f.Usage = func() {
-		_, _ = io.WriteString(stderr, "Usage: cpa-manager-plus legacy-writer-artifact --archive PATH --asset NAME [--timeout DURATION]\n       cpa-manager-plus legacy-writer-artifact --verify-receipt PATH --bundle PATH [--data-dir PATH] [--timeout DURATION]\n       cpa-manager-plus legacy-writer-artifact --execute-hop --archive PATH --asset NAME --input-bundle PATH --output-bundle PATH [--data-dir PATH] [--timeout DURATION]\nVerifies fixed v1.14.4 artifact bytes or forward-hop execution receipt; never authorizes upgrade.\n")
+		_, _ = io.WriteString(stderr, "Usage: cpa-manager-plus legacy-writer-artifact --archive PATH --asset NAME [--timeout DURATION]\n       cpa-manager-plus legacy-writer-artifact --verify-receipt PATH --bundle PATH [--data-dir PATH] [--timeout DURATION]\n       cpa-manager-plus legacy-writer-artifact --execute-hop --archive PATH --asset NAME --input-bundle PATH --output-bundle PATH [--data-dir PATH] [--timeout DURATION]\nVerifies fixed v1.14.4 artifact bytes or receipts; forward-hop execution is not qualified and is refused on all platforms. Never authorizes upgrade.\n")
 	}
 	archive := f.String("archive", "", "local published native archive (read-only)")
 	asset := f.String("asset", "", "exact published v1.14.4 native asset name")
@@ -28,9 +28,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	verifyReceipt := f.String("verify-receipt", "", "execution receipt JSON file to verify")
 	bundleDir := f.String("bundle", "", "associated bundle directory to verify against receipt")
 
-	executeHop := f.Bool("execute-hop", false, "execute controlled forward-hop operation")
-	inputBundleDir := f.String("input-bundle", "", "input legacy bundle directory")
-	outputBundleDir := f.String("output-bundle", "", "output bundle directory")
+	executeHop := f.Bool("execute-hop", false, "unsupported until offline writer execution is qualified")
+	f.String("input-bundle", "", "input legacy bundle directory")
+	f.String("output-bundle", "", "output bundle directory")
 
 	if err := f.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -45,12 +45,16 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 
+	if *executeHop {
+		return legacyartifact.ErrExecutionNotQualified
+	}
+
 	// Mode 1: verify receipt
 	if *verifyReceipt != "" {
 		if *bundleDir == "" {
 			return errors.New("explicit --bundle is required when verifying a receipt")
 		}
-		auth, err := legacyartifact.LoadOrCreateAuthority(legacyartifact.DefaultAuthorityKeyPath(*dataDir))
+		auth, err := legacyartifact.LoadAuthority(legacyartifact.DefaultAuthorityKeyPath(*dataDir))
 		if err != nil {
 			return err
 		}
@@ -70,36 +74,6 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		return json.NewEncoder(stdout).Encode(result)
-	}
-
-	// Mode 2: execute forward hop
-	if *executeHop {
-		if *archive == "" || *asset == "" || *inputBundleDir == "" || *outputBundleDir == "" {
-			return errors.New("explicit --archive, --asset, --input-bundle, and --output-bundle are required for forward-hop")
-		}
-		auth, err := legacyartifact.LoadOrCreateAuthority(legacyartifact.DefaultAuthorityKeyPath(*dataDir))
-		if err != nil {
-			return err
-		}
-		journal, err := legacyartifact.OpenJournal(legacyartifact.DefaultJournalPath(*dataDir))
-		if err != nil {
-			return err
-		}
-
-		inLayout := maintenancebundle.BundleLayout(*inputBundleDir)
-		receipt, err := legacyartifact.ExecuteHop(ctx, legacyartifact.HopOptions{
-			ArchivePath: *archive,
-			Asset:       *asset,
-			InputLayout: inLayout,
-			OutputRoot:  *outputBundleDir,
-			Authority:   auth,
-			Journal:     journal,
-			Timeout:     *timeout,
-		})
-		if err != nil {
-			return err
-		}
-		return json.NewEncoder(stdout).Encode(receipt)
 	}
 
 	// Mode 3: verify artifact archive bytes (existing behavior)

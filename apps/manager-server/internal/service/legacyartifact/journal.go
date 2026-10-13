@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	ErrOperationReplayed = errors.New("operation already recorded in private journal")
-	ErrOperationNotFound = errors.New("operation not found in private journal")
-	ErrCorruptJournal    = errors.New("journal file is corrupt, malformed, or contains duplicate records")
-	ErrInsecureJournal   = errors.New("journal file is insecure (symlink or non-regular file)")
+	ErrOperationReplayed  = errors.New("operation already recorded in private journal")
+	ErrOperationNotFound  = errors.New("operation not found in private journal")
+	ErrCorruptJournal     = errors.New("journal file is corrupt, malformed, or contains duplicate records")
+	ErrInsecureJournal    = errors.New("journal file is insecure (symlink or non-regular file)")
+	ErrJournalUnavailable = errors.New("private journal is missing or unreadable")
 )
 
 type OperationRecord struct {
@@ -71,7 +72,8 @@ func NewMemoryJournal() *Journal {
 	}
 }
 
-// OpenJournal opens or creates a JSON-backed Journal at the given path.
+// OpenJournal opens an existing JSON-backed Journal. Validation never creates
+// a missing authority file or restores records from an in-memory cache.
 // If the journal exists but is corrupt, malformed, contains duplicate records,
 // or is an insecure symlink, it fails closed with an error.
 func OpenJournal(path string) (*Journal, error) {
@@ -81,7 +83,7 @@ func OpenJournal(path string) (*Journal, error) {
 		records: make(map[string]OperationRecord),
 	}
 	if path == "" {
-		return j, nil
+		return nil, ErrJournalRequired
 	}
 
 	if err := j.loadFromDiskLocked(); err != nil {
@@ -91,17 +93,48 @@ func OpenJournal(path string) (*Journal, error) {
 	return j, nil
 }
 
-func (j *Journal) loadFromDiskLocked() error {
+// OpenOrCreateJournal explicitly initializes a new private journal under the
+// same cross-process lock used by writers. Runtime reloads never initialize it.
+func OpenOrCreateJournal(path string) (*Journal, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, ErrJournalRequired
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	lock, err := acquireFileLock(path + ".lock")
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+	j := &Journal{path: path, records: make(map[string]OperationRecord)}
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		if err := j.persistLocked(); err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, errors.Join(ErrJournalUnavailable, err)
+	}
+	if err := j.loadFromDiskLocked(); err != nil {
+		return nil, err
+	}
+	return j, nil
+}
+
+func (j *Journal) loadFromDiskLocked() (loadErr error) {
+	defer func() {
+		if loadErr != nil {
+			j.records = make(map[string]OperationRecord)
+		}
+	}()
 	if j.path == "" {
 		return nil
 	}
 
 	info, err := os.Lstat(j.path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("inspect journal path %s: %w", j.path, err)
+		return errors.Join(ErrJournalUnavailable, fmt.Errorf("inspect journal path %s: %w", j.path, err))
 	}
 
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
@@ -110,7 +143,7 @@ func (j *Journal) loadFromDiskLocked() error {
 
 	data, err := os.ReadFile(j.path)
 	if err != nil {
-		return fmt.Errorf("read journal file %s: %w", j.path, err)
+		return errors.Join(ErrJournalUnavailable, fmt.Errorf("read journal file %s: %w", j.path, err))
 	}
 
 	var list []OperationRecord
@@ -178,16 +211,23 @@ func (j *Journal) RecordOperation(rec OperationRecord) error {
 }
 
 // GetOperation returns the record for an operationID if present.
-func (j *Journal) GetOperation(operationID string) (OperationRecord, bool) {
+func (j *Journal) GetOperation(operationID string) (OperationRecord, bool, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
 	if j.path != "" {
-		_ = j.loadFromDiskLocked()
+		lock, err := acquireFileLock(j.path + ".lock")
+		if err != nil {
+			return OperationRecord{}, false, errors.Join(ErrJournalUnavailable, err)
+		}
+		defer lock.Release()
+		if err := j.loadFromDiskLocked(); err != nil {
+			return OperationRecord{}, false, err
+		}
 	}
 
 	rec, ok := j.records[operationID]
-	return rec, ok
+	return rec, ok, nil
 }
 
 // RevokeOperation marks an operation as revoked.

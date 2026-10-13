@@ -3,26 +3,23 @@ package legacyartifact
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyprofile"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
 var (
+	ErrExecutionNotQualified  = errors.New("legacy writer execution is not qualified; offline isolation, real published execution and Windows shutdown remain pending")
 	ErrInvalidSource          = errors.New("input source is invalid, corrupt, or unrecognized")
 	ErrDowngradeProhibited    = errors.New("newer or native source cannot be downgraded")
 	ErrExecutableMismatch     = errors.New("executable bytes digest does not match verified release pin")
@@ -44,148 +41,17 @@ type HopOptions struct {
 	Timeout     time.Duration
 }
 
-// DefaultCommandRunner executes the binary with an isolated, clean environment,
-// polls for migration checkpoint completion, and gracefully interrupts and reaps
-// the child process once migration checkpoints are satisfied.
-func DefaultCommandRunner(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
-	outputDir := filepath.Dir(outputLayout.DatabasePath)
-
-	var cleanEnv []string
-	for _, envVar := range os.Environ() {
-		key, _, found := strings.Cut(envVar, "=")
-		if !found {
-			continue
-		}
-		upper := strings.ToUpper(key)
-		if strings.HasPrefix(upper, "USAGE_") || strings.HasPrefix(upper, "CPA_") || upper == "HTTP_ADDR" {
-			continue
-		}
-		cleanEnv = append(cleanEnv, envVar)
-	}
-
-	cleanEnv = append(cleanEnv,
-		fmt.Sprintf("USAGE_DB_PATH=%s", outputLayout.DatabasePath),
-		fmt.Sprintf("USAGE_DATA_DIR=%s", outputDir),
-		fmt.Sprintf("CPA_MANAGER_DATA_KEY_PATH=%s", outputLayout.DataKeyPath),
-		"HTTP_ADDR=127.0.0.1:0",
-		"USAGE_COLLECTOR_MODE=none",
-	)
-	if outputLayout.ConfigPath != "" {
-		if _, err := os.Stat(outputLayout.ConfigPath); err == nil {
-			cleanEnv = append(cleanEnv, fmt.Sprintf("CPA_MANAGER_CONFIG=%s", outputLayout.ConfigPath))
-		}
-	}
-
-	cmd := exec.Command(exePath)
-	cmd.Dir = outputDir
-	cmd.Env = cleanEnv
-
-	start := time.Now()
-	if err := cmd.Start(); err != nil {
-		return ProcessEvidence{}, fmt.Errorf("start forward-hop process: %w", err)
-	}
-	pid := cmd.Process.Pid
-
-	waitCh := make(chan error, 1)
-	go func() {
-		waitCh <- cmd.Wait()
-	}()
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	var exitErr error
-	reaped := false
-
-	for !reaped {
-		select {
-		case err := <-waitCh:
-			exitErr = err
-			reaped = true
-		case <-ctx.Done():
-			_ = cmd.Process.Kill()
-			<-waitCh
-			return ProcessEvidence{}, ctx.Err()
-		case <-ticker.C:
-			if areMigrationsCompleted(ctx, outputLayout.DatabasePath) {
-				if runtime.GOOS == "windows" {
-					_ = cmd.Process.Kill()
-				} else {
-					_ = cmd.Process.Signal(os.Interrupt)
-				}
-				select {
-				case err := <-waitCh:
-					exitErr = err
-					reaped = true
-				case <-time.After(15 * time.Second):
-					_ = cmd.Process.Kill()
-					exitErr = <-waitCh
-					reaped = true
-				case <-ctx.Done():
-					_ = cmd.Process.Kill()
-					<-waitCh
-					return ProcessEvidence{}, ctx.Err()
-				}
-			}
-		}
-	}
-
-	finished := time.Now()
-	exitCode := 0
-	if exitErr != nil {
-		var exitCodeErr *exec.ExitError
-		if errors.As(exitErr, &exitCodeErr) {
-			exitCode = exitCodeErr.ExitCode()
-		} else {
-			return ProcessEvidence{}, exitErr
-		}
-	}
-
-	dur := finished.Sub(start).Milliseconds()
-	if dur <= 0 {
-		dur = 1
-	}
-
-	return ProcessEvidence{
-		PID:          pid,
-		ExitCode:     exitCode,
-		StartedAtMS:  start.UnixMilli(),
-		FinishedAtMS: finished.UnixMilli(),
-		DurationMS:   dur,
-	}, nil
+// DefaultCommandRunner refuses execution on every platform until an offline
+// exact v1.14.4 writer and shutdown/reap behavior have been qualified.
+// No process is started and no bundle or authority files are touched.
+func DefaultCommandRunner(context.Context, string, maintenancebundle.Layout) (ProcessEvidence, error) {
+	return ProcessEvidence{}, ErrExecutionNotQualified
 }
 
-func areMigrationsCompleted(ctx context.Context, dbPath string) bool {
-	if info, err := os.Stat(dbPath); err != nil || info.Size() == 0 {
-		return false
-	}
-	dsn := fmt.Sprintf("file:%s?mode=ro", filepath.ToSlash(dbPath))
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return false
-	}
-	defer db.Close()
-
-	queryCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	var count int
-	query := `select count(*) from usage_data_migrations where (name = 'usage_cache_accounting_v2' or name = 'quota_snapshot_lifecycle_v1') and status = 'completed'`
-	if err := db.QueryRowContext(queryCtx, query).Scan(&count); err != nil {
-		return false
-	}
-	return count == 2
-}
-
-// ExecuteHop performs a controlled, Manager-owned forward-hop operation.
-// It verifies the input bundle, ensures it is an eligible legacy source (prohibiting
-// downgrade of newer sources), validates release archive pins, extracts the authentic
-// v1.14.4 executable to an isolated temporary location, executes the process in an
-// isolated output workspace, validates post-condition migration checkpoints, seals the
-// output bundle, commits the operation atomically into the private journal, and issues
-// an operation-signed ExecutionReceipt.
-func ExecuteHop(ctx context.Context, opts HopOptions) (*ExecutionReceipt, error) {
-	return executeHopInternal(ctx, opts, "", nil)
+// ExecuteHop is unavailable in this producer/validator foundation.
+// Artifact authenticity alone does not qualify full-server execution as a writer.
+func ExecuteHop(context.Context, HopOptions) (*ExecutionReceipt, error) {
+	return nil, ErrExecutionNotQualified
 }
 
 // ExecuteHopForTest provides an explicit test-only injection seam guarded by testing.TB.
@@ -199,7 +65,7 @@ func ExecuteHopForTest(tb testing.TB, ctx context.Context, opts HopOptions, test
 }
 
 func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string, testRunner commandRunner) (*ExecutionReceipt, error) {
-	if opts.Authority == nil || opts.Asset == "" || opts.OutputRoot == "" {
+	if opts.Authority == nil || opts.Asset == "" || opts.OutputRoot == "" || testRunner == nil {
 		return nil, ErrInvalidHopOptions
 	}
 	if opts.Journal == nil {
@@ -209,6 +75,11 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 		return nil, ErrUnverified
 	}
 
+	var err error
+	opts.OutputRoot, err = filepath.Abs(opts.OutputRoot)
+	if err != nil {
+		return nil, errors.Join(ErrInsecureWorkspace, err)
+	}
 	if realOut, err := filepath.EvalSymlinks(opts.OutputRoot); err == nil {
 		opts.OutputRoot = realOut
 	} else if parent, err := filepath.EvalSymlinks(filepath.Dir(opts.OutputRoot)); err == nil {
@@ -220,22 +91,10 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
 
-	// Resolve symlinks in InputLayout if any
-	resolvePath := func(p string) string {
-		if p == "" {
-			return ""
-		}
-		if real, err := filepath.EvalSymlinks(p); err == nil {
-			return real
-		} else if parent, err := filepath.EvalSymlinks(filepath.Dir(p)); err == nil {
-			return filepath.Join(parent, filepath.Base(p))
-		}
-		return p
+	opts.InputLayout, err = normalizeHopLayout(opts.InputLayout)
+	if err != nil {
+		return nil, errors.Join(ErrInvalidSource, err)
 	}
-	opts.InputLayout.DatabasePath = resolvePath(opts.InputLayout.DatabasePath)
-	opts.InputLayout.DataKeyPath = resolvePath(opts.InputLayout.DataKeyPath)
-	opts.InputLayout.ConfigPath = resolvePath(opts.InputLayout.ConfigPath)
-	opts.InputLayout.ArchivesPath = resolvePath(opts.InputLayout.ArchivesPath)
 
 	// Validate output workspace isolation
 	inDbDir := filepath.Dir(opts.InputLayout.DatabasePath)
@@ -265,11 +124,11 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 	}
 	// Check for native v2 or newer schema: prohibit downgrade
 	for _, table := range inputObserved.Tables {
-		if table.Name == "gateway_api_key_identities" || table.Name == "gateway_credential_identities" {
+		if strings.HasPrefix(table.Name, "gateway_") {
 			return nil, ErrDowngradeProhibited
 		}
 	}
-	inputProfile := classifySourceProfile(inputObserved)
+	inputProfile := legacyprofile.Classify(inputObserved)
 	if inputProfile.Status != "recognized" {
 		return nil, ErrInvalidSource
 	}
@@ -285,7 +144,8 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 	}
 
 	// 2. Resolve and Validate Executable
-	// In production, executable MUST be extracted from the authenticated pinned archive.
+	// Authenticated extraction is retained for future qualification fixtures.
+	// The production entry point remains disabled.
 	var exePath string
 	var expectedExeDigest string
 	if opts.ArchivePath != "" {
@@ -335,12 +195,8 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 		return nil, errors.Join(ErrInvalidSource, fmt.Errorf("staged output bundle does not match input manifest: %w", err))
 	}
 
-	// 4. Controlled Execution of the Process
-	runner := testRunner
-	if runner == nil {
-		runner = DefaultCommandRunner
-	}
-	processEvidence, err := runner(ctx, exePath, outputLayout)
+	// 4. Test-only simulated operation; no production runner is available.
+	processEvidence, err := testRunner(ctx, exePath, outputLayout)
 	if err != nil || processEvidence.ExitCode != 0 || ctx.Err() != nil {
 		return nil, errors.Join(ErrProcessExecutionFailed, err)
 	}
@@ -356,7 +212,7 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 	if err != nil || len(outputObserved.Issues) > 0 {
 		return nil, ErrInvalidSource
 	}
-	outputProfile := classifySourceProfile(outputObserved)
+	outputProfile := legacyprofile.Classify(outputObserved)
 	if outputProfile.Status != "recognized" {
 		return nil, ErrInvalidSource
 	}
@@ -417,41 +273,24 @@ func sha256Hex(b []byte) []byte {
 	return h[:]
 }
 
-type ProfileResult struct {
-	Status string
-	Family string
-}
-
-func classifySourceProfile(source sqlite.LegacyInspection) ProfileResult {
-	tables := make(map[string]bool)
-	for _, t := range source.Tables {
-		tables[t.Name] = true
-	}
-	if !tables["settings"] || !tables["usage_events"] {
-		return ProfileResult{Status: "unknown"}
-	}
-	// Check for LegacySchemaC
-	if tables["usage_archive_runs"] && tables["usage_archive_segments"] &&
-		tables["usage_archive_event_refs"] && tables["usage_archive_deleted_coverage_daily"] &&
-		tables["usage_maintenance_locks"] {
-		return ProfileResult{Status: "recognized", Family: "LegacySchemaC"}
-	}
-	// Check for LegacySchemaB vs A based on columns of usage_events
-	for _, t := range source.Tables {
-		if t.Name == "usage_events" {
-			hasResponseModel := false
-			for _, col := range t.Columns {
-				if col.Name == "response_model" {
-					hasResponseModel = true
-					break
-				}
-			}
-			if hasResponseModel {
-				return ProfileResult{Status: "recognized", Family: "LegacySchemaB"}
-			}
+// Resolve before staging so paths agree even if a future qualified child changes cwd.
+func normalizeHopLayout(layout maintenancebundle.Layout) (maintenancebundle.Layout, error) {
+	for _, p := range []*string{&layout.DatabasePath, &layout.DataKeyPath, &layout.ConfigPath, &layout.ArchivesPath} {
+		if *p == "" {
+			continue
 		}
+		absolute, err := filepath.Abs(*p)
+		if err != nil {
+			return maintenancebundle.Layout{}, err
+		}
+		if real, err := filepath.EvalSymlinks(absolute); err == nil {
+			absolute = real
+		} else if parent, err := filepath.EvalSymlinks(filepath.Dir(absolute)); err == nil {
+			absolute = filepath.Join(parent, filepath.Base(absolute))
+		}
+		*p = absolute
 	}
-	return ProfileResult{Status: "recognized", Family: "LegacySchemaA"}
+	return layout, nil
 }
 
 func stageOutputBundle(ctx context.Context, in, out maintenancebundle.Layout) error {

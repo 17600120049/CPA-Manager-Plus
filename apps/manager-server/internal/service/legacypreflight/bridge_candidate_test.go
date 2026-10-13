@@ -4,16 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyprofile"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
@@ -112,7 +115,7 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Step 1: Set up a genuine forward-hop execution closed-loop
+	// Step 1: Set up a simulated producer/validator fixture.
 	tempDir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -151,20 +154,24 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 			return legacyartifact.ProcessEvidence{}, err
 		}
 		defer db.Close()
-		_, err = db.Exec(`
-			CREATE TABLE IF NOT EXISTS usage_archive_runs (id TEXT PRIMARY KEY, status TEXT);
-			CREATE TABLE IF NOT EXISTS usage_archive_segments (run_id TEXT, sequence INTEGER, PRIMARY KEY (run_id, sequence));
-			CREATE TABLE IF NOT EXISTS usage_archive_event_refs (event_hash TEXT PRIMARY KEY);
-			CREATE TABLE IF NOT EXISTS usage_archive_deleted_coverage_daily (utc_day INTEGER PRIMARY KEY);
-			CREATE TABLE IF NOT EXISTS usage_maintenance_locks (name TEXT PRIMARY KEY);
-			DELETE FROM usage_data_migrations;
-			INSERT INTO usage_data_migrations (name, status) VALUES ('usage_cache_accounting_v2', 'completed');
-			INSERT INTO usage_data_migrations (name, status) VALUES ('quota_snapshot_lifecycle_v1', 'completed');
-			DELETE FROM usage_maintenance_locks;
-		`)
+		for _, ddl := range loadLegacyProfileFixtures(t)[6].DDL {
+			if _, err := db.Exec(ddl.SQL); err != nil {
+				return legacyartifact.ProcessEvidence{}, err
+			}
+		}
+		for _, spec := range strings.Fields(legacyprofile.MetadataColumnSpecs) {
+			parts := strings.Split(spec, ":")
+			if _, err := db.Exec("alter table usage_events add column " + parts[0] + " " + parts[1]); err != nil {
+				return legacyartifact.ProcessEvidence{}, err
+			}
+		}
+		_, err = db.Exec(`DELETE FROM usage_data_migrations;
+   INSERT INTO usage_data_migrations (name,status) VALUES ('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','completed');
+   DELETE FROM usage_maintenance_locks;`)
 		if err != nil {
 			return legacyartifact.ProcessEvidence{}, err
 		}
+
 		return legacyartifact.ProcessEvidence{
 			PID:          9999,
 			ExitCode:     0,
@@ -199,8 +206,20 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 		t.Fatalf("expected valid non-forgeable ValidatedHopEvidence")
 	}
 
+	if receipt.InputManifestDigest == receipt.OutputManifestDigest {
+		t.Fatal("candidate must differ from original input")
+	}
+	oldReport, err := Inspect(context.Background(), paths, Options{SourceStopped: true, ValidatedHop: valResult.Evidence})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldReport.ForwardHopEvidence != nil || !slices.Contains(oldReport.Unknown, "forward-hop-evidence") {
+		t.Fatal("old input acquired output writer evidence")
+	}
+	out := maintenancebundle.BundleLayout(outputRoot)
+	candidatePaths := sqlite.InspectionPaths{Database: out.DatabasePath, DataKey: out.DataKeyPath, Config: out.ConfigPath, Archives: out.ArchivesPath}
 	// Case 1: with verified forward hop evidence from validator
-	report, err := Inspect(context.Background(), paths, Options{
+	report, err := Inspect(context.Background(), candidatePaths, Options{
 		SourceStopped: true,
 		ValidatedHop:  valResult.Evidence,
 	})
@@ -276,5 +295,48 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 	}
 	if report3.UpgradeAuthorized {
 		t.Fatalf("UpgradeAuthorized must remain false!")
+	}
+}
+
+func TestHopProducerRejectsUnresolvedLegacyProfiles(t *testing.T) {
+	for _, probe := range []struct{ name, query string }{
+		{"unknown-column", "alter table usage_events add column unreviewed text"},
+		{"partial-metadata", "alter table usage_events add column response_model text"},
+		{"other-gateway-table", "create table gateway_source_binding_revision(id integer primary key, revision integer)"},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			paths := buildLegacyProfileFixture(t, loadLegacyProfileFixtures(t)[0])
+			if err := os.WriteFile(paths.DataKey, []byte("test-data-key-12345678901234567890"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			execLegacyFixture(t, paths.Database, probe.query)
+			report, err := Inspect(context.Background(), paths, Options{SourceStopped: true})
+			if err != nil || report.CompatibilityProfile.Status == "recognized" {
+				t.Fatalf("invalid preflight fixture: %+v %v", report.CompatibilityProfile, err)
+			}
+			temp, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			key, err := legacyartifact.GenerateAuthorityKey()
+			if err != nil {
+				t.Fatal(err)
+			}
+			auth, err := legacyartifact.NewAuthority(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			called := false
+			receipt, err := legacyartifact.ExecuteHopForTest(t, context.Background(), legacyartifact.HopOptions{
+				Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: maintenancebundle.Layout{DatabasePath: paths.Database, DataKeyPath: paths.DataKey, ConfigPath: paths.Config, ArchivesPath: paths.Archives},
+				OutputRoot: filepath.Join(temp, "out"), Authority: auth, Journal: legacyartifact.NewMemoryJournal(),
+			}, filepath.Join(temp, "absent-writer"), func(context.Context, string, maintenancebundle.Layout) (legacyartifact.ProcessEvidence, error) {
+				called = true
+				return legacyartifact.ProcessEvidence{}, nil
+			})
+			if receipt != nil || called || (!errors.Is(err, legacyartifact.ErrInvalidSource) && !errors.Is(err, legacyartifact.ErrDowngradeProhibited)) {
+				t.Fatalf("unsafe profile reached writer: receipt=%v called=%v err=%v", receipt, called, err)
+			}
+		})
 	}
 }
