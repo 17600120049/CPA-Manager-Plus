@@ -596,5 +596,51 @@
       }
     },
     "digest": "sha256:84055e09f0c8b2152b7d4ba4ce4c4bc315ce690c2594ec55e9713d38acb34fef"
+  },
+  "v1.14.6": {
+    "info": {
+      "schema_version": 1,
+      "release": {
+        "version": "v1.14.6",
+        "stage": "stable",
+        "source_commit": "9d719fc8cca362f7b56d294a2ad056ae99cfeba6"
+      },
+      "content": {
+        "summary": {
+          "zh": "修复 Codex 工作区消费预算识别、用量归档清理前的历史数据保护，以及 CPA v2 缓存 Token 重复计量。",
+          "en": "Fixes Codex workspace spend-control reporting, retained usage protection during archive cleanup, and CPA v2 cache-token double counting."
+        },
+        "notes": {
+          "zh": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.6/docs/release-notes/v1.14.6-zh.md",
+          "en": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.6/docs/release-notes/v1.14.6-en.md"
+        }
+      },
+      "update": {
+        "breaking": false,
+        "migration_required": false,
+        "minimum_direct_upgrade_version": null,
+        "upgrade_guide_url": "https://github.com/seakee/CPA-Manager-Plus/releases/tag/v1.14.6"
+      },
+      "distribution": {
+        "docker": {
+          "image": "seakee/cpa-manager-plus",
+          "version_tag": "v1.14.6"
+        },
+        "native": {
+          "assets": [
+            "cpa-manager-plus_v1.14.6_darwin_amd64.tar.gz",
+            "cpa-manager-plus_v1.14.6_darwin_arm64.tar.gz",
+            "cpa-manager-plus_v1.14.6_linux_amd64.tar.gz",
+            "cpa-manager-plus_v1.14.6_linux_arm64.tar.gz",
+            "cpa-manager-plus_v1.14.6_windows_amd64.zip",
+            "cpa-manager-plus_v1.14.6_windows_arm64.zip"
+          ]
+        }
+      },
+      "compatibility": {
+        "minimum_cpa_version": "v7.3.4"
+      }
+    },
+    "digest": "sha256:c737efacd933fb44efa5812f359919bdee9826006acbb43203afc638484b40a9"
   }
 }
