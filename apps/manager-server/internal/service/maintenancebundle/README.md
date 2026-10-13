@@ -69,7 +69,9 @@ external writer quiescence separately:
 8. Validates matching evidence on the staged copy in a temporary inspection sandbox
    (SQLite driver `PRAGMA quick_check(1)` and `PRAGMA foreign_key_check`, production
    CPA connection JSON settings decryption with the data key, config validity,
-   DB-recorded archive hashes/sizes).
+   DB-recorded archive hashes/sizes, run contracts and maintenance locks). A
+   separate writable copy must also pass the real production SQLite open/migration
+   and archive reader queries. This migrated copy is discarded, never published.
 9. Writes `manifest.json` with `sourceRevision` and fence `cooperating-manager-lock`.
 10. Verifies destination is absent and atomically renames the temporary directory to
     the destination.
@@ -100,6 +102,14 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   `PRAGMA quick_check(1)` or `PRAGMA foreign_key_check`). Any foreign key violation
   fails even when quick_check and all recorded file digests pass; inspection
   uses the foreign keys declared in the database schema.
+- Requires real production SQLite open/migration on a second private writable
+  copy of DB + WAL/SHM, followed by foreign-key inspection and the production
+  archive run/segment reader queries. Same-name incomplete archive tables cannot
+  pass merely because the matching validator's smaller query succeeds. This
+  reuses maintained migrations/adapters without comparing full schema definitions.
+  Original evidence is inspected on the read-only copy; migrations never change
+  the source, bundle or published restored snapshot. A legacy snapshot that
+  production migration can open remains eligible for restoration.
 - Detects and rejects wrong data keys when encrypted CPA connection settings
   provide evidence: reads `setup.managementKey` and
   `manager_config_v1.cpaConnection.managementKey` through the production setting
@@ -120,7 +130,11 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   bypass a segment reference.
 - Independently reads all `usage_archive_runs` manifest references, including
   when the segment table is absent, and binds required evidence to the production
-  run lifecycle. `archived`/`verifying` require a manifest and at least one
+  run contract and lifecycle. IDs must be 32 lowercase hexadecimal characters,
+  mode must be `manual` or `retention`, and schema version/format must equal the
+  production archive constants. Unknown `requested_stage` values fail closed;
+  known queued stages may be satisfied/stale and handled by the production runner.
+  `archived`/`verifying` require a manifest and at least one
   corresponding segment, all `published`; `verified`/`deleting`/`completed`
   require a manifest and corresponding segments, all `verified`. Failed runs
   apply these requirements according to their `verifying`/`deleting` resume
@@ -152,6 +166,14 @@ temporary directory, revalidates file digests and `sourceRevision`, and executes
   `completed_at_ms` additionally requires the actual `completed` state. Negative
   deletion counters fail closed. Changing only a completed run's status to a
   pre-publication/cancelled state cannot discard this evidence.
+- Binds every `usage_maintenance_locks` row to an existing active run:
+  name must be `usage_archive`, operation must match the run's actual
+  `archiving`/`verifying`/`deleting` status, and lock timestamps must be positive.
+  This global lock permits only one owner even if its schema PK was removed.
+  Every active run requires its matching lock, even when the lock table is
+  absent. Failed, previewed, archived, verified, completed and cancelled runs
+  must not retain locks. Legal interrupted active stages remain resumable;
+  stale locks cannot permanently block future archive or compact operations.
 - Inspection query, scan, row-iteration, filesystem and context cancellation
   errors fail closed; an absent optional table is distinct from inspection failure.
 - Detects asset mismatches supported by these checks and bundle modifications

@@ -331,6 +331,9 @@ func sqliteURI(path string) string {
 //     DB-recorded SHA-256 and compressed byte count. Recorded run manifests also
 //     match their DB digest within the production size bound. No provenance is
 //     authenticated, and archive decoding/event validation is deferred.
+//  7. Persisted archive run contracts and maintenance locks match production
+//     stages. A separate writable copy passes production open/migration and
+//     archive reader queries; only the original file set is ever published.
 func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -438,6 +441,11 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 		return fmt.Errorf("create matching inspection scratch: %w", err)
 	}
 	defer os.RemoveAll(scratch)
+	canonicalScratch, err := filepath.EvalSymlinks(scratch)
+	if err != nil {
+		return fmt.Errorf("resolve matching inspection scratch: %w", err)
+	}
+	scratch = canonicalScratch
 
 	// Never invoke load-or-create on the source: a disappearing key must not
 	// cause inspection to write a replacement into the original file set.
@@ -518,6 +526,51 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 	if err := validateArchiveEvidence(ctx, db, l); err != nil {
 		return err
 	}
+	return validateProductionSQLiteOpen(ctx, scratchDB, scratch)
+}
+
+func validateProductionSQLiteOpen(ctx context.Context, sourceDB, scratch string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Migrate can repair/create schema and write WAL. Give the real production
+	// opener a second, writable copy; inspection above sees the original snapshot.
+	dir := filepath.Join(scratch, "production-open")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return fmt.Errorf("create production SQLite open scratch: %w", err)
+	}
+	candidateDB := filepath.Join(dir, "database")
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if _, err := os.Lstat(sourceDB + suffix); os.IsNotExist(err) && suffix != "" {
+			continue
+		} else if err != nil {
+			return fmt.Errorf("inspect production SQLite open input: %w", err)
+		}
+		if err := copyFile(ctx, sourceDB+suffix, candidateDB+suffix); err != nil {
+			return fmt.Errorf("stage production SQLite open input: %w", err)
+		}
+	}
+	db, err := managersqlite.Open(candidateDB)
+	if err != nil {
+		return fmt.Errorf("production SQLite open/migration failed: %w", err)
+	}
+	defer db.Close()
+	if err := validateForeignKeys(ctx, db); err != nil {
+		return fmt.Errorf("production SQLite open/migration integrity: %w", err)
+	}
+	// Compile the production archive readers even for an empty archive. Some
+	// missing columns are not used by migration indexes; use the maintained
+	// adapters rather than duplicating archive table definitions here.
+	repo := usagearchive.New(db)
+	if _, err := repo.Run(ctx, ""); err != nil && !errors.Is(err, usagearchive.ErrNotFound) {
+		return fmt.Errorf("production SQLite open/migration archive run reader: %w", err)
+	}
+	if _, err := repo.Segments(ctx, ""); err != nil {
+		return fmt.Errorf("production SQLite open/migration archive segment reader: %w", err)
+	}
+	if err := db.Close(); err != nil {
+		return fmt.Errorf("close production SQLite open/migration: %w", err)
+	}
 	return ctx.Err()
 }
 
@@ -578,7 +631,11 @@ func validateArchiveEvidence(ctx context.Context, db *sql.DB, l Layout) error {
 	if err := validateArchiveSegments(ctx, db, l.ArchivesPath, segments); err != nil {
 		return err
 	}
-	return validateArchiveRunManifests(ctx, db, l.ArchivesPath, segments)
+	runs := make(map[string]string)
+	if err := validateArchiveRunManifests(ctx, db, l.ArchivesPath, segments, runs); err != nil {
+		return err
+	}
+	return validateArchiveMaintenanceLocks(ctx, db, runs)
 }
 
 func archiveEvidencePath(root, runID, fileName string) (string, error) {
@@ -716,7 +773,7 @@ func archiveRunPolicy(status, resumeStatus string) (archiveLifecyclePolicy, erro
 	}
 }
 
-func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, segments map[string]archiveSegmentEvidence) error {
+func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, segments map[string]archiveSegmentEvidence, runs map[string]string) error {
 	hasRuns, err := tableExists(ctx, db, "usage_archive_runs")
 	if err != nil {
 		return err
@@ -727,7 +784,7 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, s
 	// Segment rows are already closed: inspection uses a single DB connection.
 	rows, err := db.QueryContext(ctx, `SELECT id, status, resume_status, manifest_file, manifest_sha256,
 		deleted_event_count, last_deleted_event_id, delete_started_at_ms, completed_at_ms,
-		archive_digest, archived_at_ms, verified_at_ms FROM usage_archive_runs`)
+		archive_digest, archived_at_ms, verified_at_ms, mode, schema_version, format, requested_stage FROM usage_archive_runs`)
 	if err != nil {
 		return fmt.Errorf("query archive run manifest evidence: %w", err)
 	}
@@ -736,18 +793,33 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, s
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var runID, status string
-		var resumeStatus, fileName, expectedSHA, archiveDigest sql.NullString
+		var runID, status, mode, format string
+		var schemaVersion int
+		var resumeStatus, fileName, expectedSHA, archiveDigest, requestedStage sql.NullString
 		var deletedCount, lastDeletedID int64
 		var deleteStarted, completed, archivedAt, verifiedAt sql.NullInt64
 		if err := rows.Scan(&runID, &status, &resumeStatus, &fileName, &expectedSHA,
-			&deletedCount, &lastDeletedID, &deleteStarted, &completed, &archiveDigest, &archivedAt, &verifiedAt); err != nil {
+			&deletedCount, &lastDeletedID, &deleteStarted, &completed, &archiveDigest, &archivedAt, &verifiedAt,
+			&mode, &schemaVersion, &format, &requestedStage); err != nil {
 			return fmt.Errorf("scan archive run manifest evidence: %w", err)
+		}
+		decodedID, err := hex.DecodeString(runID)
+		if err != nil || len(decodedID) != 16 || hex.EncodeToString(decodedID) != runID ||
+			(mode != usagearchive.RunModeManual && mode != usagearchive.RunModeRetention) ||
+			schemaVersion != usagearchive.SchemaVersion || format != usagearchive.FormatGzipJSONLV1 {
+			return errors.New("invalid persisted archive run contract")
+		}
+		switch requestedStage.String {
+		case "", usagearchive.StatusArchiving, usagearchive.StatusVerifying, usagearchive.StatusDeleting:
+			// Known queued stages may be satisfied/stale and cleared by the runner.
+		default:
+			return errors.New("invalid archive run requested stage")
 		}
 		policy, err := archiveRunPolicy(status, resumeStatus.String)
 		if err != nil {
 			return err
 		}
+		runs[runID] = status
 		if deletedCount < 0 || lastDeletedID < 0 {
 			return errors.New("invalid archive deletion counters")
 		}
@@ -832,6 +904,53 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, s
 	}
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("close archive run manifest evidence: %w", err)
+	}
+	return ctx.Err()
+}
+
+func archiveRunRequiresLock(status string) bool {
+	return status == usagearchive.StatusArchiving || status == usagearchive.StatusVerifying || status == usagearchive.StatusDeleting
+}
+
+func validateArchiveMaintenanceLocks(ctx context.Context, db *sql.DB, runs map[string]string) error {
+	hasLocks, err := tableExists(ctx, db, "usage_maintenance_locks")
+	if err != nil {
+		return err
+	}
+	owners := make(map[string]bool)
+	if hasLocks {
+		rows, err := db.QueryContext(ctx, `SELECT name, run_id, operation, acquired_at_ms, updated_at_ms FROM usage_maintenance_locks`)
+		if err != nil {
+			return fmt.Errorf("query archive maintenance locks: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			var name, runID, operation string
+			var acquiredAt, updatedAt int64
+			if err := rows.Scan(&name, &runID, &operation, &acquiredAt, &updatedAt); err != nil {
+				return fmt.Errorf("scan archive maintenance locks: %w", err)
+			}
+			status, exists := runs[runID]
+			if !exists || name != usagearchive.MaintenanceLockName || !archiveRunRequiresLock(status) ||
+				operation != status || acquiredAt <= 0 || updatedAt <= 0 || len(owners) != 0 {
+				return errors.New("archive maintenance lock does not match run lifecycle")
+			}
+			owners[runID] = true
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("read archive maintenance locks: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("close archive maintenance locks: %w", err)
+		}
+	}
+	for runID, status := range runs {
+		if archiveRunRequiresLock(status) && !owners[runID] {
+			return errors.New("active archive run requires matching maintenance lock")
+		}
 	}
 	return ctx.Err()
 }
