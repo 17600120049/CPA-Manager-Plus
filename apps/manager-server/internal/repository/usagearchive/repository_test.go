@@ -1462,6 +1462,67 @@ func TestRepositoryDeleteResumeRejectsMissingProjectionForDeletedEvent(t *testin
 	}
 }
 
+func TestRepositoryDeleteBatchRejectsLostRetainedEvidenceBetweenBatches(t *testing.T) {
+	for name, statement := range map[string]string{
+		"missing":            `delete from usage_monitoring_event_projection_v1 where event_id = 1`,
+		"timestamp mismatch": `update usage_monitoring_event_projection_v1 set timestamp_ms = timestamp_ms + 1 where event_id = 1`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			db, repo, run := prepareVerifiedArchiveRun(t, "batch-retained-loss")
+			ctx := context.Background()
+			if _, err := repo.BeginDelete(ctx, run.ID, 73_000); err != nil {
+				t.Fatal(err)
+			}
+			first, err := repo.DeleteBatch(ctx, run.ID, 1, 73_001, archiveTestFileVerifier)
+			if err != nil || first.Deleted != 1 {
+				t.Fatalf("first=%+v err=%v", first, err)
+			}
+			if _, err := db.Exec(statement); err != nil {
+				t.Fatal(err)
+			}
+			// The service loops directly into DeleteBatch without another BeginDelete.
+			if _, err := repo.DeleteBatch(ctx, run.ID, 1, 73_002, archiveTestFileVerifier); !errors.Is(err, ErrCoverageIncomplete) {
+				t.Fatalf("second batch error=%v, want coverage incomplete", err)
+			}
+			var rawCount, deletedCount, deletedRefs, lastDeletedID int64
+			var runStatus string
+			if err := db.QueryRow(`select
+				(select count(*) from usage_events where id = 2), deleted_event_count, last_deleted_event_id, status,
+				(select count(*) from usage_archive_event_refs where run_id = ? and raw_deleted_at_ms is not null)
+				from usage_archive_runs where id = ?`, run.ID, run.ID).Scan(&rawCount, &deletedCount, &lastDeletedID, &runStatus, &deletedRefs); err != nil {
+				t.Fatal(err)
+			}
+			if rawCount != 1 || deletedCount != 1 || deletedRefs != 1 || lastDeletedID != first.Run.LastDeletedEventID || runStatus != StatusDeleting {
+				t.Fatalf("rejected batch mutated state: raw=%d deletes=%d refs=%d last=%d status=%s", rawCount, deletedCount, deletedRefs, lastDeletedID, runStatus)
+			}
+		})
+	}
+}
+
+func TestRepositoryRetainedHandoffChecksPresenceAndTimestampOnly(t *testing.T) {
+	db, repo, run := prepareVerifiedArchiveRun(t, "retained-handoff-contract")
+	ctx := context.Background()
+	// Field integrity belongs to projection writers. This gate deliberately
+	// accepts an existing row with matching identity/time, even if tokens differ.
+	if _, err := db.Exec(`update usage_monitoring_event_projection_v1 set total_tokens = 999999 where event_id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.BeginDelete(ctx, run.ID, 74_000); err != nil {
+		t.Fatal(err)
+	}
+	result, err := repo.DeleteBatch(ctx, run.ID, 1, 74_001, archiveTestFileVerifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var totalTokens int64
+	if err := db.QueryRow(`select total_tokens from usage_monitoring_event_projection_v1 where event_id = 1`).Scan(&totalTokens); err != nil {
+		t.Fatal(err)
+	}
+	if result.Deleted != 1 || totalTokens != 999999 {
+		t.Fatalf("handoff unexpectedly validated/rewrote fields: deleted=%d tokens=%d", result.Deleted, totalTokens)
+	}
+}
+
 func TestRepositoryDeleteRevalidatesOwnershipAndEvidenceBetweenBatches(t *testing.T) {
 	mutations := map[string]struct {
 		statement string

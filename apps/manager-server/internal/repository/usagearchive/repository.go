@@ -1294,6 +1294,9 @@ func (r *Repository) DeleteBatch(ctx context.Context, runID string, limit int, n
 	if err != nil {
 		return DeleteBatchResult{}, err
 	}
+	if err := validateDeletedRetainedProjection(ctx, tx, run); err != nil {
+		return DeleteBatchResult{}, err
+	}
 	segments, err := segmentsQuery(ctx, tx, run.ID)
 	if err != nil {
 		return DeleteBatchResult{}, err
@@ -1354,6 +1357,8 @@ func (r *Repository) DeleteBatch(ctx context.Context, runID string, limit int, n
 		// A projection watermark is not proof that every retained row is actually
 		// present. Repair only missing or timestamp-mismatched rows, then prove the
 		// whole bounded batch is retained before any irreversible raw deletion.
+		// This handoff proves row presence and matching event timestamps, not
+		// field-by-field semantic integrity. Projection writers own those fields.
 		candidateIDs := make([]int64, len(candidates))
 		for index, candidate := range candidates {
 			candidateIDs[index] = candidate.ID
@@ -1868,6 +1873,10 @@ func validateDeleteCoverage(ctx context.Context, tx *sql.Tx, run Run) error {
 	if _, err := validateCurrentDeleteReadiness(ctx, tx, run); err != nil {
 		return err
 	}
+	return validateDeletedRetainedProjection(ctx, tx, run)
+}
+
+func validateDeletedRetainedProjection(ctx context.Context, tx *sql.Tx, run Run) error {
 	// A rollup watermark proves worker progress, not that retained rows from an
 	// interrupted delete are still materialized. Never resume destructive cleanup
 	// if this run has already lost an exact retained projection row.
