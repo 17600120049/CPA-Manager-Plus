@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
@@ -54,16 +53,7 @@ func ExecuteHop(context.Context, HopOptions) (*ExecutionReceipt, error) {
 	return nil, ErrExecutionNotQualified
 }
 
-// ExecuteHopForTest provides an explicit test-only injection seam guarded by testing.TB.
-// It cannot be called in production code.
-func ExecuteHopForTest(tb testing.TB, ctx context.Context, opts HopOptions, testExePath string, testRunner func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error)) (*ExecutionReceipt, error) {
-	if tb == nil {
-		panic("ExecuteHopForTest requires a non-nil testing.TB")
-	}
-	tb.Helper()
-	return executeHopInternal(ctx, opts, testExePath, testRunner)
-}
-
+// Package-private foundation seam exercised by this package's tests only.
 func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string, testRunner commandRunner) (*ExecutionReceipt, error) {
 	if opts.Authority == nil || opts.Asset == "" || opts.OutputRoot == "" || testRunner == nil {
 		return nil, ErrInvalidHopOptions
@@ -167,7 +157,7 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 		exePath = tempExe
 		expectedExeDigest = extractedDigest
 	} else if testExePath != "" && testRunner != nil {
-		// Test-only dependency injection mode guarded by testing.TB
+		// Package-private test fixture injection; no public execution path uses it.
 		exePath = testExePath
 	} else {
 		return nil, errors.Join(ErrInvalidHopOptions, errors.New("archive path is required for forward hop"))
@@ -197,8 +187,11 @@ func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string
 
 	// 4. Test-only simulated operation; no production runner is available.
 	processEvidence, err := testRunner(ctx, exePath, outputLayout)
-	if err != nil || processEvidence.ExitCode != 0 || ctx.Err() != nil {
-		return nil, errors.Join(ErrProcessExecutionFailed, err)
+	if err != nil || ctx.Err() != nil {
+		return nil, errors.Join(ErrProcessExecutionFailed, err, ctx.Err())
+	}
+	if err := processEvidence.Validate(); err != nil {
+		return nil, err
 	}
 
 	// 5. Verify Required Checkpoints Post-condition

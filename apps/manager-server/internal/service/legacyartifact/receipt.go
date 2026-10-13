@@ -7,7 +7,9 @@ import (
 	"fmt"
 )
 
-const ReceiptVersion = 1
+// Version 2 authenticates PID as part of the lifecycle evidence. Version 1
+// receipts did not bind PID and must not be accepted under this contract.
+const ReceiptVersion = 2
 
 var (
 	ErrInvalidReceipt = errors.New("invalid execution receipt")
@@ -20,6 +22,23 @@ type ProcessEvidence struct {
 	StartedAtMS  int64 `json:"startedAtMs"`
 	FinishedAtMS int64 `json:"finishedAtMs"`
 	DurationMS   int64 `json:"durationMs"`
+}
+
+// Validate checks lifecycle consistency; a trusted, qualified runner is still
+// required to establish that these observations came from an actual process.
+func (p ProcessEvidence) Validate() error {
+	if p.PID <= 0 || p.ExitCode != 0 || p.StartedAtMS <= 0 ||
+		p.FinishedAtMS < p.StartedAtMS || p.DurationMS <= 0 {
+		return ErrProcessExecutionFailed
+	}
+	// Unix millisecond timestamps and an elapsed duration can differ by one
+	// millisecond due to rounding. Larger disagreement is inconsistent evidence.
+	elapsed := p.FinishedAtMS - p.StartedAtMS
+	difference := elapsed - p.DurationMS
+	if difference < -1 || difference > 1 {
+		return ErrProcessExecutionFailed
+	}
+	return nil
 }
 
 type CheckpointEvidence struct {
@@ -65,7 +84,7 @@ func (r *ExecutionReceipt) CanonicalBytes() ([]byte, error) {
 		r.InputManifestDigest == "" || r.OutputManifestDigest == "" {
 		return nil, ErrInvalidReceipt
 	}
-	s := fmt.Sprintf("v%d|op:%s|rel:%s|sc:%s|asset:%s|exe:%s|in:%s|out:%s|inf:%s|outf:%s|exit:%d|start:%d|fin:%d|dur:%d|cac:%s|qsl:%s|mlock:%s|ts:%d",
+	s := fmt.Sprintf("v%d|op:%s|rel:%s|sc:%s|asset:%s|exe:%s|in:%s|out:%s|inf:%s|outf:%s|pid:%d|exit:%d|start:%d|fin:%d|dur:%d|cac:%s|qsl:%s|mlock:%s|ts:%d",
 		r.Version,
 		r.OperationID,
 		r.Release,
@@ -76,6 +95,7 @@ func (r *ExecutionReceipt) CanonicalBytes() ([]byte, error) {
 		r.OutputManifestDigest,
 		r.InputFamily,
 		r.OutputFamily,
+		r.ProcessEvidence.PID,
 		r.ProcessEvidence.ExitCode,
 		r.ProcessEvidence.StartedAtMS,
 		r.ProcessEvidence.FinishedAtMS,

@@ -14,8 +14,15 @@ type fileLock struct {
 }
 
 func acquireFileLock(path string) (*fileLock, error) {
+	if err := checkPrivateLockPath(path); err != nil {
+		return nil, err
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkOpenedPrivateLock(f, path); err != nil {
+		_ = f.Close()
 		return nil, err
 	}
 	err = unix.Flock(int(f.Fd()), unix.LOCK_EX)

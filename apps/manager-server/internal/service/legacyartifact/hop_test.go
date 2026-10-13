@@ -28,6 +28,9 @@ func testTempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(d, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	return d
 }
 
@@ -160,7 +163,7 @@ func TestHopProducerAndValidatorHappyPath(t *testing.T) {
 		}, nil
 	}
 
-	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	receipt, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       asset,
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
@@ -212,10 +215,10 @@ func TestHopProducerRejectsMissingJournal(t *testing.T) {
 	createFakeExecutable(t, fakeExePath)
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
-		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
+		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	_, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
@@ -239,10 +242,10 @@ func TestHopValidatorRejectsMissingJournal(t *testing.T) {
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, outputLayout.DatabasePath, "completed", "completed", false)
-		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
+		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	receipt, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
@@ -274,10 +277,10 @@ func TestHopProducerRejectsWrongArtifact(t *testing.T) {
 	createFakeExecutable(t, fakeExePath)
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
-		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
+		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	_, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "unsupported_asset_v1.14.4.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
@@ -310,10 +313,10 @@ func TestHopProducerRejectsNewerSourceDowngrade(t *testing.T) {
 	createFakeExecutable(t, fakeExePath)
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
-		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
+		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	_, err = ExecuteHopForTest(t, context.Background(), HopOptions{
+	_, err = executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
@@ -339,10 +342,10 @@ func TestHopProducerRejectsUnrecognizedSource(t *testing.T) {
 	createFakeExecutable(t, fakeExePath)
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
-		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
+		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
-	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	_, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
@@ -367,7 +370,7 @@ func TestHopProducerRejectsProcessFailureOrDirtyExit(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 1}, errors.New("exit status 1")
 	}
 
-	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	_, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out"),
@@ -391,10 +394,10 @@ func TestHopProducerRejectsIncompleteCheckpoints(t *testing.T) {
 	// Case A: Cache accounting incomplete
 	runnerIncompleteCache := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, outputLayout.DatabasePath, "running", "completed", false)
-		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
+		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	_, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out1"),
@@ -408,10 +411,10 @@ func TestHopProducerRejectsIncompleteCheckpoints(t *testing.T) {
 	// Case B: Active maintenance lock left on database
 	runnerWithLock := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, outputLayout.DatabasePath, "completed", "completed", true)
-		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
+		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	_, err = ExecuteHopForTest(t, context.Background(), HopOptions{
+	_, err = executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  filepath.Join(temp, "out2"),
@@ -434,11 +437,11 @@ func TestHopProducerRejectsInsecureWorkspace(t *testing.T) {
 	createFakeExecutable(t, fakeExePath)
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
-		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
+		return ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1010, DurationMS: 10}, nil
 	}
 
 	// Case A: outputRoot is same as input root
-	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	_, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  inDir,
@@ -457,7 +460,7 @@ func TestHopProducerRejectsInsecureWorkspace(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(nonEmptyOut, "rogue.txt"), []byte("data"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = ExecuteHopForTest(t, context.Background(), HopOptions{
+	_, err = executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  nonEmptyOut,
@@ -481,10 +484,10 @@ func TestHopValidatorRejectsForgedSignature(t *testing.T) {
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, outputLayout.DatabasePath, "completed", "completed", false)
-		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
+		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	receipt, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
@@ -520,10 +523,10 @@ func TestHopValidatorRejectsCopiedReceiptToDifferentBundle(t *testing.T) {
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, outputLayout.DatabasePath, "completed", "completed", false)
-		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
+		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	receipt, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
@@ -561,10 +564,10 @@ func TestHopValidatorRejectsOutputBundleContentChange(t *testing.T) {
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, outputLayout.DatabasePath, "completed", "completed", false)
-		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
+		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	receipt, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
@@ -607,10 +610,10 @@ func TestHopValidatorRejectsRevokedOperationInJournal(t *testing.T) {
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, outputLayout.DatabasePath, "completed", "completed", false)
-		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
+		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	receipt, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
@@ -649,10 +652,10 @@ func TestHopValidatorRejectsRecordMismatch(t *testing.T) {
 
 	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
 		mockMigrateToV1144(t, outputLayout.DatabasePath, "completed", "completed", false)
-		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
+		return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+	receipt, err := executeHopInternal(context.Background(), HopOptions{
 		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
 		InputLayout: inLayout,
 		OutputRoot:  outRoot,
@@ -899,10 +902,10 @@ func TestJournalRuntimeFailuresRejectValidationAndWrites(t *testing.T) {
 			exe := filepath.Join(temp, "writer")
 			createFakeExecutable(t, exe)
 			out := filepath.Join(temp, "out")
-			receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: input, OutputRoot: out, Authority: auth, Journal: journal}, exe,
+			receipt, err := executeHopInternal(context.Background(), HopOptions{Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: input, OutputRoot: out, Authority: auth, Journal: journal}, exe,
 				func(ctx context.Context, exe string, layout maintenancebundle.Layout) (ProcessEvidence, error) {
 					mockMigrateToV1144(t, layout.DatabasePath, "completed", "completed", false)
-					return ProcessEvidence{ExitCode: 0, DurationMS: 100}, nil
+					return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 				})
 			if err != nil {
 				t.Fatal(err)
@@ -1010,7 +1013,7 @@ func TestRelativeHopPathsIdentifyStagedBundle(t *testing.T) {
 	createFakeExecutable(t, exe)
 	t.Chdir(temp)
 	called := false
-	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: maintenancebundle.BundleLayout("in"), OutputRoot: "out", Authority: auth, Journal: NewMemoryJournal()}, exe,
+	receipt, err := executeHopInternal(context.Background(), HopOptions{Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: maintenancebundle.BundleLayout("in"), OutputRoot: "out", Authority: auth, Journal: NewMemoryJournal()}, exe,
 		func(ctx context.Context, exe string, layout maintenancebundle.Layout) (ProcessEvidence, error) {
 			called = true
 			want := maintenancebundle.BundleLayout(filepath.Join(temp, "out"))
@@ -1018,7 +1021,7 @@ func TestRelativeHopPathsIdentifyStagedBundle(t *testing.T) {
 				t.Fatalf("writer layout %+v != staged layout %+v", layout, want)
 			}
 			mockMigrateToV1144(t, layout.DatabasePath, "completed", "completed", false)
-			return ProcessEvidence{ExitCode: 0, DurationMS: 100}, nil
+			return ProcessEvidence{PID: 1234, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, nil
 		})
 	if err != nil || receipt == nil || !called {
 		t.Fatalf("relative staging failed: %v %v", receipt, err)

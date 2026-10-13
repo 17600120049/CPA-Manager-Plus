@@ -25,6 +25,10 @@ func InspectCheckpoints(ctx context.Context, databasePath string) (CheckpointEvi
 	if err != nil {
 		return CheckpointEvidence{}, errors.Join(ErrCheckpointFailed, err)
 	}
+	return checkpointsFromInspection(observed)
+}
+
+func checkpointsFromInspection(observed sqlite.LegacyInspection) (CheckpointEvidence, error) {
 	if len(observed.Issues) != 0 {
 		return CheckpointEvidence{}, ErrInspectionIssuesDetected
 	}

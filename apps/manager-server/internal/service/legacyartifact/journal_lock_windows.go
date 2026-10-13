@@ -14,6 +14,9 @@ type fileLock struct {
 }
 
 func acquireFileLock(path string) (*fileLock, error) {
+	if err := checkPrivateLockPath(path); err != nil {
+		return nil, err
+	}
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, err
@@ -30,6 +33,10 @@ func acquireFileLock(path string) (*fileLock, error) {
 		return nil, err
 	}
 	f := os.NewFile(uintptr(handle), path)
+	if err := checkOpenedPrivateLock(f, path); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
 	var overlapped windows.Overlapped
 	err = windows.LockFileEx(
 		windows.Handle(f.Fd()),

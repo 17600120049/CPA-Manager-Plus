@@ -36,18 +36,31 @@ No successful real published-artifact execution is claimed here.
 The retained foundation provides:
 
 - Authenticated pinned archive extraction and canonical input/output digests.
-- Test-only simulated producer operations guarded by `testing.TB`, using the
-  same strict historical capability classifier as preflight. Their receipts
-  are fixtures, never real writer qualification.
+- Package-private simulated producer operations exercised directly by package
+  tests, using the same strict historical capability classifier as preflight.
+  No exported test runner API or production `testing` dependency is needed.
+  Their receipts are fixtures, never real writer qualification.
 - Absolute bundle paths, input revalidation and staged-copy equivalence checks.
 - Private authority creation serialized across processes, with locked recheck,
   unique temporary files and `0600` key files in `0700` directories.
+- Dedicated `<data-dir>/.legacy-hop/` private storage: `authority.key`,
+  `journal.json` and their `.lock` files require `0600` on Unix; the private
+  directory requires `0700`. The Manager data directory may retain `0755`.
+  Existing permissive files or directories are rejected, never chmod-repaired.
 - Existing-journal-only validation. Missing, corrupt, unreadable or redirected
   runtime journals fail closed for reads, writes and revocations; stale memory
   never restores lost authority. New journal initialization is explicit.
-- Receipt authenticity, operation record, output digest and required checkpoint
-  validation. CLI verification reads an existing authority and never generates
-  a replacement key.
+- Version 2 receipts authenticate PID, exit code, start/finish timestamps and
+  duration. Producer and validator require a positive PID and start time,
+  ordered timestamps, exit zero and positive duration consistent with elapsed
+  milliseconds (at most one millisecond rounding difference). Version 1 is
+  rejected because its signature did not cover PID. These consistency checks
+  do not substitute for qualified launch/exit/reap observations.
+- Receipt authenticity, operation record and output digest validation followed
+  by current schema re-inspection. The output must still be recognized with
+  the signed family and identical checkpoint evidence; bundle contents are
+  revalidated after inspection. CLI verification reads an existing authority
+  and never generates a replacement key.
 - In-process preflight projection bound to the **output candidate** digest.
   The input digest describes where an operation began and cannot prove that
   the current candidate was written by v1.14.4.
@@ -60,6 +73,10 @@ be accepted as a trusted handle. Original historical release remains unknown,
 Full 03B-2 and Phase4A-07 remain pending until an exact offline execution
 strategy, real published writer and historical matrix, platform-specific
 shutdown/reap behavior, and a production consumer have independent evidence.
+The default private paths replace the previous foundation-only paths
+`<data-dir>/.legacy-authority.key` and `<data-dir>/legacy-hop-journal.json`.
+There is no automatic fallback, migration or regeneration during verification.
+Windows ACL protection remains unqualified; cross-builds prove compilation only.
 
 For published **artifact-byte verification only**, download an immutable asset
 separately and run the package tests with `CPAMP_LEGACY_ARTIFACT_ARCHIVE` and

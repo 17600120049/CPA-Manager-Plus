@@ -2,21 +2,17 @@ package legacypreflight
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
-	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyprofile"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
@@ -115,12 +111,34 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Step 1: Set up a simulated producer/validator fixture.
-	tempDir, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
+	// Signed fixture tests validator-to-preflight projection only. Producer
+	// simulation lives inside legacyartifact and has no exported test API.
+	candidatePaths := buildLegacyProfileFixture(t, loadLegacyProfileFixtures(t)[6])
+	if err := os.WriteFile(candidatePaths.DataKey, []byte("candidate-data-key-1234567890123456"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-
+	execLegacyFixture(t, candidatePaths.Database, `INSERT INTO usage_data_migrations (name,status) VALUES ('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','completed')`)
+	inputLayout := maintenancebundle.Layout{DatabasePath: paths.Database, DataKeyPath: paths.DataKey, ConfigPath: paths.Config, ArchivesPath: paths.Archives}
+	out := maintenancebundle.Layout{DatabasePath: candidatePaths.Database, DataKeyPath: candidatePaths.DataKey, ConfigPath: candidatePaths.Config, ArchivesPath: candidatePaths.Archives}
+	digest := func(layout maintenancebundle.Layout) string {
+		t.Helper()
+		for _, path := range []*string{&layout.DatabasePath, &layout.DataKeyPath, &layout.ConfigPath, &layout.ArchivesPath} {
+			parent, err := filepath.EvalSymlinks(filepath.Dir(*path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			*path = filepath.Join(parent, filepath.Base(*path))
+		}
+		manifest, err := maintenancebundle.Inspect(context.Background(), layout)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest, err := legacyartifact.ComputeManifestDigest(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return digest
+	}
 	authKey, err := legacyartifact.GenerateAuthorityKey()
 	if err != nil {
 		t.Fatal(err)
@@ -129,73 +147,35 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	journal := legacyartifact.NewMemoryJournal()
-
-	// Fake executable for runner-injected test
-	fakeExePath := filepath.Join(tempDir, "bin", "cpa-manager-plus")
-	if err := os.MkdirAll(filepath.Dir(fakeExePath), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(fakeExePath, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	outputRoot := filepath.Join(tempDir, "hop-output")
-	inputLayout := maintenancebundle.Layout{
-		DatabasePath: paths.Database,
-		DataKeyPath:  paths.DataKey,
-		ConfigPath:   paths.Config,
-		ArchivesPath: paths.Archives,
-	}
-
-	runner := func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (legacyartifact.ProcessEvidence, error) {
-		db, err := sql.Open("sqlite", outputLayout.DatabasePath)
-		if err != nil {
-			return legacyartifact.ProcessEvidence{}, err
-		}
-		defer db.Close()
-		for _, ddl := range loadLegacyProfileFixtures(t)[6].DDL {
-			if _, err := db.Exec(ddl.SQL); err != nil {
-				return legacyartifact.ProcessEvidence{}, err
-			}
-		}
-		for _, spec := range strings.Fields(legacyprofile.MetadataColumnSpecs) {
-			parts := strings.Split(spec, ":")
-			if _, err := db.Exec("alter table usage_events add column " + parts[0] + " " + parts[1]); err != nil {
-				return legacyartifact.ProcessEvidence{}, err
-			}
-		}
-		_, err = db.Exec(`DELETE FROM usage_data_migrations;
-   INSERT INTO usage_data_migrations (name,status) VALUES ('usage_cache_accounting_v2','completed'),('quota_snapshot_lifecycle_v1','completed');
-   DELETE FROM usage_maintenance_locks;`)
-		if err != nil {
-			return legacyartifact.ProcessEvidence{}, err
-		}
-
-		return legacyartifact.ProcessEvidence{
-			PID:          9999,
-			ExitCode:     0,
-			StartedAtMS:  1000,
-			FinishedAtMS: 1500,
-			DurationMS:   500,
-		}, nil
-	}
-
-	receipt, err := legacyartifact.ExecuteHopForTest(t, context.Background(), legacyartifact.HopOptions{
-		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		InputLayout: inputLayout,
-		OutputRoot:  outputRoot,
-		Authority:   authority,
-		Journal:     journal,
-	}, fakeExePath, runner)
+	checkpoints, err := legacyartifact.InspectCheckpoints(context.Background(), candidatePaths.Database)
 	if err != nil {
-		t.Fatalf("ExecuteHop failed: %v", err)
+		t.Fatal(err)
+	}
+	receipt := &legacyartifact.ExecutionReceipt{
+		Version: legacyartifact.ReceiptVersion, OperationID: "signed-projection-fixture",
+		Release: legacyartifact.Release, SourceCommit: legacyartifact.SourceCommit,
+		Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", ExecutableSHA256: "fixture-executable-digest",
+		InputManifestDigest: digest(inputLayout), OutputManifestDigest: digest(out),
+		InputFamily: "LegacySchemaA", OutputFamily: "LegacySchemaC", IssuedAtMS: 1500,
+		ProcessEvidence:    legacyartifact.ProcessEvidence{PID: 9999, StartedAtMS: 1000, FinishedAtMS: 1500, DurationMS: 500},
+		CheckpointEvidence: checkpoints,
+	}
+	if err := receipt.Sign(authority); err != nil {
+		t.Fatal(err)
+	}
+	journal := legacyartifact.NewMemoryJournal()
+	if err := journal.RecordOperation(legacyartifact.OperationRecord{
+		OperationID: receipt.OperationID, Release: receipt.Release, Asset: receipt.Asset,
+		ExecutableSHA256: receipt.ExecutableSHA256, InputManifestDigest: receipt.InputManifestDigest,
+		OutputManifestDigest: receipt.OutputManifestDigest, IssuedAtMS: receipt.IssuedAtMS,
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	// Validate to produce non-forgeable ValidatedHopEvidence
 	valResult, err := legacyartifact.ValidateHop(context.Background(), legacyartifact.ValidateOptions{
 		Receipt:      receipt,
-		BundleLayout: maintenancebundle.BundleLayout(outputRoot),
+		BundleLayout: out,
 		Authority:    authority,
 		Journal:      journal,
 	})
@@ -216,8 +196,6 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 	if oldReport.ForwardHopEvidence != nil || !slices.Contains(oldReport.Unknown, "forward-hop-evidence") {
 		t.Fatal("old input acquired output writer evidence")
 	}
-	out := maintenancebundle.BundleLayout(outputRoot)
-	candidatePaths := sqlite.InspectionPaths{Database: out.DatabasePath, DataKey: out.DataKeyPath, Config: out.ConfigPath, Archives: out.ArchivesPath}
 	// Case 1: with verified forward hop evidence from validator
 	report, err := Inspect(context.Background(), candidatePaths, Options{
 		SourceStopped: true,
@@ -295,48 +273,5 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 	}
 	if report3.UpgradeAuthorized {
 		t.Fatalf("UpgradeAuthorized must remain false!")
-	}
-}
-
-func TestHopProducerRejectsUnresolvedLegacyProfiles(t *testing.T) {
-	for _, probe := range []struct{ name, query string }{
-		{"unknown-column", "alter table usage_events add column unreviewed text"},
-		{"partial-metadata", "alter table usage_events add column response_model text"},
-		{"other-gateway-table", "create table gateway_source_binding_revision(id integer primary key, revision integer)"},
-	} {
-		t.Run(probe.name, func(t *testing.T) {
-			paths := buildLegacyProfileFixture(t, loadLegacyProfileFixtures(t)[0])
-			if err := os.WriteFile(paths.DataKey, []byte("test-data-key-12345678901234567890"), 0600); err != nil {
-				t.Fatal(err)
-			}
-			execLegacyFixture(t, paths.Database, probe.query)
-			report, err := Inspect(context.Background(), paths, Options{SourceStopped: true})
-			if err != nil || report.CompatibilityProfile.Status == "recognized" {
-				t.Fatalf("invalid preflight fixture: %+v %v", report.CompatibilityProfile, err)
-			}
-			temp, err := filepath.EvalSymlinks(t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
-			key, err := legacyartifact.GenerateAuthorityKey()
-			if err != nil {
-				t.Fatal(err)
-			}
-			auth, err := legacyartifact.NewAuthority(key)
-			if err != nil {
-				t.Fatal(err)
-			}
-			called := false
-			receipt, err := legacyartifact.ExecuteHopForTest(t, context.Background(), legacyartifact.HopOptions{
-				Asset: "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz", InputLayout: maintenancebundle.Layout{DatabasePath: paths.Database, DataKeyPath: paths.DataKey, ConfigPath: paths.Config, ArchivesPath: paths.Archives},
-				OutputRoot: filepath.Join(temp, "out"), Authority: auth, Journal: legacyartifact.NewMemoryJournal(),
-			}, filepath.Join(temp, "absent-writer"), func(context.Context, string, maintenancebundle.Layout) (legacyartifact.ProcessEvidence, error) {
-				called = true
-				return legacyartifact.ProcessEvidence{}, nil
-			})
-			if receipt != nil || called || (!errors.Is(err, legacyartifact.ErrInvalidSource) && !errors.Is(err, legacyartifact.ErrDowngradeProhibited)) {
-				t.Fatalf("unsafe profile reached writer: receipt=%v called=%v err=%v", receipt, called, err)
-			}
-		})
 	}
 }

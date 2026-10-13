@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyprofile"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
@@ -89,8 +91,8 @@ func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, 
 	}
 
 	// 3. Process execution evidence verification
-	if receipt.ProcessEvidence.ExitCode != 0 || receipt.ProcessEvidence.DurationMS <= 0 {
-		return nil, ErrProcessExecutionFailed
+	if err := receipt.ProcessEvidence.Validate(); err != nil {
+		return nil, err
 	}
 
 	// 4. Anti-replay and journal verification (mandatory)
@@ -126,10 +128,30 @@ func ValidateHop(ctx context.Context, opts ValidateOptions) (*ValidationResult, 
 		return nil, ErrBundleMismatch
 	}
 
-	// 6. Re-inspect Checkpoints on the actual output database
-	checkpoints, err := InspectCheckpoints(ctx, opts.BundleLayout.DatabasePath)
+	// 6. Reapply current semantic rules to the output. Authenticity does not
+	// grandfather a receipt whose schema is no longer recognized.
+	observed, err := sqlite.InspectLegacySource(ctx, sqlite.InspectionPaths{
+		Database: opts.BundleLayout.DatabasePath,
+		DataKey:  opts.BundleLayout.DataKeyPath,
+		Config:   opts.BundleLayout.ConfigPath,
+		Archives: opts.BundleLayout.ArchivesPath,
+	}, sqlite.InspectionOptions{SourceStopped: true})
+	if err != nil {
+		return nil, errors.Join(ErrInvalidSource, err)
+	}
+	profile := legacyprofile.Classify(observed)
+	if profile.Status != "recognized" || profile.Family != receipt.OutputFamily {
+		return nil, ErrInvalidSource
+	}
+	checkpoints, err := checkpointsFromInspection(observed)
 	if err != nil {
 		return nil, err
+	}
+	if checkpoints != receipt.CheckpointEvidence {
+		return nil, ErrCheckpointFailed
+	}
+	if err := maintenancebundle.Revalidate(ctx, opts.BundleLayout, currentManifest); err != nil {
+		return nil, errors.Join(ErrBundleMismatch, err)
 	}
 
 	evidence := &ValidatedHopEvidence{

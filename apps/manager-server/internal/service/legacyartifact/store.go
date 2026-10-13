@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	ErrInsecureKeyFile = errors.New("authority key file is insecure (symlink, non-regular file, or excessive permissions)")
+	ErrInsecureKeyFile        = errors.New("authority key file is insecure (symlink, non-regular file, or excessive permissions)")
+	errInsecurePrivateStorage = errors.New("private storage requires a regular 0600 file and a non-symlink 0700 directory")
 )
 
 // DefaultAuthorityKeyPath returns the canonical path to the Manager-owned private authority key.
@@ -20,7 +21,7 @@ func DefaultAuthorityKeyPath(dataDir string) string {
 	if strings.TrimSpace(dataDir) == "" {
 		dataDir = "data"
 	}
-	return filepath.Join(dataDir, ".legacy-authority.key")
+	return filepath.Join(dataDir, ".legacy-hop", "authority.key")
 }
 
 // DefaultJournalPath returns the canonical path to the Manager-owned operation journal.
@@ -28,7 +29,7 @@ func DefaultJournalPath(dataDir string) string {
 	if strings.TrimSpace(dataDir) == "" {
 		dataDir = "data"
 	}
-	return filepath.Join(dataDir, "legacy-hop-journal.json")
+	return filepath.Join(dataDir, ".legacy-hop", "journal.json")
 }
 
 // LoadAuthority reads an existing private key. Receipt verification must not
@@ -68,14 +69,61 @@ func LoadAuthority(keyPath string) (*Authority, error) {
 }
 
 func checkAuthorityDirectory(dir string) error {
-	info, err := os.Stat(dir)
+	if err := checkPrivateDirectory(dir); err != nil {
+		return errors.Join(ErrInsecureKeyFile, err)
+	}
+	return nil
+}
+
+func checkPrivateDirectory(dir string) error {
+	info, err := os.Lstat(dir)
 	if err != nil {
 		return err
 	}
 	if !info.IsDir() || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o700) {
-		return ErrInsecureKeyFile
+		return errInsecurePrivateStorage
 	}
 	return nil
+}
+
+func checkPrivateFile(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
+		return errInsecurePrivateStorage
+	}
+	return nil
+}
+
+// Never repair an existing permissive or redirected lock file in place.
+func checkPrivateLockPath(path string) error {
+	if err := checkPrivateDirectory(filepath.Dir(path)); err != nil {
+		return err
+	}
+	if err := checkPrivateFile(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func checkOpenedPrivateLock(file *os.File, path string) error {
+	if err := checkPrivateFile(path); err != nil {
+		return err
+	}
+	opened, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	current, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(opened, current) {
+		return errInsecurePrivateStorage
+	}
+	return checkPrivateDirectory(filepath.Dir(path))
 }
 
 // LoadOrCreateAuthority serializes initial creation across processes and

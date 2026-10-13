@@ -8,14 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 )
 
 var (
 	ErrOperationReplayed  = errors.New("operation already recorded in private journal")
 	ErrOperationNotFound  = errors.New("operation not found in private journal")
 	ErrCorruptJournal     = errors.New("journal file is corrupt, malformed, or contains duplicate records")
-	ErrInsecureJournal    = errors.New("journal file is insecure (symlink or non-regular file)")
+	ErrInsecureJournal    = errors.New("journal file, lock, or private directory is insecure")
 	ErrJournalUnavailable = errors.New("private journal is missing or unreadable")
 )
 
@@ -103,12 +102,12 @@ func OpenOrCreateJournal(path string) (*Journal, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	lock, err := acquireFileLock(path + ".lock")
+	j := &Journal{path: path, records: make(map[string]OperationRecord)}
+	lock, err := j.acquireDiskLock()
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Release()
-	j := &Journal{path: path, records: make(map[string]OperationRecord)}
 	if _, err := os.Lstat(path); os.IsNotExist(err) {
 		if err := j.persistLocked(); err != nil {
 			return nil, err
@@ -131,14 +130,17 @@ func (j *Journal) loadFromDiskLocked() (loadErr error) {
 	if j.path == "" {
 		return nil
 	}
-
-	info, err := os.Lstat(j.path)
-	if err != nil {
-		return errors.Join(ErrJournalUnavailable, fmt.Errorf("inspect journal path %s: %w", j.path, err))
+	if err := checkPrivateDirectory(filepath.Dir(j.path)); err != nil {
+		return errors.Join(ErrInsecureJournal, err)
 	}
-
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return ErrInsecureJournal
+	if err := checkPrivateFile(j.path); err != nil {
+		if errors.Is(err, errInsecurePrivateStorage) {
+			return errors.Join(ErrInsecureJournal, err)
+		}
+		return errors.Join(ErrJournalUnavailable, err)
+	}
+	if err := checkPrivateLockPath(j.path + ".lock"); err != nil {
+		return errors.Join(ErrInsecureJournal, err)
 	}
 
 	data, err := os.ReadFile(j.path)
@@ -168,6 +170,18 @@ func (j *Journal) loadFromDiskLocked() (loadErr error) {
 	return nil
 }
 
+func (j *Journal) acquireDiskLock() (*fileLock, error) {
+	lock, err := acquireFileLock(j.path + ".lock")
+	if err != nil {
+		j.records = make(map[string]OperationRecord)
+		if errors.Is(err, errInsecurePrivateStorage) {
+			return nil, errors.Join(ErrInsecureJournal, err)
+		}
+		return nil, errors.Join(ErrJournalUnavailable, err)
+	}
+	return lock, nil
+}
+
 // Path returns the path of the journal file.
 func (j *Journal) Path() string {
 	j.mu.RLock()
@@ -187,7 +201,7 @@ func (j *Journal) RecordOperation(rec OperationRecord) error {
 	defer j.mu.Unlock()
 
 	if j.path != "" {
-		lock, err := acquireFileLock(j.path + ".lock")
+		lock, err := j.acquireDiskLock()
 		if err != nil {
 			return fmt.Errorf("acquire journal lock: %w", err)
 		}
@@ -216,7 +230,7 @@ func (j *Journal) GetOperation(operationID string) (OperationRecord, bool, error
 	defer j.mu.Unlock()
 
 	if j.path != "" {
-		lock, err := acquireFileLock(j.path + ".lock")
+		lock, err := j.acquireDiskLock()
 		if err != nil {
 			return OperationRecord{}, false, errors.Join(ErrJournalUnavailable, err)
 		}
@@ -236,7 +250,7 @@ func (j *Journal) RevokeOperation(operationID string) error {
 	defer j.mu.Unlock()
 
 	if j.path != "" {
-		lock, err := acquireFileLock(j.path + ".lock")
+		lock, err := j.acquireDiskLock()
 		if err != nil {
 			return fmt.Errorf("acquire journal lock: %w", err)
 		}
@@ -268,8 +282,8 @@ func (j *Journal) persistLocked() error {
 		return nil
 	}
 	dir := filepath.Dir(j.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create journal directory %s: %w", dir, err)
+	if err := checkPrivateDirectory(dir); err != nil {
+		return errors.Join(ErrInsecureJournal, err)
 	}
 
 	list := make([]OperationRecord, 0, len(j.records))
@@ -282,11 +296,11 @@ func (j *Journal) persistLocked() error {
 	}
 	data = append(data, '\n')
 
-	tmpPath := fmt.Sprintf("%s.tmp.%d.%d", j.path, os.Getpid(), time.Now().UnixNano())
-	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	tmpFile, err := os.CreateTemp(dir, ".legacy-journal-*")
 	if err != nil {
-		return fmt.Errorf("create temporary journal file %s: %w", tmpPath, err)
+		return fmt.Errorf("create temporary journal file: %w", err)
 	}
+	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.Write(data); err != nil {
 		_ = tmpFile.Close()
