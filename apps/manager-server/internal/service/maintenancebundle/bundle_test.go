@@ -24,12 +24,34 @@ func fixture(t *testing.T) (Layout, string, *processlock.Lock) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l := Layout{DatabasePath: filepath.Join(root, "usage.sqlite"), DataKeyPath: filepath.Join(root, "data.key"), ConfigPath: filepath.Join(root, "manager.json"), ArchivesPath: filepath.Join(root, "usage-archives"), RequireConfig: true, RequireArchives: true}
-	for name, path := range l.paths() {
-		if name != "usage-archives" {
-			put(t, path, []byte("source-"+name))
+	l := Layout{
+		DatabasePath:    filepath.Join(root, "usage.sqlite"),
+		DataKeyPath:     filepath.Join(root, "data.key"),
+		ConfigPath:      filepath.Join(root, "manager.json"),
+		ArchivesPath:    filepath.Join(root, "usage-archives"),
+		RequireConfig:   true,
+		RequireArchives: true,
+	}
+	seedPath := filepath.Join(root, "seed.sqlite")
+	seed, err := sql.Open("sqlite", seedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer seed.Close()
+	if _, err := seed.Exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE test_table (id INTEGER PRIMARY KEY, note TEXT); INSERT INTO test_table VALUES (1, 'initial');"); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		data, err := os.ReadFile(seedPath + suffix)
+		if err == nil {
+			put(t, l.DatabasePath+suffix, data)
 		}
 	}
+	_ = seed.Close()
+	if _, _, err := security.LoadOrCreateDataKey("", l.DataKeyPath); err != nil {
+		t.Fatal(err)
+	}
+	put(t, l.ConfigPath, []byte(`{"dbPath":"`+filepath.ToSlash(l.DatabasePath)+`"}`))
 	if err := os.MkdirAll(filepath.Join(l.ArchivesPath, "empty"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -88,6 +110,9 @@ func TestCompleteBundleRoundTrip(t *testing.T) {
 	if m.Fence != CooperatingFence || !reflect.DeepEqual(before.Entries, m.Entries) {
 		t.Fatal("bundle does not match full source inventory")
 	}
+	if m.SourceRevision == "" || m.SourceRevision != before.SourceRevision {
+		t.Fatalf("source revision mismatch: %q vs %q", m.SourceRevision, before.SourceRevision)
+	}
 	if !m.Entries["usage-archives/empty"].Directory {
 		t.Fatal("empty archive directory was lost")
 	}
@@ -111,13 +136,16 @@ func TestCompleteBundleRoundTrip(t *testing.T) {
 		if name == "usage-archives" {
 			continue
 		}
-		a, err := os.ReadFile(l.paths()[name])
-		if err != nil {
-			t.Fatal(err)
+		a, errA := os.ReadFile(l.paths()[name])
+		b, errB := os.ReadFile(path)
+		if os.IsNotExist(errA) && os.IsNotExist(errB) {
+			continue
 		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
+		if errA != nil {
+			t.Fatal(errA)
+		}
+		if errB != nil {
+			t.Fatal(errB)
 		}
 		if !reflect.DeepEqual(a, b) {
 			t.Fatalf("unmatched restoration: %s", name)
@@ -175,7 +203,7 @@ func TestRealSQLiteWALAndMatchingEncryptedKeyRestore(t *testing.T) {
 	if err := seed.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(l.DatabasePath + "-journal"); err != nil {
+	if err := os.Remove(l.DatabasePath + "-journal"); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	before, err := Inspect(context.Background(), l)
@@ -272,7 +300,7 @@ func TestSourceChangesPreventPublication(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			l, root, lock := fixture(t)
 			if change == "sidecar-added" {
-				if err := os.Remove(l.DatabasePath + "-wal"); err != nil {
+				if err := os.Remove(l.DatabasePath + "-wal"); err != nil && !os.IsNotExist(err) {
 					t.Fatal(err)
 				}
 			}
@@ -537,4 +565,224 @@ func TestFilesystemCaseAliasesCannotOverlapSourcePaths(t *testing.T) {
 		t.Fatal("physical case alias of database accepted as key")
 	}
 	noPublished(t, root, dest)
+}
+
+func TestRestoreCorruptSQLite(t *testing.T) {
+	l, root, lock := fixture(t)
+	bundle, _ := mustCreate(t, l, root, lock)
+	// Tamper database in bundle with corrupt bytes that are not SQLite
+	put(t, filepath.Join(bundle, "database"), []byte("not-a-sqlite-database-corrupted-bytes-payload-header"))
+	// Re-inspect bundle layout to produce coherent manifest matching the tampered file
+	// so that Verify's digest check passes, forcing the failure to come from matching evidence!
+	tamperedManifest, err := Inspect(context.Background(), BundleLayout(bundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamperedManifest.Fence = CooperatingFence
+	data, err := json.MarshalIndent(tamperedManifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(bundle, "manifest.json"), append(data, '\n'))
+	// Verify should pass manifest integrity check since manifest was re-signed
+	if _, err := Verify(context.Background(), bundle); err != nil {
+		t.Fatalf("verify failed on coherent manifest: %v", err)
+	}
+	dest := filepath.Join(root, "restored")
+	if _, err := RestoreNew(context.Background(), bundle, dest); err == nil {
+		t.Fatal("corrupt SQLite accepted during restore")
+	}
+	noPublished(t, root, dest)
+}
+
+func TestRestoreWrongKey(t *testing.T) {
+	l, root, lock := fixture(t)
+	// Insert encrypted setting in database
+	db, err := sql.Open("sqlite", l.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, _, err := security.LoadOrCreateDataKey("", l.DataKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protector, err := security.NewProtector(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := protector.ProtectString("secret-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT); INSERT INTO settings VALUES ('s1', ?);", enc); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	bundle, _ := mustCreate(t, l, root, lock)
+
+	// Replace data-key in bundle with a different valid 32-byte key
+	otherKeyPath := filepath.Join(root, "other.key")
+	if _, _, err := security.LoadOrCreateDataKey("", otherKeyPath); err != nil {
+		t.Fatal(err)
+	}
+	otherKeyBytes, err := os.ReadFile(otherKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(bundle, "data-key"), otherKeyBytes)
+
+	// Update manifest in bundle so hashes match
+	tamperedManifest, err := Inspect(context.Background(), BundleLayout(bundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamperedManifest.Fence = CooperatingFence
+	data, err := json.MarshalIndent(tamperedManifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(bundle, "manifest.json"), append(data, '\n'))
+
+	dest := filepath.Join(root, "restored")
+	if _, err := RestoreNew(context.Background(), bundle, dest); err == nil {
+		t.Fatal("wrong key accepted during restore")
+	}
+	noPublished(t, root, dest)
+}
+
+func TestRestoreWrongConfig(t *testing.T) {
+	l, root, lock := fixture(t)
+	bundle, _ := mustCreate(t, l, root, lock)
+	put(t, filepath.Join(bundle, "config"), []byte("{invalid-json-content"))
+
+	tamperedManifest, err := Inspect(context.Background(), BundleLayout(bundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamperedManifest.Fence = CooperatingFence
+	data, err := json.MarshalIndent(tamperedManifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(bundle, "manifest.json"), append(data, '\n'))
+
+	dest := filepath.Join(root, "restored")
+	if _, err := RestoreNew(context.Background(), bundle, dest); err == nil {
+		t.Fatal("wrong config accepted during restore")
+	}
+	noPublished(t, root, dest)
+}
+
+func TestVerifyPartialBundle(t *testing.T) {
+	l, root, lock := fixture(t)
+	bundle, m := mustCreate(t, l, root, lock)
+
+	// 1. Missing manifest.json
+	partialRoot := filepath.Join(root, "partial-no-manifest")
+	if err := os.Mkdir(partialRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(partialRoot, "database"), []byte("some-data"))
+	if _, err := Verify(context.Background(), partialRoot); err == nil {
+		t.Fatal("missing manifest accepted")
+	}
+
+	// 2. Extra unexpected file in bundle root
+	extraFile := filepath.Join(bundle, "unexpected.txt")
+	put(t, extraFile, []byte("extra"))
+	if _, err := Verify(context.Background(), bundle); err == nil {
+		t.Fatal("extra file in bundle accepted")
+	}
+	_ = os.Remove(extraFile)
+
+	// 3. Unpublished temporary directory in bundle root
+	unpubDir := filepath.Join(bundle, ".manager-bundle-unpublished-12345")
+	if err := os.Mkdir(unpubDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(context.Background(), bundle); err == nil {
+		t.Fatal("unpublished temporary entry accepted")
+	}
+	_ = os.RemoveAll(unpubDir)
+
+	// 4. Missing required entry in manifest
+	corruptManifest := m
+	corruptManifest.SourceRevision = "tampered-revision"
+	data, err := json.MarshalIndent(corruptManifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(bundle, "manifest.json"), append(data, '\n'))
+	if _, err := Verify(context.Background(), bundle); err == nil {
+		t.Fatal("manifest source revision mismatch accepted")
+	}
+}
+
+func TestPartialOutputDirectoryCannotBeRestoredOrCreated(t *testing.T) {
+	l, root, lock := fixture(t)
+	bundle, _ := mustCreate(t, l, root, lock)
+
+	existingDest := filepath.Join(root, "existing-dest")
+	if err := os.Mkdir(existingDest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(existingDest, "leftover.file"), []byte("leftover"))
+
+	// Create into existing destination fails
+	if _, err := Create(context.Background(), l, existingDest, lock); err == nil {
+		t.Fatal("create into existing destination accepted")
+	}
+
+	// RestoreNew into existing destination fails
+	if _, err := RestoreNew(context.Background(), bundle, existingDest); err == nil {
+		t.Fatal("restore into existing destination accepted")
+	}
+}
+
+func TestSourceChangedSinceAuthorization(t *testing.T) {
+	l, root, lock := fixture(t)
+	bundle, m := mustCreate(t, l, root, lock)
+
+	// Before any mutation, RevalidateSource succeeds
+	if err := RevalidateSource(context.Background(), l, m); err != nil {
+		t.Fatalf("revalidate source before mutation: %v", err)
+	}
+
+	// Mutate source database by inserting a row
+	db, err := sql.Open("sqlite", l.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO test_table VALUES (2, 'new-row');"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	// RevalidateSource MUST fail now because source changed
+	if err := RevalidateSource(context.Background(), l, m); err == nil {
+		t.Fatal("revalidate source succeeded after source database was mutated")
+	}
+
+	// Restore of the old bundle still works to a clean new root, but source is marked changed
+	dest := filepath.Join(root, "restored-safe")
+	restored, err := RestoreNew(context.Background(), bundle, dest)
+	if err != nil {
+		t.Fatalf("restore new failed: %v", err)
+	}
+	// Restored DB has the initial state, NOT the mutated row
+	rdb, err := sql.Open("sqlite", restored.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rdb.Close()
+	var count int
+	if err := rdb.QueryRow("SELECT count(*) FROM test_table").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("restored count %d != 1", count)
+	}
 }
