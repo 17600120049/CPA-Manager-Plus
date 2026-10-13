@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
 	"io"
 	"time"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
 )
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -16,22 +17,44 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	// logs, just as artifact-read failures omit paths and payloads.
 	f.SetOutput(io.Discard)
 	f.Usage = func() {
-		_, _ = io.WriteString(stderr, "Usage: cpa-manager-plus legacy-writer-artifact --archive PATH --asset NAME [--timeout DURATION]\nVerifies fixed v1.14.4 artifact bytes only; never executes a writer or authorizes upgrade.\n")
+		_, _ = io.WriteString(stderr, "Usage: cpa-manager-plus legacy-writer-artifact --archive PATH --asset NAME [--timeout DURATION]\n       cpa-manager-plus legacy-writer-artifact --verify-receipt PATH --bundle PATH [--timeout DURATION]\n       cpa-manager-plus legacy-writer-artifact --execute-hop --archive PATH --asset NAME --input-bundle PATH --output-bundle PATH [--timeout DURATION]\nVerifies fixed v1.14.4 artifact bytes only; execution and trusted receipt validation are not qualified and are refused on all platforms. Never authorizes upgrade.\n")
 	}
 	archive := f.String("archive", "", "local published native archive (read-only)")
 	asset := f.String("asset", "", "exact published v1.14.4 native asset name")
 	timeout := f.Duration("timeout", 10*time.Second, "verification time budget")
+
+	verifyReceipt := f.String("verify-receipt", "", "unsupported until Manager owner authority is qualified")
+	f.String("bundle", "", "associated bundle directory to verify against receipt")
+
+	executeHop := f.Bool("execute-hop", false, "unsupported until offline writer execution is qualified")
+	f.String("input-bundle", "", "input legacy bundle directory")
+	f.String("output-bundle", "", "output bundle directory")
+
 	if err := f.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return err
 		}
 		return errors.New("invalid legacy artifact arguments; use --help")
 	}
-	if *archive == "" || *asset == "" || f.NArg() != 0 || *timeout <= 0 {
-		return errors.New("explicit --archive, --asset and positive --timeout are required; no positional arguments")
+	if f.NArg() != 0 || *timeout <= 0 {
+		return errors.New("invalid arguments or non-positive timeout; no positional arguments")
 	}
+
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
+
+	if *executeHop {
+		return legacyartifact.ErrExecutionNotQualified
+	}
+
+	if *verifyReceipt != "" {
+		return legacyartifact.ErrValidationNotQualified
+	}
+
+	// Mode 3: verify artifact archive bytes (existing behavior)
+	if *archive == "" || *asset == "" {
+		return errors.New("explicit --archive, --asset and positive --timeout are required; no positional arguments")
+	}
 	report, err := legacyartifact.Verify(ctx, *archive, *asset)
 	if err != nil {
 		return err
