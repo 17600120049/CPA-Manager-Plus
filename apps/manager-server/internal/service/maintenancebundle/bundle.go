@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -23,11 +24,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/setting"
+	managersqlite "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usagearchive"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	_ "modernc.org/sqlite"
 )
 
-const Version = 1
+const Version = 2
 const CooperatingFence = "cooperating-manager-lock"
 const maxManifestBytes = 16 * 1024 * 1024
 const maxEntries = 10000
@@ -53,7 +57,7 @@ type Entry struct {
 type Manifest struct {
 	Version        int              `json:"version"`
 	Fence          string           `json:"fence"`
-	SourceRevision string           `json:"sourceRevision,omitempty"`
+	SourceRevision string           `json:"sourceRevision"`
 	Entries        map[string]Entry `json:"entries"`
 }
 
@@ -242,14 +246,17 @@ func inspect(ctx context.Context, l Layout) (Manifest, error) {
 }
 
 func Revalidate(ctx context.Context, layout Layout, expected Manifest) error {
+	if expected.Version != Version || expected.SourceRevision == "" {
+		return errors.New("unsupported Manager bundle manifest")
+	}
 	current, err := Inspect(ctx, layout)
 	if err != nil {
 		return err
 	}
-	if expected.Version != Version || !reflect.DeepEqual(current.Entries, expected.Entries) {
+	if !reflect.DeepEqual(current.Entries, expected.Entries) {
 		return errors.New("Manager bundle contents changed")
 	}
-	if expected.SourceRevision != "" && current.SourceRevision != expected.SourceRevision {
+	if current.SourceRevision != expected.SourceRevision {
 		return errors.New("Manager bundle source revision mismatch")
 	}
 	return nil
@@ -311,13 +318,18 @@ func sqliteURI(path string) string {
 }
 
 // ValidateMatchingEvidence verifies cross-file coherence:
-// 1. Database is a valid SQLite database (header magic, page size, PRAGMA quick_check).
-// 2. If WAL exists, WAL header and checksum match database page size.
-// 3. Data key is a valid 32-byte key.
-// 4. Data key successfully decrypts any encrypted envelopes in the database settings table.
-// 5. Config is valid JSON if present.
-// 6. Usage archive segments recorded in the database exist on disk if archives are present.
+//  1. Database is a valid SQLite database (header magic, page size, PRAGMA quick_check).
+//  2. If WAL exists, WAL header and checksum match database page size.
+//  3. Data key is a valid 32-byte key.
+//  4. Data key decrypts both persisted CPA connection JSON settings, subject to
+//     their existing connection-storage migration invariant.
+//  5. Config is valid JSON if present.
+//  6. Published/verified archive segments have safe paths and match DB-recorded
+//     SHA-256 and compressed byte counts. This does not authenticate provenance.
 func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(l.DatabasePath) == "" {
 		return errors.New("database path is required")
 	}
@@ -353,30 +365,34 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 	}
 
 	walPath := l.DatabasePath + "-wal"
-	if walInfo, err := os.Lstat(walPath); err == nil && walInfo.Mode().IsRegular() && walInfo.Size() > 0 {
-		if err := validateWALHeader(walPath, pageSize); err != nil {
-			return fmt.Errorf("database WAL validation failed: %w", err)
+	if walInfo, err := os.Lstat(walPath); err == nil {
+		if !walInfo.Mode().IsRegular() {
+			return errors.New("database WAL is not a regular file")
 		}
+		if walInfo.Size() > 0 {
+			if err := validateWALHeader(walPath, pageSize); err != nil {
+				return fmt.Errorf("database WAL validation failed: %w", err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect database WAL: %w", err)
 	}
 
-	var rawKey []byte
-	if strings.TrimSpace(l.DataKeyPath) != "" {
-		if keyInfo, err := os.Lstat(l.DataKeyPath); err == nil && keyInfo.Mode().IsRegular() {
-			k, _, err := security.LoadOrCreateDataKey("", l.DataKeyPath)
-			if err != nil {
-				return fmt.Errorf("invalid data key: %w", err)
-			}
-			if len(k) != 32 {
-				return errors.New("data key must be 32 bytes")
-			}
-			rawKey = k
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("inspect data key: %w", err)
-		}
+	if strings.TrimSpace(l.DataKeyPath) == "" {
+		return errors.New("data key path is required")
 	}
-
+	keyInfo, err := os.Lstat(l.DataKeyPath)
+	if err != nil {
+		return fmt.Errorf("inspect data key: %w", err)
+	}
+	if !keyInfo.Mode().IsRegular() {
+		return errors.New("data key is not a regular file")
+	}
 	if strings.TrimSpace(l.ConfigPath) != "" {
-		if info, err := os.Lstat(l.ConfigPath); err == nil && info.Mode().IsRegular() {
+		if info, err := os.Lstat(l.ConfigPath); err == nil {
+			if !info.Mode().IsRegular() {
+				return errors.New("config is not a regular file")
+			}
 			data, err := os.ReadFile(l.ConfigPath)
 			if err != nil {
 				return fmt.Errorf("read config: %w", err)
@@ -388,9 +404,13 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 			if _, ok := js.(map[string]any); !ok {
 				return errors.New("config JSON root must be an object")
 			}
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("inspect config: %w", err)
 		} else if l.RequireConfig {
 			return errors.New("required config is missing")
 		}
+	} else if l.RequireConfig {
+		return errors.New("required config path is missing")
 	}
 
 	// Stage SQLite files into a dedicated scratch directory for driver inspection
@@ -401,6 +421,20 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 	}
 	defer os.RemoveAll(scratch)
 
+	// Never invoke load-or-create on the source: a disappearing key must not
+	// cause inspection to write a replacement into the original file set.
+	scratchKey := filepath.Join(scratch, "data-key")
+	if err := copyFile(ctx, l.DataKeyPath, scratchKey); err != nil {
+		return fmt.Errorf("stage data key for inspection: %w", err)
+	}
+	rawKey, created, err := security.LoadOrCreateDataKey("", scratchKey)
+	if err != nil {
+		return fmt.Errorf("invalid data key: %w", err)
+	}
+	if created {
+		return errors.New("data key disappeared during inspection")
+	}
+
 	scratchDB := filepath.Join(scratch, "database")
 	if err := copyFile(ctx, l.DatabasePath, scratchDB); err != nil {
 		return fmt.Errorf("stage database for inspection: %w", err)
@@ -409,12 +443,16 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 		if err := copyFile(ctx, walPath, scratchDB+"-wal"); err != nil {
 			return fmt.Errorf("stage WAL for inspection: %w", err)
 		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect database WAL: %w", err)
 	}
 	shmPath := l.DatabasePath + "-shm"
 	if _, err := os.Lstat(shmPath); err == nil {
 		if err := copyFile(ctx, shmPath, scratchDB+"-shm"); err != nil {
 			return fmt.Errorf("stage SHM for inspection: %w", err)
 		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect database SHM: %w", err)
 	}
 
 	dsn := sqliteURI(scratchDB)
@@ -434,68 +472,121 @@ func ValidateMatchingEvidence(ctx context.Context, l Layout) error {
 		return fmt.Errorf("SQLite integrity check failed: %s", quickCheck)
 	}
 
-	if len(rawKey) > 0 {
+	// Reuse the production raw-storage guard on the scratch database before any
+	// protected read can reinterpret a malformed post-migration value as plaintext.
+	if _, err := managersqlite.InspectPersistedCPAConnectionStorage(ctx, scratchDB); err != nil {
+		return fmt.Errorf("inspect persisted CPA connection storage: %w", err)
+	}
+	hasSettings, err := tableExists(ctx, db, "settings")
+	if err != nil {
+		return err
+	}
+	if hasSettings {
 		protector, err := security.NewProtector(rawKey)
 		if err != nil {
-			return fmt.Errorf("create key protector: %w", err)
+			return fmt.Errorf("create data key protector: %w", err)
 		}
-		var hasSettings int
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='settings'").Scan(&hasSettings); err == nil && hasSettings > 0 {
-			rows, err := db.QueryContext(ctx, "SELECT * FROM settings LIMIT 200")
-			if err == nil {
-				cols, colErr := rows.Columns()
-				if colErr == nil {
-					for rows.Next() {
-						values := make([]any, len(cols))
-						valuePtrs := make([]any, len(cols))
-						for i := range values {
-							valuePtrs[i] = &values[i]
-						}
-						if err := rows.Scan(valuePtrs...); err == nil {
-							for _, v := range values {
-								var strVal string
-								switch s := v.(type) {
-								case string:
-									strVal = s
-								case []byte:
-									strVal = string(s)
-								}
-								if security.IsValidProtectedEnvelope(strVal) {
-									if _, err := protector.UnprotectString(strVal); err != nil {
-										_ = rows.Close()
-										return fmt.Errorf("data key does not match database settings encryption: %w", err)
-									}
-								}
-							}
-						}
-					}
-				}
-				_ = rows.Close()
-			}
+		repo := setting.New(db, protector)
+		if _, _, err := repo.LoadSetup(ctx); err != nil {
+			return fmt.Errorf("data key/settings setup matching failed: %w", err)
+		}
+		if _, _, err := repo.LoadManagerConfig(ctx); err != nil {
+			return fmt.Errorf("data key/settings manager_config_v1 matching failed: %w", err)
 		}
 	}
+	if err := validateArchiveEvidence(ctx, db, l); err != nil {
+		return err
+	}
+	return ctx.Err()
+}
 
-	if strings.TrimSpace(l.ArchivesPath) != "" {
-		var hasArchiveSegments int
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='usage_archive_segments'").Scan(&hasArchiveSegments); err == nil && hasArchiveSegments > 0 {
-			rows, err := db.QueryContext(ctx, "SELECT file_name FROM usage_archive_segments WHERE status IN ('archived', 'verified', 'completed')")
-			if err == nil {
-				for rows.Next() {
-					var fileName string
-					if err := rows.Scan(&fileName); err == nil && strings.TrimSpace(fileName) != "" {
-						segPath := filepath.Join(l.ArchivesPath, filepath.FromSlash(fileName))
-						if _, err := os.Lstat(segPath); os.IsNotExist(err) {
-							_ = rows.Close()
-							return fmt.Errorf("required archive segment recorded in database is missing from usage-archives: %s", fileName)
-						}
-					}
-				}
-				_ = rows.Close()
-			}
+func tableExists(ctx context.Context, db *sql.DB, name string) (bool, error) {
+	var kind string
+	err := db.QueryRowContext(ctx, "SELECT type FROM sqlite_schema WHERE name=?", name).Scan(&kind)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect %s table: %w", name, err)
+	}
+	if kind != "table" {
+		return false, fmt.Errorf("inspect %s: persisted object is not a table", name)
+	}
+	return true, nil
+}
+
+func validateArchiveEvidence(ctx context.Context, db *sql.DB, l Layout) error {
+	if strings.TrimSpace(l.ArchivesPath) == "" {
+		if l.RequireArchives {
+			return errors.New("required archive path is missing")
+		}
+	} else if info, err := os.Lstat(l.ArchivesPath); err == nil {
+		if !info.IsDir() {
+			return errors.New("archive root is not a directory")
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect archive root: %w", err)
+	} else if l.RequireArchives {
+		return errors.New("required archive root is missing")
+	}
+	hasSegments, err := tableExists(ctx, db, "usage_archive_segments")
+	if err != nil {
+		return err
+	}
+	if !hasSegments {
+		return nil
+	}
+	rows, err := db.QueryContext(ctx, `SELECT run_id, file_name, content_sha256, compressed_bytes
+		FROM usage_archive_segments WHERE status IN (?, ?)`,
+		usagearchive.SegmentStatusPublished, usagearchive.SegmentStatusVerified)
+	if err != nil {
+		return fmt.Errorf("query archive matching evidence: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var runID, fileName, expectedSHA string
+		var expectedSize int64
+		if err := rows.Scan(&runID, &fileName, &expectedSHA, &expectedSize); err != nil {
+			return fmt.Errorf("scan archive matching evidence: %w", err)
+		}
+		// Restore inspects untrusted SQLite bytes, so re-establish RecordSegment's
+		// run/filename invariant and reject portable Windows separators/drive names.
+		if runID == "" || runID == "." || runID == ".." || path.IsAbs(fileName) ||
+			path.Clean(fileName) != fileName || strings.Count(fileName, "/") != 1 ||
+			path.Dir(fileName) != runID || path.Base(fileName) == "." || path.Base(fileName) == ".." ||
+			strings.ContainsAny(fileName, `\:`) {
+			return errors.New("invalid archive segment file name")
+		}
+		if strings.TrimSpace(l.ArchivesPath) == "" {
+			return errors.New("archive path is required for recorded segments")
+		}
+		segPath := filepath.Join(l.ArchivesPath, filepath.FromSlash(fileName))
+		rel, err := filepath.Rel(l.ArchivesPath, segPath)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+			return errors.New("archive segment escapes archive root")
+		}
+		decodedSHA, err := hex.DecodeString(expectedSHA)
+		if err != nil || len(decodedSHA) != sha256.Size || expectedSize <= 0 {
+			return errors.New("invalid archive segment digest or byte count")
+		}
+		entry, err := digestFile(ctx, segPath, nil)
+		if err != nil {
+			return fmt.Errorf("inspect required archive segment: %w", err)
+		}
+		if entry.SHA256 != expectedSHA || entry.Size != expectedSize {
+			return errors.New("archive segment does not match database digest or byte count")
 		}
 	}
-
-	return nil
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read archive matching evidence: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close archive matching evidence: %w", err)
+	}
+	return ctx.Err()
 }
 
 type createHooks struct {

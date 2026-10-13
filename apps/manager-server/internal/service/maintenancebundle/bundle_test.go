@@ -2,7 +2,9 @@ package maintenancebundle
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -13,7 +15,9 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/setting"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	_ "modernc.org/sqlite"
 )
@@ -70,6 +74,44 @@ func fixture(t *testing.T) (Layout, string, *processlock.Lock) {
 func put(t *testing.T, path string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func rewriteManifest(t *testing.T, bundle string) {
+	t.Helper()
+	m, err := Inspect(context.Background(), BundleLayout(bundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Fence = CooperatingFence
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, filepath.Join(bundle, "manifest.json"), data)
+	if _, err := Verify(context.Background(), bundle); err != nil {
+		t.Fatalf("rewritten inventory must pass Verify: %v", err)
+	}
+}
+
+func saveConnections(t *testing.T, db *sql.DB, protector *security.Protector, which string) {
+	t.Helper()
+	if _, err := db.Exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at_ms INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	repo := setting.New(db, protector)
+	if which == "setup" || which == "both" {
+		if err := repo.SaveSetup(context.Background(), model.Setup{CPAUpstreamURL: "http://localhost:8317", ManagementKey: "fixture-secret"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if which == "manager_config_v1" || which == "both" {
+		if err := repo.SaveManagerConfig(context.Background(), model.ManagerConfig{CPAConnection: model.ManagerCPAConnectionConfig{CPABaseURL: "http://localhost:8317", ManagementKey: "fixture-secret"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := repo.SaveBootstrapState(context.Background(), model.BootstrapState{ConnectionStorageMigrationVersion: 2}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -166,10 +208,6 @@ func TestRealSQLiteWALAndMatchingEncryptedKeyRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encrypted, err := protector.ProtectString("fixture-secret")
-	if err != nil {
-		t.Fatal(err)
-	}
 	seedPath := filepath.Join(root, "seed.sqlite")
 	seed, err := sql.Open("sqlite", seedPath)
 	if err != nil {
@@ -177,7 +215,7 @@ func TestRealSQLiteWALAndMatchingEncryptedKeyRestore(t *testing.T) {
 	}
 	seed.SetMaxOpenConns(1)
 	defer seed.Close()
-	for _, statement := range []string{"PRAGMA journal_mode=WAL", "PRAGMA wal_autocheckpoint=0", "CREATE TABLE usage_events (id INTEGER PRIMARY KEY, raw_json TEXT)", "CREATE TABLE settings (value TEXT)"} {
+	for _, statement := range []string{"PRAGMA journal_mode=WAL", "PRAGMA wal_autocheckpoint=0", "CREATE TABLE usage_events (id INTEGER PRIMARY KEY, raw_json TEXT)"} {
 		if _, err := seed.Exec(statement); err != nil {
 			t.Fatal(err)
 		}
@@ -185,9 +223,7 @@ func TestRealSQLiteWALAndMatchingEncryptedKeyRestore(t *testing.T) {
 	if _, err := seed.Exec("INSERT INTO usage_events VALUES (1, ?)", `{"immutable-history":true}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := seed.Exec("INSERT INTO settings VALUES (?)", encrypted); err != nil {
-		t.Fatal(err)
-	}
+	saveConnections(t, seed, protector, "both")
 	// Clone actual committed WAL bytes to an offline input. The seed writer never
 	// uses this clone, and closing it afterward cannot checkpoint the clone.
 	for _, suffix := range []string{"", "-wal", "-shm"} {
@@ -223,15 +259,12 @@ func TestRealSQLiteWALAndMatchingEncryptedKeyRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	var raw, ciphertext, integrity string
+	var raw, integrity string
 	if err := db.QueryRow("SELECT raw_json FROM usage_events WHERE id=1").Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	if raw != `{"immutable-history":true}` {
 		t.Fatal("immutable usage row changed")
-	}
-	if err := db.QueryRow("SELECT value FROM settings").Scan(&ciphertext); err != nil {
-		t.Fatal(err)
 	}
 	restoredKey, _, err := security.LoadOrCreateDataKey("", restored.DataKeyPath)
 	if err != nil {
@@ -241,9 +274,14 @@ func TestRealSQLiteWALAndMatchingEncryptedKeyRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plaintext, err := restoredProtector.UnprotectString(ciphertext)
-	if err != nil || plaintext != "fixture-secret" {
+	repo := setting.New(db, restoredProtector)
+	setup, found, err := repo.LoadSetup(context.Background())
+	if err != nil || !found || setup.ManagementKey != "fixture-secret" {
 		t.Fatalf("DB/key mismatch: %v", err)
+	}
+	cfg, found, err := repo.LoadManagerConfig(context.Background())
+	if err != nil || !found || cfg.CPAConnection.ManagementKey != "fixture-secret" {
+		t.Fatalf("manager config/key mismatch: %v", err)
 	}
 	if err := db.QueryRow("PRAGMA integrity_check").Scan(&integrity); err != nil || integrity != "ok" {
 		t.Fatalf("restored integrity: %q %v", integrity, err)
@@ -584,7 +622,7 @@ func TestRestoreCorruptSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	put(t, filepath.Join(bundle, "manifest.json"), append(data, '\n'))
-	// Verify should pass manifest integrity check since manifest was re-signed
+	// Verify should pass inventory integrity because the manifest was recomputed.
 	if _, err := Verify(context.Background(), bundle); err != nil {
 		t.Fatalf("verify failed on coherent manifest: %v", err)
 	}
@@ -596,61 +634,266 @@ func TestRestoreCorruptSQLite(t *testing.T) {
 }
 
 func TestRestoreWrongKey(t *testing.T) {
+	for _, which := range []string{"setup", "manager_config_v1", "both"} {
+		t.Run(which, func(t *testing.T) {
+			l, root, lock := fixture(t)
+			db, err := sql.Open("sqlite", l.DatabasePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key, _, err := security.LoadOrCreateDataKey("", l.DataKeyPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			protector, err := security.NewProtector(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			saveConnections(t, db, protector, which)
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			bundle, _ := mustCreate(t, l, root, lock)
+
+			// Replace data-key in bundle with a different valid 32-byte key
+			otherKeyPath := filepath.Join(root, "other.key")
+			if _, _, err := security.LoadOrCreateDataKey("", otherKeyPath); err != nil {
+				t.Fatal(err)
+			}
+			otherKeyBytes, err := os.ReadFile(otherKeyPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			put(t, filepath.Join(bundle, "data-key"), otherKeyBytes)
+
+			rewriteManifest(t, bundle)
+			dest := filepath.Join(root, "restored")
+			if _, err := RestoreNew(context.Background(), bundle, dest); err == nil || !strings.Contains(err.Error(), "data key") {
+				t.Fatalf("wrong key must fail matching evidence: %v", err)
+			}
+			noPublished(t, root, dest)
+		})
+	}
+}
+
+func TestRestoreArchiveMatchingEvidence(t *testing.T) {
+	for _, status := range []string{"published", "verified"} {
+		for _, change := range []string{"none", "missing", "root-missing", "foreign-content", "wrong-size", "traversal", "absolute", "wrong-run", "backslash", "directory"} {
+			t.Run(status+"/"+change, func(t *testing.T) {
+				l, root, lock := fixture(t)
+				fileName := "run-1/segment.jsonl.gz"
+				segPath := filepath.Join(l.ArchivesPath, filepath.FromSlash(fileName))
+				if err := os.MkdirAll(filepath.Dir(segPath), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				payload := []byte("instance A archive bytes")
+				put(t, segPath, payload)
+				digest := sha256.Sum256(payload)
+				db, err := sql.Open("sqlite", l.DatabasePath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// These are the production columns consumed by bundle inspection.
+				if _, err := db.Exec(`CREATE TABLE usage_archive_segments (
+					run_id TEXT NOT NULL, sequence INTEGER NOT NULL, status TEXT NOT NULL,
+					file_name TEXT NOT NULL, content_sha256 TEXT NOT NULL, compressed_bytes INTEGER NOT NULL,
+					PRIMARY KEY (run_id, sequence));
+					INSERT INTO usage_archive_segments VALUES ('run-1', 1, ?, ?, ?, ?)`,
+					status, fileName, hex.EncodeToString(digest[:]), len(payload)); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+				bundle, _ := mustCreate(t, l, root, lock)
+				bundleSeg := filepath.Join(bundle, "usage-archives", filepath.FromSlash(fileName))
+				switch change {
+				case "root-missing":
+					if err := os.RemoveAll(filepath.Join(bundle, "usage-archives")); err != nil {
+						t.Fatal(err)
+					}
+				case "missing", "directory":
+					if err := os.Remove(bundleSeg); err != nil {
+						t.Fatal(err)
+					}
+					if change == "directory" {
+						if err := os.Mkdir(bundleSeg, 0o700); err != nil {
+							t.Fatal(err)
+						}
+					}
+				case "foreign-content":
+					// Same path and byte count; only DB-recorded SHA-256 exposes the mix.
+					put(t, bundleSeg, []byte("instance B archive bytes"))
+				case "wrong-size", "traversal", "absolute", "wrong-run", "backslash":
+					db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					query, value := "UPDATE usage_archive_segments SET file_name = ?", "../database"
+					switch change {
+					case "wrong-size":
+						query, value = "UPDATE usage_archive_segments SET compressed_bytes = ?", "999"
+					case "absolute":
+						value = filepath.ToSlash(bundleSeg)
+					case "wrong-run":
+						query, value = "UPDATE usage_archive_segments SET run_id = ?", "other-run"
+					case "backslash":
+						value = `run-1\segment.jsonl.gz`
+					}
+					if _, err := db.Exec(query, value); err != nil {
+						t.Fatal(err)
+					}
+					if err := db.Close(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				rewriteManifest(t, bundle)
+				dest := filepath.Join(root, "restored")
+				_, err = RestoreNew(context.Background(), bundle, dest)
+				if change == "none" {
+					if err != nil {
+						t.Fatalf("matching archive must restore: %v", err)
+					}
+				} else {
+					if err == nil || !strings.Contains(err.Error(), "archive") {
+						t.Fatalf("invalid archive must fail matching evidence: %v", err)
+					}
+					noPublished(t, root, dest)
+				}
+			})
+		}
+	}
+}
+
+func TestRestoreInspectionErrorsFailClosed(t *testing.T) {
+	cases := []struct {
+		name, sql, want string
+	}{
+		{"settings-query", `CREATE TABLE settings (value TEXT)`, "inspect persisted CPA connection storage"},
+		{"settings-view", `CREATE VIEW settings AS SELECT 'setup' AS key, '{}' AS value`, "not a table"},
+		{"settings-scan", `CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT); INSERT INTO settings VALUES ('setup', NULL)`, "scan encrypted CPA connection"},
+		{"settings-json", `CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT); INSERT INTO settings VALUES ('setup', '{')`, "invalid setup JSON"},
+		{"bootstrap-json", `CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT); INSERT INTO settings VALUES ('bootstrap_state_v1', '{')`, "invalid bootstrap state"},
+		{"migrated-plaintext", `CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+			INSERT INTO settings VALUES ('bootstrap_state_v1', '{"connectionStorageMigrationVersion":2}');
+			INSERT INTO settings VALUES ('manager_config_v1', '{"cpaConnection":{"managementKey":"plaintext"}}')`, "not a valid encrypted envelope"},
+		{"migrated-malformed-envelope", `CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+			INSERT INTO settings VALUES ('bootstrap_state_v1', '{"connectionStorageMigrationVersion":2}');
+			INSERT INTO settings VALUES ('setup', '{"managementKey":"enc:v1:broken"}')`, "not a valid encrypted envelope"},
+		{"archive-query", `CREATE TABLE usage_archive_segments (file_name TEXT, status TEXT)`, "query archive matching evidence"},
+		{"archive-view", `CREATE VIEW usage_archive_segments AS SELECT 'published' AS status`, "not a table"},
+		{"archive-scan", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT);
+			INSERT INTO usage_archive_segments VALUES ('run-1', NULL, '', 1, 'published')`, "scan archive matching evidence"},
+		{"archive-size-scan", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT);
+			INSERT INTO usage_archive_segments VALUES ('run-1', 'run-1/segment.gz', '', 'invalid', 'verified')`, "scan archive matching evidence"},
+		{"archive-digest", `CREATE TABLE usage_archive_segments (run_id TEXT, file_name TEXT, content_sha256 TEXT, compressed_bytes INTEGER, status TEXT);
+			INSERT INTO usage_archive_segments VALUES ('run-1', 'run-1/segment.gz', 'invalid', 1, 'verified')`, "invalid archive segment digest"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			l, root, lock := fixture(t)
+			bundle, _ := mustCreate(t, l, root, lock)
+			db, err := sql.Open("sqlite", filepath.Join(bundle, "database"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(tc.sql); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			rewriteManifest(t, bundle)
+			dest := filepath.Join(root, "restored")
+			if _, err := RestoreNew(context.Background(), bundle, dest); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("inspection must fail closed with %q: %v", tc.want, err)
+			}
+			noPublished(t, root, dest)
+		})
+	}
+}
+
+func TestMatchingEvidenceMissingKeyDoesNotCreateReplacement(t *testing.T) {
+	l, _, _ := fixture(t)
+	if err := os.Remove(l.DataKeyPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateMatchingEvidence(context.Background(), l); err == nil {
+		t.Fatal("missing key must fail matching inspection")
+	}
+	if _, err := os.Lstat(l.DataKeyPath); !os.IsNotExist(err) {
+		t.Fatalf("inspection generated a replacement data key: %v", err)
+	}
+}
+
+func TestLegacyPlaintextConnectionStorageRemainsReadable(t *testing.T) {
 	l, root, lock := fixture(t)
-	// Insert encrypted setting in database
 	db, err := sql.Open("sqlite", l.DatabasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, _, err := security.LoadOrCreateDataKey("", l.DataKeyPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	protector, err := security.NewProtector(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	enc, err := protector.ProtectString("secret-value")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT); INSERT INTO settings VALUES ('s1', ?);", enc); err != nil {
+	if _, err := db.Exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+		INSERT INTO settings VALUES ('setup', '{"managementKey":"legacy-plaintext"}')`); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-
 	bundle, _ := mustCreate(t, l, root, lock)
+	if _, err := RestoreNew(context.Background(), bundle, filepath.Join(root, "restored")); err != nil {
+		t.Fatalf("pre-migration legacy plaintext must retain existing guard semantics: %v", err)
+	}
+}
 
-	// Replace data-key in bundle with a different valid 32-byte key
-	otherKeyPath := filepath.Join(root, "other.key")
-	if _, _, err := security.LoadOrCreateDataKey("", otherKeyPath); err != nil {
-		t.Fatal(err)
-	}
-	otherKeyBytes, err := os.ReadFile(otherKeyPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	put(t, filepath.Join(bundle, "data-key"), otherKeyBytes)
-
-	// Update manifest in bundle so hashes match
-	tamperedManifest, err := Inspect(context.Background(), BundleLayout(bundle))
-	if err != nil {
-		t.Fatal(err)
-	}
-	tamperedManifest.Fence = CooperatingFence
-	data, err := json.MarshalIndent(tamperedManifest, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	put(t, filepath.Join(bundle, "manifest.json"), append(data, '\n'))
-
+func TestRestoreCancellationDuringStaging(t *testing.T) {
+	l, root, lock := fixture(t)
+	bundle, _ := mustCreate(t, l, root, lock)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	dest := filepath.Join(root, "restored")
-	if _, err := RestoreNew(context.Background(), bundle, dest); err == nil {
-		t.Fatal("wrong key accepted during restore")
+	if _, err := restoreNew(ctx, bundle, dest, createHooks{beforeRevalidate: cancel}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("restore must return cancellation: %v", err)
 	}
 	noPublished(t, root, dest)
+}
+
+func TestManifestVersionAndRequiredRevision(t *testing.T) {
+	for _, format := range []string{"legacy-v1", "v1-with-revision", "future-version", "v2-without-revision"} {
+		t.Run(format, func(t *testing.T) {
+			l, root, lock := fixture(t)
+			bundle, m := mustCreate(t, l, root, lock)
+			if m.Version != 2 || m.SourceRevision == "" {
+				t.Fatal("new bundles must use format v2 with a source revision")
+			}
+			switch format {
+			case "legacy-v1":
+				m.Version, m.SourceRevision = 1, ""
+			case "v1-with-revision":
+				m.Version = 1
+			case "future-version":
+				m.Version = Version + 1
+			case "v2-without-revision":
+				m.SourceRevision = ""
+			}
+			if err := RevalidateSource(context.Background(), l, m); err == nil {
+				t.Fatal("unsupported source authorization accepted")
+			}
+			data, err := json.Marshal(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			put(t, filepath.Join(bundle, "manifest.json"), data)
+			if _, err := Verify(context.Background(), bundle); err == nil || !strings.Contains(err.Error(), "unsupported") {
+				t.Fatalf("unsupported format must be explicitly rejected: %v", err)
+			}
+			dest := filepath.Join(root, "restored")
+			if _, err := RestoreNew(context.Background(), bundle, dest); err == nil {
+				t.Fatal("unsupported format restored")
+			}
+			noPublished(t, root, dest)
+		})
+	}
 }
 
 func TestRestoreWrongConfig(t *testing.T) {

@@ -148,6 +148,44 @@ func TestCommandCreateVerifyRestorePreservesSource(t *testing.T) {
 	}
 }
 
+func TestCommandRejectsLegacyBundleFormat(t *testing.T) {
+	l, root := source(t)
+	bundle := filepath.Join(root, "bundle")
+	run(t, createArgs(l, bundle), "created")
+	m, err := maintenancebundle.Verify(context.Background(), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version != 2 || m.SourceRevision == "" {
+		t.Fatal("CLI must create format v2 with a source revision")
+	}
+	m.Version, m.SourceRevision = 1, ""
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "manifest.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceWitness(t, bundle)
+	dest := filepath.Join(root, "restored")
+	for _, args := range [][]string{
+		{"verify", "--bundle", bundle},
+		{"restore-new", "--bundle", bundle, "--target", dest},
+	} {
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), args, &stdout, &stderr); err == nil || stdout.Len() != 0 || stderr.Len() != 0 {
+			t.Fatalf("legacy format must fail without success output: %v", err)
+		}
+	}
+	if _, err := os.Lstat(dest); !os.IsNotExist(err) {
+		t.Fatalf("legacy format published a restore root: %v", err)
+	}
+	if after := sourceWitness(t, bundle); !reflect.DeepEqual(before, after) {
+		t.Fatal("format rejection modified bundle")
+	}
+}
+
 func TestCommandFailsWithoutOwnershipAndNeverCreatesSourceMarker(t *testing.T) {
 	for _, kind := range []string{"marker-missing", "lock-held", "database-missing"} {
 		t.Run(kind, func(t *testing.T) {
