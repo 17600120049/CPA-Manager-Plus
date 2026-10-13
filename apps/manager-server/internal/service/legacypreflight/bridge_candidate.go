@@ -1,6 +1,13 @@
 package legacypreflight
 
-import "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
+import (
+	"context"
+	"path/filepath"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
+)
 
 // PlannedBridgeCandidate describes a target from the migration plan. It is
 // neither the inspected source's release nor evidence of upgrade eligibility.
@@ -24,7 +31,7 @@ type ForwardHopEvidence struct {
 	OutputManifestDigest string `json:"outputManifestDigest,omitempty"`
 }
 
-func addPlannedBridgeCandidate(report *Report, validatedHop *legacyartifact.ValidatedHopEvidence) {
+func addPlannedBridgeCandidate(ctx context.Context, report *Report, paths sqlite.InspectionPaths, validatedHop *legacyartifact.ValidatedHopEvidence) {
 	if report.SourceKind != "legacy-manager" || report.CompatibilityProfile == nil || report.CompatibilityProfile.Status != "recognized" {
 		return
 	}
@@ -33,7 +40,36 @@ func addPlannedBridgeCandidate(report *Report, validatedHop *legacyartifact.Vali
 		Release:      "v1.14.4",
 		SourceCommit: "166262365d506157b99968105c890f480cc7c07c",
 	}
+
+	matchesSource := false
 	if validatedHop != nil && validatedHop.IsValid() {
+		resolvePath := func(p string) string {
+			if p == "" {
+				return ""
+			}
+			if real, err := filepath.EvalSymlinks(p); err == nil {
+				return real
+			} else if parent, err := filepath.EvalSymlinks(filepath.Dir(p)); err == nil {
+				return filepath.Join(parent, filepath.Base(p))
+			}
+			return p
+		}
+		layout := maintenancebundle.Layout{
+			DatabasePath: resolvePath(paths.Database),
+			DataKeyPath:  resolvePath(paths.DataKey),
+			ConfigPath:   resolvePath(paths.Config),
+			ArchivesPath: resolvePath(paths.Archives),
+		}
+		if manifest, err := maintenancebundle.Inspect(ctx, layout); err == nil {
+			if digest, err := legacyartifact.ComputeManifestDigest(manifest); err == nil {
+				if digest == validatedHop.InputManifestDigest() {
+					matchesSource = true
+				}
+			}
+		}
+	}
+
+	if matchesSource {
 		report.ForwardHopEvidence = &ForwardHopEvidence{
 			Status:               "verified-hop-evidence",
 			OperationID:          validatedHop.OperationID(),

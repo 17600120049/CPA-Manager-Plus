@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
 var (
-	ErrInsecureKeyFile = errors.New("authority key file is insecure (symlink or non-regular file)")
+	ErrInsecureKeyFile = errors.New("authority key file is insecure (symlink, non-regular file, or excessive permissions)")
 )
 
 // DefaultAuthorityKeyPath returns the canonical path to the Manager-owned private authority key.
@@ -32,7 +33,7 @@ func DefaultJournalPath(dataDir string) string {
 
 // LoadOrCreateAuthority loads the private HMAC key from keyPath, or generates and stores
 // a new 32-byte cryptographically secure key with 0600 permissions in a 0700 directory.
-// Symlinks and non-regular files are rejected to prevent redirection attacks.
+// Symlinks, non-regular files, and excessive permissions are rejected to prevent redirection attacks.
 func LoadOrCreateAuthority(keyPath string) (*Authority, error) {
 	keyPath = strings.TrimSpace(keyPath)
 	if keyPath == "" {
@@ -43,6 +44,18 @@ func LoadOrCreateAuthority(keyPath string) (*Authority, error) {
 	if err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return nil, ErrInsecureKeyFile
+		}
+		if runtime.GOOS != "windows" {
+			if info.Mode().Perm() != 0o600 {
+				return nil, errors.Join(ErrInsecureKeyFile, fmt.Errorf("authority key file permissions must be 0600, got %#o", info.Mode().Perm()))
+			}
+			parentInfo, err := os.Stat(filepath.Dir(keyPath))
+			if err != nil {
+				return nil, fmt.Errorf("inspect authority directory: %w", err)
+			}
+			if parentInfo.Mode().Perm() != 0o700 {
+				return nil, errors.Join(ErrInsecureKeyFile, fmt.Errorf("authority directory permissions must be 0700, got %#o", parentInfo.Mode().Perm()))
+			}
 		}
 		data, err := os.ReadFile(keyPath)
 		if err != nil {
@@ -74,12 +87,18 @@ func LoadOrCreateAuthority(keyPath string) (*Authority, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create authority directory %s: %w", dir, err)
 	}
+	if runtime.GOOS != "windows" {
+		_ = os.Chmod(dir, 0o700)
+	}
 
 	content := []byte(hex.EncodeToString(key) + "\n")
 	tmpPath := fmt.Sprintf("%s.tmp.%d", keyPath, os.Getpid())
 	tmpFile, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("create temporary authority file %s: %w", tmpPath, err)
+	}
+	if runtime.GOOS != "windows" {
+		_ = os.Chmod(tmpPath, 0o600)
 	}
 	if _, err := tmpFile.Write(content); err != nil {
 		_ = tmpFile.Close()

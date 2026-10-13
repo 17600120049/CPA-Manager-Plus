@@ -83,7 +83,7 @@ func (a *Admission) Close() error {
 func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options) (report Report, err error) {
 	// Diagnostic projection only. Startup admission uses inspect directly and
 	// never consumes the planned target as source identity or authority.
-	defer func() { addPlannedBridgeCandidate(&report, options.ValidatedHop) }()
+	defer func() { addPlannedBridgeCandidate(ctx, &report, paths, options.ValidatedHop) }()
 	lock, err := processlock.AcquireExisting(paths.Database)
 	if err != nil && !errors.Is(err, processlock.ErrNoExistingLock) {
 		report := Report{SourceKind: "unknown", Unknown: []string{"source-consistency", "compatibility-profile", "exact-source-release"}, Blocked: []string{"source-ownership-unavailable"}}

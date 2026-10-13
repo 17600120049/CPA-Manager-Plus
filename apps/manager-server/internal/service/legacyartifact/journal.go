@@ -84,41 +84,55 @@ func OpenJournal(path string) (*Journal, error) {
 		return j, nil
 	}
 
-	info, err := os.Lstat(path)
+	if err := j.loadFromDiskLocked(); err != nil {
+		return nil, err
+	}
+
+	return j, nil
+}
+
+func (j *Journal) loadFromDiskLocked() error {
+	if j.path == "" {
+		return nil
+	}
+
+	info, err := os.Lstat(j.path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return j, nil
+			return nil
 		}
-		return nil, fmt.Errorf("inspect journal path %s: %w", path, err)
+		return fmt.Errorf("inspect journal path %s: %w", j.path, err)
 	}
 
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, ErrInsecureJournal
+		return ErrInsecureJournal
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(j.path)
 	if err != nil {
-		return nil, fmt.Errorf("read journal file %s: %w", path, err)
+		return fmt.Errorf("read journal file %s: %w", j.path, err)
 	}
 
 	var list []OperationRecord
 	if err := json.Unmarshal(data, &list); err != nil {
-		return nil, errors.Join(ErrCorruptJournal, fmt.Errorf("unmarshal journal %s: %w", path, err))
+		return errors.Join(ErrCorruptJournal, fmt.Errorf("unmarshal journal %s: %w", j.path, err))
 	}
 
 	seenIDs := make(map[string]bool, len(list))
+	newRecords := make(map[string]OperationRecord, len(list))
 	for i, rec := range list {
 		if err := rec.Validate(); err != nil {
-			return nil, errors.Join(ErrCorruptJournal, fmt.Errorf("record %d invalid: %w", i, err))
+			return errors.Join(ErrCorruptJournal, fmt.Errorf("record %d invalid: %w", i, err))
 		}
 		if seenIDs[rec.OperationID] {
-			return nil, errors.Join(ErrCorruptJournal, fmt.Errorf("duplicate operation ID %s", rec.OperationID))
+			return errors.Join(ErrCorruptJournal, fmt.Errorf("duplicate operation ID %s", rec.OperationID))
 		}
 		seenIDs[rec.OperationID] = true
-		j.records[rec.OperationID] = rec
+		newRecords[rec.OperationID] = rec
 	}
 
-	return j, nil
+	j.records = newRecords
+	return nil
 }
 
 // Path returns the path of the journal file.
@@ -129,8 +143,8 @@ func (j *Journal) Path() string {
 }
 
 // RecordOperation records a new completed operation. If the operationID is already present,
-// it returns ErrOperationReplayed. Persistence failures cause the entire record operation
-// to fail and not be committed to memory.
+// it returns ErrOperationReplayed. Cross-process file locking ensures mutual exclusion.
+// Persistence failures cause the entire record operation to fail and not be committed to memory.
 func (j *Journal) RecordOperation(rec OperationRecord) error {
 	if err := rec.Validate(); err != nil {
 		return err
@@ -138,6 +152,18 @@ func (j *Journal) RecordOperation(rec OperationRecord) error {
 
 	j.mu.Lock()
 	defer j.mu.Unlock()
+
+	if j.path != "" {
+		lock, err := acquireFileLock(j.path + ".lock")
+		if err != nil {
+			return fmt.Errorf("acquire journal lock: %w", err)
+		}
+		defer lock.Release()
+
+		if err := j.loadFromDiskLocked(); err != nil {
+			return err
+		}
+	}
 
 	if _, exists := j.records[rec.OperationID]; exists {
 		return ErrOperationReplayed
@@ -153,8 +179,12 @@ func (j *Journal) RecordOperation(rec OperationRecord) error {
 
 // GetOperation returns the record for an operationID if present.
 func (j *Journal) GetOperation(operationID string) (OperationRecord, bool) {
-	j.mu.RLock()
-	defer j.mu.RUnlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	if j.path != "" {
+		_ = j.loadFromDiskLocked()
+	}
 
 	rec, ok := j.records[operationID]
 	return rec, ok
@@ -164,6 +194,18 @@ func (j *Journal) GetOperation(operationID string) (OperationRecord, bool) {
 func (j *Journal) RevokeOperation(operationID string) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+
+	if j.path != "" {
+		lock, err := acquireFileLock(j.path + ".lock")
+		if err != nil {
+			return fmt.Errorf("acquire journal lock: %w", err)
+		}
+		defer lock.Release()
+
+		if err := j.loadFromDiskLocked(); err != nil {
+			return err
+		}
+	}
 
 	rec, ok := j.records[operationID]
 	if !ok {

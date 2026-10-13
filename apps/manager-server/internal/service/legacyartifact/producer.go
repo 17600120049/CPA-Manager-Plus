@@ -3,6 +3,7 @@ package legacyartifact
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -10,8 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
@@ -27,50 +32,120 @@ var (
 	ErrInsecureWorkspace      = errors.New("output root workspace is invalid, overlaps with input, or is not empty")
 )
 
-type CommandRunner func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error)
+type commandRunner func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error)
 
 type HopOptions struct {
-	ArchivePath    string
-	Asset          string
-	ExecutablePath string
-	InputLayout    maintenancebundle.Layout
-	OutputRoot     string
-	Authority      *Authority
-	Journal        *Journal
-	Timeout        time.Duration
-	CommandRunner  CommandRunner
+	ArchivePath string
+	Asset       string
+	InputLayout maintenancebundle.Layout
+	OutputRoot  string
+	Authority   *Authority
+	Journal     *Journal
+	Timeout     time.Duration
 }
 
-// DefaultCommandRunner executes the binary with controlled environment pointing
-// to outputLayout.
+// DefaultCommandRunner executes the binary with an isolated, clean environment,
+// polls for migration checkpoint completion, and gracefully interrupts and reaps
+// the child process once migration checkpoints are satisfied.
 func DefaultCommandRunner(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error) {
-	cmd := exec.CommandContext(ctx, exePath)
-	cmd.Dir = filepath.Dir(outputLayout.DatabasePath)
-	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("CPA_MANAGER_DATABASE=%s", outputLayout.DatabasePath),
-		fmt.Sprintf("CPA_MANAGER_DATA_KEY_PATH=%s", outputLayout.DataKeyPath),
-		fmt.Sprintf("CPA_MANAGER_CONFIG=%s", outputLayout.ConfigPath),
-	)
-	start := time.Now()
-	if err := cmd.Start(); err != nil {
-		return ProcessEvidence{}, fmt.Errorf("start process: %w", err)
+	outputDir := filepath.Dir(outputLayout.DatabasePath)
+
+	var cleanEnv []string
+	for _, envVar := range os.Environ() {
+		key, _, found := strings.Cut(envVar, "=")
+		if !found {
+			continue
+		}
+		upper := strings.ToUpper(key)
+		if strings.HasPrefix(upper, "USAGE_") || strings.HasPrefix(upper, "CPA_") || upper == "HTTP_ADDR" {
+			continue
+		}
+		cleanEnv = append(cleanEnv, envVar)
 	}
-	pid := cmd.Process.Pid
-	err := cmd.Wait()
-	finished := time.Now()
-	exitCode := 0
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			exitCode = exitErr.ExitCode()
-		} else {
-			return ProcessEvidence{}, err
+
+	cleanEnv = append(cleanEnv,
+		fmt.Sprintf("USAGE_DB_PATH=%s", outputLayout.DatabasePath),
+		fmt.Sprintf("USAGE_DATA_DIR=%s", outputDir),
+		fmt.Sprintf("CPA_MANAGER_DATA_KEY_PATH=%s", outputLayout.DataKeyPath),
+		"HTTP_ADDR=127.0.0.1:0",
+		"USAGE_COLLECTOR_MODE=none",
+	)
+	if outputLayout.ConfigPath != "" {
+		if _, err := os.Stat(outputLayout.ConfigPath); err == nil {
+			cleanEnv = append(cleanEnv, fmt.Sprintf("CPA_MANAGER_CONFIG=%s", outputLayout.ConfigPath))
 		}
 	}
+
+	cmd := exec.Command(exePath)
+	cmd.Dir = outputDir
+	cmd.Env = cleanEnv
+
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		return ProcessEvidence{}, fmt.Errorf("start forward-hop process: %w", err)
+	}
+	pid := cmd.Process.Pid
+
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	var exitErr error
+	reaped := false
+
+	for !reaped {
+		select {
+		case err := <-waitCh:
+			exitErr = err
+			reaped = true
+		case <-ctx.Done():
+			_ = cmd.Process.Kill()
+			<-waitCh
+			return ProcessEvidence{}, ctx.Err()
+		case <-ticker.C:
+			if areMigrationsCompleted(ctx, outputLayout.DatabasePath) {
+				if runtime.GOOS == "windows" {
+					_ = cmd.Process.Kill()
+				} else {
+					_ = cmd.Process.Signal(os.Interrupt)
+				}
+				select {
+				case err := <-waitCh:
+					exitErr = err
+					reaped = true
+				case <-time.After(15 * time.Second):
+					_ = cmd.Process.Kill()
+					exitErr = <-waitCh
+					reaped = true
+				case <-ctx.Done():
+					_ = cmd.Process.Kill()
+					<-waitCh
+					return ProcessEvidence{}, ctx.Err()
+				}
+			}
+		}
+	}
+
+	finished := time.Now()
+	exitCode := 0
+	if exitErr != nil {
+		var exitCodeErr *exec.ExitError
+		if errors.As(exitErr, &exitCodeErr) {
+			exitCode = exitCodeErr.ExitCode()
+		} else {
+			return ProcessEvidence{}, exitErr
+		}
+	}
+
 	dur := finished.Sub(start).Milliseconds()
 	if dur <= 0 {
 		dur = 1
 	}
+
 	return ProcessEvidence{
 		PID:          pid,
 		ExitCode:     exitCode,
@@ -78,6 +153,28 @@ func DefaultCommandRunner(ctx context.Context, exePath string, outputLayout main
 		FinishedAtMS: finished.UnixMilli(),
 		DurationMS:   dur,
 	}, nil
+}
+
+func areMigrationsCompleted(ctx context.Context, dbPath string) bool {
+	if info, err := os.Stat(dbPath); err != nil || info.Size() == 0 {
+		return false
+	}
+	dsn := fmt.Sprintf("file:%s?mode=ro", filepath.ToSlash(dbPath))
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+
+	queryCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	var count int
+	query := `select count(*) from usage_data_migrations where (name = 'usage_cache_accounting_v2' or name = 'quota_snapshot_lifecycle_v1') and status = 'completed'`
+	if err := db.QueryRowContext(queryCtx, query).Scan(&count); err != nil {
+		return false
+	}
+	return count == 2
 }
 
 // ExecuteHop performs a controlled, Manager-owned forward-hop operation.
@@ -88,6 +185,20 @@ func DefaultCommandRunner(ctx context.Context, exePath string, outputLayout main
 // output bundle, commits the operation atomically into the private journal, and issues
 // an operation-signed ExecutionReceipt.
 func ExecuteHop(ctx context.Context, opts HopOptions) (*ExecutionReceipt, error) {
+	return executeHopInternal(ctx, opts, "", nil)
+}
+
+// ExecuteHopForTest provides an explicit test-only injection seam guarded by testing.TB.
+// It cannot be called in production code.
+func ExecuteHopForTest(tb testing.TB, ctx context.Context, opts HopOptions, testExePath string, testRunner func(ctx context.Context, exePath string, outputLayout maintenancebundle.Layout) (ProcessEvidence, error)) (*ExecutionReceipt, error) {
+	if tb == nil {
+		panic("ExecuteHopForTest requires a non-nil testing.TB")
+	}
+	tb.Helper()
+	return executeHopInternal(ctx, opts, testExePath, testRunner)
+}
+
+func executeHopInternal(ctx context.Context, opts HopOptions, testExePath string, testRunner commandRunner) (*ExecutionReceipt, error) {
 	if opts.Authority == nil || opts.Asset == "" || opts.OutputRoot == "" {
 		return nil, ErrInvalidHopOptions
 	}
@@ -175,7 +286,6 @@ func ExecuteHop(ctx context.Context, opts HopOptions) (*ExecutionReceipt, error)
 
 	// 2. Resolve and Validate Executable
 	// In production, executable MUST be extracted from the authenticated pinned archive.
-	// opts.ExecutablePath is only allowed in test harnesses when CommandRunner is explicitly injected.
 	var exePath string
 	var expectedExeDigest string
 	if opts.ArchivePath != "" {
@@ -196,9 +306,9 @@ func ExecuteHop(ctx context.Context, opts HopOptions) (*ExecutionReceipt, error)
 		}
 		exePath = tempExe
 		expectedExeDigest = extractedDigest
-	} else if opts.ExecutablePath != "" && opts.CommandRunner != nil {
-		// Test-only dependency injection mode
-		exePath = opts.ExecutablePath
+	} else if testExePath != "" && testRunner != nil {
+		// Test-only dependency injection mode guarded by testing.TB
+		exePath = testExePath
 	} else {
 		return nil, errors.Join(ErrInvalidHopOptions, errors.New("archive path is required for forward hop"))
 	}
@@ -213,14 +323,20 @@ func ExecuteHop(ctx context.Context, opts HopOptions) (*ExecutionReceipt, error)
 		return nil, ErrExecutableMismatch
 	}
 
-	// 3. Staging: Prepare Isolated Output Bundle Copy
+	// 3. Staging & Quiescence / Consistency Revalidation
 	outputLayout := maintenancebundle.BundleLayout(opts.OutputRoot)
 	if err := stageOutputBundle(ctx, opts.InputLayout, outputLayout); err != nil {
 		return nil, err
 	}
+	if err := maintenancebundle.Revalidate(ctx, opts.InputLayout, inputManifest); err != nil {
+		return nil, errors.Join(ErrInvalidSource, fmt.Errorf("input source changed during staging: %w", err))
+	}
+	if err := maintenancebundle.Revalidate(ctx, outputLayout, inputManifest); err != nil {
+		return nil, errors.Join(ErrInvalidSource, fmt.Errorf("staged output bundle does not match input manifest: %w", err))
+	}
 
 	// 4. Controlled Execution of the Process
-	runner := opts.CommandRunner
+	runner := testRunner
 	if runner == nil {
 		runner = DefaultCommandRunner
 	}

@@ -154,15 +154,13 @@ func TestHopProducerAndValidatorHappyPath(t *testing.T) {
 		}, nil
 	}
 
-	receipt, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          asset,
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     outRoot,
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       asset,
+		InputLayout: inLayout,
+		OutputRoot:  outRoot,
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatalf("ExecuteHop failed: %v", err)
 	}
@@ -211,15 +209,13 @@ func TestHopProducerRejectsMissingJournal(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
 	}
 
-	_, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     filepath.Join(temp, "out"),
-		Authority:      auth,
-		Journal:        nil, // missing journal
-		CommandRunner:  runner,
-	})
+	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  filepath.Join(temp, "out"),
+		Authority:   auth,
+		Journal:     nil, // missing journal
+	}, fakeExePath, runner)
 	if !errors.Is(err, ErrJournalRequired) {
 		t.Fatalf("expected ErrJournalRequired, got %v", err)
 	}
@@ -240,15 +236,13 @@ func TestHopValidatorRejectsMissingJournal(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
 	}
 
-	receipt, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     outRoot,
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  outRoot,
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,15 +271,13 @@ func TestHopProducerRejectsWrongArtifact(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
 	}
 
-	_, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "unsupported_asset_v1.14.4.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     filepath.Join(temp, "out"),
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "unsupported_asset_v1.14.4.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  filepath.Join(temp, "out"),
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if err == nil {
 		t.Fatal("expected failure on wrong artifact, got nil")
 	}
@@ -315,15 +307,13 @@ func TestHopProducerRejectsNewerSourceDowngrade(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
 	}
 
-	_, err = ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     filepath.Join(temp, "out"),
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	_, err = ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  filepath.Join(temp, "out"),
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if !errors.Is(err, ErrDowngradeProhibited) {
 		t.Fatalf("expected ErrDowngradeProhibited, got %v", err)
 	}
@@ -346,15 +336,13 @@ func TestHopProducerRejectsUnrecognizedSource(t *testing.T) {
 		return ProcessEvidence{PID: 1, ExitCode: 0, DurationMS: 10}, nil
 	}
 
-	_, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     filepath.Join(temp, "out"),
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  filepath.Join(temp, "out"),
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if !errors.Is(err, ErrInvalidSource) {
 		t.Fatalf("expected ErrInvalidSource, got %v", err)
 	}
@@ -373,15 +361,13 @@ func TestHopProducerRejectsProcessFailureOrDirtyExit(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 1}, errors.New("exit status 1")
 	}
 
-	_, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     filepath.Join(temp, "out"),
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  filepath.Join(temp, "out"),
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if !errors.Is(err, ErrProcessExecutionFailed) {
 		t.Fatalf("expected ErrProcessExecutionFailed, got %v", err)
 	}
@@ -402,15 +388,13 @@ func TestHopProducerRejectsIncompleteCheckpoints(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
 	}
 
-	_, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     filepath.Join(temp, "out1"),
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runnerIncompleteCache,
-	})
+	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  filepath.Join(temp, "out1"),
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runnerIncompleteCache)
 	if !errors.Is(err, ErrCheckpointFailed) {
 		t.Fatalf("expected ErrCheckpointFailed for incomplete cache, got %v", err)
 	}
@@ -421,15 +405,13 @@ func TestHopProducerRejectsIncompleteCheckpoints(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
 	}
 
-	_, err = ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     filepath.Join(temp, "out2"),
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runnerWithLock,
-	})
+	_, err = ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  filepath.Join(temp, "out2"),
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runnerWithLock)
 	if !errors.Is(err, ErrMaintenanceLockActive) {
 		t.Fatalf("expected ErrMaintenanceLockActive, got %v", err)
 	}
@@ -450,15 +432,13 @@ func TestHopProducerRejectsInsecureWorkspace(t *testing.T) {
 	}
 
 	// Case A: outputRoot is same as input root
-	_, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     inDir,
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	_, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  inDir,
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if !errors.Is(err, ErrInsecureWorkspace) {
 		t.Fatalf("expected ErrInsecureWorkspace for same dir, got %v", err)
 	}
@@ -471,15 +451,13 @@ func TestHopProducerRejectsInsecureWorkspace(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(nonEmptyOut, "rogue.txt"), []byte("data"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     nonEmptyOut,
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	_, err = ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  nonEmptyOut,
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if !errors.Is(err, ErrInsecureWorkspace) {
 		t.Fatalf("expected ErrInsecureWorkspace for non-empty dir, got %v", err)
 	}
@@ -500,15 +478,13 @@ func TestHopValidatorRejectsForgedSignature(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     outRoot,
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  outRoot,
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,15 +517,13 @@ func TestHopValidatorRejectsCopiedReceiptToDifferentBundle(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     outRoot,
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  outRoot,
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,15 +558,13 @@ func TestHopValidatorRejectsOutputBundleContentChange(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     outRoot,
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  outRoot,
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -632,15 +604,13 @@ func TestHopValidatorRejectsRevokedOperationInJournal(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     outRoot,
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  outRoot,
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,15 +646,13 @@ func TestHopValidatorRejectsRecordMismatch(t *testing.T) {
 		return ProcessEvidence{PID: 1234, ExitCode: 0, DurationMS: 100}, nil
 	}
 
-	receipt, err := ExecuteHop(context.Background(), HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inLayout,
-		OutputRoot:     outRoot,
-		Authority:      auth,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	receipt, err := ExecuteHopForTest(t, context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  outRoot,
+		Authority:   auth,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,5 +756,82 @@ func TestAuthorityStorePermissionsAndReload(t *testing.T) {
 	_, err = LoadOrCreateAuthority(symPath)
 	if !errors.Is(err, ErrInsecureKeyFile) {
 		t.Fatalf("expected ErrInsecureKeyFile on symlink, got %v", err)
+	}
+}
+
+// 17. Production ExecuteHop mandates ArchivePath
+func TestExecuteHopRejectsMissingArchivePathInProduction(t *testing.T) {
+	temp := testTempDir(t)
+	inLayout := createTestInputBundle(t, filepath.Join(temp, "in"), "LegacySchemaA")
+	auth, _ := setupTestAuthority(t)
+	journal := NewMemoryJournal()
+
+	_, err := ExecuteHop(context.Background(), HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inLayout,
+		OutputRoot:  filepath.Join(temp, "out"),
+		Authority:   auth,
+		Journal:     journal,
+	})
+	if !errors.Is(err, ErrInvalidHopOptions) {
+		t.Fatalf("expected ErrInvalidHopOptions for missing ArchivePath in production, got %v", err)
+	}
+}
+
+// 18. Cross-process journal file locking and anti-replay
+func TestHopJournalCrossProcessConcurrency(t *testing.T) {
+	temp := testTempDir(t)
+	journalPath := filepath.Join(temp, "concurrent-journal.json")
+
+	j1, err := OpenJournal(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j2, err := OpenJournal(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec1 := OperationRecord{
+		OperationID:          "op-concur-1",
+		Release:              Release,
+		Asset:                "asset1",
+		ExecutableSHA256:     "sha1",
+		InputManifestDigest:  "in1",
+		OutputManifestDigest: "out1",
+		IssuedAtMS:           1000,
+	}
+	rec2 := OperationRecord{
+		OperationID:          "op-concur-2",
+		Release:              Release,
+		Asset:                "asset2",
+		ExecutableSHA256:     "sha2",
+		InputManifestDigest:  "in2",
+		OutputManifestDigest: "out2",
+		IssuedAtMS:           2000,
+	}
+
+	if err := j1.RecordOperation(rec1); err != nil {
+		t.Fatalf("j1.RecordOperation failed: %v", err)
+	}
+	if err := j2.RecordOperation(rec2); err != nil {
+		t.Fatalf("j2.RecordOperation failed: %v", err)
+	}
+
+	// Try replaying rec1 through j2: must be rejected!
+	if err := j2.RecordOperation(rec1); !errors.Is(err, ErrOperationReplayed) {
+		t.Fatalf("expected ErrOperationReplayed when replaying rec1 via j2, got %v", err)
+	}
+
+	// Read from fresh journal instance
+	jFresh, err := OpenJournal(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := jFresh.GetOperation("op-concur-1"); !ok {
+		t.Errorf("expected op-concur-1 in journal")
+	}
+	if _, ok := jFresh.GetOperation("op-concur-2"); !ok {
+		t.Errorf("expected op-concur-2 in journal")
 	}
 }

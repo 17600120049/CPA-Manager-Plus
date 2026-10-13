@@ -174,15 +174,13 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 		}, nil
 	}
 
-	receipt, err := legacyartifact.ExecuteHop(context.Background(), legacyartifact.HopOptions{
-		Asset:          "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
-		ExecutablePath: fakeExePath,
-		InputLayout:    inputLayout,
-		OutputRoot:     outputRoot,
-		Authority:      authority,
-		Journal:        journal,
-		CommandRunner:  runner,
-	})
+	receipt, err := legacyartifact.ExecuteHopForTest(t, context.Background(), legacyartifact.HopOptions{
+		Asset:       "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+		InputLayout: inputLayout,
+		OutputRoot:  outputRoot,
+		Authority:   authority,
+		Journal:     journal,
+	}, fakeExePath, runner)
 	if err != nil {
 		t.Fatalf("ExecuteHop failed: %v", err)
 	}
@@ -254,6 +252,29 @@ func TestForwardHopEvidencePreservesOrthogonality(t *testing.T) {
 		t.Fatalf("forward-hop-evidence should remain unknown: %v", report2.Unknown)
 	}
 	if report2.UpgradeAuthorized {
+		t.Fatalf("UpgradeAuthorized must remain false!")
+	}
+
+	// Case 3: with ValidatedHop evidence generated for source A, but passed to different source B
+	otherFixture := loadLegacyProfileFixtures(t)[1]
+	otherPaths := buildLegacyProfileFixture(t, otherFixture)
+	if err := os.WriteFile(otherPaths.DataKey, []byte("other-data-key-12345678901234567890\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report3, err := Inspect(context.Background(), otherPaths, Options{
+		SourceStopped: true,
+		ValidatedHop:  valResult.Evidence,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report3.ForwardHopEvidence != nil {
+		t.Fatalf("cross-source ValidatedHop evidence must not attach to mismatched source: %+v", report3.ForwardHopEvidence)
+	}
+	if !slices.Contains(report3.Unknown, "forward-hop-evidence") {
+		t.Fatalf("forward-hop-evidence must remain unknown for mismatched source: %v", report3.Unknown)
+	}
+	if report3.UpgradeAuthorized {
 		t.Fatalf("UpgradeAuthorized must remain false!")
 	}
 }
