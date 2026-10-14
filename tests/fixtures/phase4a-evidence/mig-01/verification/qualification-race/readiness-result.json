@@ -704,35 +704,6 @@
       },
       "cacheAccountingV2": "completed-observed",
       "quotaSnapshotLifecycleV1": "completed-observed",
-      "requiredMigrationReadiness": {
-        "cache": [
-          {
-            "status": "completed",
-            "lastId": 0,
-            "targetId": 0,
-            "processed": 0,
-            "changed": 0,
-            "applied": 0,
-            "finishedAtMs": null,
-            "hasError": false
-          }
-        ],
-        "quota": [
-          {
-            "status": "completed",
-            "lastId": 0,
-            "targetId": 0,
-            "processed": 0,
-            "changed": 0,
-            "applied": 0,
-            "finishedAtMs": 1791989746122,
-            "hasError": false
-          }
-        ],
-        "cacheRevision": "2",
-        "cacheStagingRows": 0,
-        "quotaUnattachedRows": 0
-      },
       "connectionStorageVersion": 2,
       "connectionStorage": {
         "migrationVersion": 2,
@@ -812,5 +783,34 @@
     }
   },
   "UpgradeAuthorized": false,
-  "TrustedHopReceipt": false
+  "TrustedHopReceipt": false,
+  "migrationReadiness": {
+    "cache": [
+      {
+        "status": "completed",
+        "lastId": 0,
+        "targetId": 0,
+        "processed": 0,
+        "changed": 0,
+        "applied": 0,
+        "finishedAtMs": null,
+        "hasError": false
+      }
+    ],
+    "quota": [
+      {
+        "status": "completed",
+        "lastId": 0,
+        "targetId": 0,
+        "processed": 0,
+        "changed": 0,
+        "applied": 0,
+        "finishedAtMs": 1791989746122,
+        "hasError": false
+      }
+    ],
+    "cacheRevision": "2",
+    "cacheStagingRows": 0,
+    "quotaUnattachedRows": 0
+  }
 }

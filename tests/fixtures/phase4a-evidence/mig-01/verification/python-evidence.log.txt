@@ -15,6 +15,7 @@ test_windows_zipinfo_normalization_rejected_before_inventory (test_materialize_s
 test_actual_readiness_semantics_and_source_immutability (test_mig01.Mig01EvidenceTests.test_actual_readiness_semantics_and_source_immutability) ... ok
 test_complete_literal_inventory (test_mig01.Mig01EvidenceTests.test_complete_literal_inventory) ... ok
 test_durable_asset_and_delivery_boundary (test_mig01.Mig01EvidenceTests.test_durable_asset_and_delivery_boundary) ... ok
+test_frozen_product_scope (test_mig01.Mig01EvidenceTests.test_frozen_product_scope) ... ok
 test_independent_exact_generation (test_mig01.Mig01EvidenceTests.test_independent_exact_generation) ... ok
 test_persisted_source_bytes (test_mig01.Mig01EvidenceTests.test_persisted_source_bytes) ... ok
 test_case_and_authority_boundaries (test_ret01.Ret01EvidenceTests.test_case_and_authority_boundaries) ... ok
@@ -35,6 +36,6 @@ run-aut03.py: error: output must be absent; never overwrite evidence
 ok
 
 ----------------------------------------------------------------------
-Ran 29 tests in 0.109s
+Ran 30 tests in 0.148s
 
 OK (skipped=3)

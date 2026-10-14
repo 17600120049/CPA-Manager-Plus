@@ -53,5 +53,8 @@
   "UpgradeAuthorized": false,
   "TrustedHopReceipt": false,
   "Phase4A07Complete": false,
-  "Phase4AComplete": false
+  "Phase4AComplete": false,
+  "qualificationExecutionCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef",
+  "productCodeChanged": false,
+  "harnessOnly": true
 }

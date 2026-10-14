@@ -13,15 +13,17 @@
     "qualification-race": 0,
     "python-evidence": 0
   },
-  "pythonResult": "29 tests; 3 unrelated original-asset opt-in skips; all 5 MIG-01 tests executed",
+  "pythonResult": "30 tests; 3 unrelated original-asset opt-in skips; all 6 MIG-01 tests executed",
   "codeReview": {
     "exactSource": "archive, executable, build metadata and release-info bound to pinned generation",
     "migrationAuthenticity": "natural real producer completed state; revision2 retained",
-    "readinessSemantics": "actual production-compatible data primitive, default production obligations unknown",
+    "readinessSemantics": "qualification-only composition of existing primitives; production preflight JSON unchanged",
     "sourceImmutability": "read-only inspection; validator private copies only; full source inventory and authoritative snapshots equal",
     "authoritySeparation": "no consumers wired; false grants; pending independent acceptance",
-    "evidenceDurability": "immutable original ZIP redownloaded and clean-clone replayed; original logs retained",
-    "blockingFindingsRemaining": 0
+    "evidenceDurability": "original immutable archive retained; source-generation unchanged; current scope-corrected runtime and clean clone regenerated",
+    "blockingFindingsRemaining": 0,
+    "frozenProductScope": "PASS: product trees equal v2 base; only _test.go composition and readonly migration queries"
   },
-  "runtimePlatformLimit": "Windows materialization/SQLite inspection/compilation only, no Windows runtime readiness claim"
+  "runtimePlatformLimit": "Windows materialization/SQLite inspection/compilation only, no Windows runtime readiness claim",
+  "executionCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef"
 }

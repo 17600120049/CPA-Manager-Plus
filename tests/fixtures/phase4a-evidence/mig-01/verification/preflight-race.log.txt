@@ -1,2 +1,2 @@
-ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight	12.413s
-ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/legacypreflight	3.968s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight	6.936s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/cmd/cpa-manager-plus	13.984s

@@ -1,8 +1,8 @@
 {
-  "executionCommit": "d13d997e3c58c6f77eef89bc2092a3c6d5cb8c2f",
+  "executionCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef",
   "statusBefore": "",
   "statusAfter": "",
-  "method": "task-owned clean local clone of committed checkpoint; immutable ZIP re-downloaded and materialized before replay",
+  "method": "clean local clone of scope-correction checkpoint; original previously downloaded immutable ZIP revalidated and materialized",
   "downloadedArchiveSHA256": "bca2e3d802b9c48e76e895418a7280e666915bebe3cd353bef17c45a3021607b",
   "releaseID": 412855420,
   "assetID": 640737774,

@@ -3,7 +3,7 @@
     "SEM-01",
     "SEM-07"
   ],
-  "executionCommit": "d13d997e3c58c6f77eef89bc2092a3c6d5cb8c2f",
+  "executionCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef",
   "readinessStatus": "ready",
   "sourceMutation": false,
   "sqlite": {

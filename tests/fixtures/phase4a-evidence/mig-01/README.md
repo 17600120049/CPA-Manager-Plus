@@ -17,7 +17,8 @@ ownership/maintenancebundle contract. `source-generation/` is independent of
 SRC-11 and RET-01; only their accepted exact producer identity is reused.
 
 `runtime/` (macOS), `platform-replay/linux/` and `clean-checkout/` contain actual
-invocations of `legacypreflight.InspectDirectCandidateReadiness`. It executes the
+invocations of qualification-only `inspectDirectCandidateReadiness` in
+`apps/manager-server/tests/qualification/src11/mig01_readiness_test.go`. It executes the
 maintained source inspector, schema classifier, exact artifact verifier and
 matching-evidence validator. `ready` means **controlled direct-candidate data
 and compatibility eligibility**. The default embedded preflight still reports
@@ -25,6 +26,12 @@ exact release and Bridge obligations as `unknown`; its production authority is
 fail-closed. Caller-supplied qualification pins cannot authorize production.
 No Upgrade API, receipt, cutover, bootstrap, UI or startup authorization was
 implemented or called.
+
+The final PR has zero product-code changes versus the frozen v2 base.
+Production `LegacyInspection`, inspector calls and CLI JSON remain unchanged.
+Migration details are queried by `_test.go` harness code with `immutable=1 +
+query_only` and serialized separately from the existing preflight report.
+`product-scope.json` pins the unchanged product trees, checked against HEAD.
 
 The source is opened read-only. Matching validation uses its existing private,
 disposable copies; v2 migrations never run on the source. Full bundle inventory,
@@ -44,7 +51,7 @@ Release API `target_commitish=main` is separately recorded as default metadata;
 the actual Git tag ref is independently verified. ZIP SHA256:
 `bca2e3d802b9c48e76e895418a7280e666915bebe3cd353bef17c45a3021607b`.
 Original bytes were downloaded again, verified and replayed from a clean clone
-at `d13d997e3c58c6f77eef89bc2092a3c6d5cb8c2f`.
+at the scope-correction verifier checkpoint in `clean-checkout/checkout-record.json`.
 
 `result.json` sets `casePass=true` for the 13 completed delivery criteria.
 Each preserved runtime `result.json` keeps `casePass=false` because a runtime
