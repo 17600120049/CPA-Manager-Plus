@@ -194,13 +194,17 @@ func TestReplayExactSource(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		a, e := st.CatchUpUsageMonitoringProjection(ctx, 2, p.ToMS)
 		must(t, e)
+		d, e := st.CatchUpUsageMonitoringStats(ctx, 2, p.ToMS)
+		must(t, e)
+		metadata, e := st.CatchUpUsageMonitoringMetadata(ctx, 2, p.ToMS)
+		must(t, e)
 		b, e := st.CatchUpUsageHourlyAggregate(ctx, 2, p.ToMS)
 		must(t, e)
 		c, e := st.CatchUpUsagePricing(ctx, 2, p.ToMS)
 		must(t, e)
 		_, e = st.CatchUpAccountHistoryRollups(ctx, 2, p.ToMS)
 		must(t, e)
-		if !a.Pending && !b.Pending && !c.Pending {
+		if !a.Pending && !d.Pending && !metadata.Pending && !b.Pending && !c.Pending {
 			break
 		}
 		if i == 99 {
