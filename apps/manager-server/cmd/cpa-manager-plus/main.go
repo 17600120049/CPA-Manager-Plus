@@ -323,6 +323,7 @@ func runServerWithOptions(options legacypreflight.Options) {
 			ManagementKey:  cfg.ManagementKey,
 		},
 	)
+	serverApp.AppContext().QuotaCooldownRecoveryService = rateLimitAutoDisableWorker
 	accountActionWorker := worker.NewAccountActionCandidateWorkerWithMutationCoordinator(
 		db,
 		serverApp.AppContext().AuthFileMutationCoordinator,

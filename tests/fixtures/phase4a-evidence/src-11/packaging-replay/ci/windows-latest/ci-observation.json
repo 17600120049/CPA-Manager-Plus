@@ -1,0 +1,16 @@
+{
+  "artifactDigest": "sha256:f7b7fe4a0f2fd023255441378ece596f8ea3e99f66b4b132e96b65fe7fb0ead9",
+  "artifactID": 11869243381,
+  "artifactName": "src11-packaging-replay-windows-latest-38509940326-1",
+  "compile": "pass",
+  "fullSQLiteReplay": "pending; failed prior attempt recorded separately",
+  "independentAcceptance": "pending",
+  "jobID": 115675887578,
+  "jobURL": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/38509940326/job/115675887578",
+  "materialization": "runtime-pass",
+  "platform": "windows-latest",
+  "runID": 38509940326,
+  "scope": "materialization + native compile only",
+  "testedCommit": "8e483cb73402056aadd450d0680af072c6564379",
+  "workflowHeadSHA": "7dad61ad750cccad951ea3464c2967c1de2037cd"
+}

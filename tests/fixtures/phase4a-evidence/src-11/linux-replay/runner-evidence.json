@@ -1,0 +1,18 @@
+{
+  "platform": {
+    "goOS": "linux",
+    "goArch": "amd64",
+    "goVersion": "go1.26.1"
+  },
+  "image": "debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b",
+  "parentIndex": "sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251",
+  "qualificationExecutableSHA256": "390352eb5d40bf1d6d057295cb356f9c35a147d83fa75486dc52e27009a9acb3",
+  "sourceGeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+  "sourceEvidenceRoot": "../source-generation + ../bundle",
+  "network": "none",
+  "readOnlyRoot": true,
+  "capabilities": "none",
+  "privateTmpfs": true,
+  "executionExitCode": 0,
+  "resultSHA256": "79d094a4961efd37491966fd0319aec941d53299de06d099edd4ed1aba0365ff"
+}

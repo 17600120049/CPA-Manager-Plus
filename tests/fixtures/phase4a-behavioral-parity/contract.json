@@ -1,0 +1,357 @@
+{
+  "schema_version": 1,
+  "capability_baseline": {
+    "release": "v1.14.4",
+    "commit": "166262365d506157b99968105c890f480cc7c07c"
+  },
+  "compatibility_delta": {
+    "release": "v1.14.6",
+    "commit": "9d719fc8cca362f7b56d294a2ad056ae99cfeba6"
+  },
+  "qualification": "local-contract-fixture-only",
+  "lane_d_consumers": [
+    "SRC-11",
+    "RET-01",
+    "SEM-06",
+    "SEM-07",
+    "SEM-08"
+  ],
+  "price_per_million": {
+    "prompt": 1,
+    "completion": 2,
+    "cache": 0.1,
+    "cacheRead": 0.1,
+    "cacheCreation": 0.5
+  },
+  "records": [
+    {
+      "id": "devin-838-read-mirror",
+      "minimum_semantics_release": "v1.14.4",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "devin",
+        "executor_type": "DevinExecutor",
+        "model": "claude-fable-5-1",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "requested_model": "fixture-alias",
+        "resolved_model": "claude-fable-5-1",
+        "response_model": "provider-response-model",
+        "session_id": "fixture-session",
+        "parent_session_id": "fixture-parent",
+        "generate": false,
+        "stream": false,
+        "response_metadata": {
+          "trace": {
+            "primary_trace_id": "fixture-trace"
+          }
+        },
+        "tokens": {
+          "input_tokens": 229788,
+          "output_tokens": 1775,
+          "cached_tokens": 228021,
+          "cache_read_tokens": 228021,
+          "cache_creation_tokens": 0,
+          "total_tokens": 231563
+        }
+      },
+      "expected": {
+        "cache_input_mode": "read_included_creation_separate",
+        "uncached_input_tokens": 1767,
+        "total_input_tokens": 229788,
+        "cache_read_tokens": 228021,
+        "cache_creation_tokens": 0,
+        "total_tokens": 231563,
+        "cost": 0.0281191
+      }
+    },
+    {
+      "id": "devin-creation-separate",
+      "minimum_semantics_release": "v1.14.4",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "devin",
+        "executor_type": "DevinExecutor",
+        "model": "devin/swe-2",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "tokens": {
+          "input_tokens": 53,
+          "output_tokens": 7,
+          "cache_read_tokens": 50,
+          "cache_creation_tokens": 14361,
+          "total_tokens": 14421
+        }
+      },
+      "expected": {
+        "cache_input_mode": "read_included_creation_separate",
+        "uncached_input_tokens": 3,
+        "total_input_tokens": 14414,
+        "cache_read_tokens": 50,
+        "cache_creation_tokens": 14361,
+        "total_tokens": 14421,
+        "cost": 0.0072025
+      }
+    },
+    {
+      "id": "devin-provider-beats-claude-alias",
+      "minimum_semantics_release": "v1.14.4",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "devin/custom",
+        "executor_type": "executorAdapter",
+        "model": "claude-fixture",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "tokens": {
+          "input_tokens": 100,
+          "output_tokens": 5,
+          "cache_read_tokens": 20,
+          "cache_creation_tokens": 10,
+          "total_tokens": 115
+        }
+      },
+      "expected": {
+        "cache_input_mode": "read_included_creation_separate",
+        "uncached_input_tokens": 80,
+        "total_input_tokens": 110,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 10,
+        "total_tokens": 115,
+        "cost": 0.000097
+      }
+    },
+    {
+      "id": "explicit-mode-beats-devin",
+      "minimum_semantics_release": "v1.14.4",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "devin",
+        "executor_type": "DevinExecutor",
+        "model": "devin/swe-2",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "tokens": {
+          "cache_input_mode": "included_in_input",
+          "input_tokens": 100,
+          "output_tokens": 5,
+          "cache_read_tokens": 20,
+          "cache_creation_tokens": 10,
+          "total_tokens": 105
+        }
+      },
+      "expected": {
+        "cache_input_mode": "included_in_input",
+        "uncached_input_tokens": 70,
+        "total_input_tokens": 100,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 10,
+        "total_tokens": 105,
+        "cost": 0.000087
+      }
+    },
+    {
+      "id": "claude-separate",
+      "minimum_semantics_release": "v1.14.4",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "claude",
+        "executor_type": "ClaudeExecutor",
+        "model": "claude-fixture",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "tokens": {
+          "input_tokens": 100,
+          "output_tokens": 5,
+          "cache_read_tokens": 20,
+          "cache_creation_tokens": 10,
+          "total_tokens": 135
+        }
+      },
+      "expected": {
+        "cache_input_mode": "separate_from_input",
+        "uncached_input_tokens": 100,
+        "total_input_tokens": 130,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 10,
+        "total_tokens": 135,
+        "cost": 0.000117
+      }
+    },
+    {
+      "id": "xai-included",
+      "minimum_semantics_release": "v1.14.4",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "xai",
+        "executor_type": "XAIExecutor",
+        "model": "grok-fixture",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "tokens": {
+          "input_tokens": 100,
+          "output_tokens": 5,
+          "cache_read_tokens": 20,
+          "total_tokens": 105
+        }
+      },
+      "expected": {
+        "cache_input_mode": "included_in_input",
+        "uncached_input_tokens": 80,
+        "total_input_tokens": 100,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 0,
+        "total_tokens": 105,
+        "cost": 0.000092
+      }
+    },
+    {
+      "id": "unknown-fallback",
+      "minimum_semantics_release": "v1.14.4",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "unknown-fixture",
+        "executor_type": "executorAdapter",
+        "model": "opaque-fixture",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "tokens": {
+          "input_tokens": 100,
+          "output_tokens": 5,
+          "cache_read_tokens": 20,
+          "cache_creation_tokens": 10,
+          "total_tokens": 135
+        }
+      },
+      "expected": {
+        "cache_input_mode": "separate_from_input",
+        "uncached_input_tokens": 100,
+        "total_input_tokens": 130,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 10,
+        "total_tokens": 135,
+        "cost": 0.000117
+      }
+    },
+    {
+      "id": "meta-muse-fallback",
+      "minimum_semantics_release": "v1.14.4",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "meta",
+        "executor_type": "MetaExecutor",
+        "model": "muse-fixture",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "tokens": {
+          "input_tokens": 100,
+          "output_tokens": 5,
+          "total_tokens": 105
+        }
+      },
+      "expected": {
+        "cache_input_mode": "included_in_input",
+        "uncached_input_tokens": 100,
+        "total_input_tokens": 100,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "total_tokens": 105,
+        "cost": 0.00011
+      }
+    },
+    {
+      "id": "unknown-canonical-v2",
+      "minimum_semantics_release": "v1.14.6",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "unknown-fixture",
+        "executor_type": "executorAdapter",
+        "model": "opaque-fixture",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "accounting_version": 2,
+        "token_breakdown": {
+          "schema_version": 2,
+          "quality": "complete",
+          "accounting_valid": true,
+          "unclassified_tokens": 0,
+          "total_tokens": 105,
+          "input": {
+          "total_tokens": 100,
+            "uncached_tokens": 70,
+            "cache_read_tokens": 20,
+            "cache_write_tokens": 10
+          },
+          "output": {
+            "total_tokens": 5,
+            "non_reasoning_tokens": 5,
+            "reasoning_tokens": 0
+          }
+        },
+        "tokens": {
+          "input_tokens": 100,
+          "output_tokens": 5,
+          "cache_read_tokens": 20,
+          "cache_creation_tokens": 10,
+          "total_tokens": 105
+        }
+      },
+      "expected": {
+        "cache_input_mode": "included_in_input",
+        "uncached_input_tokens": 70,
+        "total_input_tokens": 100,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 10,
+        "total_tokens": 105,
+        "cost": 0.000087
+      }
+    },
+    {
+      "id": "unknown-canonical-invalid",
+      "minimum_semantics_release": "v1.14.6",
+      "input": {
+        "timestamp": "2026-10-14T00:00:00Z",
+        "provider": "unknown-fixture",
+        "executor_type": "executorAdapter",
+        "model": "opaque-fixture",
+        "source": "parity-fixture-account",
+        "auth_index": "fixture-auth",
+        "accounting_version": 2,
+        "token_breakdown": {
+          "schema_version": 2,
+          "quality": "complete",
+          "accounting_valid": false,
+          "unclassified_tokens": 0,
+          "total_tokens": 105,
+          "input": {
+            "total_tokens": 101,
+            "uncached_tokens": 70,
+            "cache_read_tokens": 20,
+            "cache_write_tokens": 10
+          },
+          "output": {
+            "total_tokens": 5,
+            "non_reasoning_tokens": 5,
+            "reasoning_tokens": 0
+          }
+        },
+        "tokens": {
+          "input_tokens": 100,
+          "output_tokens": 5,
+          "cache_read_tokens": 20,
+          "cache_creation_tokens": 10,
+          "total_tokens": 105
+        }
+      },
+      "expected": {
+        "cache_input_mode": "separate_from_input",
+        "uncached_input_tokens": 100,
+        "total_input_tokens": 130,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 10,
+        "total_tokens": 105,
+        "cost": 0.000117
+      }
+    }
+  ]
+}

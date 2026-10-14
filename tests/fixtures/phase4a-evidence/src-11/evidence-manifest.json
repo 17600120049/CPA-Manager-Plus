@@ -1,0 +1,1048 @@
+{
+  "authorityBoundary": {
+    "Phase4A07Complete": false,
+    "Phase4AComplete": false,
+    "TrustedHopReceipt": false,
+    "UpgradeAuthorized": false,
+    "casePass": false,
+    "directCandidateHop": "N/A; zero hop required",
+    "generationSuccess": true,
+    "independentAcceptance": "pending",
+    "other48Cases": "pending",
+    "runtimeAssertions": "pass"
+  },
+  "caseID": "SRC-11",
+  "files": {
+    "README.md": {
+      "sha256": "9def6ca015c026a516f5400aca12f19d6d7d1696cc85830233602ce4854d6960",
+      "size": 6174
+    },
+    "bundle/config": {
+      "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+      "size": 243
+    },
+    "bundle/manifest.json": {
+      "sha256": "8c9578bbe29911f5339b1c2c7c3b6c773e5ea1b681802af837c5c1c4c74df28c",
+      "size": 829
+    },
+    "generation-index.json": {
+      "sha256": "3a59d99b0bd7422ad6ab965bcd69e2f10a072992700bdab553a347a6ebe71904",
+      "size": 266
+    },
+    "generation-runner-evidence.json": {
+      "sha256": "4cf9f5043139ccdabe0f9b2881499f7ba7725f990e3c048dc88596eaad27b5cc",
+      "size": 69029
+    },
+    "linux-replay/runner-evidence.json": {
+      "sha256": "9f60ee869a22f109a4784bdacce15b49f9fce2d85715c7838eb8b658d8d52ad2",
+      "size": 726
+    },
+    "linux-replay/runtime/backup-restore.json": {
+      "sha256": "b78e6726ec608c27e62b84bf45317f22c12e0ffd51d4718db24fe93ff587bf71",
+      "size": 525
+    },
+    "linux-replay/runtime/result.json": {
+      "sha256": "79d094a4961efd37491966fd0319aec941d53299de06d099edd4ed1aba0365ff",
+      "size": 1826
+    },
+    "linux-replay/runtime/retention-backup/manifest.json": {
+      "sha256": "2f9b450c6016d1bff2d257fa93e2fa64b47ff112999ceac659638f4fd7bdbad4",
+      "size": 1680
+    },
+    "linux-replay/runtime/retention-backup/usage-archives/bbaf4c3b66dbd592a8cec6884574a870/manifest.json": {
+      "sha256": "c1215cab37c22be3aff1446727b28251a82182b96b547f008f261ba20f2f03af",
+      "size": 1667
+    },
+    "linux-replay/runtime/retention-backup/usage-archives/bbaf4c3b66dbd592a8cec6884574a870/segment-000001-00000000000000000001-00000000000000000002.jsonl.gz": {
+      "sha256": "e5cd317ea78d7471d3d75418710bde5e54111d459a674b276bd5af0c02bd224c",
+      "size": 1493
+    },
+    "linux-replay/runtime/retention-backup/usage-archives/bbaf4c3b66dbd592a8cec6884574a870/segment-000002-00000000000000000003-00000000000000000004.jsonl.gz": {
+      "sha256": "85533b8c3b33761ccdb66293d370019785bb69eb29bff562eef5bfd2fc393366",
+      "size": 1573
+    },
+    "linux-replay/runtime/sem-full-raw.json": {
+      "sha256": "38de0db7402b7f9b0f75ae59e0bd0f653646252c41461bdc7fbb8a9c10f5812b",
+      "size": 56441
+    },
+    "linux-replay/runtime/sem09-retention-branch.json": {
+      "sha256": "821a65428b68cdbb927126081c98151dfd3bafb9c39ee5a34d987dd2d9206796",
+      "size": 10061
+    },
+    "linux-replay/runtime/tamper-rejection.json": {
+      "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+      "size": 133
+    },
+    "packaging-replay/ci/macos-latest/backup-restore.json": {
+      "sha256": "6f1e6cd77f88a7f61ceed7b690504e539dcbb456f8b7dfefd5265db48bda213a",
+      "size": 525
+    },
+    "packaging-replay/ci/macos-latest/build.log.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "packaging-replay/ci/macos-latest/ci-observation.json": {
+      "sha256": "b9b5432baae39b6f7cd1307ba26de2877ee22d5bc9c94f172f9adcc6639b7d01",
+      "size": 663
+    },
+    "packaging-replay/ci/macos-latest/log-locations.json": {
+      "sha256": "a7888beabbe2fc6a611a1c81dfee90749ebb4e8fe7c1a15fb0a20240f5e0f6eb",
+      "size": 89
+    },
+    "packaging-replay/ci/macos-latest/materialization.json": {
+      "sha256": "fc3df917b56e4b97f5d25694e4ee95eb5b2fb22e88f2ec6cd298d2dabaabc8d0",
+      "size": 383
+    },
+    "packaging-replay/ci/macos-latest/replay-execution.log.txt": {
+      "sha256": "6baa16203025e39dfe90e07e5695f9d7514fb6bfa8880a3cb9220ef159a5cdcf",
+      "size": 501
+    },
+    "packaging-replay/ci/macos-latest/result.json": {
+      "sha256": "35bceda51daeb4797f714f72f5bee0e93e13ac76674d2c542ad2a64548afe666",
+      "size": 1827
+    },
+    "packaging-replay/ci/macos-latest/runner-evidence.json": {
+      "sha256": "57a192e283d6d256dd961417480d8602e287ac67c4a8ccbdc749d73f5019bb1f",
+      "size": 67461
+    },
+    "packaging-replay/ci/macos-latest/sem-full-raw.json": {
+      "sha256": "b448182a7096215163b8ffae0495ce9d4cba700bea93b07d87be831ebd147d6b",
+      "size": 56505
+    },
+    "packaging-replay/ci/macos-latest/sem09-retention-branch.json": {
+      "sha256": "11b64da5758e6828a226c79dd4f2511d438969aa1dbee4e8b410d3d127a515ac",
+      "size": 10069
+    },
+    "packaging-replay/ci/macos-latest/tamper-rejection.json": {
+      "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+      "size": 133
+    },
+    "packaging-replay/ci/ubuntu-latest/backup-restore.json": {
+      "sha256": "055822a75456466dba6336a0b4f6415fc06bca2b52bc228e3f7543f1380df0f0",
+      "size": 525
+    },
+    "packaging-replay/ci/ubuntu-latest/build.log.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "packaging-replay/ci/ubuntu-latest/ci-observation.json": {
+      "sha256": "e340232adad605a09b58b95f336dfca3e57f484a2bc046031965de8bf55ed0aa",
+      "size": 665
+    },
+    "packaging-replay/ci/ubuntu-latest/log-locations.json": {
+      "sha256": "bbc79bb071a58eb51b06cd52246b1f5385a55fd2dabdcfae96549bc480aacaf0",
+      "size": 89
+    },
+    "packaging-replay/ci/ubuntu-latest/materialization.json": {
+      "sha256": "0685094fc6d758fbd595af0b1b40f925019747defc5be0d33e181bb163979b76",
+      "size": 393
+    },
+    "packaging-replay/ci/ubuntu-latest/replay-execution.log.txt": {
+      "sha256": "c4391dc27da021eb948d7437c809fd66e338871707f8a138e83ac7a60f3cb441",
+      "size": 501
+    },
+    "packaging-replay/ci/ubuntu-latest/result.json": {
+      "sha256": "53228e80193aa729e07432d6b0faf8d80d3cee9fdba12b99b1808be30a3a529f",
+      "size": 1826
+    },
+    "packaging-replay/ci/ubuntu-latest/runner-evidence.json": {
+      "sha256": "3d398848556b5e29ed911b31b2a5de4a1166eb6bed78ee225082d7f29b42d8cc",
+      "size": 69057
+    },
+    "packaging-replay/ci/ubuntu-latest/sem-full-raw.json": {
+      "sha256": "669b24e1d649079e667d9f30fd4299b621941c0d355f3c07624e0a121d9335be",
+      "size": 56505
+    },
+    "packaging-replay/ci/ubuntu-latest/sem09-retention-branch.json": {
+      "sha256": "a8e4ab74e9f3cf6c6566746005bc269c4f4163847fadd2d319d92ea70b2986e8",
+      "size": 10069
+    },
+    "packaging-replay/ci/ubuntu-latest/tamper-rejection.json": {
+      "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+      "size": 133
+    },
+    "packaging-replay/ci/windows-latest/ci-observation.json": {
+      "sha256": "eb9adff0a6573c97c5182be6d9e561ef0dc12e8270a19f2ef2695d7d5a85614a",
+      "size": 731
+    },
+    "packaging-replay/ci/windows-latest/compile.txt": {
+      "sha256": "142945d176ae9c46d9bc0816b65165ce9bc9b5a1b5b908919c273f0ca04ea878",
+      "size": 522
+    },
+    "packaging-replay/ci/windows-latest/materialization.json": {
+      "sha256": "50e9111f8450a606fe1747d9f0e89c0ee9ecbebfcb368b2967fff25d9d6d8b58",
+      "size": 390
+    },
+    "packaging-replay/darwin/backup-restore.json": {
+      "sha256": "fe2f0f578628adf28f2022f299e8cec9fbe0c46300330b23410f5900ab2c3de0",
+      "size": 525
+    },
+    "packaging-replay/darwin/build.log.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "packaging-replay/darwin/log-locations.json": {
+      "sha256": "bbc79bb071a58eb51b06cd52246b1f5385a55fd2dabdcfae96549bc480aacaf0",
+      "size": 89
+    },
+    "packaging-replay/darwin/replay-execution.log.txt": {
+      "sha256": "16e3923bd1ee141d65a049e5c7dcb6da905804cc272c8684a797878d0d9b2169",
+      "size": 501
+    },
+    "packaging-replay/darwin/result.json": {
+      "sha256": "1cec575b1189f7a593adaefe4f5a104ed0584e968c28d9415c11c654c90cda56",
+      "size": 1827
+    },
+    "packaging-replay/darwin/runner-evidence.json": {
+      "sha256": "70fb6cfed4aa206e38aa705d93739c7ecc3c05ef0747a9c798f50fde2c04a1ca",
+      "size": 67701
+    },
+    "packaging-replay/darwin/sem-full-raw.json": {
+      "sha256": "f34107c069f838d889f556572d802cec1d7f128a670068ac4b8da7299dca8383",
+      "size": 56505
+    },
+    "packaging-replay/darwin/sem09-retention-branch.json": {
+      "sha256": "2783d3e4922c6df36791b2360d7b4b869f033f17cedde530d175660996594dbc",
+      "size": 10069
+    },
+    "packaging-replay/darwin/tamper-rejection.json": {
+      "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+      "size": 133
+    },
+    "packaging-replay/linux/backup-restore.json": {
+      "sha256": "5bcda291d42842ce073a9444b3871adbb98987ec21cba4d64909678981ec8cf1",
+      "size": 525
+    },
+    "packaging-replay/linux/build.log.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "packaging-replay/linux/log-locations.json": {
+      "sha256": "bbc79bb071a58eb51b06cd52246b1f5385a55fd2dabdcfae96549bc480aacaf0",
+      "size": 89
+    },
+    "packaging-replay/linux/replay-execution.log.txt": {
+      "sha256": "abc779b7d3aff122213123dfdab02fd4833f8005f3b892672b925e4099636107",
+      "size": 501
+    },
+    "packaging-replay/linux/result.json": {
+      "sha256": "29a1e7d7af4b090562fef18c18074e90ad16293df39e7a0cd7c0e0e75b606cbc",
+      "size": 1826
+    },
+    "packaging-replay/linux/runner-evidence.json": {
+      "sha256": "0442131fee624dd017332d147e2e9a50a084eb638562aa1f8846977c01dafc53",
+      "size": 69731
+    },
+    "packaging-replay/linux/sem-full-raw.json": {
+      "sha256": "c51fa40b4d962b593b1ff0f6a8875e6437d324afda5212b241b0b3994e368117",
+      "size": 56505
+    },
+    "packaging-replay/linux/sem09-retention-branch.json": {
+      "sha256": "3f9a2b49944ece8a25cf0968c6342df0f8f0cdb065eeab5516f15d048594239d",
+      "size": 10069
+    },
+    "packaging-replay/linux/tamper-rejection.json": {
+      "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+      "size": 133
+    },
+    "packaging-replay/replay-race.txt": {
+      "sha256": "428d2191faaf7c45b4d834ff944b414463c40e8d7e130683ce036c31eb57ef78",
+      "size": 93
+    },
+    "packaging-replay/restore-race.txt": {
+      "sha256": "5f4813dc1e943edb7a68d5fc7a9bc9371c75c9d26b739d04bf9d4a4e7ca546b1",
+      "size": 103
+    },
+    "packaging-replay/verification.json": {
+      "sha256": "7ede7ff52c47a74044cd649c8e50e7729a44115caf6e16c0a2fcd250e73d0b65",
+      "size": 1097
+    },
+    "packaging-replay/windows-attempt/build.log.txt": {
+      "sha256": "b0e90235dcfd9eac3b3ed5c93a2a5ba6372a15fd6c6f12733da2ea0651c4157c",
+      "size": 522
+    },
+    "packaging-replay/windows-attempt/replay-execution.log.txt": {
+      "sha256": "3b99288abdb273f2b6d78d250a8d3c81fc1cc154de0f013ee76bf30cb2e50299",
+      "size": 173
+    },
+    "packaging-replay/windows-attempt/result.json": {
+      "sha256": "27d4e8ca1062f8988368a0f4577492cd606c9f15a547cd752ae40b69d94abf36",
+      "size": 891
+    },
+    "replay/runner-evidence.json": {
+      "sha256": "4b7678b5335f754f929db6f94b135e9a19b8ba1674dbaa4460f2969b39050a89",
+      "size": 67087
+    },
+    "replay/runtime/backup-restore.json": {
+      "sha256": "63d5981f201285f69a95f00eac67b2723159adf75e7cd86c833089a2d3133c9a",
+      "size": 525
+    },
+    "replay/runtime/result.json": {
+      "sha256": "d381b9e1f4a810080614c71874bcc9a32b985f0d362319532b828adb767ee56c",
+      "size": 1827
+    },
+    "replay/runtime/retention-backup/manifest.json": {
+      "sha256": "6f8ef7ae6ed20ba3f7c43e4dca2d496610b328cab0ec24dab3a9ce2a44f5c94d",
+      "size": 1680
+    },
+    "replay/runtime/retention-backup/usage-archives/c91a0bb7e5fe72172870b4d19efce01d/manifest.json": {
+      "sha256": "bebb0b1bceb8d86162e8aef52a751dca87d5d5d60a548cb14366a283a268b56a",
+      "size": 1667
+    },
+    "replay/runtime/retention-backup/usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000001-00000000000000000001-00000000000000000002.jsonl.gz": {
+      "sha256": "e5cd317ea78d7471d3d75418710bde5e54111d459a674b276bd5af0c02bd224c",
+      "size": 1493
+    },
+    "replay/runtime/retention-backup/usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000002-00000000000000000003-00000000000000000004.jsonl.gz": {
+      "sha256": "85533b8c3b33761ccdb66293d370019785bb69eb29bff562eef5bfd2fc393366",
+      "size": 1573
+    },
+    "replay/runtime/sem-full-raw.json": {
+      "sha256": "ec0bffc0c3ba99579a96d0c625e7151058b036348b69a7ee030578c416a28686",
+      "size": 56441
+    },
+    "replay/runtime/sem09-retention-branch.json": {
+      "sha256": "626eb0829961d94d42ecb6315ee7eb9b2eeb4dc980d2e459b7ae1ba56af8eb4e",
+      "size": 10061
+    },
+    "replay/runtime/tamper-rejection.json": {
+      "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+      "size": 133
+    },
+    "sealed-artifact.json": {
+      "sha256": "146542430c45b60a2ee4453c7689aaa24c5b4ed512dc58b0d7742b062affd552",
+      "size": 1272
+    },
+    "source-generation/config-write.json": {
+      "sha256": "a6cb34f24ff886bdeceb7ca2cee0365717d59095c65bc3c58af537d361b4c1c5",
+      "size": 731
+    },
+    "source-generation/controlled-input.json": {
+      "sha256": "d2aed5bccfd1214b81227f930808727d8e7bb606dd5d05a6858cdf5ab4dd6eb4",
+      "size": 4508
+    },
+    "source-generation/price-write.json": {
+      "sha256": "e8eba9d5e692435fe082b0a2f1c5f7da6eb6abc7d5dc3a191916937d19a20a45",
+      "size": 1124
+    },
+    "source-generation/producer-build.json": {
+      "sha256": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+      "size": 2313
+    },
+    "source-generation/quota-write.json": {
+      "sha256": "7169d395e09a4a33f40f3b5e707e2fcf1f6352f9af8b8af6efc4a0a908eb16a9",
+      "size": 193
+    },
+    "source-generation/record.json": {
+      "sha256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+      "size": 6535
+    },
+    "source-generation/release-info.json": {
+      "sha256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "size": 1562
+    },
+    "source-generation/source-snapshot.json": {
+      "sha256": "fb892f0d81db8ea92f05773ef78e2eeb316f791780b0077841820244cd7f654c",
+      "size": 22726
+    },
+    "source-generation/v1-analytics.json": {
+      "sha256": "632c23de9cf4934d455e8d139400b4ca65281dcb67633a05da8233b848a55c6e",
+      "size": 3511
+    },
+    "source-generation/v1-export.jsonl": {
+      "sha256": "c383656fe038dd6950c77da2ad2624f530b3e728a081444cadfb1b878ec82b4f",
+      "size": 3913
+    }
+  },
+  "gitSnapshotPolicy": "Metadata index only. Original DB/key, declared .log files and full backups are available in the immutable sealedArtifact. Replay materializes that archive; the Git metadata directory is not the replay input.",
+  "lane": [
+    "A",
+    "D"
+  ],
+  "linuxReplay": {
+    "image": "debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b",
+    "independentAcceptance": "pending",
+    "parentIndex": "sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251",
+    "platform": {
+      "goArch": "amd64",
+      "goOS": "linux",
+      "goVersion": "go1.26.1"
+    },
+    "qualificationExecutableSHA256": "390352eb5d40bf1d6d057295cb356f9c35a147d83fa75486dc52e27009a9acb3",
+    "resultSHA256": "79d094a4961efd37491966fd0319aec941d53299de06d099edd4ed1aba0365ff",
+    "runtimeAssertions": "pass",
+    "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "status": "pass"
+  },
+  "packagingRevalidation": {
+    "ci": {
+      "conclusion": "success",
+      "evidenceLocations": {
+        "macos-latest": "packaging-replay/ci/macos-latest/ci-observation.json",
+        "ubuntu-latest": "packaging-replay/ci/ubuntu-latest/ci-observation.json",
+        "windows-latest": "packaging-replay/ci/windows-latest/ci-observation.json"
+      },
+      "runID": 38509940326,
+      "scope": {
+        "linux": "materialization + full pinned-container replay",
+        "macos": "materialization + full replay",
+        "windows": "materialization runtime + native compile; full SQLite replay remains pending"
+      },
+      "status": "completed",
+      "testedMergeCommit": "8e483cb73402056aadd450d0680af072c6564379",
+      "workflowHeadSHA": "7dad61ad750cccad951ea3464c2967c1de2037cd"
+    },
+    "independentAcceptance": "pending",
+    "originalNoGoHead": "b86ecacc4c3b4b4339978c22acd6af88b6e04e3f",
+    "platforms": {
+      "darwin": {
+        "logLocationMap": "packaging-replay/darwin/log-locations.json",
+        "result": {
+          "AfterDigest": "8a047129330f578f8d686ca6c7f84398fe4216f49860975c7e117b307cb4f3c4",
+          "BeforeDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+          "Phase4A07Complete": false,
+          "Phase4AComplete": false,
+          "SQLite": {
+            "checkpoint": [
+              {
+                "busy": 0,
+                "checkpointed": 0,
+                "log": 0
+              }
+            ],
+            "foreignKeyCheck": [],
+            "integrityCheck": [
+              {
+                "integrity_check": "ok"
+              }
+            ],
+            "journalMode": [
+              {
+                "journal_mode": "wal"
+              }
+            ]
+          },
+          "SourceAfterDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+          "SourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+          "SourceGeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+          "TrustedHopReceipt": false,
+          "UpgradeAuthorized": false,
+          "VerifierCodeCommit": "e6e74cd9435359dc0b157e71df569f7ca8415de1",
+          "backupRestoreEvidenceSHA256": "fe2f0f578628adf28f2022f299e8cec9fbe0c46300330b23410f5900ab2c3de0",
+          "caseID": "SRC-11",
+          "independentAcceptance": "pending",
+          "migrationStates": [
+            {
+              "appliedRows": 0,
+              "changedRows": 0,
+              "lastEventId": 0,
+              "name": "usage_cache_accounting_v2",
+              "processedRows": 0,
+              "status": "completed",
+              "targetEventId": 0,
+              "updatedAtMs": 0
+            }
+          ],
+          "other48Cases": "pending",
+          "platform": {
+            "goArch": "amd64",
+            "goOS": "darwin",
+            "goVersion": "go1.26.1",
+            "qualificationOnly": true
+          },
+          "retentionBackupDigest": "8a047129330f578f8d686ca6c7f84398fe4216f49860975c7e117b307cb4f3c4",
+          "runtimeAssertions": "pass",
+          "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+          "tamperRejectionEvidenceSHA256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb"
+        },
+        "resultLocation": "packaging-replay/darwin/result.json",
+        "resultSHA256": "1cec575b1189f7a593adaefe4f5a104ed0584e968c28d9415c11c654c90cda56",
+        "runnerEvidenceLocation": "packaging-replay/darwin/runner-evidence.json"
+      },
+      "linux": {
+        "logLocationMap": "packaging-replay/linux/log-locations.json",
+        "result": {
+          "AfterDigest": "d8bf8aa812d4febb368c23b729036c4e09088cf1c42bf75e8659a4da4b4041b8",
+          "BeforeDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+          "Phase4A07Complete": false,
+          "Phase4AComplete": false,
+          "SQLite": {
+            "checkpoint": [
+              {
+                "busy": 0,
+                "checkpointed": 0,
+                "log": 0
+              }
+            ],
+            "foreignKeyCheck": [],
+            "integrityCheck": [
+              {
+                "integrity_check": "ok"
+              }
+            ],
+            "journalMode": [
+              {
+                "journal_mode": "wal"
+              }
+            ]
+          },
+          "SourceAfterDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+          "SourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+          "SourceGeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+          "TrustedHopReceipt": false,
+          "UpgradeAuthorized": false,
+          "VerifierCodeCommit": "e6e74cd9435359dc0b157e71df569f7ca8415de1",
+          "backupRestoreEvidenceSHA256": "5bcda291d42842ce073a9444b3871adbb98987ec21cba4d64909678981ec8cf1",
+          "caseID": "SRC-11",
+          "independentAcceptance": "pending",
+          "migrationStates": [
+            {
+              "appliedRows": 0,
+              "changedRows": 0,
+              "lastEventId": 0,
+              "name": "usage_cache_accounting_v2",
+              "processedRows": 0,
+              "status": "completed",
+              "targetEventId": 0,
+              "updatedAtMs": 0
+            }
+          ],
+          "other48Cases": "pending",
+          "platform": {
+            "goArch": "amd64",
+            "goOS": "linux",
+            "goVersion": "go1.26.1",
+            "qualificationOnly": true
+          },
+          "retentionBackupDigest": "d8bf8aa812d4febb368c23b729036c4e09088cf1c42bf75e8659a4da4b4041b8",
+          "runtimeAssertions": "pass",
+          "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+          "tamperRejectionEvidenceSHA256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb"
+        },
+        "resultLocation": "packaging-replay/linux/result.json",
+        "resultSHA256": "29a1e7d7af4b090562fef18c18074e90ad16293df39e7a0cd7c0e0e75b606cbc",
+        "runnerEvidenceLocation": "packaging-replay/linux/runner-evidence.json"
+      }
+    },
+    "repair": "original byte-identical sealed artifact materialized locally after pinned outer hash verification; no regeneration",
+    "reviewFinding": "missing raw sealed bundle/key and ignored declared logs prevented independent clean-checkout replay",
+    "verifierCodeCommit": "e6e74cd9435359dc0b157e71df569f7ca8415de1",
+    "windows": {
+      "archiveMaterialization": "runtime-pass",
+      "bundleQualification": "pending",
+      "ciScope": "Windows materialization runtime + compile; complete replay is currently qualified only on Linux/Darwin",
+      "failureEvidenceLocation": "packaging-replay/windows-attempt/result.json",
+      "fullReplay": "failed-before-SEM",
+      "jobID": 115672773642,
+      "runID": 38508948388
+    }
+  },
+  "planCommit": "26b5d6bde1c30e8187135c87a8b84b6c808f23f0",
+  "planEvidencePath": "tests/fixtures/phase4a-evidence/src-11",
+  "producerAndHarness": {
+    "generationExitCode": 0,
+    "generationRunnerCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+    "generationRunnerExecutableSHA256": "390352eb5d40bf1d6d057295cb356f9c35a147d83fa75486dc52e27009a9acb3",
+    "linuxIsolation": {
+      "capabilities": "none",
+      "image": "debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b",
+      "imageID": "sha256:db9f02c6bde9fa90cc8074c92754b2b046947392f1a857726e77f041febb7b82",
+      "mounts": "runner/archive/profile read-only; unique output writable; private tmpfs",
+      "network": "none",
+      "parentIndex": "sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251",
+      "readOnlyRoot": true
+    },
+    "replayExitCode": 0,
+    "replayRunnerCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+    "replayRunnerExecutableSHA256": "4e73633f539fc7f4cac7d446ce299032e93a57e5a8d2107e24875a7aef0145e3",
+    "sourceProcess": {
+      "arguments": [],
+      "deliveredPayloads": 5,
+      "environment": [
+        "CPA_MANAGER_CONFIG=<task-scratch>/source/config.json",
+        "HTTP_ADDR=<private-listener>",
+        "CPA_UPSTREAM_URL=<private-http-queue>",
+        "CPA_MANAGEMENT_KEY=<qualification-only-secret>",
+        "CPA_MANAGER_ADMIN_KEY=<qualification-only-secret>",
+        "USAGE_COLLECTOR_MODE=http",
+        "USAGE_POLL_INTERVAL_MS=100",
+        "USAGE_QUOTA_COOLDOWN_ENABLED=true",
+        "TZ=UTC"
+      ],
+      "exitCode": 0,
+      "expectedUniqueEvents": 4,
+      "finishedAt": "2026-10-14T02:58:41.023527964Z",
+      "pid": 15,
+      "queueCalls": 4,
+      "reaped": true,
+      "startedAt": "2026-10-14T02:58:40.707676461Z"
+    },
+    "toolchain": {
+      "goArch": "amd64",
+      "goOS": "linux",
+      "goVersion": "go1.26.1",
+      "qualificationOnly": true
+    }
+  },
+  "runtime": {
+    "backupRestoreEvidenceSHA256": "63d5981f201285f69a95f00eac67b2723159adf75e7cd86c833089a2d3133c9a",
+    "linuxReplayResultSHA256": "79d094a4961efd37491966fd0319aec941d53299de06d099edd4ed1aba0365ff",
+    "result": {
+      "AfterDigest": "2500d2a2bcc4f89456a7d6a434087fb305e5c9be44b42cef1552233c5e660947",
+      "BeforeDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "Phase4A07Complete": false,
+      "Phase4AComplete": false,
+      "SQLite": {
+        "checkpoint": [
+          {
+            "busy": 0,
+            "checkpointed": 0,
+            "log": 0
+          }
+        ],
+        "foreignKeyCheck": [],
+        "integrityCheck": [
+          {
+            "integrity_check": "ok"
+          }
+        ],
+        "journalMode": [
+          {
+            "journal_mode": "wal"
+          }
+        ]
+      },
+      "SourceAfterDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "SourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "SourceGeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+      "TrustedHopReceipt": false,
+      "UpgradeAuthorized": false,
+      "VerifierCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+      "backupRestoreEvidenceSHA256": "63d5981f201285f69a95f00eac67b2723159adf75e7cd86c833089a2d3133c9a",
+      "caseID": "SRC-11",
+      "independentAcceptance": "pending",
+      "migrationStates": [
+        {
+          "appliedRows": 0,
+          "changedRows": 0,
+          "lastEventId": 0,
+          "name": "usage_cache_accounting_v2",
+          "processedRows": 0,
+          "status": "completed",
+          "targetEventId": 0,
+          "updatedAtMs": 0
+        }
+      ],
+      "other48Cases": "pending",
+      "platform": {
+        "goArch": "amd64",
+        "goOS": "darwin",
+        "goVersion": "go1.26.1",
+        "qualificationOnly": true
+      },
+      "retentionBackupDigest": "2500d2a2bcc4f89456a7d6a434087fb305e5c9be44b42cef1552233c5e660947",
+      "runtimeAssertions": "pass",
+      "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+      "tamperRejectionEvidenceSHA256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb"
+    },
+    "retentionBackupManifest": {
+      "entries": {
+        "config": {
+          "present": true,
+          "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+          "size": 243
+        },
+        "data-key": {
+          "present": true,
+          "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a",
+          "size": 44
+        },
+        "database": {
+          "present": true,
+          "sha256": "8b2ab202627d7e8b7ccf12634fc25a799f7f2174d9fad5f637bfabb841a013ad",
+          "size": 827392
+        },
+        "database-journal": {
+          "present": false
+        },
+        "database-shm": {
+          "present": false
+        },
+        "database-wal": {
+          "present": false
+        },
+        "usage-archives": {
+          "directory": true,
+          "present": true
+        },
+        "usage-archives/c91a0bb7e5fe72172870b4d19efce01d": {
+          "directory": true,
+          "present": true
+        },
+        "usage-archives/c91a0bb7e5fe72172870b4d19efce01d/manifest.json": {
+          "present": true,
+          "sha256": "bebb0b1bceb8d86162e8aef52a751dca87d5d5d60a548cb14366a283a268b56a",
+          "size": 1667
+        },
+        "usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000001-00000000000000000001-00000000000000000002.jsonl.gz": {
+          "present": true,
+          "sha256": "e5cd317ea78d7471d3d75418710bde5e54111d459a674b276bd5af0c02bd224c",
+          "size": 1493
+        },
+        "usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000002-00000000000000000003-00000000000000000004.jsonl.gz": {
+          "present": true,
+          "sha256": "85533b8c3b33761ccdb66293d370019785bb69eb29bff562eef5bfd2fc393366",
+          "size": 1573
+        }
+      },
+      "fence": "cooperating-manager-lock",
+      "sourceRevision": "2500d2a2bcc4f89456a7d6a434087fb305e5c9be44b42cef1552233c5e660947",
+      "version": 2
+    },
+    "retentionRawArtifactPolicy": "Full original retention backup bytes, including DB/config/fixture-only key and usage archives, are preserved under src-11/replay/runtime/retention-backup and src-11/linux-replay/runtime/retention-backup in sealedArtifact.",
+    "semanticEvidence": {
+      "SEM-01": "runtime-pass",
+      "SEM-02": "runtime-pass",
+      "SEM-03": "runtime-pass",
+      "SEM-04": "runtime-pass",
+      "SEM-05": "runtime-pass",
+      "SEM-06": "runtime-pass",
+      "SEM-07": "runtime-pass",
+      "SEM-08": "runtime-pass",
+      "SEM-09": "runtime-pass",
+      "sem09SHA256": "626eb0829961d94d42ecb6315ee7eb9b2eeb4dc980d2e459b7ae1ba56af8eb4e",
+      "semFullRawSHA256": "ec0bffc0c3ba99579a96d0c625e7151058b036348b69a7ee030578c416a28686"
+    },
+    "tamperRejectionEvidenceSHA256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb"
+  },
+  "schemaVersion": 2,
+  "sealedArtifact": {
+    "TrustedHopReceipt": false,
+    "UpgradeAuthorized": false,
+    "archiveName": "src-11-0e106589baef-sealed-evidence.tar.gz",
+    "archiveSHA256": "c6abbb0594a874708b41795de6d1035fd4263fec1c067496a8b0bb1d26fec6d2",
+    "archiveSize": 8752307,
+    "assetID": 639129253,
+    "bundleManifestSHA256": "8c9578bbe29911f5339b1c2c7c3b6c773e5ea1b681802af837c5c1c4c74df28c",
+    "caseID": "SRC-11",
+    "downloadURL": "https://github.com/seakee/CPA-Manager-Plus/releases/download/qualification-src11-0e106589baef-20261014/src-11-0e106589baef-sealed-evidence.tar.gz",
+    "fileInventory": {
+      "producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz": {
+        "sha256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+        "size": 8564211
+      },
+      "src-11/README.md": {
+        "sha256": "64fad8ea569f3a2bf3da7af15948ab5c637d902c09d364f882edcef1a2f75232",
+        "size": 2982
+      },
+      "src-11/bundle/config": {
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+        "size": 243
+      },
+      "src-11/bundle/data-key": {
+        "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a",
+        "size": 44
+      },
+      "src-11/bundle/database": {
+        "sha256": "7ce02b5b7338bd6c2b43eaec255057bc793250f9c76702e64c3a851ddb3198b8",
+        "size": 659456
+      },
+      "src-11/bundle/manifest.json": {
+        "sha256": "8c9578bbe29911f5339b1c2c7c3b6c773e5ea1b681802af837c5c1c4c74df28c",
+        "size": 829
+      },
+      "src-11/evidence-manifest.json": {
+        "sha256": "693317b1c931c36e4a18f4bb06680950ee37e47f0da49a93ecbd4efe2fee7ef5",
+        "size": 18996
+      },
+      "src-11/generation-build.log": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "src-11/generation-execution.log": {
+        "sha256": "dbeeda373f2cbf43cd8ff988d43128b3d499ce4a07481c9de9b5bf891bb0d849",
+        "size": 199
+      },
+      "src-11/generation-index.json": {
+        "sha256": "3a59d99b0bd7422ad6ab965bcd69e2f10a072992700bdab553a347a6ebe71904",
+        "size": 266
+      },
+      "src-11/generation-runner-evidence.json": {
+        "sha256": "4cf9f5043139ccdabe0f9b2881499f7ba7725f990e3c048dc88596eaad27b5cc",
+        "size": 69029
+      },
+      "src-11/linux-replay/execution.log": {
+        "sha256": "242c31e2a0be12539fcacd59237e317e330b64256614d008f4c171e4e9a7adaa",
+        "size": 501
+      },
+      "src-11/linux-replay/runner-evidence.json": {
+        "sha256": "9f60ee869a22f109a4784bdacce15b49f9fce2d85715c7838eb8b658d8d52ad2",
+        "size": 726
+      },
+      "src-11/linux-replay/runtime/backup-restore.json": {
+        "sha256": "b78e6726ec608c27e62b84bf45317f22c12e0ffd51d4718db24fe93ff587bf71",
+        "size": 525
+      },
+      "src-11/linux-replay/runtime/result.json": {
+        "sha256": "79d094a4961efd37491966fd0319aec941d53299de06d099edd4ed1aba0365ff",
+        "size": 1826
+      },
+      "src-11/linux-replay/runtime/retention-backup/config": {
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+        "size": 243
+      },
+      "src-11/linux-replay/runtime/retention-backup/data-key": {
+        "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a",
+        "size": 44
+      },
+      "src-11/linux-replay/runtime/retention-backup/database": {
+        "sha256": "f8e40defd91bf2810d264074d052e53a4c8f10833a2df79c14a07797c187c741",
+        "size": 827392
+      },
+      "src-11/linux-replay/runtime/retention-backup/manifest.json": {
+        "sha256": "2f9b450c6016d1bff2d257fa93e2fa64b47ff112999ceac659638f4fd7bdbad4",
+        "size": 1680
+      },
+      "src-11/linux-replay/runtime/retention-backup/usage-archives/bbaf4c3b66dbd592a8cec6884574a870/manifest.json": {
+        "sha256": "c1215cab37c22be3aff1446727b28251a82182b96b547f008f261ba20f2f03af",
+        "size": 1667
+      },
+      "src-11/linux-replay/runtime/retention-backup/usage-archives/bbaf4c3b66dbd592a8cec6884574a870/segment-000001-00000000000000000001-00000000000000000002.jsonl.gz": {
+        "sha256": "e5cd317ea78d7471d3d75418710bde5e54111d459a674b276bd5af0c02bd224c",
+        "size": 1493
+      },
+      "src-11/linux-replay/runtime/retention-backup/usage-archives/bbaf4c3b66dbd592a8cec6884574a870/segment-000002-00000000000000000003-00000000000000000004.jsonl.gz": {
+        "sha256": "85533b8c3b33761ccdb66293d370019785bb69eb29bff562eef5bfd2fc393366",
+        "size": 1573
+      },
+      "src-11/linux-replay/runtime/sem-full-raw.json": {
+        "sha256": "38de0db7402b7f9b0f75ae59e0bd0f653646252c41461bdc7fbb8a9c10f5812b",
+        "size": 56441
+      },
+      "src-11/linux-replay/runtime/sem09-retention-branch.json": {
+        "sha256": "821a65428b68cdbb927126081c98151dfd3bafb9c39ee5a34d987dd2d9206796",
+        "size": 10061
+      },
+      "src-11/linux-replay/runtime/tamper-rejection.json": {
+        "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+        "size": 133
+      },
+      "src-11/replay/build.log": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "src-11/replay/replay-execution.log": {
+        "sha256": "34b7ddefbd12ae58fe537972e6c39e99ab168ad2af33afc774cb81ac1c31372c",
+        "size": 501
+      },
+      "src-11/replay/runner-evidence.json": {
+        "sha256": "4b7678b5335f754f929db6f94b135e9a19b8ba1674dbaa4460f2969b39050a89",
+        "size": 67087
+      },
+      "src-11/replay/runtime/backup-restore.json": {
+        "sha256": "63d5981f201285f69a95f00eac67b2723159adf75e7cd86c833089a2d3133c9a",
+        "size": 525
+      },
+      "src-11/replay/runtime/result.json": {
+        "sha256": "d381b9e1f4a810080614c71874bcc9a32b985f0d362319532b828adb767ee56c",
+        "size": 1827
+      },
+      "src-11/replay/runtime/retention-backup/config": {
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+        "size": 243
+      },
+      "src-11/replay/runtime/retention-backup/data-key": {
+        "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a",
+        "size": 44
+      },
+      "src-11/replay/runtime/retention-backup/database": {
+        "sha256": "8b2ab202627d7e8b7ccf12634fc25a799f7f2174d9fad5f637bfabb841a013ad",
+        "size": 827392
+      },
+      "src-11/replay/runtime/retention-backup/manifest.json": {
+        "sha256": "6f8ef7ae6ed20ba3f7c43e4dca2d496610b328cab0ec24dab3a9ce2a44f5c94d",
+        "size": 1680
+      },
+      "src-11/replay/runtime/retention-backup/usage-archives/c91a0bb7e5fe72172870b4d19efce01d/manifest.json": {
+        "sha256": "bebb0b1bceb8d86162e8aef52a751dca87d5d5d60a548cb14366a283a268b56a",
+        "size": 1667
+      },
+      "src-11/replay/runtime/retention-backup/usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000001-00000000000000000001-00000000000000000002.jsonl.gz": {
+        "sha256": "e5cd317ea78d7471d3d75418710bde5e54111d459a674b276bd5af0c02bd224c",
+        "size": 1493
+      },
+      "src-11/replay/runtime/retention-backup/usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000002-00000000000000000003-00000000000000000004.jsonl.gz": {
+        "sha256": "85533b8c3b33761ccdb66293d370019785bb69eb29bff562eef5bfd2fc393366",
+        "size": 1573
+      },
+      "src-11/replay/runtime/sem-full-raw.json": {
+        "sha256": "ec0bffc0c3ba99579a96d0c625e7151058b036348b69a7ee030578c416a28686",
+        "size": 56441
+      },
+      "src-11/replay/runtime/sem09-retention-branch.json": {
+        "sha256": "626eb0829961d94d42ecb6315ee7eb9b2eeb4dc980d2e459b7ae1ba56af8eb4e",
+        "size": 10061
+      },
+      "src-11/replay/runtime/tamper-rejection.json": {
+        "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+        "size": 133
+      },
+      "src-11/source-generation/config-write.json": {
+        "sha256": "a6cb34f24ff886bdeceb7ca2cee0365717d59095c65bc3c58af537d361b4c1c5",
+        "size": 731
+      },
+      "src-11/source-generation/controlled-input.json": {
+        "sha256": "d2aed5bccfd1214b81227f930808727d8e7bb606dd5d05a6858cdf5ab4dd6eb4",
+        "size": 4508
+      },
+      "src-11/source-generation/price-write.json": {
+        "sha256": "e8eba9d5e692435fe082b0a2f1c5f7da6eb6abc7d5dc3a191916937d19a20a45",
+        "size": 1124
+      },
+      "src-11/source-generation/producer-build.json": {
+        "sha256": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+        "size": 2313
+      },
+      "src-11/source-generation/producer.log": {
+        "sha256": "1b35ed2712c3ad33798982c29016b92264148ab356ff28b3adee637dfa9c70d5",
+        "size": 7729
+      },
+      "src-11/source-generation/quota-write.json": {
+        "sha256": "7169d395e09a4a33f40f3b5e707e2fcf1f6352f9af8b8af6efc4a0a908eb16a9",
+        "size": 193
+      },
+      "src-11/source-generation/record.json": {
+        "sha256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+        "size": 6535
+      },
+      "src-11/source-generation/release-info.json": {
+        "sha256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+        "size": 1562
+      },
+      "src-11/source-generation/source-snapshot.json": {
+        "sha256": "fb892f0d81db8ea92f05773ef78e2eeb316f791780b0077841820244cd7f654c",
+        "size": 22726
+      },
+      "src-11/source-generation/v1-analytics.json": {
+        "sha256": "632c23de9cf4934d455e8d139400b4ca65281dcb67633a05da8233b848a55c6e",
+        "size": 3511
+      },
+      "src-11/source-generation/v1-export.jsonl": {
+        "sha256": "c383656fe038dd6950c77da2ad2624f530b3e728a081444cadfb1b878ec82b4f",
+        "size": 3913
+      }
+    },
+    "generationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+    "immutable": true,
+    "independentAcceptance": "pending",
+    "originalEvidenceManifestSHA256": "693317b1c931c36e4a18f4bb06680950ee37e47f0da49a93ecbd4efe2fee7ef5",
+    "originalRunnerLogLocations": {
+      "src-11/generation-runner-evidence.json": {
+        "build.log": "src-11/generation-build.log",
+        "generation-execution.log": "src-11/generation-execution.log"
+      },
+      "src-11/linux-replay/runner-evidence.json": {
+        "execution.log": "src-11/linux-replay/execution.log"
+      },
+      "src-11/replay/runner-evidence.json": {
+        "build.log": "src-11/replay/build.log",
+        "replay-execution.log": "src-11/replay/replay-execution.log"
+      }
+    },
+    "packagingManifestSHA256": "e1c96644c30a1563fc617485bd2094efda4c1b37f50baa933e66f6e000ecd837",
+    "releaseID": 412319673,
+    "repository": "seakee/CPA-Manager-Plus",
+    "schemaVersion": 1,
+    "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "sourceGeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+    "tag": "qualification-src11-0e106589baef-20261014",
+    "tagCommit": "b86ecacc4c3b4b4339978c22acd6af88b6e04e3f"
+  },
+  "source": {
+    "ControlledInputSHA256": "d2aed5bccfd1214b81227f930808727d8e7bb606dd5d05a6858cdf5ab4dd6eb4",
+    "GenerationEvidenceFiles": {
+      "config-write.json": "a6cb34f24ff886bdeceb7ca2cee0365717d59095c65bc3c58af537d361b4c1c5",
+      "controlled-input.json": "d2aed5bccfd1214b81227f930808727d8e7bb606dd5d05a6858cdf5ab4dd6eb4",
+      "price-write.json": "e8eba9d5e692435fe082b0a2f1c5f7da6eb6abc7d5dc3a191916937d19a20a45",
+      "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+      "producer.log": "1b35ed2712c3ad33798982c29016b92264148ab356ff28b3adee637dfa9c70d5",
+      "quota-write.json": "7169d395e09a4a33f40f3b5e707e2fcf1f6352f9af8b8af6efc4a0a908eb16a9",
+      "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "source-snapshot.json": "fb892f0d81db8ea92f05773ef78e2eeb316f791780b0077841820244cd7f654c",
+      "v1-analytics.json": "632c23de9cf4934d455e8d139400b4ca65281dcb67633a05da8233b848a55c6e",
+      "v1-export.jsonl": "c383656fe038dd6950c77da2ad2624f530b3e728a081444cadfb1b878ec82b4f"
+    },
+    "GenerationIndexSHA256": "3a59d99b0bd7422ad6ab965bcd69e2f10a072992700bdab553a347a6ebe71904",
+    "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation",
+    "GenerationProfile": "src-11-full-raw-revision2-v1",
+    "GenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+    "GeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+    "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "SourceProducerArtifact": {
+      "asset": "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+      "assetID": 616064478,
+      "immutableReleaseID": 404941931,
+      "releaseInfoSHA256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5"
+    },
+    "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "SourceProducerKind": "published-artifact",
+    "SourceRelease": "v1.14.4",
+    "VerifierCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff"
+  },
+  "sourceBundle": {
+    "GeneratedBundleSHA256": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "explicitlyAbsent": {
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": false
+      },
+      "database-wal": {
+        "present": false
+      },
+      "usage-archives": {
+        "present": false
+      }
+    },
+    "manifest": {
+      "entries": {
+        "config": {
+          "present": true,
+          "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+          "size": 243
+        },
+        "data-key": {
+          "present": true,
+          "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a",
+          "size": 44
+        },
+        "database": {
+          "present": true,
+          "sha256": "7ce02b5b7338bd6c2b43eaec255057bc793250f9c76702e64c3a851ddb3198b8",
+          "size": 659456
+        },
+        "database-journal": {
+          "present": false
+        },
+        "database-shm": {
+          "present": false
+        },
+        "database-wal": {
+          "present": false
+        },
+        "usage-archives": {
+          "present": false
+        }
+      },
+      "fence": "cooperating-manager-lock",
+      "sourceRevision": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "version": 2
+    },
+    "rawArtifactLocation": "Immutable sealedArtifact: src-11/bundle/database and src-11/bundle/data-key",
+    "rawArtifactPolicy": "database and data.key bytes remain in the task-owned run output; this shared evidence records their verified digests and complete inventory, while avoiding committed SQLite/private key material"
+  },
+  "status": "runtime-pass-independent-acceptance-pending"
+}

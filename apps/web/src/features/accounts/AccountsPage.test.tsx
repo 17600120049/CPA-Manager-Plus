@@ -439,6 +439,7 @@ const { mocks } = vi.hoisted(() => {
         }> => ({ run: null, results: [] })
       ),
       getActiveQuotaCooldowns: vi.fn(async (): Promise<QuotaCooldownInfo[]> => []),
+      recoverQuotaCooldown: vi.fn(async () => ({ recovered: false })),
       listAccountActionCandidates: vi.fn(
         async (): Promise<AccountActionCandidatesResponse> => ({
           items: [],
@@ -872,6 +873,7 @@ vi.mock('@/services/api', () => ({
     listCodexInspectionRuns: mocks.listCodexInspectionRuns,
     getCodexInspectionRun: mocks.getCodexInspectionRun,
     getActiveQuotaCooldowns: mocks.getActiveQuotaCooldowns,
+    recoverQuotaCooldown: mocks.recoverQuotaCooldown,
     listAccountActionCandidates: mocks.listAccountActionCandidates,
   },
   authFilesApi: {
@@ -1392,6 +1394,8 @@ describe('AccountsPage replacement flows', () => {
     mocks.getCodexInspectionRun.mockResolvedValue({ run: null, results: [] });
     mocks.getActiveQuotaCooldowns.mockReset();
     mocks.getActiveQuotaCooldowns.mockResolvedValue([]);
+    mocks.recoverQuotaCooldown.mockClear();
+    mocks.recoverQuotaCooldown.mockResolvedValue({ recovered: false });
     mocks.listAccountActionCandidates.mockReset();
     mocks.listAccountActionCandidates.mockResolvedValue({ items: [], pendingCount: 0 });
     mocks.quotaState.antigravityQuota = {};
@@ -14472,9 +14476,13 @@ describe('AccountsPage replacement flows', () => {
     staleQuotaResult.resolve(makeCodexQuotaData(1, [makeResetCredit('stale-credit-1')]));
     await flushPromises();
 
-    expect(mocks.consumeResetCredit).toHaveBeenCalledTimes(1);
+    expect(mocks.consumeResetCredit).not.toHaveBeenCalled();
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      expect.stringContaining('codex_quota.reset_verify_failed'),
+      'error'
+    );
     const committed = applyCodexQuotaCommits();
-    expect(committed['codex.json::auth-1'].rateLimitResetCreditsAvailableCount).toBe(0);
+    expect(committed['codex.json::auth-1'].rateLimitResetCreditsAvailableCount).toBe(1);
     expect(committed['codex.json::auth-1'].rateLimitResetCredits).toEqual([]);
   });
 
@@ -14505,6 +14513,169 @@ describe('AccountsPage replacement flows', () => {
       expect.objectContaining({ title: 'codex_quota.reset_confirm_title' })
     );
   });
+
+  it('recovers a CPAMP-owned disabled credential only after healthy post-reset verification', async () => {
+    const file = {
+      ...makeCodexFile('codex-disabled-recovery.json', 'auth-recovery-1', 'recovery@example.com'),
+      disabled: true,
+    };
+    mocks.files = [file];
+    mocks.getActiveQuotaCooldowns.mockResolvedValue([
+      {
+        authFileName: file.name,
+        authIndex: 'auth-recovery-1',
+        provider: 'codex',
+        owner: 'cpamp_usage_429',
+        recoverAtMs: Date.now() + 3600000,
+        cooldownId: 42,
+        updatedAtMs: 3000,
+      },
+    ]);
+    mocks.quotaState.codexQuota = buildCredentialScopedQuotaRecord(file, {
+      status: 'success' as const,
+      windows: [],
+      rateLimitResetCreditsAvailableCount: 1,
+    });
+    mocks.recoverQuotaCooldown.mockResolvedValueOnce({ recovered: true });
+    vi.spyOn(CODEX_SUMMARY_CONFIG, 'fetchQuota').mockResolvedValue(
+      makeCodexQuotaData(1, [makeResetCredit('recovery-credit-1')])
+    );
+    vi.spyOn(CODEX_CONFIG, 'fetchQuota').mockResolvedValue({
+      ...makeCodexQuotaData(0),
+      windows: [
+        {
+          id: 'five-hour',
+          label: '5h',
+          usedPercent: 20,
+          resetLabel: 'later',
+          resetAtMs: Date.now() + 60 * 60 * 1000,
+        },
+      ],
+    });
+
+    const renderer = await renderAccountsPage();
+    await openCodexQuotaTab(renderer, 'codex-disabled-recovery.json');
+    await act(async () => {
+      renderer.root.findByProps({ 'data-quota-reset-action': 'true' }).props.onClick();
+    });
+    await flushPromises();
+    const confirmation = mocks.showConfirmation.mock.calls[0]?.[0] as {
+      onConfirm: () => Promise<void>;
+    };
+    await act(async () => {
+      await confirmation.onConfirm();
+    });
+    await flushPromises();
+
+    expect(mocks.recoverQuotaCooldown).toHaveBeenCalledWith(
+      'http://manager.local:18317',
+      'manager-key',
+      {
+        authFileName: 'codex-disabled-recovery.json',
+        authIndex: 'auth-recovery-1',
+        provider: 'codex',
+        cooldownId: 42,
+        updatedAtMs: 3000,
+      }
+    );
+    expect(mocks.resetQuota).toHaveBeenCalledWith(
+      'auth-recovery-1',
+      expect.objectContaining({
+        apiBase: 'http://cpa-a.local:8317',
+        managementKey: 'manager-key',
+      })
+    );
+    expect(mocks.showNotification).toHaveBeenCalledWith(
+      'codex_quota.reset_success:recovery@example.com',
+      'success'
+    );
+  });
+
+  it.each(['changed generation', 'missing generation'])(
+    'keeps disabled credentials fail-closed with %s after quota verification',
+    async (scenario) => {
+      const file = {
+        ...makeCodexFile(
+          'codex-disabled-unconfirmed.json',
+          'auth-unconfirmed-1',
+          'unconfirmed@example.com'
+        ),
+        disabled: true,
+      };
+      mocks.files = [file];
+      const cooldown: QuotaCooldownInfo = {
+        authFileName: file.name,
+        authIndex: 'auth-unconfirmed-1',
+        provider: 'codex',
+        owner: 'cpamp_usage_429',
+        recoverAtMs: Date.now() + 3600000,
+        ...(scenario === 'changed generation' ? { cooldownId: 42, updatedAtMs: 3000 } : {}),
+      };
+      mocks.getActiveQuotaCooldowns.mockResolvedValue([cooldown]);
+      mocks.quotaState.codexQuota = buildCredentialScopedQuotaRecord(file, {
+        status: 'success' as const,
+        windows: [],
+        rateLimitResetCreditsAvailableCount: 1,
+      });
+      mocks.recoverQuotaCooldown.mockResolvedValueOnce({ recovered: false });
+      vi.spyOn(CODEX_SUMMARY_CONFIG, 'fetchQuota').mockResolvedValue(
+        makeCodexQuotaData(1, [makeResetCredit('unconfirmed-credit-1')])
+      );
+      vi.spyOn(CODEX_CONFIG, 'fetchQuota').mockImplementation(async () => {
+        // A new 429 updates even the in-memory object while verification is in
+        // flight. The recovery request must retain the pre-observation token.
+        if (scenario === 'changed generation') cooldown.updatedAtMs = 4000;
+        return {
+          ...makeCodexQuotaData(0),
+          windows: [
+            {
+              id: 'five-hour',
+              label: '5h',
+              usedPercent: 20,
+              resetLabel: 'later',
+              resetAtMs: Date.now() + 60 * 60 * 1000,
+            },
+          ],
+        };
+      });
+
+      const renderer = await renderAccountsPage();
+      await openCodexQuotaTab(renderer, 'codex-disabled-unconfirmed.json');
+      await act(async () => {
+        renderer.root.findByProps({ 'data-quota-reset-action': 'true' }).props.onClick();
+      });
+      await flushPromises();
+      const confirmation = mocks.showConfirmation.mock.calls[0]?.[0] as {
+        onConfirm: () => Promise<void>;
+      };
+      await act(async () => {
+        await confirmation.onConfirm();
+      });
+      await flushPromises();
+
+      expect(mocks.recoverQuotaCooldown).toHaveBeenCalledTimes(
+        scenario === 'changed generation' ? 1 : 0
+      );
+      if (scenario === 'changed generation') {
+        expect(mocks.recoverQuotaCooldown).toHaveBeenCalledWith(
+          'http://manager.local:18317',
+          'manager-key',
+          {
+            authFileName: file.name,
+            authIndex: 'auth-unconfirmed-1',
+            provider: 'codex',
+            cooldownId: 42,
+            updatedAtMs: 3000,
+          }
+        );
+      }
+      expect(mocks.resetQuota).not.toHaveBeenCalled();
+      expect(mocks.showNotification).toHaveBeenCalledWith(
+        'codex_quota.reset_partial_success:unconfirmed@example.com',
+        'warning'
+      );
+    }
+  );
 
   it('does not reset gateway cooldown on normal healthy quota refresh', async () => {
     const file = makeCodexFile('codex-healthy.json', 'auth-healthy-1', 'healthy@example.com');

@@ -5,10 +5,49 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
 )
+
+func TestUpsertActiveGenerationStrictlyAdvancesWithinClockResolution(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "usage.sqlite")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	input := model.QuotaCooldownUpsert{
+		AuthFileName: "codex.json", AuthIndex: "auth-1", Provider: "codex",
+		Owner: model.QuotaCooldownOwnerUsage429, RecoverAtMS: time.Now().Add(time.Hour).UnixMilli(),
+		EventHash: "old-429",
+	}
+	old, err := st.QuotaCooldowns.UpsertActive(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Force the previous generation ahead of the wall clock, exercising the
+	// same-millisecond/clock-rollback collision without sleeps or timing races.
+	generation := time.Now().Add(time.Hour).UnixMilli()
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if _, err := raw.ExecContext(ctx, "update quota_cooldowns set updated_at_ms = ? where id = ?", generation, old.ID); err != nil {
+		t.Fatal(err)
+	}
+	input.EventHash = "new-429"
+	current, err := st.QuotaCooldowns.UpsertActive(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ID != old.ID || current.UpdatedAtMS != generation+1 || current.EventHash != "new-429" {
+		t.Fatalf("generation did not advance: %+v", current)
+	}
+}
 
 func TestUpsertActiveUsesCredentialIdentity(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "usage.sqlite"))

@@ -1,0 +1,29 @@
+{
+  "build": {
+    "command": "go build ./...",
+    "status": "pass"
+  },
+  "goChecksCodeCommit": "b06eebfef683f47d93f7789df3ae181c5f015ae1",
+  "historicalCombinedRaceTimeout": "original b86 evidence had a 10-minute combined-suite timeout; current isolated restore deletion evidence race passed; this is not Phase4A completion",
+  "independentAcceptance": "pending",
+  "managerInternalTests": {
+    "command": "go test ./internal/...",
+    "status": "pass"
+  },
+  "other48Cases": "pending",
+  "packagingReplayVerifierCodeCommit": "e6e74cd9435359dc0b157e71df569f7ca8415de1",
+  "raceReplay": {
+    "command": "go test -race -count=1 -ldflags <recorded-b06-verifier-identity> ./tests/qualification/src11 -run '^TestReplayExactSource$' -timeout 4m",
+    "log": "replay-race.txt",
+    "status": "pass"
+  },
+  "raceRestoreDeletionEvidence": {
+    "command": "go test -race -count=1 ./internal/service/maintenancebundle -run '^TestRestoreArchiveDeletionEvidence$' -timeout 5m",
+    "log": "restore-race.txt",
+    "status": "pass"
+  },
+  "vet": {
+    "command": "go vet ./...",
+    "status": "pass"
+  }
+}

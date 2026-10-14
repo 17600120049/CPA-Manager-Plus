@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "caseID": "SRC-11",
+  "repository": "seakee/CPA-Manager-Plus",
+  "tag": "qualification-src11-0e106589baef-20261014",
+  "tagCommit": "b86ecacc4c3b4b4339978c22acd6af88b6e04e3f",
+  "releaseID": 412319673,
+  "assetID": 639129253,
+  "immutable": true,
+  "downloadURL": "https://github.com/seakee/CPA-Manager-Plus/releases/download/qualification-src11-0e106589baef-20261014/src-11-0e106589baef-sealed-evidence.tar.gz",
+  "archiveName": "src-11-0e106589baef-sealed-evidence.tar.gz",
+  "archiveSHA256": "c6abbb0594a874708b41795de6d1035fd4263fec1c067496a8b0bb1d26fec6d2",
+  "archiveSize": 8752307,
+  "packagingManifestSHA256": "e1c96644c30a1563fc617485bd2094efda4c1b37f50baa933e66f6e000ecd837",
+  "bundleManifestSHA256": "8c9578bbe29911f5339b1c2c7c3b6c773e5ea1b681802af837c5c1c4c74df28c",
+  "generationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+  "originalEvidenceManifestSHA256": "693317b1c931c36e4a18f4bb06680950ee37e47f0da49a93ecbd4efe2fee7ef5",
+  "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "sourceGeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+  "independentAcceptance": "pending",
+  "UpgradeAuthorized": false,
+  "TrustedHopReceipt": false
+}
