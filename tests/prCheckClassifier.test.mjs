@@ -297,6 +297,7 @@ describe('PR check classifier', () => {
     for (const filePath of [
       'apps/ingress/internal/ingress/proxy.go',
       'apps/manager-server/cmd/cpa-manager-plus/main.go',
+      'apps/manager-server/internal/app/app.go',
       'apps/manager-server/internal/config/config.go',
       'apps/manager-server/internal/model/runtime.go',
       'apps/manager-server/internal/http/router/router.go',
