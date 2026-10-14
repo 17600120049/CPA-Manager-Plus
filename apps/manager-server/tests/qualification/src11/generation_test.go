@@ -110,6 +110,12 @@ func TestGenerateExactSource(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"files": []any{map[string]any{"name": "fixture-codex.json", "auth_index": "fixture-codex", "provider": "codex", "disabled": disabled.Load()}}})
 		case "/v0/management/config":
 			w.Write([]byte(`{"usage-statistics-enabled":true,"redis-usage-queue-retention-seconds":60}`))
+		case "/v0/management/usage-statistics-enabled":
+			if r.Method != "PUT" {
+				http.Error(w, "method", 405)
+				return
+			}
+			w.Write([]byte(`{"ok":true}`))
 		case "/v0/management/auth-files/status":
 			if r.Method != "PATCH" {
 				http.Error(w, "method", 405)
