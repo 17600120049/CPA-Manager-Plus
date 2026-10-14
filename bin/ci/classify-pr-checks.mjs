@@ -8,6 +8,9 @@ const CHECK_NAMES = [
   'runtime_supervisor',
   'ingress',
   'windows_sqlite',
+  'windows_preflight',
+  'bundle_boundary',
+  'runtime_lifecycle',
   'native_control',
   'docker',
   'demo_docs',
@@ -34,11 +37,12 @@ const allChecks = (enabled) =>
   Object.fromEntries(CHECK_NAMES.map((checkName) => [checkName, enabled]));
 
 const triggersAllChecks = (filePath) =>
-  startsWithPath(filePath, '.github/workflows') ||
+  filePath === '.github/workflows/pr-check.yml' ||
   filePath === 'bin/ci/classify-pr-checks.mjs' ||
   filePath === 'tests/prCheckClassifier.test.mjs';
 
 const triggersFrontend = (filePath) =>
+  startsWithPath(filePath, '.github/workflows') ||
   startsWithPath(filePath, 'apps/web') ||
   startsWithPath(filePath, 'apps/docs') ||
   startsWithPath(filePath, 'tests') ||
@@ -69,6 +73,57 @@ const triggersRuntimeSupervisor = (filePath) =>
 
 const triggersIngress = (filePath) =>
   startsWithPath(filePath, 'apps/ingress') || filePath === 'Dockerfile.ingress';
+
+const managerServerModuleFile = (filePath, relativePath) =>
+  startsWithPath(filePath, `apps/manager-server/${relativePath}`);
+
+const managerServerDependencyFile = (filePath) =>
+  filePath === 'apps/manager-server/go.mod' || filePath === 'apps/manager-server/go.sum';
+
+const triggersWindowsSQLite = (filePath) =>
+  managerServerModuleFile(filePath, 'internal/repository/sqlite') ||
+  managerServerModuleFile(filePath, 'internal/adapters/sqlite') ||
+  managerServerDependencyFile(filePath);
+
+const triggersWindowsPreflight = (filePath) =>
+  managerServerModuleFile(filePath, 'cmd/cpa-manager-plus') ||
+  managerServerModuleFile(filePath, 'internal/processlock') ||
+  managerServerModuleFile(filePath, 'internal/config') ||
+  managerServerModuleFile(filePath, 'internal/service/legacypreflight') ||
+  managerServerModuleFile(filePath, 'internal/command/legacypreflight') ||
+  triggersWindowsSQLite(filePath) ||
+  managerServerDependencyFile(filePath) ||
+  filePath === 'bin/release/package-native.sh';
+
+const triggersBundleBoundary = (filePath) =>
+  managerServerModuleFile(filePath, 'internal/service/maintenancebundle') ||
+  managerServerModuleFile(filePath, 'internal/command/managerdatabundle') ||
+  managerServerModuleFile(filePath, 'internal/processlock') ||
+  managerServerModuleFile(filePath, 'internal/service/legacyartifact') ||
+  managerServerModuleFile(filePath, 'internal/command/legacyartifact') ||
+  triggersWindowsSQLite(filePath) ||
+  managerServerDependencyFile(filePath);
+
+const triggersRuntimeLifecycle = (filePath) =>
+  managerServerModuleFile(filePath, 'internal/service/cpaupdate') ||
+  managerServerModuleFile(filePath, 'internal/service/runtime') ||
+  managerServerModuleFile(filePath, 'internal/repository/setting') ||
+  managerServerModuleFile(filePath, 'internal/service/bootstrap') ||
+  startsWithPath(filePath, 'apps/runtime-supervisor') ||
+  startsWithPath(filePath, 'apps/ingress') ||
+  startsWithPath(filePath, 'docker/runtime') ||
+  filePath.startsWith('bin/ci/runtime12-') ||
+  filePath.startsWith('bin/ci/runtime14-') ||
+  filePath.startsWith('bin/ci/runtime17-') ||
+  filePath.startsWith('bin/ci/runtime18-') ||
+  filePath.startsWith('bin/ci/runtime19-') ||
+  filePath === 'bin/ci/validate-runtime12-compose.mjs' ||
+  filePath === 'Dockerfile.manager-server' ||
+  filePath === 'Dockerfile.ingress' ||
+  filePath === 'Dockerfile.runtime' ||
+  filePath === 'docker-compose.yml' ||
+  filePath === 'docker-compose.manager.yml' ||
+  managerServerDependencyFile(filePath);
 
 const triggersNativeControl = (filePath) =>
   startsWithPath(filePath, 'bin/native') ||
@@ -121,7 +176,10 @@ export const classifyChangedFiles = (changedFiles) => {
     manager_server: managerServer,
     runtime_supervisor: files.some(triggersRuntimeSupervisor),
     ingress: files.some(triggersIngress),
-    windows_sqlite: managerServer,
+    windows_sqlite: files.some(triggersWindowsSQLite),
+    windows_preflight: files.some(triggersWindowsPreflight),
+    bundle_boundary: files.some(triggersBundleBoundary),
+    runtime_lifecycle: files.some(triggersRuntimeLifecycle),
     native_control: files.some(triggersNativeControl),
     docker: files.some(triggersDocker),
     demo_docs: files.some(triggersDemoDocs),
