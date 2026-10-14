@@ -1,0 +1,47 @@
+{
+  "caseID": "RET-01",
+  "checks": [
+    {
+      "name": "foreign-source-case",
+      "injection": "Unmodified accepted SRC-11 evidence supplied to RET-01",
+      "command": [
+        "/private/tmp/cpamp-ret01-fix.Op5KwH/reject-src11/qualification",
+        "-test.v",
+        "-test.run",
+        "^TestReplayRET01$",
+        "-test.timeout",
+        "4m"
+      ],
+      "executionCommit": "5780feac5c5738110ac285e8631babbbe0729aed",
+      "executableSHA256": "017d5e9c2f685e0f6a67553c40764718c5bcdcc130f085062038354e6a7d9fc6",
+      "inputLocation": "/private/tmp/cpamp-ret01.bRI6Nl/source-anchor/src-11",
+      "exitCode": 1,
+      "expectedDiagnostic": "invalid source-generation chain/boundary",
+      "actualOutput": "=== RUN   TestReplayRET01\n    ret01_test.go:32: invalid source-generation chain/boundary\n--- FAIL: TestReplayRET01 (0.00s)\nFAIL\n",
+      "status": "expected-rejection",
+      "runtimeEvidenceRole": "adversarial-only; never historical source evidence"
+    },
+    {
+      "name": "changed-ret01-bundle",
+      "injection": "Task-owned copy of RET-01 config: collectorMode http -> tampered; original artifact untouched",
+      "command": [
+        "/private/tmp/cpamp-ret01-fix.Op5KwH/reject-src11/qualification",
+        "-test.v",
+        "-test.run",
+        "^TestReplayRET01$",
+        "-test.timeout",
+        "4m"
+      ],
+      "executionCommit": "5780feac5c5738110ac285e8631babbbe0729aed",
+      "executableSHA256": "017d5e9c2f685e0f6a67553c40764718c5bcdcc130f085062038354e6a7d9fc6",
+      "inputLocation": "/private/tmp/cpamp-ret01-fix.Op5KwH/tampered-ret01",
+      "exitCode": 1,
+      "expectedDiagnostic": "Manager bundle contents changed",
+      "actualOutput": "=== RUN   TestReplayRET01\n    ret01_test.go:32: Manager bundle contents changed\n--- FAIL: TestReplayRET01 (0.19s)\nFAIL\n",
+      "status": "expected-rejection",
+      "runtimeEvidenceRole": "adversarial-only; never historical source evidence"
+    }
+  ],
+  "UpgradeAuthorized": false,
+  "TrustedHopReceipt": false
+}

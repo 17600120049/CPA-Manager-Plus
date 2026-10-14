@@ -4,15 +4,15 @@
     "UpgradeAuthorized": false
   },
   "caseID": "RET-01",
-  "executionCommit": "389e86ae37815fa9a0fa4d741cee9c86a2c94a14",
-  "sourceAnchorCaseID": "SRC-11",
+  "executionCommit": "5780feac5c5738110ac285e8631babbbe0729aed",
+  "sourceGenerationCaseID": "RET-01",
   "steps": [
     {
       "status": "pass",
-      "step": "materialize-and-verify-source-anchor"
+      "step": "verify-ret01-source-generation-and-bundle"
     },
     {
-      "manifestDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "manifestDigest": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
       "status": "pass",
       "step": "restore-input-to-new-root"
     },
@@ -26,10 +26,10 @@
       "step": "verify-pricing-accounting-metadata-quota"
     },
     {
-      "backupManifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
+      "backupManifestDigest": "2a2f57bc1cdd547bca46a85c91366e98934545b02080730648d2595da5ef8c06",
       "status": "pass",
       "step": "create-and-restore-complete-backup"
     }
   ],
-  "verifierCodeCommit": "389e86ae37815fa9a0fa4d741cee9c86a2c94a14"
+  "verifierCodeCommit": "5780feac5c5738110ac285e8631babbbe0729aed"
 }

@@ -1,8 +1,8 @@
 {
-  "authoritativeDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
-  "backupManifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
+  "authoritativeDigest": "52840329f39a59c9dddcd857362a4609259d1298ea3afc9a4cbb9b4914c742cc",
+  "backupManifestDigest": "2a2f57bc1cdd547bca46a85c91366e98934545b02080730648d2595da5ef8c06",
   "inventoryMatched": true,
-  "restoredManifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
+  "restoredManifestDigest": "2a2f57bc1cdd547bca46a85c91366e98934545b02080730648d2595da5ef8c06",
   "sqlite": {
     "checkpoint": [
       {

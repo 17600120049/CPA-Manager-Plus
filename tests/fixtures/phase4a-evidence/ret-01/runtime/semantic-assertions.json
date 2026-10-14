@@ -40,8 +40,8 @@
   ],
   "assertions": {
     "SEM-01": {
-      "authoritativeAfterDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
-      "authoritativeBeforeDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
+      "authoritativeAfterDigest": "52840329f39a59c9dddcd857362a4609259d1298ea3afc9a4cbb9b4914c742cc",
+      "authoritativeBeforeDigest": "52840329f39a59c9dddcd857362a4609259d1298ea3afc9a4cbb9b4914c742cc",
       "authoritativeFieldsPreserved": true,
       "status": "runtime-pass"
     },
@@ -55,7 +55,7 @@
       "status": "runtime-pass",
       "v1Costs": {
         "claude-fixture": {
-          "generated_at_ms": 1791946720974,
+          "generated_at_ms": 1791972908032,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -87,7 +87,7 @@
           }
         },
         "devin/swe-2": {
-          "generated_at_ms": 1791946720984,
+          "generated_at_ms": 1791972908040,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -119,7 +119,7 @@
           }
         },
         "fixture-free": {
-          "generated_at_ms": 1791946720993,
+          "generated_at_ms": 1791972908047,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -151,7 +151,7 @@
           }
         },
         "fixture-paid": {
-          "generated_at_ms": 1791946720999,
+          "generated_at_ms": 1791972908053,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -185,7 +185,7 @@
       },
       "v2Costs": {
         "claude-fixture": {
-          "generated_at_ms": 1791967025851,
+          "generated_at_ms": 1791973173856,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -217,7 +217,7 @@
           }
         },
         "devin/swe-2": {
-          "generated_at_ms": 1791967025856,
+          "generated_at_ms": 1791973173860,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -249,7 +249,7 @@
           }
         },
         "fixture-free": {
-          "generated_at_ms": 1791967025860,
+          "generated_at_ms": 1791973173864,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -281,7 +281,7 @@
           }
         },
         "fixture-paid": {
-          "generated_at_ms": 1791967025864,
+          "generated_at_ms": 1791973173868,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,

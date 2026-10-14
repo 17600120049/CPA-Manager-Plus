@@ -10,12 +10,12 @@
       "data-key": {
         "present": true,
         "size": 44,
-        "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a"
+        "sha256": "3fc7424d5500819bcb0aecd3eb8fa24c335a5ae85d51e2c8ec7611087596429e"
       },
       "database": {
         "present": true,
         "size": 659456,
-        "sha256": "7ce02b5b7338bd6c2b43eaec255057bc793250f9c76702e64c3a851ddb3198b8"
+        "sha256": "4e2a14fe95302c2bef9995b095eaa538e144a0349e37da8918592abc37ac56c0"
       },
       "database-journal": {
         "present": false
@@ -30,20 +30,20 @@
         "present": false
       }
     },
-    "manifestDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
-    "materializedFrom": "immutable SRC-11 qualification asset; verified before extraction"
+    "manifestDigest": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
+    "materializedFrom": "RET-01 controlled generation; complete case bundle verified before replay"
   },
-  "inputBundleIdentity": "RET-01/input-bundle@0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
-  "provenanceRole": "accepted SRC-11 exact-source anchor; no source regeneration or reinterpretation",
+  "inputBundleIdentity": "RET-01/input-bundle@82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
+  "provenanceRole": "RET-01 controlled generation using the independently accepted exact v1.14.4 producer identity",
   "sourceAnchor": {
-    "acceptance": "accepted",
-    "acceptanceEvidence": "seakee/cpamp-plan/main@2719d8466951da1ea457bd1a00dca3fa6f09dc43",
-    "caseID": "SRC-11",
+    "acceptance": "pending",
+    "caseID": "RET-01",
     "producerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
     "producerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
-    "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "sourceBundleDigest": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
     "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
-    "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+    "sourceGenerationRecordSHA256": "f958cc6df95c6c59b9bbeff70728762d3348a0521724170e34bc3e437b8ad137",
+    "sourceRecord": "ret-01/source-generation",
     "sourceRelease": "v1.14.4"
   }
 }

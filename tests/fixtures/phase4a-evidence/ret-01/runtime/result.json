@@ -37,7 +37,7 @@
     },
     "devinRevision": 2
   },
-  "afterDigest": "9d07b488eab5515a1d157a099e3f5a8e6e5101b7c993bc8ecc76e14c5f858d80",
+  "afterDigest": "14b2c72f14230999901e6cb6a3cc7d333495d354927bb3e100c8a7758241e0eb",
   "applicableSEM": [
     "SEM-01",
     "SEM-02",
@@ -45,12 +45,12 @@
     "SEM-06",
     "SEM-08"
   ],
-  "authoritativeAfterDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
-  "authoritativeBeforeDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
+  "authoritativeAfterDigest": "52840329f39a59c9dddcd857362a4609259d1298ea3afc9a4cbb9b4914c742cc",
+  "authoritativeBeforeDigest": "52840329f39a59c9dddcd857362a4609259d1298ea3afc9a4cbb9b4914c742cc",
   "backupRestore": {
     "inventoryMatched": true,
-    "manifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
-    "restoredManifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
+    "manifestDigest": "2a2f57bc1cdd547bca46a85c91366e98934545b02080730648d2595da5ef8c06",
+    "restoredManifestDigest": "2a2f57bc1cdd547bca46a85c91366e98934545b02080730648d2595da5ef8c06",
     "sqlite": {
       "checkpoint": [
         {
@@ -72,21 +72,21 @@
       ]
     }
   },
-  "beforeDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "beforeDigest": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
   "caseID": "RET-01",
-  "casePass": true,
+  "casePass": false,
   "evidence": {
-    "backupRestore": "9c1e67da614ed60a911f497437f223c3960183a2ef73b96dd803b477da6a3286",
-    "executionRecord": "25ae68fb1228a643e9f4eb61fa01327101f2cf3c60ca1377e1f6b99ad2a9a8a7",
-    "inputBundle": "7c0b44558fb10166f56ae89893b01b425de910f28ff02f106b429fb25cb2eb35",
-    "semanticAssertions": "32109dd2785629815305af8cb50ddefb98d651fc616969182e34e8a2a62125b9"
+    "backupRestore": "a9e65c8bb78c3891ad77d18eb8e82cbddaaf2ff7929637f58385259343d98549",
+    "executionRecord": "b2e285b2f4e2593d02b407928f40222ab12fb2e43a0e4af68b0d5c374d357fd1",
+    "inputBundle": "3a76e96fcb02ef678d010e378a56536987f071ed47c027a685b6747fcf49d3a3",
+    "semanticAssertions": "3bd3d24a79a1d2c03b1e9328b69daf48bdf6205416d6a2ff00ec9edbec8c53e2"
   },
-  "executionCommit": "389e86ae37815fa9a0fa4d741cee9c86a2c94a14",
+  "executionCommit": "5780feac5c5738110ac285e8631babbbe0729aed",
   "independentAcceptance": "pending",
-  "inputBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
-  "inputBundleIdentity": "RET-01/input-bundle@0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "inputBundleDigest": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
+  "inputBundleIdentity": "RET-01/input-bundle@82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
   "metadata": {
-    "digest": "4ce98e2f3117e2b28c8071646f0cddf3f7f546ac3a4eb673248d59de1b466c46",
+    "digest": "f042b441cdc0d897ee754bbea72e31ae02971c49e56d48317e68ad7ece99398c",
     "rows": 4
   },
   "migrationStates": [
@@ -111,11 +111,11 @@
     },
     {
       "hourly": {
-        "Processed": 0,
-        "LastEventID": 4,
-        "CoverageEventID": 4,
+        "Processed": 2,
+        "LastEventID": 2,
+        "CoverageEventID": 2,
         "TargetEventID": 4,
-        "Pending": false,
+        "Pending": true,
         "Rebuilt": false
       },
       "identity": {
@@ -126,54 +126,54 @@
         "rebuilt": false
       },
       "legacyIdentity": {
-        "Processed": 0,
-        "LastEventID": 4,
-        "CoverageEventID": 4,
+        "Processed": 2,
+        "LastEventID": 2,
+        "CoverageEventID": 2,
         "TargetEventID": 4,
-        "Pending": false,
+        "Pending": true,
         "Rebuilt": false,
         "ContinueSoon": false
       },
       "monitoringMetadata": {
-        "Processed": 0,
-        "LastEventID": 4,
-        "CoverageEventID": 4,
+        "Processed": 2,
+        "LastEventID": 2,
+        "CoverageEventID": 2,
         "TargetEventID": 4,
-        "Pending": false,
+        "Pending": true,
         "Rebuilt": false,
         "ContinueSoon": false
       },
       "monitoringProjection": {
-        "Processed": 0,
-        "LastEventID": 4,
-        "CoverageEventID": 4,
+        "Processed": 2,
+        "LastEventID": 2,
+        "CoverageEventID": 2,
         "TargetEventID": 4,
-        "Pending": false,
+        "Pending": true,
         "Rebuilt": false,
         "ContinueSoon": false
       },
       "monitoringStats": {
-        "Processed": 0,
-        "LastEventID": 4,
-        "CoverageEventID": 4,
+        "Processed": 2,
+        "LastEventID": 2,
+        "CoverageEventID": 2,
         "TargetEventID": 4,
-        "Pending": false,
+        "Pending": true,
         "Rebuilt": false,
         "ContinueSoon": false
       },
       "pricing": {
-        "Processed": 0,
-        "LastEventID": 4,
-        "CoverageEventID": 4,
+        "Processed": 2,
+        "LastEventID": 2,
+        "CoverageEventID": 2,
         "TargetEventID": 4,
-        "Pending": false,
+        "Pending": true,
         "Rebuilt": false,
         "ContinueSoon": false
       }
     },
     {
       "hourly": {
-        "Processed": 0,
+        "Processed": 2,
         "LastEventID": 4,
         "CoverageEventID": 4,
         "TargetEventID": 4,
@@ -188,7 +188,7 @@
         "rebuilt": false
       },
       "legacyIdentity": {
-        "Processed": 0,
+        "Processed": 2,
         "LastEventID": 4,
         "CoverageEventID": 4,
         "TargetEventID": 4,
@@ -197,7 +197,7 @@
         "ContinueSoon": false
       },
       "monitoringMetadata": {
-        "Processed": 0,
+        "Processed": 2,
         "LastEventID": 4,
         "CoverageEventID": 4,
         "TargetEventID": 4,
@@ -206,7 +206,7 @@
         "ContinueSoon": false
       },
       "monitoringProjection": {
-        "Processed": 0,
+        "Processed": 2,
         "LastEventID": 4,
         "CoverageEventID": 4,
         "TargetEventID": 4,
@@ -215,7 +215,7 @@
         "ContinueSoon": false
       },
       "monitoringStats": {
-        "Processed": 0,
+        "Processed": 2,
         "LastEventID": 4,
         "CoverageEventID": 4,
         "TargetEventID": 4,
@@ -224,7 +224,7 @@
         "ContinueSoon": false
       },
       "pricing": {
-        "Processed": 0,
+        "Processed": 2,
         "LastEventID": 4,
         "CoverageEventID": 4,
         "TargetEventID": 4,
@@ -248,7 +248,7 @@
     },
     "v1Costs": {
       "claude-fixture": {
-        "generated_at_ms": 1791946720974,
+        "generated_at_ms": 1791972908032,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -280,7 +280,7 @@
         }
       },
       "devin/swe-2": {
-        "generated_at_ms": 1791946720984,
+        "generated_at_ms": 1791972908040,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -312,7 +312,7 @@
         }
       },
       "fixture-free": {
-        "generated_at_ms": 1791946720993,
+        "generated_at_ms": 1791972908047,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -344,7 +344,7 @@
         }
       },
       "fixture-paid": {
-        "generated_at_ms": 1791946720999,
+        "generated_at_ms": 1791972908053,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -378,7 +378,7 @@
     },
     "v2Costs": {
       "claude-fixture": {
-        "generated_at_ms": 1791967025851,
+        "generated_at_ms": 1791973173856,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -410,7 +410,7 @@
         }
       },
       "devin/swe-2": {
-        "generated_at_ms": 1791967025856,
+        "generated_at_ms": 1791973173860,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -442,7 +442,7 @@
         }
       },
       "fixture-free": {
-        "generated_at_ms": 1791967025860,
+        "generated_at_ms": 1791973173864,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -474,7 +474,7 @@
         }
       },
       "fixture-paid": {
-        "generated_at_ms": 1791967025864,
+        "generated_at_ms": 1791973173868,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -515,7 +515,7 @@
     "quota_cooldowns": 1
   },
   "remainingCases": {
-    "count": 47,
+    "count": 48,
     "status": "pending"
   },
   "retentionArchiveState": {
@@ -533,14 +533,15 @@
     "variant": "full raw"
   },
   "runtimeEvidence": "pass",
-  "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+  "sourceGenerationRecordSHA256": "f958cc6df95c6c59b9bbeff70728762d3348a0521724170e34bc3e437b8ad137",
   "sourceProvenance": {
-    "acceptance": "accepted",
-    "acceptanceEvidence": "seakee/cpamp-plan/main@2719d8466951da1ea457bd1a00dca3fa6f09dc43",
-    "anchorCaseID": "SRC-11",
-    "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "acceptance": "pending",
+    "caseID": "RET-01",
+    "producerIdentityDependency": "SRC-11 accepted; no fixture reuse",
+    "sourceBundleDigest": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
     "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
-    "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+    "sourceGenerationRecordSHA256": "f958cc6df95c6c59b9bbeff70728762d3348a0521724170e34bc3e437b8ad137",
+    "sourceRecord": "ret-01/source-generation",
     "sourceRelease": "v1.14.4"
   }
 }

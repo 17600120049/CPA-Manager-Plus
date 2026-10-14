@@ -92,6 +92,21 @@ class Ret01EvidenceTests(unittest.TestCase):
         index = json.loads((EVIDENCE / "generation-index.json").read_text())
         self.assertEqual(index["SHA256"], digest(EVIDENCE / "source-generation/record.json"))
         self.assertEqual(index["bundleDigest"], self.bundle_digest)
+        runner = json.loads((EVIDENCE / "generation-runner.json").read_text())
+        self.assertEqual(runner["codeCommit"], self.generation["GeneratorCodeCommit"])
+        self.assertEqual(runner["generationRecordSHA256"], index["SHA256"])
+        self.assertEqual(runner["executionExitCode"], 0)
+        for prefix in ("runtime", "platform-replay/linux"):
+            result = json.loads((EVIDENCE / prefix / "result.json").read_text())
+            execution = json.loads((EVIDENCE / prefix / "runner-evidence.json").read_text())
+            self.assertEqual(execution["codeCommit"], result["executionCommit"])
+            self.assertEqual(execution["resultSHA256"], digest(EVIDENCE / prefix / "result.json"))
+            self.assertEqual(result["inputBundleDigest"], self.bundle_digest)
+            self.assertEqual(result["runtimeEvidence"], "pass")
+            self.assertFalse(result["casePass"])
+            self.assertEqual(result["independentAcceptance"], "pending")
+            self.assertFalse(result["UpgradeAuthorized"])
+            self.assertFalse(result["TrustedHopReceipt"])
         self.assertEqual(self.result["sourceGenerationRecordSHA256"], index["SHA256"])
         self.assertEqual(self.generation["SourceCommit"], SOURCE_COMMIT)
         self.assertEqual(self.generation["SourceProducerBuildCodeCommit"], SOURCE_COMMIT)
@@ -110,7 +125,9 @@ class Ret01EvidenceTests(unittest.TestCase):
                          "opt-in original Actions fixture verification; no SQLite/platform PASS implied")
     def test_original_fixture_bytes(self):
         root = Path(os.environ["CPAMP_RET01_FULL_EVIDENCE"])
-        for name, expected in self.provenance["sourceArtifact"]["inventory"].items():
+        expected_files = self.provenance["sourceArtifact"]["inventory"]
+        self.assertEqual(set(expected_files), {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()})
+        for name, expected in expected_files.items():
             path = root / name
             self.assertTrue(path.is_file(), name)
             self.assertEqual(path.stat().st_size, expected["size"], name)
