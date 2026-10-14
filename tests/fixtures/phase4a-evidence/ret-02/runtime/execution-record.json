@@ -1,0 +1,172 @@
+{
+  "archiveImports": [
+    {
+      "format": "usage_service_jsonl",
+      "added": 0,
+      "skipped": 4,
+      "total": 4,
+      "failed": 0,
+      "unsupported": 0,
+      "warnings": null
+    },
+    {
+      "format": "usage_service_jsonl",
+      "added": 0,
+      "skipped": 4,
+      "total": 4,
+      "failed": 0,
+      "unsupported": 0,
+      "warnings": null
+    }
+  ],
+  "caseID": "RET-02",
+  "deleteCalled": false,
+  "executionCommit": "cf31d104b2485665408e90a75eca977fa390c4df",
+  "migrationStates": [
+    {
+      "name": "usage_cache_accounting_v2",
+      "status": "completed",
+      "lastEventId": 0,
+      "targetEventId": 0,
+      "processedRows": 0,
+      "changedRows": 0,
+      "appliedRows": 0,
+      "updatedAtMs": 0
+    },
+    {
+      "Processed": 0,
+      "LastSnapshotID": 0,
+      "Pending": false,
+      "Completed": true
+    },
+    {
+      "responseMetadataChanged": 0
+    },
+    {
+      "hourly": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false
+      },
+      "identity": {
+        "processed": 2,
+        "last_processed_event_id": 2,
+        "target_event_id": 4,
+        "pending": true,
+        "rebuilt": false
+      },
+      "legacyIdentity": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringMetadata": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringProjection": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringStats": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "pricing": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      }
+    },
+    {
+      "hourly": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false
+      },
+      "identity": {
+        "processed": 2,
+        "last_processed_event_id": 4,
+        "target_event_id": 4,
+        "pending": false,
+        "rebuilt": false
+      },
+      "legacyIdentity": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringMetadata": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringProjection": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringStats": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "pricing": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      }
+    }
+  ],
+  "newRootRecovery": true,
+  "sourceGenerationCaseID": "RET-02"
+}

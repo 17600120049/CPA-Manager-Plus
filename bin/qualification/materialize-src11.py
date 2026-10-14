@@ -165,7 +165,7 @@ def materialize_retention(archive, output, case, pin=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=["src-11", "ret-01", "ret-02"], default="src-11")
-    parser.add_argument("--release-metadata", type=Path, help="optional local RET-01 Release API response")
+    parser.add_argument("--release-metadata", type=Path, help="optional local retention qualification Release API response")
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -176,7 +176,7 @@ def main():
         print(materialize_retention(args.archive, args.output, args.case))
     else:
         if args.release_metadata:
-            parser.error("--release-metadata is only applicable to RET-01")
+            parser.error("--release-metadata is only applicable to retention cases")
         print(materialize(args.archive, args.output))
 
 

@@ -1,0 +1,18 @@
+{
+  "caseID": "RET-02",
+  "releaseID": 412861956,
+  "assetID": 640754614,
+  "immutable": true,
+  "prerelease": true,
+  "draft": false,
+  "tag": "qualification-ret02-3c63a99f32c5-20261014",
+  "tagCommit": "3f65813749a89371a3005b4a710836df587a7582",
+  "downloadURL": "https://github.com/seakee/CPA-Manager-Plus/releases/download/qualification-ret02-3c63a99f32c5-20261014/ret-02-3c63a99f32c5-sealed-evidence.zip",
+  "downloadSize": 8828354,
+  "downloadSHA256": "b8a49362108d5a3281bd4de2d5cde0f3b3658d6f348b014bc7f95a34a74baa25",
+  "byteIdenticalToFirstPackaging": true,
+  "repacked": false,
+  "generatorCommit": "cdf88c52b017179ff9594ab13201f19b4ca7bd28",
+  "runtimeCommit": "cf31d104b2485665408e90a75eca977fa390c4df",
+  "publicationScope": "qualification prerelease only; no product release, Registry, Telegram or stable publication"
+}

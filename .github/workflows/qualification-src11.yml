@@ -198,7 +198,7 @@ jobs:
             --archive "$RUNNER_TEMP/ret01-source/producer.tar.gz" \
             --evidence "$RUNNER_TEMP/ret01-source/${{ matrix.case }}" \
             --output "$RUNNER_TEMP/ret01-replay" "${extra[@]}"
-      - name: Upload RET-01 runtime evidence
+      - name: Upload case-specific retention runtime evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

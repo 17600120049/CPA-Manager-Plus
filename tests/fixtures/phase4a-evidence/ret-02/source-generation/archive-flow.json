@@ -1,0 +1,109 @@
+{
+  "actions": [
+    "create",
+    "resume?wait=true\u0026expected_stage=archiving",
+    "verify?wait=true"
+  ],
+  "automaticRetentionEnabled": false,
+  "create": {
+    "run": {
+      "id": "bdf8114f3f1417101d6ef86ade058d05",
+      "mode": "manual",
+      "status": "previewed",
+      "cutoff_timestamp_ms": 1790899200000,
+      "target_event_id": 4,
+      "event_count": 4,
+      "estimated_bytes": 6431,
+      "last_archived_event_id": 0,
+      "archived_event_count": 0,
+      "archived_uncompressed_bytes": 0,
+      "archived_compressed_bytes": 0,
+      "last_deleted_event_id": 0,
+      "deleted_event_count": 0,
+      "created_at_ms": 1791990375294,
+      "updated_at_ms": 1791990375294,
+      "has_error": false
+    },
+    "segments": []
+  },
+  "deleteCalled": false,
+  "producer": "published exact v1.14.4",
+  "resume": {
+    "run": {
+      "id": "bdf8114f3f1417101d6ef86ade058d05",
+      "mode": "manual",
+      "status": "archived",
+      "requested_stage": "archiving",
+      "cutoff_timestamp_ms": 1790899200000,
+      "target_event_id": 4,
+      "event_count": 4,
+      "estimated_bytes": 6431,
+      "last_archived_event_id": 4,
+      "archived_event_count": 4,
+      "archived_uncompressed_bytes": 12018,
+      "archived_compressed_bytes": 2873,
+      "last_deleted_event_id": 0,
+      "deleted_event_count": 0,
+      "created_at_ms": 1791990375294,
+      "updated_at_ms": 1791990375300,
+      "started_at_ms": 1791990375297,
+      "archived_at_ms": 1791990375300,
+      "has_error": false
+    },
+    "segments": [
+      {
+        "run_id": "bdf8114f3f1417101d6ef86ade058d05",
+        "sequence": 1,
+        "status": "published",
+        "first_event_id": 1,
+        "last_event_id": 4,
+        "min_timestamp_ms": 1790812800000,
+        "max_timestamp_ms": 1790823600000,
+        "event_count": 4,
+        "uncompressed_bytes": 12018,
+        "compressed_bytes": 2873,
+        "created_at_ms": 1791990375299
+      }
+    ]
+  },
+  "verify": {
+    "run": {
+      "id": "bdf8114f3f1417101d6ef86ade058d05",
+      "mode": "manual",
+      "status": "verified",
+      "requested_stage": "verifying",
+      "cutoff_timestamp_ms": 1790899200000,
+      "target_event_id": 4,
+      "event_count": 4,
+      "estimated_bytes": 6431,
+      "last_archived_event_id": 4,
+      "archived_event_count": 4,
+      "archived_uncompressed_bytes": 12018,
+      "archived_compressed_bytes": 2873,
+      "last_deleted_event_id": 0,
+      "deleted_event_count": 0,
+      "created_at_ms": 1791990375294,
+      "updated_at_ms": 1791990375309,
+      "started_at_ms": 1791990375297,
+      "archived_at_ms": 1791990375300,
+      "verified_at_ms": 1791990375309,
+      "has_error": false
+    },
+    "segments": [
+      {
+        "run_id": "bdf8114f3f1417101d6ef86ade058d05",
+        "sequence": 1,
+        "status": "verified",
+        "first_event_id": 1,
+        "last_event_id": 4,
+        "min_timestamp_ms": 1790812800000,
+        "max_timestamp_ms": 1790823600000,
+        "event_count": 4,
+        "uncompressed_bytes": 12018,
+        "compressed_bytes": 2873,
+        "created_at_ms": 1791990375299,
+        "verified_at_ms": 1791990375309
+      }
+    ]
+  }
+}
