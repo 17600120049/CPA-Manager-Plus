@@ -116,6 +116,7 @@ const triggersManagerRuntime = (filePath) =>
   managerServerModuleFile(filePath, 'internal/service/runtime') ||
   managerServerModuleFile(filePath, 'internal/repository/setting') ||
   managerServerModuleFile(filePath, 'internal/service/bootstrap') ||
+  filePath === 'apps/manager-server/internal/store/store.go' ||
   managerServerDependencyFile(filePath);
 
 const triggersRuntimeLifecycle = (filePath) =>
