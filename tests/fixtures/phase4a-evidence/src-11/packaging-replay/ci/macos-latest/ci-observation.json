@@ -1,0 +1,15 @@
+{
+  "artifactDigest": "sha256:8e80b8ec339e0f6b5b949d2044945ff66b6e761197098296c7c91039b48c0dfb",
+  "artifactID": 11869621374,
+  "artifactName": "src11-packaging-replay-macos-latest-38509940326-1",
+  "independentAcceptance": "pending",
+  "jobID": 115675887260,
+  "jobURL": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/38509940326/job/115675887260",
+  "materialization": "runtime-pass",
+  "platform": "macos-latest",
+  "replay": "runtime-pass",
+  "runID": 38509940326,
+  "scope": "materialization + complete offline replay",
+  "testedCommit": "8e483cb73402056aadd450d0680af072c6564379",
+  "workflowHeadSHA": "7dad61ad750cccad951ea3464c2967c1de2037cd"
+}

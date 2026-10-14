@@ -1,0 +1,4 @@
+=== RUN   TestReplayExactSource
+    replay_test.go:111: SQLite integrity check query failed: SQL logic error: out of memory (1)
+--- FAIL: TestReplayExactSource (0.22s)
+FAIL

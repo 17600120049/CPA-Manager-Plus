@@ -1,0 +1,15 @@
+{
+  "artifactDigest": "sha256:10900b10fed4d537e3d75b750ab0d2ebd72d98d5cb353617b452b2a08f4b2055",
+  "artifactID": 11868779004,
+  "artifactName": "src11-packaging-replay-ubuntu-latest-38509940326-1",
+  "independentAcceptance": "pending",
+  "jobID": 115675887402,
+  "jobURL": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/38509940326/job/115675887402",
+  "materialization": "runtime-pass",
+  "platform": "ubuntu-latest",
+  "replay": "runtime-pass",
+  "runID": 38509940326,
+  "scope": "materialization + complete offline replay",
+  "testedCommit": "8e483cb73402056aadd450d0680af072c6564379",
+  "workflowHeadSHA": "7dad61ad750cccad951ea3464c2967c1de2037cd"
+}

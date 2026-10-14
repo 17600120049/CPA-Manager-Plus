@@ -1,0 +1,1 @@
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle	57.441s

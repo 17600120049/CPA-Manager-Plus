@@ -1,0 +1,7 @@
+=== RUN   TestReplayExactSource
+2026/10/14 04:09:57 [derived-migration] post-listen index preparation started
+2026/10/14 04:09:57 [derived-migration] creating index idx_gateway_api_key_binding_history_hash
+2026/10/14 04:09:57 [derived-migration] creating index idx_gateway_credential_binding_history_auth_id
+2026/10/14 04:09:57 [derived-migration] post-listen index preparation completed created=2 removedAccountActionLegacy=false removedQuotaLegacy=false
+--- PASS: TestReplayExactSource (0.64s)
+PASS

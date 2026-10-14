@@ -1,0 +1,97 @@
+name: SRC-11 sealed evidence
+
+on:
+  pull_request:
+    branches: [v2]
+    paths:
+      - '.github/workflows/qualification-src11.yml'
+      - 'bin/qualification/**'
+      - 'apps/manager-server/tests/qualification/src11/**'
+      - 'tests/fixtures/phase4a-src11/**'
+      - 'tests/fixtures/phase4a-evidence/src-11/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: src11-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  replay:
+    name: SRC-11 packaging (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Download immutable qualification artifact (outside Go test)
+        shell: bash
+        run: |
+          gh release download qualification-src11-0e106589baef-20261014 \
+            --repo seakee/CPA-Manager-Plus \
+            --pattern src-11-0e106589baef-sealed-evidence.tar.gz --dir "$RUNNER_TEMP/src11-download"
+      - name: Verify materialization and reject adversarial archives
+        shell: bash
+        run: |
+          export CPAMP_SRC11_SEALED_ARCHIVE="$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz"
+          python -m unittest discover -s bin/qualification -p 'test_*.py' -v
+          python bin/qualification/materialize-src11.py --archive "$CPAMP_SRC11_SEALED_ARCHIVE" --output "$RUNNER_TEMP/src11-original"
+          python - <<'PY'
+          import hashlib, json, os, platform, subprocess
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          archive = root / 'src11-download/src-11-0e106589baef-sealed-evidence.tar.gz'
+          record = {'scope': 'archive materialization only; not SQLite/migration qualification',
+                    'runtimeAssertions': 'pass', 'independentAcceptance': 'pending',
+                    'archiveSHA256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+                    'testedCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+                    'platform': platform.platform(), 'pythonVersion': platform.python_version()}
+          (root / 'src11-materialization.json').write_text(json.dumps(record, indent=2) + '\n')
+          PY
+      - name: Replay original sealed fixture (offline test)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+            extra=(--linux)
+          fi
+          python bin/qualification/run-src11.py replay \
+            --archive "$RUNNER_TEMP/src11-original/producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
+            --evidence-archive "$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz" \
+            --output "$RUNNER_TEMP/src11-replay" "${extra[@]}"
+      - name: Compile Windows harness (full SQLite replay remains pending)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: apps/manager-server
+        run: |
+          go test -c -o "$RUNNER_TEMP/src11-windows-qualification.exe" ./tests/qualification/src11 > "$RUNNER_TEMP/src11-windows-compile.txt" 2>&1
+          echo 'Windows archive materialization ran successfully. Full Windows bundle replay remains pending: the observed matching-evidence quick_check failure is preserved in the PR evidence; no SQLite qualification PASS is claimed.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload actual runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: src11-packaging-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/src11-replay/runner-evidence.json
+            ${{ runner.temp }}/src11-replay/*.log
+            ${{ runner.temp }}/src11-replay/runtime/
+            ${{ runner.temp }}/src11-materialization.json
+            ${{ runner.temp }}/src11-windows-compile.txt
+          if-no-files-found: warn
+          retention-days: 14
