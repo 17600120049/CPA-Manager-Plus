@@ -31,19 +31,31 @@ and compiles the harness; full Windows SQLite replay remains unqualified.
 
 ## Original bytes and clean-checkout verification
 
-`source-provenance.json#/sourceArtifact` pins Actions artifact 11884714735 by
-run/name/digest and complete file inventory. It contains the original DB,
+`source-provenance.json#/sourceArtifact` pins immutable qualification Release
+`412621764`, asset `640121411`, tag `qualification-ret01-82e2287ed64e-20261014`,
+archive size/SHA256, generation record, bundle digest and complete file inventory.
+It contains the original DB,
 fixture-only key/config, explicit sidecar/archive absences, producer archive,
-generation records and logs. DB/key/runtime logs are not committed. The artifact
-has **90-day retention, expiring 2027-01-12T10:14:44Z**; this is not a permanent
-immutable Release. Expiry/deletion is an evidence-availability gap and must
-fail closed; regeneration must not be substituted for the original digest.
+generation records and logs. DB/key/runtime logs are not committed. The ZIP is
+**byte-for-byte Actions artifact 11884714735**, SHA256
+`e7f5df5ce2792a7049d2fac29f7c67b9d7e407237e52167c22b1c9eefc7ff790`.
+All 19 files, the original ZIP and bundle remain unchanged; nothing was
+regenerated or repackaged. Actions origin metadata is historical only: neither
+its retention nor its availability is an evidence dependency anymore. The
+Release is immutable, prerelease and not latest; it is not a product release.
+Its tag targets archival commit `9eeba5f442a100168f715637781cec3644d1e1bb`,
+not a replacement generator/execution identity or independent acceptance.
 
-With GitHub Actions read access, use a new task-owned output directory:
+With GitHub release read access, use new task-owned output directories:
 
 ```sh
-gh run download 38548199153 --repo seakee/CPA-Manager-Plus \
-  --name ret01-source-38548199153-1 --dir <original>
+gh release download qualification-ret01-82e2287ed64e-20261014 \
+  --repo seakee/CPA-Manager-Plus \
+  --pattern ret-01-82e2287ed64e-sealed-evidence.zip --dir <download>
+gh api repos/seakee/CPA-Manager-Plus/releases/412621764 > <download>/release.json
+python3 bin/qualification/materialize-src11.py --case ret-01 \
+  --release-metadata <download>/release.json \
+  --archive <download>/ret-01-82e2287ed64e-sealed-evidence.zip --output <original>
 CPAMP_RET01_FULL_EVIDENCE=<original> PYTHONDONTWRITEBYTECODE=1 \
   python3 -m unittest discover -s bin/qualification -p 'test_ret01.py' -v
 python3 bin/qualification/run-src11.py ret01 \
@@ -73,7 +85,10 @@ python3 bin/qualification/run-src11.py ret01 \
   --evidence <new-generation-output>/ret-01 --output <new-replay-output>
 ```
 
-The existing workflow generates once on Linux and shares that fresh case
-fixture across Linux/macOS replay; the original pinned artifact is separately
-byte-verified on Windows/Linux/macOS. No new production credential, trusted
+Controlled regeneration is an opt-in equivalent-fixture diagnostic only; it
+does not replace the original evidence identity. The existing workflow now
+replays the **same sealed original fixture** on Linux/macOS and byte-verifies
+it on Windows/Linux/macOS. It neither regenerates historical input nor depends
+on expiring source Actions artifacts. CI replay output artifacts remain temporary.
+No new production credential, trusted
 authority, public API or second fixture framework is introduced.

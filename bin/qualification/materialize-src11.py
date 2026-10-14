@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Materialize the pinned SRC-11 evidence archive locally; never download data."""
+"""Materialize pinned SRC-11/RET-01 qualification bytes locally; never download."""
 import argparse
 import hashlib
 import io
@@ -7,7 +7,9 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
+import stat
 import tarfile
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PIN = ROOT / "tests/fixtures/phase4a-evidence/src-11/sealed-artifact.json"
@@ -62,6 +64,11 @@ def materialize(archive, output, pin=None):
     ):
         if sha256(members[name]) != pin[field]:
             raise ValueError(f"pinned evidence mismatch: {name}")
+    write_members(output, members)
+    return output / "src-11"
+
+
+def write_members(output, members):
     # No extractall, links, platform path aliases or pre-existing output files.
     output.mkdir(parents=True, mode=0o700)
     try:
@@ -74,15 +81,91 @@ def materialize(archive, output, pin=None):
     except BaseException:
         shutil.rmtree(output)
         raise
-    return output / "src-11"
+
+
+def validate_ret01_release(metadata, pin):
+    """Check durable hosting identity, not production admission or acceptance."""
+    if (metadata.get("id") != pin["releaseID"] or metadata.get("tag_name") != pin["tag"]
+            or metadata.get("target_commitish") != pin["tagCommit"]
+            or metadata.get("draft") is not False or metadata.get("prerelease") is not True
+            or metadata.get("immutable") is not True):
+        raise ValueError("RET-01 immutable qualification release mismatch")
+    assets = metadata.get("assets", [])
+    if len(assets) != 1:
+        raise ValueError("RET-01 release asset inventory mismatch")
+    asset = assets[0]
+    if (asset.get("id") != pin["assetID"] or asset.get("name") != pin["archiveName"]
+            or asset.get("size") != pin["archiveSize"] or asset.get("state") != "uploaded"
+            or asset.get("digest") != "sha256:" + pin["archiveSHA256"]):
+        raise ValueError("RET-01 release asset identity mismatch")
+
+
+def materialize_ret01(archive, output, pin=None):
+    """Authenticate the original ZIP, then reuse the existing safe writer."""
+    if pin is None:
+        provenance = ROOT / "tests/fixtures/phase4a-evidence/ret-01/source-provenance.json"
+        pin = json.loads(provenance.read_text())["sourceArtifact"]
+    output = Path(output)
+    if os.path.lexists(output):
+        raise ValueError("materialization output must be absent")
+    with Path(archive).open("rb") as stream:
+        data = stream.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES or len(data) != pin["archiveSize"] or sha256(data) != pin["archiveSHA256"]:
+        raise ValueError("sealed evidence archive size/SHA256 mismatch")
+    members = {}
+    total = 0
+    with zipfile.ZipFile(io.BytesIO(data)) as zipped:
+        for entry in zipped.infolist():
+            name = entry.filename
+            path = PurePosixPath(name)
+            mode = entry.external_attr >> 16
+            if (entry.is_dir() or path.is_absolute() or ".." in path.parts
+                    or str(path) != name or "\\" in name or ":" in name
+                    or name in members or entry.file_size < 0
+                    or stat.S_IFMT(mode) not in (0, stat.S_IFREG)):
+                raise ValueError("unsafe or duplicate archive member")
+            total += entry.file_size
+            if total > MAX_BYTES or len(members) >= 256:
+                raise ValueError("evidence archive exceeds extraction budget")
+            with zipped.open(entry) as stream:
+                members[name] = stream.read(entry.file_size + 1)
+            if len(members[name]) != entry.file_size:
+                raise ValueError("truncated archive member")
+    inventory = pin["inventory"]
+    if set(members) != set(inventory):
+        raise ValueError("RET-01 source inventory mismatch")
+    for name, entry in inventory.items():
+        if len(members[name]) != entry["size"] or sha256(members[name]) != entry["sha256"]:
+            raise ValueError(f"RET-01 source member mismatch: {name}")
+    for name, field in (("ret-01/source-generation/record.json", "generationRecordSHA256"),
+                        ("ret-01/bundle/manifest.json", "bundleManifestSHA256")):
+        if sha256(members[name]) != pin[field]:
+            raise ValueError(f"RET-01 pinned evidence mismatch: {name}")
+    record = json.loads(members["ret-01/source-generation/record.json"])
+    bundle = json.loads(members["ret-01/bundle/manifest.json"])
+    if (record["caseID"] != "RET-01" or record["GeneratedBundleSHA256"] != pin["sourceBundleDigest"]
+            or bundle["sourceRevision"] != pin["sourceBundleDigest"]):
+        raise ValueError("RET-01 source bundle binding mismatch")
+    write_members(output, members)
+    return output / "ret-01"
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--case", choices=["src-11", "ret-01"], default="src-11")
+    parser.add_argument("--release-metadata", type=Path, help="optional local RET-01 Release API response")
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    print(materialize(args.archive, args.output))
+    if args.case == "ret-01":
+        if args.release_metadata:
+            pin = json.loads((ROOT / "tests/fixtures/phase4a-evidence/ret-01/source-provenance.json").read_text())["sourceArtifact"]
+            validate_ret01_release(json.loads(args.release_metadata.read_text()), pin)
+        print(materialize_ret01(args.archive, args.output))
+    else:
+        if args.release_metadata:
+            parser.error("--release-metadata is only applicable to RET-01")
+        print(materialize(args.archive, args.output))
 
 
 if __name__ == "__main__":

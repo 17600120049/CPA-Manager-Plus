@@ -1,4 +1,5 @@
-"""Adversarial packaging tests. Synthetic archives never count as SRC-11 evidence."""
+"""Adversarial packaging tests. Synthetic archives never count as runtime evidence."""
+import copy
 import hashlib
 import importlib.util
 import io
@@ -9,6 +10,9 @@ import tarfile
 import tempfile
 import unittest
 import sys
+import stat
+import warnings
+import zipfile
 
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("materialize_src11", Path(__file__).with_name("materialize-src11.py"))
@@ -82,6 +86,126 @@ class MaterializeTests(unittest.TestCase):
                 self.assertFalse(p.exists())
         for name, digest in record["GenerationEvidenceFiles"].items():
             self.assertEqual(module.sha256((root / "source-generation" / name).read_bytes()), digest)
+
+
+class Ret01MaterializeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.archive = self.root / "adversarial.zip"
+        self.output = self.root / "materialized"
+
+    def make_archive(self, files=None, mode=stat.S_IFREG | 0o600):
+        if files is None:
+            files = [
+                ("ret-01/source-generation/record.json", b'{"caseID":"RET-01","GeneratedBundleSHA256":"bundle"}'),
+                ("ret-01/bundle/manifest.json", b'{"sourceRevision":"bundle"}'),
+            ]
+        inventory = {}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)  # intentional duplicate negative
+            with zipfile.ZipFile(self.archive, "w") as zipped:
+                for name, data in files:
+                    entry = zipfile.ZipInfo(name)
+                    entry.create_system = 3
+                    entry.external_attr = mode << 16
+                    zipped.writestr(entry, data)
+                    inventory[name] = {"size": len(data), "sha256": module.sha256(data)}
+        raw = self.archive.read_bytes()
+        return {"archiveSize": len(raw), "archiveSHA256": module.sha256(raw), "inventory": inventory,
+                "generationRecordSHA256": inventory.get("ret-01/source-generation/record.json", {}).get("sha256"),
+                "bundleManifestSHA256": inventory.get("ret-01/bundle/manifest.json", {}).get("sha256"),
+                "sourceBundleDigest": "bundle"}
+
+    def reject(self, pin, message):
+        with self.assertRaisesRegex(ValueError, message):
+            module.materialize_ret01(self.archive, self.output, pin)
+        self.assertFalse(self.output.exists())
+
+    def test_outer_mismatch_before_output(self):
+        for field, value in (("archiveSHA256", "0" * 64), ("archiveSize", 0)):
+            pin = self.make_archive()
+            pin[field] = value
+            self.reject(pin, "size/SHA256 mismatch")
+
+    def test_paths_links_and_duplicates_before_output(self):
+        for name in ("../escape", "/absolute", "ret-01/../../escape", "ret-01/./alias",
+                     "ret-01\\escape", "ret-01/C:drive", "ret-01//alias", "ret-01/directory/"):
+            with self.subTest(name=name):
+                self.reject(self.make_archive([(name, b"x")]), "archive member")
+        for mode in (stat.S_IFLNK | 0o777, stat.S_IFIFO | 0o600):
+            self.reject(self.make_archive([("ret-01/link", b"outside")], mode), "archive member")
+        self.reject(self.make_archive([("ret-01/file", b"x"), ("ret-01/file", b"y")]), "duplicate")
+
+    def test_inventory_content_and_critical_bindings_before_output(self):
+        for alteration, message in (("missing", "inventory mismatch"), ("size", "member mismatch"),
+                                    ("digest", "member mismatch"), ("record", "pinned evidence mismatch"),
+                                    ("manifest", "pinned evidence mismatch"), ("bundle", "bundle binding mismatch")):
+            with self.subTest(alteration=alteration):
+                pin = self.make_archive()
+                name = "ret-01/source-generation/record.json"
+                if alteration == "missing":
+                    del pin["inventory"][name]
+                elif alteration == "size":
+                    pin["inventory"][name]["size"] = 0
+                elif alteration == "digest":
+                    pin["inventory"][name]["sha256"] = "0" * 64
+                elif alteration == "record":
+                    pin["generationRecordSHA256"] = "0" * 64
+                elif alteration == "manifest":
+                    pin["bundleManifestSHA256"] = "0" * 64
+                else:
+                    pin["sourceBundleDigest"] = "different-bundle"
+                self.reject(pin, message)
+
+    def test_extraction_budget_before_output(self):
+        pin = self.make_archive()
+        previous = module.MAX_BYTES
+        try:
+            module.MAX_BYTES = 1
+            self.reject(pin, "size/SHA256 mismatch")
+        finally:
+            module.MAX_BYTES = previous
+        self.reject(self.make_archive([(f"ret-01/file-{i}", b"x") for i in range(257)]), "extraction budget")
+
+    def test_existing_output_preserved(self):
+        self.output.mkdir()
+        sentinel = self.output / "unrelated"
+        sentinel.write_bytes(b"preserve")
+        with self.assertRaisesRegex(ValueError, "output must be absent"):
+            module.materialize_ret01(self.archive, self.output, self.make_archive())
+        self.assertEqual(sentinel.read_bytes(), b"preserve")
+
+    def test_release_metadata_fail_closed(self):
+        pin = json.loads((module.ROOT / "tests/fixtures/phase4a-evidence/ret-01/source-provenance.json").read_text())["sourceArtifact"]
+        metadata = {"id": pin["releaseID"], "tag_name": pin["tag"], "target_commitish": pin["tagCommit"],
+                    "draft": False, "prerelease": True, "immutable": True,
+                    "assets": [{"id": pin["assetID"], "name": pin["archiveName"], "size": pin["archiveSize"],
+                                "state": "uploaded", "digest": "sha256:" + pin["archiveSHA256"]}]}
+        module.validate_ret01_release(metadata, pin)
+        for field, value in (("id", 0), ("tag_name", "other"), ("target_commitish", "other"),
+                             ("draft", True), ("prerelease", False), ("immutable", False), ("immutable", None)):
+            altered = copy.deepcopy(metadata)
+            altered[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                module.validate_ret01_release(altered, pin)
+        for assets in ([], metadata["assets"] * 2):
+            altered = copy.deepcopy(metadata)
+            altered["assets"] = assets
+            with self.assertRaisesRegex(ValueError, "inventory mismatch"):
+                module.validate_ret01_release(altered, pin)
+        for field, value in (("id", 0), ("name", "other"), ("size", 0), ("state", "new"), ("digest", "sha256:" + "0" * 64)):
+            altered = copy.deepcopy(metadata)
+            altered["assets"][0][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "identity mismatch"):
+                module.validate_ret01_release(altered, pin)
+
+    @unittest.skipUnless(os.environ.get("CPAMP_RET01_SEALED_ARCHIVE"), "opt-in original immutable RET-01 ZIP")
+    def test_original_ret01_zip(self):
+        root = module.materialize_ret01(Path(os.environ["CPAMP_RET01_SEALED_ARCHIVE"]), self.output)
+        committed = module.ROOT / "tests/fixtures/phase4a-evidence/ret-01/source-generation/record.json"
+        self.assertEqual((root / "source-generation/record.json").read_bytes(), committed.read_bytes())
 
 
 if __name__ == "__main__":

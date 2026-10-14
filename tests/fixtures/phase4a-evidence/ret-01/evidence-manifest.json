@@ -142,24 +142,19 @@
       "sha256": "d6264dee81dd731fde2ac0753634d75c8bc0768b5d1922c53e352b0dcf4e55a7"
     },
     "source-provenance.json": {
-      "size": 5121,
-      "sha256": "e3a9cd52d519e74e103775b8747276cef7a0099954696ed9020ef2cc3b0bceba"
+      "size": 5881,
+      "sha256": "dc4a64267df32e2b6155f1b202bc47000a8e5f87f40f4c647f8aebedec1c5cc2"
     }
   },
   "replay": {
     "runner": "bin/qualification/run-src11.py ret01",
-    "inputPolicy": "Download the original pinned RET-01 source artifact and verify all bytes before replay; new controlled generations qualify equivalent fixtures only.",
+    "inputPolicy": "Download the byte-identical original RET-01 ZIP from its pinned immutable qualification Release and verify all bytes before replay; no Actions retention dependency. New controlled generations qualify equivalent fixtures only.",
     "rawArtifactsCommitted": false
   },
   "gaps": [
     {
       "scope": "Windows",
       "status": "packaging-only; full SQLite runtime replay not qualified"
-    },
-    {
-      "scope": "original-source-artifact",
-      "status": "available with 90-day retention, not a permanent immutable release",
-      "expiresAt": "2027-01-12T10:14:44Z"
     },
     {
       "scope": "independentAcceptance",

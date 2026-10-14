@@ -122,7 +122,7 @@ class Ret01EvidenceTests(unittest.TestCase):
             self.assertEqual(self.result["evidence"][key], digest(EVIDENCE / ("runtime/" + name + ".json")))
 
     @unittest.skipUnless(os.environ.get("CPAMP_RET01_FULL_EVIDENCE"),
-                         "opt-in original Actions fixture verification; no SQLite/platform PASS implied")
+                         "opt-in sealed original fixture verification; no SQLite/platform PASS implied")
     def test_original_fixture_bytes(self):
         root = Path(os.environ["CPAMP_RET01_FULL_EVIDENCE"])
         expected_files = self.provenance["sourceArtifact"]["inventory"]
@@ -146,6 +146,31 @@ class Ret01EvidenceTests(unittest.TestCase):
                 self.assertEqual(digest(path), entry["sha256"], name)
             else:
                 self.assertFalse(path.exists(), name)
+
+    def test_durable_seal_pins_original_identity_without_acceptance(self):
+        pin = self.provenance["sourceArtifact"]
+        self.assertTrue(pin["immutableRelease"])
+        self.assertEqual(pin["repository"], "seakee/CPA-Manager-Plus")
+        self.assertEqual(pin["releaseID"], 412621764)
+        self.assertEqual(pin["assetID"], 640121411)
+        self.assertEqual(pin["tag"], "qualification-ret01-82e2287ed64e-20261014")
+        self.assertEqual(pin["tagCommit"], "9eeba5f442a100168f715637781cec3644d1e1bb")
+        self.assertEqual(pin["archiveName"], "ret-01-82e2287ed64e-sealed-evidence.zip")
+        self.assertEqual(pin["archiveSize"], 8622918)
+        self.assertEqual(pin["archiveSHA256"], "e7f5df5ce2792a7049d2fac29f7c67b9d7e407237e52167c22b1c9eefc7ff790")
+        self.assertEqual(pin["downloadURL"], "https://github.com/" + pin["repository"]
+                         + "/releases/download/" + pin["tag"] + "/" + pin["archiveName"])
+        self.assertEqual(pin["sourceBundleDigest"], self.bundle_digest)
+        self.assertEqual(pin["generationRecordSHA256"], digest(EVIDENCE / "source-generation/record.json"))
+        bundle = self.generation["bundleInventory"]
+        self.assertEqual(pin["bundleManifestSHA256"], pin["inventory"]["ret-01/bundle/manifest.json"]["sha256"])
+        self.assertEqual(bundle["sourceRevision"], pin["sourceBundleDigest"])
+        self.assertEqual(pin["originActionsArtifact"]["artifactID"], 11884714735)
+        self.assertEqual(pin["originActionsArtifact"]["artifactDigest"], "sha256:" + pin["archiveSHA256"])
+        self.assertEqual(len(pin["inventory"]), 19)
+        self.assertNotIn("expiresAt", pin)
+        self.assertNotIn("retentionDays", pin)
+        self.assertNotIn("original-source-artifact", {gap["scope"] for gap in self.manifest["gaps"]})
 
     def test_semantic_assertions_are_runtime_passes(self):
         self.assertEqual(self.assertions["caseID"], "RET-01")
