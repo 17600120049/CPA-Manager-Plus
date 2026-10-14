@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -247,7 +248,7 @@ func TestGenerateExactSource(t *testing.T) {
 	}
 	migrationState := querySourceState(t, layout.DatabasePath)
 	save(t, generation, "source-snapshot.json", before)
-	record := map[string]any{"caseID": "SRC-11", "SourceRelease": "v1.14.4", "SourceCommit": sourceCommit, "SourceProducerKind": "published-artifact", "SourceProducerArtifact": map[string]any{"immutableReleaseID": 404941931, "assetID": 616064478, "asset": asset, "releaseInfoSHA256": releaseInfoDigest}, "SourceProducerArchiveSHA256": report.ArchiveSHA256, "SourceProducerExecutableSHA256": exeBefore, "SourceProducerBuildCodeCommit": vcsRevision, "GeneratorCodeCommit": code, "PlanCommit": planCommit, "GenerationProfile": p.Profile, "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation", "ControlledInputSHA256": digestBytes(input), "process": map[string]any{"pid": cmd.Process.Pid, "arguments": []string{}, "environment": cmd.Env, "startedAt": started.UTC(), "finishedAt": finished.UTC(), "exitCode": cmd.ProcessState.ExitCode(), "reaped": reaped, "queueCalls": queueCalls.Load(), "deliveredPayloads": 5, "expectedUniqueEvents": 4}, "producerBuildIdentity": "producer-build.json", "harnessToolchain": platformIdentity(), "StoppedBeforeCheckpointInventory": preCheckpoint, "SQLite": checks, "GeneratedBundleSHA256": sealed.SourceRevision, "bundleInventory": sealed, "migrationState": migrationState, "sourceVariant": "full raw; no archives and no deletion; cache/quota completed", "generationSuccess": true, "casePass": false, "UpgradeAuthorized": false, "TrustedHopReceipt": false}
+	record := map[string]any{"caseID": "SRC-11", "SourceRelease": "v1.14.4", "SourceCommit": sourceCommit, "SourceProducerKind": "published-artifact", "SourceProducerArtifact": map[string]any{"immutableReleaseID": 404941931, "assetID": 616064478, "asset": asset, "releaseInfoSHA256": releaseInfoDigest}, "SourceProducerArchiveSHA256": report.ArchiveSHA256, "SourceProducerExecutableSHA256": exeBefore, "SourceProducerBuildCodeCommit": vcsRevision, "GeneratorCodeCommit": code, "PlanCommit": planCommit, "GenerationProfile": p.Profile, "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation", "ControlledInputSHA256": digestBytes(input), "process": map[string]any{"pid": cmd.Process.Pid, "arguments": []string{}, "environment": safeEnvironment(cmd.Env), "startedAt": started.UTC(), "finishedAt": finished.UTC(), "exitCode": cmd.ProcessState.ExitCode(), "reaped": reaped, "queueCalls": queueCalls.Load(), "deliveredPayloads": 5, "expectedUniqueEvents": 4}, "producerBuildIdentity": "producer-build.json", "harnessToolchain": platformIdentity(), "StoppedBeforeCheckpointInventory": preCheckpoint, "SQLite": checks, "GeneratedBundleSHA256": sealed.SourceRevision, "bundleInventory": sealed, "migrationState": migrationState, "sourceVariant": "full raw; no archives and no deletion; cache/quota completed", "generationSuccess": true, "casePass": false, "UpgradeAuthorized": false, "TrustedHopReceipt": false}
 	hashes := map[string]string{}
 	for _, name := range []string{"controlled-input.json", "release-info.json", "producer-build.json", "producer.log", "config-write.json", "price-write.json", "quota-write.json", "v1-analytics.json", "v1-export.jsonl", "source-snapshot.json"} {
 		hashes[name] = fileDigest(t, filepath.Join(generation, name))
@@ -257,6 +258,33 @@ func TestGenerateExactSource(t *testing.T) {
 	save(t, root, "generation-index.json", map[string]any{"location": "source-generation/record.json", "SHA256": generationDigest, "bundleDigest": sealed.SourceRevision, "generationSuccess": true, "casePass": false})
 	t.Log("source generation succeeded; SRC-11 case remains pending until primitive/SEM verification")
 }
+
+func safeEnvironment(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, item := range env {
+		key, _, ok := strings.Cut(item, "=")
+		if !ok {
+			out = append(out, item)
+			continue
+		}
+		value := "<redacted>"
+		switch key {
+		case "CPA_MANAGER_CONFIG":
+			value = "<task-scratch>/source/config.json"
+		case "HTTP_ADDR":
+			value = "<private-listener>"
+		case "CPA_UPSTREAM_URL":
+			value = "<private-http-queue>"
+		case "CPA_MANAGEMENT_KEY", "CPA_MANAGER_ADMIN_KEY":
+			value = "<qualification-only-secret>"
+		case "USAGE_COLLECTOR_MODE", "USAGE_POLL_INTERVAL_MS", "USAGE_QUOTA_COOLDOWN_ENABLED", "TZ":
+			value = item[len(key)+1:]
+		}
+		out = append(out, key+"="+value)
+	}
+	return out
+}
+
 func querySourceState(t *testing.T, path string) any {
 	db := openDB(t, path, true)
 	defer db.Close()
