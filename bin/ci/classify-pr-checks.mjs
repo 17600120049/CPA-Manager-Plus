@@ -10,6 +10,7 @@ const CHECK_NAMES = [
   'windows_sqlite',
   'windows_preflight',
   'bundle_boundary',
+  'manager_runtime',
   'runtime_lifecycle',
   'native_control',
   'docker',
@@ -104,7 +105,7 @@ const triggersBundleBoundary = (filePath) =>
   triggersWindowsSQLite(filePath) ||
   managerServerDependencyFile(filePath);
 
-const triggersRuntimeLifecycle = (filePath) =>
+const triggersManagerRuntime = (filePath) =>
   filePath === 'apps/manager-server/cmd/cpa-manager-plus/main.go' ||
   filePath === 'apps/manager-server/internal/config/config.go' ||
   filePath === 'apps/manager-server/internal/model/runtime.go' ||
@@ -115,6 +116,10 @@ const triggersRuntimeLifecycle = (filePath) =>
   managerServerModuleFile(filePath, 'internal/service/runtime') ||
   managerServerModuleFile(filePath, 'internal/repository/setting') ||
   managerServerModuleFile(filePath, 'internal/service/bootstrap') ||
+  managerServerDependencyFile(filePath);
+
+const triggersRuntimeLifecycle = (filePath) =>
+  triggersManagerRuntime(filePath) ||
   startsWithPath(filePath, 'apps/runtime-supervisor') ||
   startsWithPath(filePath, 'apps/ingress') ||
   startsWithPath(filePath, 'docker/runtime') ||
@@ -128,8 +133,7 @@ const triggersRuntimeLifecycle = (filePath) =>
   filePath === 'Dockerfile.ingress' ||
   filePath === 'Dockerfile.runtime' ||
   filePath === 'docker-compose.yml' ||
-  filePath === 'docker-compose.manager.yml' ||
-  managerServerDependencyFile(filePath);
+  filePath === 'docker-compose.manager.yml';
 
 const triggersNativeControl = (filePath) =>
   startsWithPath(filePath, 'bin/native') ||
@@ -185,6 +189,7 @@ export const classifyChangedFiles = (changedFiles) => {
     windows_sqlite: files.some(triggersWindowsSQLite),
     windows_preflight: files.some(triggersWindowsPreflight),
     bundle_boundary: files.some(triggersBundleBoundary),
+    manager_runtime: files.some(triggersManagerRuntime),
     runtime_lifecycle: files.some(triggersRuntimeLifecycle),
     native_control: files.some(triggersNativeControl),
     docker: files.some(triggersDocker),
