@@ -105,6 +105,11 @@ const triggersBundleBoundary = (filePath) =>
   managerServerDependencyFile(filePath);
 
 const triggersRuntimeLifecycle = (filePath) =>
+  filePath === 'apps/manager-server/cmd/cpa-manager-plus/main.go' ||
+  filePath === 'apps/manager-server/internal/config/config.go' ||
+  filePath === 'apps/manager-server/internal/model/runtime.go' ||
+  filePath === 'apps/manager-server/internal/http/router/router.go' ||
+  managerServerModuleFile(filePath, 'internal/http/controller/cpaupdate') ||
   managerServerModuleFile(filePath, 'internal/command/runtimeconfig') ||
   managerServerModuleFile(filePath, 'internal/service/cpaupdate') ||
   managerServerModuleFile(filePath, 'internal/service/runtime') ||
