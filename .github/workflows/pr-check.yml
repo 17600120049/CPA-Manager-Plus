@@ -35,6 +35,9 @@ jobs:
       runtime_supervisor: ${{ steps.classify.outputs.runtime_supervisor }}
       ingress: ${{ steps.classify.outputs.ingress }}
       windows_sqlite: ${{ steps.classify.outputs.windows_sqlite }}
+      windows_preflight: ${{ steps.classify.outputs.windows_preflight }}
+      bundle_boundary: ${{ steps.classify.outputs.bundle_boundary }}
+      runtime_lifecycle: ${{ steps.classify.outputs.runtime_lifecycle }}
       native_control: ${{ steps.classify.outputs.native_control }}
       docker: ${{ steps.classify.outputs.docker }}
       demo_docs: ${{ steps.classify.outputs.demo_docs }}
@@ -132,6 +135,7 @@ jobs:
         run: go test ./...
 
       - name: Race test Runtime ownership paths
+        if: needs.changes.outputs.runtime_lifecycle == 'true'
         working-directory: apps/manager-server
         run: go test -race ./internal/service/cpaupdate ./internal/service/runtime ./internal/repository/setting ./internal/service/bootstrap
 
@@ -140,6 +144,7 @@ jobs:
         run: go vet ./...
 
       - name: Record Linux bundle boundary environment
+        if: needs.changes.outputs.bundle_boundary == 'true'
         working-directory: apps/manager-server
         shell: bash
         env:
@@ -159,6 +164,7 @@ jobs:
           PY
 
       - name: Test bundle recovery and publication boundaries with race
+        if: needs.changes.outputs.bundle_boundary == 'true'
         working-directory: apps/manager-server
         shell: bash
         run: |
@@ -167,7 +173,7 @@ jobs:
             tee "${RUNNER_TEMP}/manager-bundle-linux/boundary.jsonl"
 
       - name: Upload Linux bundle boundary evidence
-        if: always()
+        if: always() && needs.changes.outputs.bundle_boundary == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: manager-bundle-linux-${{ github.run_id }}-${{ github.run_attempt }}
@@ -309,7 +315,11 @@ jobs:
   manager-server-windows-sqlite:
     name: Manager Server SQLite (Windows)
     needs: changes
-    if: needs.changes.outputs.windows_sqlite == 'true'
+    if: >-
+      needs.changes.outputs.windows_sqlite == 'true' ||
+      needs.changes.outputs.windows_preflight == 'true' ||
+      needs.changes.outputs.bundle_boundary == 'true' ||
+      needs.changes.outputs.runtime_lifecycle == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -340,6 +350,7 @@ jobs:
           } | ConvertTo-Json | Set-Content -Encoding utf8 "$env:RUNNER_TEMP/manager-preflight-windows/environment.json"
 
       - name: Test SQLite repository and source inspection
+        if: needs.changes.outputs.windows_sqlite == 'true'
         working-directory: apps/manager-server
         shell: pwsh
         run: |
@@ -348,6 +359,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test preflight ownership and commands
+        if: needs.changes.outputs.windows_preflight == 'true'
         working-directory: apps/manager-server
         shell: pwsh
         run: |
@@ -356,6 +368,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test preflight startup and recovery
+        if: needs.changes.outputs.windows_preflight == 'true'
         working-directory: apps/manager-server
         shell: pwsh
         run: |
@@ -364,10 +377,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test Runtime portability
+        if: needs.changes.outputs.runtime_lifecycle == 'true'
         working-directory: apps/manager-server
         run: go test ./internal/service/runtime ./internal/repository/setting ./internal/service/bootstrap
 
       - name: Test bundle runtime recovery and Windows file semantics
+        if: needs.changes.outputs.bundle_boundary == 'true'
         working-directory: apps/manager-server
         shell: pwsh
         run: |
@@ -483,33 +498,39 @@ jobs:
           push: false
 
       - name: Build native smoke images
+        if: needs.changes.outputs.runtime_lifecycle == 'true'
         run: docker compose build
 
       - name: Run single-public-port Runtime smoke
+        if: needs.changes.outputs.runtime_lifecycle == 'true'
         env:
           CPAMP_SMOKE_PORT: '18317'
           CPAMP_SMOKE_SKIP_BUILD: 'true'
         run: bin/ci/runtime12-docker-smoke.sh
 
       - name: Run Runtime failure-behavior E2E
+        if: needs.changes.outputs.runtime_lifecycle == 'true'
         env:
           CPAMP_RUNTIME14_PORT: '18317'
           CPAMP_RUNTIME14_SKIP_BUILD: 'true'
         run: bin/ci/runtime14-failure-e2e.sh
 
       - name: Run Runtime activation and rollback E2E
+        if: needs.changes.outputs.runtime_lifecycle == 'true'
         env:
           CPAMP_RUNTIME17_PORT: '18317'
           CPAMP_RUNTIME17_SKIP_BUILD: 'true'
         run: bin/ci/runtime17-activation-e2e.sh
 
       - name: Run Runtime secret and state segmentation E2E
+        if: needs.changes.outputs.runtime_lifecycle == 'true'
         env:
           CPAMP_RUNTIME18_PORT: '18317'
           CPAMP_RUNTIME18_SKIP_BUILD: 'true'
         run: bin/ci/runtime18-secret-state-e2e.sh
 
       - name: Run Runtime Phase1 exit E2E
+        if: needs.changes.outputs.runtime_lifecycle == 'true'
         env:
           CPAMP_RUNTIME19_PORT: '18317'
           CPAMP_RUNTIME19_SKIP_BUILD: 'true'
