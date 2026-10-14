@@ -1,0 +1,247 @@
+{
+  "profile": "ret-02-archived-raw-retained-v1",
+  "events": [
+    {
+      "request_id": "ret02-devin-mixed",
+      "timestamp": "2026-10-01T00:00:00Z",
+      "provider": "devin",
+      "executor_type": "DevinExecutor",
+      "model": "devin/swe-2",
+      "session_id": "ret02-session",
+      "parent_session_id": "ret02-parent",
+      "auth_index": "fixture-devin",
+      "auth_file_snapshot": "fixture-devin.json",
+      "auth_provider_snapshot": "devin",
+      "account_snapshot": "fixture-devin@example.invalid",
+      "tokens": {
+        "input_tokens": 1000,
+        "output_tokens": 100,
+        "cached_tokens": 900,
+        "cache_read_tokens": 900,
+        "cache_creation_tokens": 50,
+        "total_tokens": 1150
+      },
+      "response_headers": {
+        "X-Request-Id": [
+          "trace-ret02-devin"
+        ],
+        "Content-Type": [
+          "text/event-stream"
+        ],
+        "Authorization": [
+          "Bearer qualification-redaction-sentinel"
+        ]
+      },
+      "api_key": "sk-qualification-redaction-sentinel",
+      "response_model": "devin/swe-2",
+      "requested_model": "devin/swe-2",
+      "resolved_model": "devin/swe-2",
+      "endpoint": "responses",
+      "method": "POST",
+      "path": "/v1/responses",
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "stream": true,
+      "generate": true,
+      "latency_ms": 125,
+      "ttft_ms": 25
+    },
+    {
+      "request_id": "ret02-claude-tier",
+      "timestamp": "2026-10-01T01:00:00Z",
+      "provider": "claude",
+      "executor_type": "ClaudeExecutor",
+      "model": "claude-fixture",
+      "session_id": "ret02-session",
+      "auth_index": "fixture-claude",
+      "auth_provider_snapshot": "claude",
+      "auth_file_snapshot": "fixture-claude.json",
+      "tokens": {
+        "input_tokens": 2000,
+        "output_tokens": 100,
+        "cache_read_tokens": 100,
+        "cache_creation_tokens": 50,
+        "total_tokens": 2250
+      },
+      "response_model": "claude-fixture",
+      "requested_model": "claude-fixture",
+      "resolved_model": "claude-fixture",
+      "endpoint": "responses",
+      "method": "POST",
+      "path": "/v1/responses",
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "stream": false,
+      "generate": false,
+      "latency_ms": 0,
+      "ttft_ms": 0
+    },
+    {
+      "request_id": "ret02-explicit-zero",
+      "timestamp": "2026-10-01T02:00:00Z",
+      "provider": "codex",
+      "model": "fixture-free",
+      "auth_index": "fixture-codex",
+      "auth_provider_snapshot": "codex",
+      "auth_file_snapshot": "fixture-codex.json",
+      "tokens": {
+        "input_tokens": 500,
+        "output_tokens": 100,
+        "cached_tokens": 400,
+        "total_tokens": 600
+      },
+      "response_model": "fixture-free",
+      "requested_model": "fixture-free",
+      "resolved_model": "fixture-free",
+      "endpoint": "responses",
+      "method": "POST",
+      "path": "/v1/responses",
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "request_id": "ret02-quota-failure",
+      "timestamp": "2026-10-01T03:00:00Z",
+      "provider": "codex",
+      "model": "fixture-paid",
+      "auth_index": "fixture-codex",
+      "auth_provider_snapshot": "codex",
+      "auth_file_snapshot": "fixture-codex.json",
+      "failed": true,
+      "fail_status_code": 429,
+      "fail_body": "HTTP 429 cpaManagementKey=qualification-redaction-sentinel quota exhausted",
+      "session_id": "ret02-session",
+      "response_model": "fixture-paid",
+      "tokens": {
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "total_tokens": 110
+      },
+      "response_headers": {
+        "X-Codex-Primary-Used-Percent": [
+          "100"
+        ],
+        "X-Codex-Primary-Reset-At": [
+          "4102444800000"
+        ],
+        "X-Codex-Primary-Window-Minutes": [
+          "300"
+        ],
+        "X-Codex-Plan-Type": [
+          "plus"
+        ],
+        "X-Request-Id": [
+          "trace-ret02-quota"
+        ]
+      },
+      "requested_model": "fixture-paid",
+      "resolved_model": "fixture-paid",
+      "endpoint": "responses",
+      "method": "POST",
+      "path": "/v1/responses",
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "prices": {
+    "devin/swe-2": {
+      "prompt": 3,
+      "completion": 15,
+      "cache": 0.3,
+      "cacheRead": 0.3,
+      "cacheCreation": 3.75,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "cacheReadConfigured": true,
+      "cacheCreationConfigured": true,
+      "source": "manual"
+    },
+    "claude-fixture": {
+      "prompt": 3,
+      "completion": 15,
+      "cache": 0.3,
+      "cacheRead": 0.3,
+      "cacheCreation": 3.75,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "cacheReadConfigured": true,
+      "cacheCreationConfigured": true,
+      "source": "manual",
+      "contextTiers": [
+        {
+          "thresholdTokens": 1000,
+          "prompt": 6,
+          "completion": 30,
+          "cache": 0.6,
+          "cacheRead": 0.6,
+          "cacheCreation": 7.5,
+          "promptConfigured": true,
+          "completionConfigured": true,
+          "cacheConfigured": true,
+          "cacheReadConfigured": true,
+          "cacheCreationConfigured": true
+        }
+      ]
+    },
+    "fixture-free": {
+      "prompt": 0,
+      "completion": 0,
+      "cache": 0,
+      "cacheRead": 0,
+      "cacheCreation": 0,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "cacheReadConfigured": true,
+      "cacheCreationConfigured": true,
+      "source": "manual"
+    },
+    "fixture-paid": {
+      "prompt": 2,
+      "completion": 8,
+      "cache": 0.2,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "source": "manual"
+    }
+  },
+  "quota": {
+    "entries": [
+      {
+        "provider": "meta",
+        "account": {
+          "auth_index": "fixture-meta",
+          "auth_file_snapshot": "fixture-meta.json",
+          "auth_provider_snapshot": "meta"
+        },
+        "windows": [
+          {
+            "provider_window_id": "fixture-week",
+            "window_kind": "week",
+            "window_mode": "fixed",
+            "model_scope_kind": "all",
+            "source": "api_query",
+            "source_observation_id": "ret02-controlled-quota",
+            "observed_at_ms": 1790812800000,
+            "boundary_accuracy": "exact",
+            "cycle_start_ms": 1790812800000,
+            "cycle_end_ms": 1791417600000,
+            "duration_seconds": 604800,
+            "used_percent": 25,
+            "remaining_percent": 75,
+            "reset_credits_available": 2,
+            "reset_credits": [
+              {
+                "id": "fixture-banked-reset",
+                "expires_at_ms": 1791417600000
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "fromMS": 1790812800000,
+  "toMS": 1790899200000,
+  "expectedUSD": {
+    "devin/swe-2": 0.0022575,
+    "claude-fixture": 0.015435,
+    "fixture-free": 0,
+    "fixture-paid": 0.00028
+  }
+}
