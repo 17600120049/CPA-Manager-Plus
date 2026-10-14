@@ -276,6 +276,11 @@ describe('PR check classifier', () => {
   it('runs Docker failure validation for every combined Runtime lifecycle family', () => {
     for (const filePath of [
       'apps/ingress/internal/ingress/proxy.go',
+      'apps/manager-server/cmd/cpa-manager-plus/main.go',
+      'apps/manager-server/internal/config/config.go',
+      'apps/manager-server/internal/model/runtime.go',
+      'apps/manager-server/internal/http/router/router.go',
+      'apps/manager-server/internal/http/controller/cpaupdate/handler.go',
       'apps/manager-server/internal/command/runtimeconfig/command.go',
       'apps/manager-server/internal/service/runtime/reconciler.go',
       'apps/manager-server/internal/repository/setting/repository.go',
@@ -359,6 +364,7 @@ describe('PR check classifier', () => {
       frontend: true,
       manager_server: true,
       windows_preflight: true,
+      runtime_lifecycle: true,
       docker: true,
       demo_docs: true,
     });
