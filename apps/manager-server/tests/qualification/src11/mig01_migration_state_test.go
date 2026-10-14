@@ -1,21 +1,21 @@
-package sqlite
+package src11
 
 import (
 	"context"
 	"database/sql"
 )
 
-// RequiredMigrationReadiness is read-only persisted evidence, not an upgrade
+// requiredMigrationReadiness is read-only persisted evidence, not an upgrade
 // grant. Historical completion does not use the current v2 worker's revision.
-type RequiredMigrationReadiness struct {
-	Cache               []MigrationCheckpoint `json:"cache"`
-	Quota               []MigrationCheckpoint `json:"quota"`
+type requiredMigrationReadiness struct {
+	Cache               []migrationCheckpoint `json:"cache"`
+	Quota               []migrationCheckpoint `json:"quota"`
 	CacheRevision       *string               `json:"cacheRevision"`
 	CacheStagingRows    *int64                `json:"cacheStagingRows"`
 	QuotaUnattachedRows *int64                `json:"quotaUnattachedRows"`
 }
 
-type MigrationCheckpoint struct {
+type migrationCheckpoint struct {
 	Status       string `json:"status"`
 	LastID       int64  `json:"lastId"`
 	TargetID     int64  `json:"targetId"`
@@ -28,7 +28,7 @@ type MigrationCheckpoint struct {
 
 // Exact v1.14.4 may initialize completed cache rows with NULL finished_at_ms.
 // Do not repair that value or infer completion from a timestamp.
-func (s *RequiredMigrationReadiness) CompletedV1144() bool {
+func (s *requiredMigrationReadiness) completedV1144() bool {
 	if s == nil || s.CacheRevision == nil || *s.CacheRevision != "2" ||
 		s.CacheStagingRows == nil || *s.CacheStagingRows != 0 ||
 		s.QuotaUnattachedRows == nil || *s.QuotaUnattachedRows != 0 ||
@@ -44,14 +44,11 @@ func (s *RequiredMigrationReadiness) CompletedV1144() bool {
 	// snapshots. The authoritative incomplete test is unattached rows, not max(id).
 }
 
-func inspectMigrationReadiness(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
-	if !inspectionHasColumns(result, "usage_data_migrations", "name", "status", "last_event_id", "target_event_id", "processed_rows", "changed_rows", "applied_rows", "finished_at_ms", "last_error") {
-		return nil
-	}
-	s := &RequiredMigrationReadiness{Cache: []MigrationCheckpoint{}, Quota: []MigrationCheckpoint{}}
+func inspectMigrationReadiness(ctx context.Context, db *sql.DB) (*requiredMigrationReadiness, error) {
+	s := &requiredMigrationReadiness{Cache: []migrationCheckpoint{}, Quota: []migrationCheckpoint{}}
 	for _, item := range []struct {
 		name string
-		dest *[]MigrationCheckpoint
+		dest *[]migrationCheckpoint
 	}{
 		{"usage_cache_accounting_v2", &s.Cache}, {"quota_snapshot_lifecycle_v1", &s.Quota},
 	} {
@@ -62,33 +59,33 @@ func inspectMigrationReadiness(ctx context.Context, db *sql.DB, result *LegacyIn
 			case when last_error is null or last_error = '' then 0 else 1 end
 			from usage_data_migrations where name collate binary = ? limit 2`, item.name)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for rows.Next() {
-			var c MigrationCheckpoint
+			var c migrationCheckpoint
 			if err := rows.Scan(&c.Status, &c.LastID, &c.TargetID, &c.Processed, &c.Changed, &c.Applied, &c.FinishedAtMS, &c.HasError); err != nil {
 				rows.Close()
-				return err
+				return nil, err
 			}
 			*item.dest = append(*item.dest, c)
 		}
 		err = rows.Err()
 		closeErr := rows.Close()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if closeErr != nil {
-			return closeErr
+			return nil, closeErr
 		}
 	}
-	if inspectionHasColumns(result, "settings", "key", "value") {
+	{
 		var revision string
 		err := db.QueryRowContext(ctx, `select case when typeof(value) = 'text' and value collate binary in ('1','2','3')
 			then value else 'unknown' end from settings where key collate binary = 'usage_cache_accounting_semantics_revision'`).Scan(&revision)
 		if err == nil {
 			s.CacheRevision = &revision
 		} else if err != sql.ErrNoRows {
-			return err
+			return nil, err
 		}
 	}
 	for _, item := range []struct {
@@ -98,20 +95,14 @@ func inspectMigrationReadiness(ctx context.Context, db *sql.DB, result *LegacyIn
 		{"usage_cache_accounting_v2_changes", "event_id", "select count(*) from usage_cache_accounting_v2_changes", &s.CacheStagingRows},
 		{"account_quota_snapshots", "observation_id", "select count(*) from account_quota_snapshots where observation_id is null", &s.QuotaUnattachedRows},
 	} {
-		// Supplementary tables are not schema-family fingerprints. Inspect their
-		// exact column before querying; absent evidence remains unknown.
-		var exists bool
-		if err := db.QueryRowContext(ctx, `select exists(select 1 from pragma_table_info(?) where name = ?)`, item.table, item.column).Scan(&exists); err != nil {
-			return err
-		}
-		if exists {
+		// The exact source schema is already classified; absent columns fail closed.
+		{
 			var count int64
 			if err := db.QueryRowContext(ctx, item.query).Scan(&count); err != nil {
-				return err
+				return nil, err
 			}
 			*item.dest = &count
 		}
 	}
-	result.RequiredMigrationReadiness = s
-	return nil
+	return s, nil
 }

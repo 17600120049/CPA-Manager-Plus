@@ -1,8 +1,11 @@
-package legacypreflight
+// Qualification-only composition of existing product primitives. This file
+// is compiled only by go test; it cannot alter product preflight or CLI JSON.
+package src11
 
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,30 +18,32 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
-// DirectCandidateInput belongs to controlled qualification, not an authority
+// directCandidateInput belongs to controlled qualification, not an authority
 // consumer. The independently retained evidence index supplies both pins. A
 // caller's own pins/JSON cannot establish Manager ownership or support policy.
-type DirectCandidateInput struct {
+type directCandidateInput struct {
 	SourceRoot             string
 	ProducerArchive        string
 	GenerationRecordSHA256 string
 	BundleSHA256           string
 }
 
-type DirectCandidateReadiness struct {
-	Scope                  string            `json:"scope"`
-	Status                 string            `json:"status"`
-	SourceRelease          string            `json:"sourceRelease,omitempty"`
-	SourceCommit           string            `json:"sourceCommit,omitempty"`
-	BundleSHA256           string            `json:"bundleSHA256,omitempty"`
-	GenerationRecordSHA256 string            `json:"generationRecordSHA256,omitempty"`
-	Checks                 map[string]string `json:"checks"`
-	Preflight              Report            `json:"preflight"`
-	UpgradeAuthorized      bool              `json:"UpgradeAuthorized"`
-	TrustedHopReceipt      bool              `json:"TrustedHopReceipt"`
+type directCandidateReadiness struct {
+	Scope                  string                      `json:"scope"`
+	Status                 string                      `json:"status"`
+	SourceRelease          string                      `json:"sourceRelease,omitempty"`
+	SourceCommit           string                      `json:"sourceCommit,omitempty"`
+	BundleSHA256           string                      `json:"bundleSHA256,omitempty"`
+	GenerationRecordSHA256 string                      `json:"generationRecordSHA256,omitempty"`
+	Checks                 map[string]string           `json:"checks"`
+	Preflight              legacypreflight.Report      `json:"preflight"`
+	UpgradeAuthorized      bool                        `json:"UpgradeAuthorized"`
+	TrustedHopReceipt      bool                        `json:"TrustedHopReceipt"`
+	MigrationReadiness     *requiredMigrationReadiness `json:"migrationReadiness"`
 }
 
 type directGenerationRecord struct {
@@ -61,15 +66,15 @@ type directGenerationRecord struct {
 
 var errDirectCandidate = errors.New("direct candidate data qualification failed")
 
-// InspectDirectCandidateReadiness executes the maintained production reader,
+// inspectdirectCandidateReadiness executes the maintained production reader,
 // classifier, artifact and matching-evidence primitives. It is deliberately
 // disconnected from startupAllowed, AdmitStartup, hop validation and all APIs.
 // ready means data/compatibility eligibility for the pinned controlled input;
 // the embedded diagnostic report's unknown production obligations stay unknown.
 // No source migration or repair is permitted. Matching-evidence migration runs
 // only on the existing validator's private disposable copies.
-func InspectDirectCandidateReadiness(ctx context.Context, in DirectCandidateInput) (out DirectCandidateReadiness, err error) {
-	out = DirectCandidateReadiness{Scope: "controlled-direct-candidate-data-compatibility", Status: "blocked", Checks: map[string]string{}}
+func inspectDirectCandidateReadiness(ctx context.Context, in directCandidateInput) (out directCandidateReadiness, err error) {
+	out = directCandidateReadiness{Scope: "controlled-direct-candidate-data-compatibility", Status: "blocked", Checks: map[string]string{}}
 	if !directDigest(in.GenerationRecordSHA256) || !directDigest(in.BundleSHA256) {
 		out.Checks["exact-source-generation"] = "missing-evidence"
 		return out, errDirectCandidate
@@ -149,13 +154,20 @@ func InspectDirectCandidateReadiness(ctx context.Context, in DirectCandidateInpu
 	out.Checks["exact-source-generation"] = "pass"
 	layout := maintenancebundle.BundleLayout(bundleRoot)
 	paths := sqlite.InspectionPaths{Database: layout.DatabasePath, Config: layout.ConfigPath, DataKey: layout.DataKeyPath, Archives: layout.ArchivesPath}
-	out.Preflight, e = Inspect(ctx, paths, Options{SourceStopped: true})
+	out.Preflight, e = legacypreflight.Inspect(ctx, paths, legacypreflight.Options{SourceStopped: true})
 	if e != nil || len(out.Preflight.Blocked) != 0 || out.Preflight.SourceKind != "legacy-manager" || out.Preflight.CompatibilityProfile == nil ||
 		out.Preflight.CompatibilityProfile.Status != "recognized" || out.Preflight.CompatibilityProfile.Family != "LegacySchemaC" {
 		return out, errDirectCandidate
 	}
 	out.Checks["legacy-classifier"] = "pass"
-	if !out.Preflight.Observed.RequiredMigrationReadiness.CompletedV1144() {
+	db, e := sql.Open("sqlite", dbURI(layout.DatabasePath, true)+"&immutable=1&_pragma=query_only(1)")
+	if e != nil {
+		return out, errDirectCandidate
+	}
+	db.SetMaxOpenConns(1)
+	out.MigrationReadiness, e = inspectMigrationReadiness(ctx, db)
+	closeErr := db.Close()
+	if e != nil || closeErr != nil || !out.MigrationReadiness.completedV1144() {
 		return out, errDirectCandidate
 	}
 	out.Checks["required-migrations"] = "pass"

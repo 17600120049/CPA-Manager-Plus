@@ -47,19 +47,18 @@ type InspectionTable struct {
 
 // Observations never constitute a profile, backup receipt or upgrade grant.
 type LegacyInspection struct {
-	Files                      []InspectionFile                        `json:"files"`
-	SQLite                     string                                  `json:"sqlite"`
-	Consistency                string                                  `json:"consistency"`
-	Tables                     []InspectionTable                       `json:"tables,omitempty"`
-	SchemaFingerprint          string                                  `json:"schemaFingerprint,omitempty"`
-	History                    map[string]string                       `json:"history"`
-	HistoryRowsObserved        map[string]int                          `json:"historyRowsObserved,omitempty"`
-	CacheAccountingV2          string                                  `json:"cacheAccountingV2"`
-	QuotaSnapshotLifecycleV1   string                                  `json:"quotaSnapshotLifecycleV1"`
-	RequiredMigrationReadiness *RequiredMigrationReadiness             `json:"requiredMigrationReadiness,omitempty"`
-	ConnectionStorageVersion   *int                                    `json:"connectionStorageVersion,omitempty"`
-	ConnectionStorage          PersistedCPAConnectionStorageInspection `json:"connectionStorage"`
-	Issues                     []string                                `json:"issues"`
+	Files                    []InspectionFile                        `json:"files"`
+	SQLite                   string                                  `json:"sqlite"`
+	Consistency              string                                  `json:"consistency"`
+	Tables                   []InspectionTable                       `json:"tables,omitempty"`
+	SchemaFingerprint        string                                  `json:"schemaFingerprint,omitempty"`
+	History                  map[string]string                       `json:"history"`
+	HistoryRowsObserved      map[string]int                          `json:"historyRowsObserved,omitempty"`
+	CacheAccountingV2        string                                  `json:"cacheAccountingV2"`
+	QuotaSnapshotLifecycleV1 string                                  `json:"quotaSnapshotLifecycleV1"`
+	ConnectionStorageVersion *int                                    `json:"connectionStorageVersion,omitempty"`
+	ConnectionStorage        PersistedCPAConnectionStorageInspection `json:"connectionStorage"`
+	Issues                   []string                                `json:"issues"`
 }
 
 // Restrict work to known tables rather than exposing arbitrary source names.
@@ -206,10 +205,6 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 	if readErr := inspectHistory(ctx, db, &result); readErr != nil {
 		result.Issues = append(result.Issues, "history-inspection-failed")
 		return result, errors.New("source history could not be inspected")
-	}
-	if readErr := inspectMigrationReadiness(ctx, db, &result); readErr != nil {
-		result.Issues = append(result.Issues, "migration-readiness-inspection-failed")
-		return result, errors.New("source migration readiness could not be inspected")
 	}
 	during, checkErr := inspectFiles(paths)
 	if checkErr != nil || !sameInspectionFiles(result.Files, during) {

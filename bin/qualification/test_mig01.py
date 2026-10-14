@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +41,19 @@ class Mig01EvidenceTests(unittest.TestCase):
             path = EVIDENCE / name
             self.assertEqual(path.stat().st_size, entry["size"], name)
             self.assertEqual(digest(path), entry["sha256"], name)
+
+    def test_frozen_product_scope(self):
+        scope = read(EVIDENCE / "product-scope.json")
+        self.assertEqual(scope["baselineCommit"], "3f65813749a89371a3005b4a710836df587a7582")
+        self.assertFalse(scope["productCodeChanged"])
+        for path, expected in scope["baselineTrees"].items():
+            actual = subprocess.check_output(["git", "rev-parse", "HEAD:" + path], cwd=ROOT, text=True).strip()
+            self.assertEqual(actual, expected, path)
+        for path in ("internal/repository/sqlite/legacy_migration_readiness.go",
+                     "internal/service/legacypreflight/direct_candidate.go"):
+            self.assertFalse((ROOT / "apps/manager-server" / path).exists(), path)
+        for name in ("mig01_readiness_test.go", "mig01_migration_state_test.go"):
+            self.assertTrue((ROOT / "apps/manager-server/tests/qualification/src11" / name).is_file())
 
     def test_independent_exact_generation(self):
         record = self.generation
@@ -86,6 +100,7 @@ class Mig01EvidenceTests(unittest.TestCase):
             self.assertEqual(ready["preflight"]["exactSourceRelease"]["status"], "unknown")
             self.assertEqual(ready["preflight"]["bridgeReadiness"]["status"], "unknown")
             self.assertFalse(ready["preflight"]["upgradeAuthorized"])
+            self.assertNotIn("requiredMigrationReadiness", ready["preflight"]["observed"])
             self.assertEqual(set(ready["checks"].values()), {"pass"})
             self.assertEqual(state["before"], state["after"])
             self.assertEqual(state["readinessInspection"]["cacheRevision"], "2")

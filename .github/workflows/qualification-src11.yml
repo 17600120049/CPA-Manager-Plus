@@ -12,8 +12,6 @@ on:
       - 'tests/fixtures/phase4a-evidence/src-11/**'
       - 'tests/fixtures/phase4a-evidence/ret-01/**'
       - 'tests/fixtures/phase4a-evidence/mig-01/**'
-      - 'apps/manager-server/internal/repository/sqlite/**'
-      - 'apps/manager-server/internal/service/legacypreflight/**'
 
 permissions:
   contents: read

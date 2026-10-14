@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
@@ -58,9 +57,9 @@ func TestQualifyMIG01(t *testing.T) {
 	if len(devin) != 1 || devin[0]["cache_input_mode"] != "read_included_creation_separate" || devin[0]["total_tokens"] != int64(1150) {
 		t.Fatal("historical Devin revision 2 missing")
 	}
-	input := legacypreflight.DirectCandidateInput{SourceRoot: root, ProducerArchive: archive,
+	input := directCandidateInput{SourceRoot: root, ProducerArchive: archive,
 		GenerationRecordSHA256: fileDigest(t, filepath.Join(root, "source-generation/record.json")), BundleSHA256: sealed.SourceRevision}
-	ready, err := legacypreflight.InspectDirectCandidateReadiness(ctx, input)
+	ready, err := inspectDirectCandidateReadiness(ctx, input)
 	must(t, err)
 	if ready.Status != "ready" || ready.SourceRelease != "v1.14.4" || ready.SourceCommit != sourceCommit ||
 		ready.UpgradeAuthorized || ready.TrustedHopReceipt || ready.Preflight.UpgradeAuthorized ||
@@ -71,7 +70,7 @@ func TestQualifyMIG01(t *testing.T) {
 	// Missing exact generation evidence is a narrow guard, not AUT or MIG-02.
 	guard := input
 	guard.GenerationRecordSHA256 = ""
-	rejected, err := legacypreflight.InspectDirectCandidateReadiness(ctx, guard)
+	rejected, err := inspectDirectCandidateReadiness(ctx, guard)
 	if err == nil || rejected.Status != "blocked" || rejected.UpgradeAuthorized || rejected.TrustedHopReceipt {
 		t.Fatal("schema-only guard did not reject")
 	}
@@ -90,7 +89,7 @@ func TestQualifyMIG01(t *testing.T) {
 	save(t, out, "input-bundle.json", sealed)
 	save(t, out, "readiness-input.json", map[string]any{"sourceRelease": r.SourceRelease, "sourceCommit": r.SourceCommit, "sourceGenerationRecordSHA256": input.GenerationRecordSHA256, "inputBundleDigest": input.BundleSHA256, "producerArchiveSHA256": r.SourceProducerArchiveSHA256, "producerExecutableSHA256": r.SourceProducerExecutableSHA256, "readOnlySource": true})
 	save(t, out, "readiness-result.json", ready)
-	save(t, out, "migration-state-snapshot.json", map[string]any{"before": statesBefore, "after": statesAfter, "readinessInspection": ready.Preflight.Observed.RequiredMigrationReadiness})
+	save(t, out, "migration-state-snapshot.json", map[string]any{"before": statesBefore, "after": statesAfter, "readinessInspection": ready.MigrationReadiness})
 	save(t, out, "authoritative-digest.json", map[string]any{"before": beforeSHA, "after": afterSHA, "bundleBefore": sealed.SourceRevision, "bundleAfter": afterBundle.SourceRevision, "beforeSnapshot": before, "afterSnapshot": after})
 	save(t, out, "semantic-assertions.json", map[string]any{
 		"SEM-01":         map[string]any{"status": "runtime-pass", "allSourceFieldsEqual": true, "nullsPreserved": true, "historyBeforeSHA256": beforeSHA, "historyAfterSHA256": afterSHA, "historicalCosts": json.RawMessage(read(t, filepath.Join(root, "source-generation/v1-analytics.json"))), "noRepricing": true},
