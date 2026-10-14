@@ -7,3 +7,5 @@ apps/manager-server/tests/qualification/src11/*.go text eol=lf
 bin/qualification/*.py text eol=lf
 tests/fixtures/phase4a-src11/** text eol=lf
 tests/fixtures/phase4a-evidence/src-11/** -text
+# Preserve actual Windows CI JSON bytes, including native CRLF observations.
+tests/fixtures/phase4a-evidence/src-11/packaging-replay/ci/windows-latest/*.json -text whitespace=cr-at-eol
