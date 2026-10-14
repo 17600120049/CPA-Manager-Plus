@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -332,5 +333,116 @@ func TestCommandCancellationAndHelp(t *testing.T) {
 	}
 	if after := sourceWitness(t, filepath.Dir(l.DatabasePath)); !reflect.DeepEqual(before, after) {
 		t.Fatal("cancellation/help changed source")
+	}
+}
+
+func TestCommandJournalWriter(t *testing.T) {
+	path := os.Getenv("CPAMP_COMMAND_JOURNAL_DB")
+	if path == "" {
+		return
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;
+		PRAGMA cache_size=2; PRAGMA cache_spill=ON; BEGIN IMMEDIATE;
+		UPDATE command_recovery SET note=CAST(hex(zeroblob(2000)) AS BLOB)`); err != nil {
+		t.Fatal(err)
+	}
+	os.Exit(0)
+}
+
+func TestCommandRecoverCreateAndPublication(t *testing.T) {
+	l, root := source(t)
+	db, err := sql.Open("sqlite", l.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA journal_mode=DELETE; CREATE TABLE command_recovery(id INTEGER PRIMARY KEY,note BLOB);
+		WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<64)
+		INSERT INTO command_recovery SELECT n,zeroblob(4000) FROM seq`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	writer := exec.Command(os.Args[0], "-test.run=^TestCommandJournalWriter$")
+	writer.Env = append(os.Environ(), "CPAMP_COMMAND_JOURNAL_DB="+l.DatabasePath)
+	if output, err := writer.CombinedOutput(); err != nil {
+		t.Fatalf("writer/reap: %v %s", err, output)
+	}
+	before := sourceWitness(t, filepath.Dir(l.DatabasePath))
+	bundle := filepath.Join(root, "recovered")
+	args := createArgs(l, bundle)
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), args, &stdout, &stderr); err == nil || stdout.Len() != 0 {
+		t.Fatal("ordinary create accepted hot journal")
+	}
+	args[0] = "recover-create"
+	if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	var got summary
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "recovered-created" || got.UpgradeAuthorized || got.Fence != maintenancebundle.CooperatingFence {
+		t.Fatalf("recovery summary: %+v", got)
+	}
+	m, err := maintenancebundle.Verify(context.Background(), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Recovery == nil {
+		t.Fatal("missing recovery metadata")
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"recover-publication", "--bundle", bundle}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "publication-committed" || got.UpgradeAuthorized {
+		t.Fatalf("publication recovery summary: %+v", got)
+	}
+	if after := sourceWitness(t, filepath.Dir(l.DatabasePath)); !reflect.DeepEqual(before, after) {
+		t.Fatal("CLI recovery changed source")
+	}
+	if strings.Contains(stdout.String(), root) || strings.Contains(stdout.String(), "private-fixture-secret") || stderr.Len() != 0 {
+		t.Fatal("recovery leaked source")
+	}
+	unknown := filepath.Join(root, "unknown")
+	stdout.Reset()
+	err = Run(context.Background(), []string{"recover-publication", "--bundle", unknown}, &stdout, &stderr)
+	if err == nil || stdout.Len() != 0 || strings.Contains(err.Error(), root) {
+		t.Fatal("unknown recovery accepted or leaked path")
+	}
+}
+
+func TestCommandRecoveryArgumentAndUncertainOutcome(t *testing.T) {
+	l, root := source(t)
+	for _, flagName := range []string{"--db", "--data-key", "--config", "--archives", "--source-stopped"} {
+		args := createArgs(l, filepath.Join(root, "recovered"))
+		args[0] = "recover-create"
+		for i, v := range args {
+			if v == flagName {
+				if flagName == "--source-stopped" {
+					args = append(args[:i], args[i+1:]...)
+				} else {
+					args = append(args[:i], args[i+2:]...)
+				}
+				break
+			}
+		}
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), args, &stdout, &stderr); err == nil || stdout.Len() != 0 {
+			t.Fatalf("recover-create accepted missing %s", flagName)
+		}
+	}
+	redacted := operationError{errors.Join(maintenancebundle.ErrPublicationUncertain, errors.New("private-fixture-secret"))}
+	if !strings.Contains(redacted.Error(), "recover-publication") || strings.Contains(redacted.Error(), "private-fixture-secret") {
+		t.Fatal("uncertain outcome is misleading or leaks input")
 	}
 }

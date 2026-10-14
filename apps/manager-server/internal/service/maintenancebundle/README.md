@@ -10,6 +10,13 @@ cpa-manager-plus manager-data-bundle create --db /private/source/usage.sqlite \
 cpa-manager-plus manager-data-bundle verify --bundle /private/backups/bundle
 cpa-manager-plus manager-data-bundle restore-new --bundle /private/backups/bundle \
   --target /private/recovery/new-root
+# Explicit hot rollback-journal recovery, on a private copy only:
+cpa-manager-plus manager-data-bundle recover-create --db /private/source/usage.sqlite \
+  --data-key /private/source/data.key --config /private/source/config.json \
+  --archives /private/source/usage-archives --bundle /private/backups/recovered \
+  --source-stopped --timeout 2m
+# After an uncertain result or a crash; use the create OR restore destination:
+cpa-manager-plus manager-data-bundle recover-publication --bundle /private/recovery/new-root
 ```
 
 The source must have its existing Manager ownership marker; this command never
@@ -42,7 +49,9 @@ Non-empty rollback journals fail matching evidence with
 `rollback journal recovery is not qualified for maintenance bundle`. SQLite
 could roll back database pages on first open, so these inputs are never
 published by create/restore. Absent or empty regular journals remain supported;
-rollback-journal recovery qualification is deferred to Phase4A-07.
+ordinary create/restore never performs rollback-journal recovery. The explicit
+`recover-create` primitive supports the restricted recovery contract below;
+real historical recovery qualification remains a Phase4A-07 obligation.
 Manifest format **version 2** requires a deterministic aggregate `sourceRevision`
 across all inventory entries. Version 1 bundles from the earlier offline
 primitives (including v1 manifests with an added revision) are explicitly
@@ -73,8 +82,16 @@ external writer quiescence separately:
    separate writable copy must also pass the real production SQLite open/migration
    and archive reader queries. This migrated copy is discarded, never published.
 9. Writes `manifest.json` with `sourceRevision` and fence `cooperating-manager-lock`.
-10. Verifies destination is absent and atomically renames the temporary directory to
-    the destination.
+10. Records the expected manifest in a fenced per-destination operation journal;
+    flushes every staged file and, on POSIX, all staged directories from leaves
+    to root. Independently verifies the complete staged manifest and inventory.
+11. Revalidates the original source again AFTER the expensive matching checks,
+    manifest write and staging flush, and rechecks its Manager lock. Any observed
+    drift invalidates this operation's content evidence and aborts publication.
+12. Verifies destination is absent and renames the complete temporary directory
+    to the destination. Flushes the old and new parent metadata on POSIX, then
+    durably records `committed`. Windows uses `MoveFileEx(WRITE_THROUGH)` without
+    replacement; it has no portable directory fsync guarantee.
 
 An external writer that ignores the lock can change and revert files between
 observations or write after the final source observation and before publication;
@@ -195,17 +212,81 @@ Only after matching evidence passes and the source bundle is re-verified does
 `RestoreNew` publish the restored file set via atomic rename into a previously
 absent root. It refuses to replace a live or existing root. Missing sidecars and
 optional roots remain absent, and all present roots come from the same bundle.
-Restoration does not retain writer authority or authenticate a historical source.
+The restored root now also carries `manifest.json`, so it can be verified before
+an authorized owner adopts/opens it. A target inside, containing, or aliasing the
+source bundle root is rejected before any journal or staging write. Restoration
+does not retain writer authority or authenticate a historical source. Starting a
+writer on a restored root changes its content and may invalidate this offline
+manifest; do not reconcile publication concurrently with writer adoption.
 
-Files and the manifest are synced before publication. Final directory metadata
-fsync, in-place live-file replacement, power-loss recovery, real historical
-SQLite/archive qualification and non-cooperating writer fencing remain later
-Phase4A-04/07 obligations. Abrupt termination before rename may leave a private
-`*-unpublished-*` directory, which is not a published bundle. Cancellation,
-disk-full (ENOSPC), and ordinary failures remove the temporary directory and
-never publish an incomplete bundle.
+### Publication, cancellation and restart
 
-Windows amd64 cross-compilation establishes build compatibility only. The
-existing `Manager Server SQLite (Windows)` CI job exercises SQLite/preflight
-paths, not `maintenancebundle` or `managerdatabundle`; bundle create/restore,
-SQLite URI and archive path checks still lack Windows runtime qualification.
+Each destination has a private sibling `.manager-bundle-operation-<digest>/`
+containing a `processlock` fence, bounded `state.json`, and its recorded staging
+directory. These journals contain content hashes and must receive the same
+private placement/ACL protection as backups. They are integrity/operation state,
+never trusted upgrade receipts. The parent remains exclusively owner-controlled;
+the fence is not a hostile same-user directory-replacement sandbox. Destination
+publishers must use one canonical path and must not publish concurrently through
+case aliases. Journal directories are retained for explicit restart inspection.
+
+Cancellation and ordinary failures BEFORE rename remove only the recorded
+staging directory and record `aborted`. Cancellation AFTER rename finishes the
+commit; it does not roll back a complete published target. Flush/journal errors
+after rename return `ErrPublicationUncertain`, and the CLI explicitly requests
+`recover-publication`. A target may already exist: never infer that any error
+means publication did not happen, and never delete it merely to retry.
+
+`recover-publication --bundle DESTINATION` acquires that operation's fence and:
+- With no target and a valid pending/aborted record, removes only that exact
+  recorded staging directory and records `aborted`. Create/restore can retry the
+  same target; they also reconcile a valid interrupted absent-target operation.
+- With a target, requires the complete manifest to equal the recorded expected
+  manifest, validates matching evidence, flushes and rechecks it, then records
+  `committed`. It never replaces a target or reruns database migrations on it.
+- Refuses unknown/corrupt journals, missing committed targets, mismatched or
+  partial targets, symlink ancestors and unexpected targets for aborted records.
+  Such failures require owner inspection; no broad cleanup or adoption occurs.
+
+Public `Verify`/restore refuse unpublished/operation roots and their descendants,
+even if staging already contains a fully written manifest. Filesystem failures
+can leave recoverable staging; unknown unrecorded artifacts are quarantined by
+refusal, never deleted by age or pattern. Simulated process crashes and flush
+errors establish these software boundaries. They do not establish physical
+power-loss durability across all disks, filesystems, VMs or storage controllers.
+
+### Explicit rollback-journal recovery
+
+`RecoverCreate`/`recover-create` requires the existing matching Manager fence,
+explicit stopped/isolated source, nonempty rollback journal, and no nonempty
+WAL/SHM. It inventories and copies the complete file set, revalidates both copies,
+and opens ONLY the private copy with SQLite `mode=rw`, `synchronous=FULL`.
+Recovery does not run production migrations or delete an input journal by hand.
+
+Before writable open, a streaming format gate checks synced headers, consistent
+page/sector geometry, declared record bounds, page numbers and SQLite's native
+page checksums. An unsynced final header is supported only for complete frames
+whose full page preimages still equal the on-disk database pages. No-sync counts,
+partial/truncated records, unsupported headers, mixed WAL and super-journals are
+refused. This avoids treating SQLite's silent discard of invalid journal records
+as successful recovery. Native journal checksums are not authentication or a
+complete corruption detector; exact historical/producer qualification is separate.
+
+SQLite must consume the journal itself. The recovered copy must pass full
+`integrity_check` and the existing key/config/archive/foreign-key/production-open
+matching gates before sealing. The original dirty database and journal remain
+unchanged. The resulting format-v2 manifest adds optional `recovery.method` and
+`recovery.sourceRevision`; `sourceRevision` describes recovered bytes. Older
+readers reject the added recovery field; ordinary v2 bundles remain readable by
+both versions. The raw pre-recovery revision is transformation metadata, not
+provenance. `RevalidateSource` with the recovered manifest cannot authorize the
+different dirty source. Consumers needing that source must retain and revalidate
+its independently captured original inventory and ownership contract.
+
+Linux and Windows CI execute the bundle service and CLI, including real WAL,
+hot-journal recovery, external mutation/reap, cancellation and process-kill tests.
+Windows additionally exercises non-delete-sharing handles against rename,
+replacement and delete. Runtime evidence must come from the actual successful
+job's tested SHA/environment and JSON artifact; workflow presence and successful
+cross-compilation alone confer no qualification. See [BOUNDARIES.md](BOUNDARIES.md)
+for Phase4A-04 and Phase4A-07 Lane C dependency status and remaining gates.
