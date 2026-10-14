@@ -337,16 +337,28 @@ func TestReplayExactSource(t *testing.T) {
 	must(t, e)
 	must(t, lock.Close())
 	retentionRestore := taskScratch(t, output, "retention-restore-")
-	_, e = maintenancebundle.RestoreNew(ctx, filepath.Join(output, "retention-backup"), retentionRestore)
+	restoredLayout, e := maintenancebundle.RestoreNew(ctx, filepath.Join(output, "retention-backup"), retentionRestore)
 	must(t, e)
+	restoredBackup, e := maintenancebundle.Inspect(ctx, restoredLayout)
+	must(t, e)
+	sameInventory(t, backup, restoredBackup)
+	restoredBackupDB := openDB(t, restoredLayout.DatabasePath, false)
+	restoredBackupSQLite := sqliteChecks(t, restoredBackupDB, true)
+	must(t, restoredBackupDB.Close())
+	backupRestoreEvidence := save(t, output, "backup-restore.json", map[string]any{
+		"backupManifestDigest":   backup.SourceRevision,
+		"restoredManifestDigest": restoredBackup.SourceRevision,
+		"inventoryMatched":       true,
+		"sqlite":                 restoredBackupSQLite,
+	})
 	// Wrong key, modified archive and added sidecars must not pass revalidation.
-	testTamperedInventory(t, root, output)
+	tamperEvidence := save(t, output, "tamper-rejection.json", testTamperedInventory(t, root, output))
 	sameInventory(t, sealed, inventory(t, filepath.Join(root, "bundle")))
 	revalidate(t, root, envRequired(t, "CPAMP_SRC11_ARCHIVE"))
-	save(t, output, "result.json", map[string]any{"caseID": "SRC-11", "runtimeAssertions": "pass", "independentAcceptance": "pending", "SourceGeneratorCodeCommit": r.GeneratorCodeCommit, "VerifierCodeCommit": code, "SourceBundleDigest": sealed.SourceRevision, "BeforeDigest": restoredBefore.SourceRevision, "AfterDigest": afterMigration.SourceRevision, "SourceAfterDigest": inventory(t, filepath.Join(root, "bundle")).SourceRevision, "sourceGenerationRecordSHA256": fileDigest(t, filepath.Join(root, "source-generation", "record.json")), "migrationStates": states, "SQLite": checks, "retentionBackupDigest": backup.SourceRevision, "platform": platformIdentity(), "UpgradeAuthorized": false, "TrustedHopReceipt": false, "other48Cases": "pending", "Phase4A07Complete": false, "Phase4AComplete": false})
+	save(t, output, "result.json", map[string]any{"caseID": "SRC-11", "runtimeAssertions": "pass", "independentAcceptance": "pending", "SourceGeneratorCodeCommit": r.GeneratorCodeCommit, "VerifierCodeCommit": code, "SourceBundleDigest": sealed.SourceRevision, "BeforeDigest": restoredBefore.SourceRevision, "AfterDigest": afterMigration.SourceRevision, "SourceAfterDigest": inventory(t, filepath.Join(root, "bundle")).SourceRevision, "sourceGenerationRecordSHA256": fileDigest(t, filepath.Join(root, "source-generation", "record.json")), "migrationStates": states, "SQLite": checks, "retentionBackupDigest": backup.SourceRevision, "backupRestoreEvidenceSHA256": backupRestoreEvidence, "tamperRejectionEvidenceSHA256": tamperEvidence, "platform": platformIdentity(), "UpgradeAuthorized": false, "TrustedHopReceipt": false, "other48Cases": "pending", "Phase4A07Complete": false, "Phase4AComplete": false})
 }
 
-func testTamperedInventory(t *testing.T, root, scratchParent string) {
+func testTamperedInventory(t *testing.T, root, scratchParent string) map[string]any {
 	t.Helper()
 	ctx := context.Background()
 	l, e := maintenancebundle.RestoreNew(ctx, filepath.Join(root, "bundle"), taskScratch(t, scratchParent, "tamper-"))
@@ -356,14 +368,17 @@ func testTamperedInventory(t *testing.T, root, scratchParent string) {
 	key := read(t, l.DataKeyPath)
 	key[0] ^= 1
 	must(t, os.WriteFile(l.DataKeyPath, key, 0600))
-	if maintenancebundle.Revalidate(ctx, l, baseline) == nil {
+	wrongKeyRejected := maintenancebundle.Revalidate(ctx, l, baseline) != nil
+	if !wrongKeyRejected {
 		t.Fatal("changed key accepted")
 	}
 	must(t, os.WriteFile(l.DataKeyPath, read(t, filepath.Join(root, "bundle", "data-key")), 0600))
 	must(t, os.WriteFile(l.DatabasePath+"-journal", []byte("nonempty unqualified journal"), 0600))
-	if maintenancebundle.ValidateMatchingEvidence(ctx, l) == nil {
+	nonEmptyJournalRejected := maintenancebundle.ValidateMatchingEvidence(ctx, l) != nil
+	if !nonEmptyJournalRejected {
 		t.Fatal("nonempty journal accepted")
 	}
+	return map[string]any{"wrongDataKey": "rejected", "nonEmptyJournal": "rejected", "wrongDataKeyRejected": wrongKeyRejected, "nonEmptyJournalRejected": nonEmptyJournalRejected}
 }
 
 func taskScratch(t *testing.T, parent, pattern string) string {
