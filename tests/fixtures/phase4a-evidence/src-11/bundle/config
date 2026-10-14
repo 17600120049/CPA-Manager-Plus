@@ -1,0 +1,10 @@
+{
+  "accountActionsAutoDisable": false,
+  "accountActionsEnabled": false,
+  "collectorMode": "http",
+  "dataDir": ".",
+  "dataKeyPath": "data.key",
+  "dbPath": "usage.sqlite",
+  "pollIntervalMs": 100,
+  "usageArchiveRetentionEnabled": false
+}

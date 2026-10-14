@@ -1,0 +1,469 @@
+{
+  "authorityBoundary": {
+    "Phase4A07Complete": false,
+    "Phase4AComplete": false,
+    "TrustedHopReceipt": false,
+    "UpgradeAuthorized": false,
+    "casePass": false,
+    "directCandidateHop": "N/A; zero hop required",
+    "generationSuccess": true,
+    "independentAcceptance": "pending",
+    "other48Cases": "pending",
+    "runtimeAssertions": "pass"
+  },
+  "caseID": "SRC-11",
+  "files": {
+    "README.md": {
+      "sha256": "64fad8ea569f3a2bf3da7af15948ab5c637d902c09d364f882edcef1a2f75232",
+      "size": 2982
+    },
+    "bundle/config": {
+      "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+      "size": 243
+    },
+    "bundle/manifest.json": {
+      "sha256": "8c9578bbe29911f5339b1c2c7c3b6c773e5ea1b681802af837c5c1c4c74df28c",
+      "size": 829
+    },
+    "generation-execution.log": {
+      "sha256": "dbeeda373f2cbf43cd8ff988d43128b3d499ce4a07481c9de9b5bf891bb0d849",
+      "size": 199
+    },
+    "generation-index.json": {
+      "sha256": "3a59d99b0bd7422ad6ab965bcd69e2f10a072992700bdab553a347a6ebe71904",
+      "size": 266
+    },
+    "generation-runner-evidence.json": {
+      "sha256": "4cf9f5043139ccdabe0f9b2881499f7ba7725f990e3c048dc88596eaad27b5cc",
+      "size": 69029
+    },
+    "linux-replay/execution.log": {
+      "sha256": "242c31e2a0be12539fcacd59237e317e330b64256614d008f4c171e4e9a7adaa",
+      "size": 501
+    },
+    "linux-replay/runner-evidence.json": {
+      "sha256": "9f60ee869a22f109a4784bdacce15b49f9fce2d85715c7838eb8b658d8d52ad2",
+      "size": 726
+    },
+    "linux-replay/runtime/backup-restore.json": {
+      "sha256": "b78e6726ec608c27e62b84bf45317f22c12e0ffd51d4718db24fe93ff587bf71",
+      "size": 525
+    },
+    "linux-replay/runtime/result.json": {
+      "sha256": "79d094a4961efd37491966fd0319aec941d53299de06d099edd4ed1aba0365ff",
+      "size": 1826
+    },
+    "linux-replay/runtime/retention-backup/manifest.json": {
+      "sha256": "2f9b450c6016d1bff2d257fa93e2fa64b47ff112999ceac659638f4fd7bdbad4",
+      "size": 1680
+    },
+    "linux-replay/runtime/retention-backup/usage-archives/bbaf4c3b66dbd592a8cec6884574a870/manifest.json": {
+      "sha256": "c1215cab37c22be3aff1446727b28251a82182b96b547f008f261ba20f2f03af",
+      "size": 1667
+    },
+    "linux-replay/runtime/retention-backup/usage-archives/bbaf4c3b66dbd592a8cec6884574a870/segment-000001-00000000000000000001-00000000000000000002.jsonl.gz": {
+      "sha256": "e5cd317ea78d7471d3d75418710bde5e54111d459a674b276bd5af0c02bd224c",
+      "size": 1493
+    },
+    "linux-replay/runtime/retention-backup/usage-archives/bbaf4c3b66dbd592a8cec6884574a870/segment-000002-00000000000000000003-00000000000000000004.jsonl.gz": {
+      "sha256": "85533b8c3b33761ccdb66293d370019785bb69eb29bff562eef5bfd2fc393366",
+      "size": 1573
+    },
+    "linux-replay/runtime/sem-full-raw.json": {
+      "sha256": "38de0db7402b7f9b0f75ae59e0bd0f653646252c41461bdc7fbb8a9c10f5812b",
+      "size": 56441
+    },
+    "linux-replay/runtime/sem09-retention-branch.json": {
+      "sha256": "821a65428b68cdbb927126081c98151dfd3bafb9c39ee5a34d987dd2d9206796",
+      "size": 10061
+    },
+    "linux-replay/runtime/tamper-rejection.json": {
+      "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+      "size": 133
+    },
+    "replay/replay-execution.log": {
+      "sha256": "34b7ddefbd12ae58fe537972e6c39e99ab168ad2af33afc774cb81ac1c31372c",
+      "size": 501
+    },
+    "replay/runner-evidence.json": {
+      "sha256": "4b7678b5335f754f929db6f94b135e9a19b8ba1674dbaa4460f2969b39050a89",
+      "size": 67087
+    },
+    "replay/runtime/backup-restore.json": {
+      "sha256": "63d5981f201285f69a95f00eac67b2723159adf75e7cd86c833089a2d3133c9a",
+      "size": 525
+    },
+    "replay/runtime/result.json": {
+      "sha256": "d381b9e1f4a810080614c71874bcc9a32b985f0d362319532b828adb767ee56c",
+      "size": 1827
+    },
+    "replay/runtime/retention-backup/manifest.json": {
+      "sha256": "6f8ef7ae6ed20ba3f7c43e4dca2d496610b328cab0ec24dab3a9ce2a44f5c94d",
+      "size": 1680
+    },
+    "replay/runtime/retention-backup/usage-archives/c91a0bb7e5fe72172870b4d19efce01d/manifest.json": {
+      "sha256": "bebb0b1bceb8d86162e8aef52a751dca87d5d5d60a548cb14366a283a268b56a",
+      "size": 1667
+    },
+    "replay/runtime/retention-backup/usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000001-00000000000000000001-00000000000000000002.jsonl.gz": {
+      "sha256": "e5cd317ea78d7471d3d75418710bde5e54111d459a674b276bd5af0c02bd224c",
+      "size": 1493
+    },
+    "replay/runtime/retention-backup/usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000002-00000000000000000003-00000000000000000004.jsonl.gz": {
+      "sha256": "85533b8c3b33761ccdb66293d370019785bb69eb29bff562eef5bfd2fc393366",
+      "size": 1573
+    },
+    "replay/runtime/sem-full-raw.json": {
+      "sha256": "ec0bffc0c3ba99579a96d0c625e7151058b036348b69a7ee030578c416a28686",
+      "size": 56441
+    },
+    "replay/runtime/sem09-retention-branch.json": {
+      "sha256": "626eb0829961d94d42ecb6315ee7eb9b2eeb4dc980d2e459b7ae1ba56af8eb4e",
+      "size": 10061
+    },
+    "replay/runtime/tamper-rejection.json": {
+      "sha256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb",
+      "size": 133
+    },
+    "source-generation/config-write.json": {
+      "sha256": "a6cb34f24ff886bdeceb7ca2cee0365717d59095c65bc3c58af537d361b4c1c5",
+      "size": 731
+    },
+    "source-generation/controlled-input.json": {
+      "sha256": "d2aed5bccfd1214b81227f930808727d8e7bb606dd5d05a6858cdf5ab4dd6eb4",
+      "size": 4508
+    },
+    "source-generation/price-write.json": {
+      "sha256": "e8eba9d5e692435fe082b0a2f1c5f7da6eb6abc7d5dc3a191916937d19a20a45",
+      "size": 1124
+    },
+    "source-generation/producer-build.json": {
+      "sha256": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+      "size": 2313
+    },
+    "source-generation/producer.log": {
+      "sha256": "1b35ed2712c3ad33798982c29016b92264148ab356ff28b3adee637dfa9c70d5",
+      "size": 7729
+    },
+    "source-generation/quota-write.json": {
+      "sha256": "7169d395e09a4a33f40f3b5e707e2fcf1f6352f9af8b8af6efc4a0a908eb16a9",
+      "size": 193
+    },
+    "source-generation/record.json": {
+      "sha256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+      "size": 6535
+    },
+    "source-generation/release-info.json": {
+      "sha256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "size": 1562
+    },
+    "source-generation/source-snapshot.json": {
+      "sha256": "fb892f0d81db8ea92f05773ef78e2eeb316f791780b0077841820244cd7f654c",
+      "size": 22726
+    },
+    "source-generation/v1-analytics.json": {
+      "sha256": "632c23de9cf4934d455e8d139400b4ca65281dcb67633a05da8233b848a55c6e",
+      "size": 3511
+    },
+    "source-generation/v1-export.jsonl": {
+      "sha256": "c383656fe038dd6950c77da2ad2624f530b3e728a081444cadfb1b878ec82b4f",
+      "size": 3913
+    }
+  },
+  "lane": [
+    "A",
+    "D"
+  ],
+  "linuxReplay": {
+    "image": "debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b",
+    "independentAcceptance": "pending",
+    "parentIndex": "sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251",
+    "platform": {
+      "goArch": "amd64",
+      "goOS": "linux",
+      "goVersion": "go1.26.1"
+    },
+    "qualificationExecutableSHA256": "390352eb5d40bf1d6d057295cb356f9c35a147d83fa75486dc52e27009a9acb3",
+    "resultSHA256": "79d094a4961efd37491966fd0319aec941d53299de06d099edd4ed1aba0365ff",
+    "runtimeAssertions": "pass",
+    "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "status": "pass"
+  },
+  "planCommit": "26b5d6bde1c30e8187135c87a8b84b6c808f23f0",
+  "planEvidencePath": "tests/fixtures/phase4a-evidence/src-11",
+  "producerAndHarness": {
+    "generationExitCode": 0,
+    "generationRunnerCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+    "generationRunnerExecutableSHA256": "390352eb5d40bf1d6d057295cb356f9c35a147d83fa75486dc52e27009a9acb3",
+    "linuxIsolation": {
+      "capabilities": "none",
+      "image": "debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b",
+      "imageID": "sha256:db9f02c6bde9fa90cc8074c92754b2b046947392f1a857726e77f041febb7b82",
+      "mounts": "runner/archive/profile read-only; unique output writable; private tmpfs",
+      "network": "none",
+      "parentIndex": "sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251",
+      "readOnlyRoot": true
+    },
+    "replayExitCode": 0,
+    "replayRunnerCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+    "replayRunnerExecutableSHA256": "4e73633f539fc7f4cac7d446ce299032e93a57e5a8d2107e24875a7aef0145e3",
+    "sourceProcess": {
+      "arguments": [],
+      "deliveredPayloads": 5,
+      "environment": [
+        "CPA_MANAGER_CONFIG=<task-scratch>/source/config.json",
+        "HTTP_ADDR=<private-listener>",
+        "CPA_UPSTREAM_URL=<private-http-queue>",
+        "CPA_MANAGEMENT_KEY=<qualification-only-secret>",
+        "CPA_MANAGER_ADMIN_KEY=<qualification-only-secret>",
+        "USAGE_COLLECTOR_MODE=http",
+        "USAGE_POLL_INTERVAL_MS=100",
+        "USAGE_QUOTA_COOLDOWN_ENABLED=true",
+        "TZ=UTC"
+      ],
+      "exitCode": 0,
+      "expectedUniqueEvents": 4,
+      "finishedAt": "2026-10-14T02:58:41.023527964Z",
+      "pid": 15,
+      "queueCalls": 4,
+      "reaped": true,
+      "startedAt": "2026-10-14T02:58:40.707676461Z"
+    },
+    "toolchain": {
+      "goArch": "amd64",
+      "goOS": "linux",
+      "goVersion": "go1.26.1",
+      "qualificationOnly": true
+    }
+  },
+  "runtime": {
+    "backupRestoreEvidenceSHA256": "63d5981f201285f69a95f00eac67b2723159adf75e7cd86c833089a2d3133c9a",
+    "linuxReplayResultSHA256": "79d094a4961efd37491966fd0319aec941d53299de06d099edd4ed1aba0365ff",
+    "result": {
+      "AfterDigest": "2500d2a2bcc4f89456a7d6a434087fb305e5c9be44b42cef1552233c5e660947",
+      "BeforeDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "Phase4A07Complete": false,
+      "Phase4AComplete": false,
+      "SQLite": {
+        "checkpoint": [
+          {
+            "busy": 0,
+            "checkpointed": 0,
+            "log": 0
+          }
+        ],
+        "foreignKeyCheck": [],
+        "integrityCheck": [
+          {
+            "integrity_check": "ok"
+          }
+        ],
+        "journalMode": [
+          {
+            "journal_mode": "wal"
+          }
+        ]
+      },
+      "SourceAfterDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "SourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "SourceGeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+      "TrustedHopReceipt": false,
+      "UpgradeAuthorized": false,
+      "VerifierCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+      "backupRestoreEvidenceSHA256": "63d5981f201285f69a95f00eac67b2723159adf75e7cd86c833089a2d3133c9a",
+      "caseID": "SRC-11",
+      "independentAcceptance": "pending",
+      "migrationStates": [
+        {
+          "appliedRows": 0,
+          "changedRows": 0,
+          "lastEventId": 0,
+          "name": "usage_cache_accounting_v2",
+          "processedRows": 0,
+          "status": "completed",
+          "targetEventId": 0,
+          "updatedAtMs": 0
+        }
+      ],
+      "other48Cases": "pending",
+      "platform": {
+        "goArch": "amd64",
+        "goOS": "darwin",
+        "goVersion": "go1.26.1",
+        "qualificationOnly": true
+      },
+      "retentionBackupDigest": "2500d2a2bcc4f89456a7d6a434087fb305e5c9be44b42cef1552233c5e660947",
+      "runtimeAssertions": "pass",
+      "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+      "tamperRejectionEvidenceSHA256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb"
+    },
+    "retentionBackupManifest": {
+      "entries": {
+        "config": {
+          "present": true,
+          "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+          "size": 243
+        },
+        "data-key": {
+          "present": true,
+          "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a",
+          "size": 44
+        },
+        "database": {
+          "present": true,
+          "sha256": "8b2ab202627d7e8b7ccf12634fc25a799f7f2174d9fad5f637bfabb841a013ad",
+          "size": 827392
+        },
+        "database-journal": {
+          "present": false
+        },
+        "database-shm": {
+          "present": false
+        },
+        "database-wal": {
+          "present": false
+        },
+        "usage-archives": {
+          "directory": true,
+          "present": true
+        },
+        "usage-archives/c91a0bb7e5fe72172870b4d19efce01d": {
+          "directory": true,
+          "present": true
+        },
+        "usage-archives/c91a0bb7e5fe72172870b4d19efce01d/manifest.json": {
+          "present": true,
+          "sha256": "bebb0b1bceb8d86162e8aef52a751dca87d5d5d60a548cb14366a283a268b56a",
+          "size": 1667
+        },
+        "usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000001-00000000000000000001-00000000000000000002.jsonl.gz": {
+          "present": true,
+          "sha256": "e5cd317ea78d7471d3d75418710bde5e54111d459a674b276bd5af0c02bd224c",
+          "size": 1493
+        },
+        "usage-archives/c91a0bb7e5fe72172870b4d19efce01d/segment-000002-00000000000000000003-00000000000000000004.jsonl.gz": {
+          "present": true,
+          "sha256": "85533b8c3b33761ccdb66293d370019785bb69eb29bff562eef5bfd2fc393366",
+          "size": 1573
+        }
+      },
+      "fence": "cooperating-manager-lock",
+      "sourceRevision": "2500d2a2bcc4f89456a7d6a434087fb305e5c9be44b42cef1552233c5e660947",
+      "version": 2
+    },
+    "retentionRawArtifactPolicy": "retention backup database and data.key bytes remain in task-owned run output; archive manifests and sanitized JSONL segments are included here",
+    "semanticEvidence": {
+      "SEM-01": "pass",
+      "SEM-02": "pass",
+      "SEM-03": "pass",
+      "SEM-04": "pass",
+      "SEM-05": "pass",
+      "SEM-06": "pass",
+      "SEM-07": "pass",
+      "SEM-08": "pass",
+      "SEM-09": "pass",
+      "sem09SHA256": "626eb0829961d94d42ecb6315ee7eb9b2eeb4dc980d2e459b7ae1ba56af8eb4e",
+      "semFullRawSHA256": "ec0bffc0c3ba99579a96d0c625e7151058b036348b69a7ee030578c416a28686"
+    },
+    "tamperRejectionEvidenceSHA256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "ControlledInputSHA256": "d2aed5bccfd1214b81227f930808727d8e7bb606dd5d05a6858cdf5ab4dd6eb4",
+    "GenerationEvidenceFiles": {
+      "config-write.json": "a6cb34f24ff886bdeceb7ca2cee0365717d59095c65bc3c58af537d361b4c1c5",
+      "controlled-input.json": "d2aed5bccfd1214b81227f930808727d8e7bb606dd5d05a6858cdf5ab4dd6eb4",
+      "price-write.json": "e8eba9d5e692435fe082b0a2f1c5f7da6eb6abc7d5dc3a191916937d19a20a45",
+      "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+      "producer.log": "1b35ed2712c3ad33798982c29016b92264148ab356ff28b3adee637dfa9c70d5",
+      "quota-write.json": "7169d395e09a4a33f40f3b5e707e2fcf1f6352f9af8b8af6efc4a0a908eb16a9",
+      "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "source-snapshot.json": "fb892f0d81db8ea92f05773ef78e2eeb316f791780b0077841820244cd7f654c",
+      "v1-analytics.json": "632c23de9cf4934d455e8d139400b4ca65281dcb67633a05da8233b848a55c6e",
+      "v1-export.jsonl": "c383656fe038dd6950c77da2ad2624f530b3e728a081444cadfb1b878ec82b4f"
+    },
+    "GenerationIndexSHA256": "3a59d99b0bd7422ad6ab965bcd69e2f10a072992700bdab553a347a6ebe71904",
+    "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation",
+    "GenerationProfile": "src-11-full-raw-revision2-v1",
+    "GenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+    "GeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+    "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "SourceProducerArtifact": {
+      "asset": "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+      "assetID": 616064478,
+      "immutableReleaseID": 404941931,
+      "releaseInfoSHA256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5"
+    },
+    "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "SourceProducerKind": "published-artifact",
+    "SourceRelease": "v1.14.4",
+    "VerifierCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff"
+  },
+  "sourceBundle": {
+    "GeneratedBundleSHA256": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "explicitlyAbsent": {
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": false
+      },
+      "database-wal": {
+        "present": false
+      },
+      "usage-archives": {
+        "present": false
+      }
+    },
+    "manifest": {
+      "entries": {
+        "config": {
+          "present": true,
+          "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+          "size": 243
+        },
+        "data-key": {
+          "present": true,
+          "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a",
+          "size": 44
+        },
+        "database": {
+          "present": true,
+          "sha256": "7ce02b5b7338bd6c2b43eaec255057bc793250f9c76702e64c3a851ddb3198b8",
+          "size": 659456
+        },
+        "database-journal": {
+          "present": false
+        },
+        "database-shm": {
+          "present": false
+        },
+        "database-wal": {
+          "present": false
+        },
+        "usage-archives": {
+          "present": false
+        }
+      },
+      "fence": "cooperating-manager-lock",
+      "sourceRevision": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "version": 2
+    },
+    "omittedRawArtifacts": {
+      "bundle/data-key": {
+        "present": true,
+        "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a",
+        "size": 44
+      },
+      "bundle/database": {
+        "present": true,
+        "sha256": "7ce02b5b7338bd6c2b43eaec255057bc793250f9c76702e64c3a851ddb3198b8",
+        "size": 659456
+      }
+    },
+    "rawArtifactPolicy": "database and data.key bytes remain in the task-owned run output; this shared evidence records their verified digests and complete inventory, while avoiding committed SQLite/private key material"
+  },
+  "status": "runtime-pass-independent-acceptance-pending"
+}

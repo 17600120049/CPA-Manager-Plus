@@ -1,0 +1,54 @@
+{
+  "version": 2,
+  "fence": "cooperating-manager-lock",
+  "sourceRevision": "bb853728fe743781d50148f83d34e92330a5c19d5778473fd0f7b3d43a760a26",
+  "entries": {
+    "config": {
+      "present": true,
+      "size": 243,
+      "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+    },
+    "data-key": {
+      "present": true,
+      "size": 44,
+      "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a"
+    },
+    "database": {
+      "present": true,
+      "size": 827392,
+      "sha256": "f8e40defd91bf2810d264074d052e53a4c8f10833a2df79c14a07797c187c741"
+    },
+    "database-journal": {
+      "present": false
+    },
+    "database-shm": {
+      "present": false
+    },
+    "database-wal": {
+      "present": false
+    },
+    "usage-archives": {
+      "present": true,
+      "directory": true
+    },
+    "usage-archives/bbaf4c3b66dbd592a8cec6884574a870": {
+      "present": true,
+      "directory": true
+    },
+    "usage-archives/bbaf4c3b66dbd592a8cec6884574a870/manifest.json": {
+      "present": true,
+      "size": 1667,
+      "sha256": "c1215cab37c22be3aff1446727b28251a82182b96b547f008f261ba20f2f03af"
+    },
+    "usage-archives/bbaf4c3b66dbd592a8cec6884574a870/segment-000001-00000000000000000001-00000000000000000002.jsonl.gz": {
+      "present": true,
+      "size": 1493,
+      "sha256": "e5cd317ea78d7471d3d75418710bde5e54111d459a674b276bd5af0c02bd224c"
+    },
+    "usage-archives/bbaf4c3b66dbd592a8cec6884574a870/segment-000002-00000000000000000003-00000000000000000004.jsonl.gz": {
+      "present": true,
+      "size": 1573,
+      "sha256": "85533b8c3b33761ccdb66293d370019785bb69eb29bff562eef5bfd2fc393366"
+    }
+  }
+}
