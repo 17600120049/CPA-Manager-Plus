@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import unittest
 
@@ -38,6 +39,9 @@ class Ret01EvidenceTests(unittest.TestCase):
         self.assertEqual(self.manifest["status"], "runtime-pass-independent-acceptance-pending")
         inventory = self.manifest["inventory"]
         self.assertNotIn("evidence-manifest.json", inventory)
+        actual = {p.relative_to(EVIDENCE).as_posix() for p in EVIDENCE.rglob("*")
+                  if p.is_file() and p.name not in ("README.md", "evidence-manifest.json")}
+        self.assertEqual(set(inventory), actual)
         for name, expected in inventory.items():
             path = EVIDENCE / name
             self.assertTrue(path.is_file(), name)
@@ -83,6 +87,48 @@ class Ret01EvidenceTests(unittest.TestCase):
         self.assertEqual(self.provenance["caseID"], "RET-01")
         self.assertEqual(self.provenance["sourceCommit"], SOURCE_COMMIT)
         self.assertEqual(self.provenance["sourceBundleDigest"], self.bundle_digest)
+
+    def test_generation_execution_and_runtime_bindings(self):
+        index = json.loads((EVIDENCE / "generation-index.json").read_text())
+        self.assertEqual(index["SHA256"], digest(EVIDENCE / "source-generation/record.json"))
+        self.assertEqual(index["bundleDigest"], self.bundle_digest)
+        self.assertEqual(self.result["sourceGenerationRecordSHA256"], index["SHA256"])
+        self.assertEqual(self.generation["SourceCommit"], SOURCE_COMMIT)
+        self.assertEqual(self.generation["SourceProducerBuildCodeCommit"], SOURCE_COMMIT)
+        self.assertEqual(self.generation["PlanCommit"], "2719d8466951da1ea457bd1a00dca3fa6f09dc43")
+        self.assertRegex(self.generation["GeneratorCodeCommit"], r"^[a-f0-9]{40}$")
+        self.assertNotEqual(self.generation["GeneratorCodeCommit"], SOURCE_COMMIT)
+        self.assertTrue(self.generation["generationSuccess"])
+        self.assertTrue(self.generation["process"]["reaped"])
+        self.assertEqual(self.generation["process"]["exitCode"], 0)
+        self.assertEqual(self.generation["process"]["deliveredPayloads"], 5)
+        for key, name in (("inputBundle", "input-bundle"), ("semanticAssertions", "semantic-assertions"),
+                          ("executionRecord", "execution-record"), ("backupRestore", "backup-restore")):
+            self.assertEqual(self.result["evidence"][key], digest(EVIDENCE / ("runtime/" + name + ".json")))
+
+    @unittest.skipUnless(os.environ.get("CPAMP_RET01_FULL_EVIDENCE"),
+                         "opt-in original Actions fixture verification; no SQLite/platform PASS implied")
+    def test_original_fixture_bytes(self):
+        root = Path(os.environ["CPAMP_RET01_FULL_EVIDENCE"])
+        for name, expected in self.provenance["sourceArtifact"]["inventory"].items():
+            path = root / name
+            self.assertTrue(path.is_file(), name)
+            self.assertEqual(path.stat().st_size, expected["size"], name)
+            self.assertEqual(digest(path), expected["sha256"], name)
+        self.assertEqual(digest(root / "ret-01/source-generation/record.json"),
+                         digest(EVIDENCE / "source-generation/record.json"))
+        self.assertEqual(digest(root / "producer.tar.gz"), self.generation["SourceProducerArchiveSHA256"])
+        for name, sha in self.generation["GenerationEvidenceFiles"].items():
+            self.assertEqual(digest(root / "ret-01/source-generation" / name), sha, name)
+        bundle = json.loads((root / "ret-01/bundle/manifest.json").read_text())
+        self.assertEqual(bundle, self.generation["bundleInventory"])
+        for name, entry in bundle["entries"].items():
+            path = root / "ret-01/bundle" / name
+            if entry["present"]:
+                self.assertEqual(path.stat().st_size, entry["size"], name)
+                self.assertEqual(digest(path), entry["sha256"], name)
+            else:
+                self.assertFalse(path.exists(), name)
 
     def test_semantic_assertions_are_runtime_passes(self):
         self.assertEqual(self.assertions["caseID"], "RET-01")

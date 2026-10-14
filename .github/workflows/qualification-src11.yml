@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: src11-evidence-${{ github.event.pull_request.number }}
@@ -46,9 +47,24 @@ jobs:
           gh release download qualification-src11-0e106589baef-20261014 \
             --repo seakee/CPA-Manager-Plus \
             --pattern src-11-0e106589baef-sealed-evidence.tar.gz --dir "$RUNNER_TEMP/src11-download"
+      - name: Download original RET-01 case bytes for strict cross-platform verification
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/ret-01/source-provenance.json').read_text())['sourceArtifact']
+          meta = json.loads(subprocess.check_output(['gh', 'api', 'repos/seakee/CPA-Manager-Plus/actions/artifacts/' + str(pin['artifactID'])]))
+          assert not meta['expired'], 'RET-01 original evidence expired; do not substitute a regenerated bundle'
+          assert meta['digest'] == pin['artifactDigest']
+          assert meta['workflow_run']['id'] == pin['runID']
+          subprocess.check_call(['gh', 'run', 'download', str(pin['runID']), '--repo', 'seakee/CPA-Manager-Plus',
+                                 '--name', pin['name'], '--dir', str(Path(os.environ['RUNNER_TEMP']) / 'ret01-original')])
+          PY
       - name: Verify materialization and reject adversarial archives
         shell: bash
         run: |
+          export CPAMP_RET01_FULL_EVIDENCE="$RUNNER_TEMP/ret01-original"
           export CPAMP_SRC11_SEALED_ARCHIVE="$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz"
           python -m unittest discover -s bin/qualification -p 'test_*.py' -v
           python bin/qualification/materialize-src11.py --archive "$CPAMP_SRC11_SEALED_ARCHIVE" --output "$RUNNER_TEMP/src11-original"
