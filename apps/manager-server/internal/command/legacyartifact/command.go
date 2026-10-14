@@ -17,7 +17,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	// logs, just as artifact-read failures omit paths and payloads.
 	f.SetOutput(io.Discard)
 	f.Usage = func() {
-		_, _ = io.WriteString(stderr, "Usage: cpa-manager-plus legacy-writer-artifact --archive PATH --asset NAME [--timeout DURATION]\n       cpa-manager-plus legacy-writer-artifact --verify-receipt PATH --bundle PATH [--timeout DURATION]\n       cpa-manager-plus legacy-writer-artifact --execute-hop --archive PATH --asset NAME --input-bundle PATH --output-bundle PATH [--timeout DURATION]\nVerifies fixed v1.14.4 artifact bytes only; execution and trusted receipt validation are not qualified and are refused on all platforms. Never authorizes upgrade.\n")
+		_, _ = io.WriteString(stderr, "Usage: cpa-manager-plus legacy-writer-artifact --archive PATH --asset NAME [--timeout DURATION]\n       --offline-cleanup --archive PATH --asset NAME --input-bundle PATH --input-digest SHA256 --operation-workspace NEW_PATH [--timeout DURATION]\n       --inspect-offline-operation ID --operation-workspace PATH\n       --recover-offline-operation ID --operation-workspace PATH\n       --verify-receipt PATH --bundle PATH\n       --execute-hop --archive PATH --asset NAME --input-bundle PATH --output-bundle PATH\nOffline cleanup observes the fixed early-dispatch command on a private copy (Linux AMD64 sealed launch only; Darwin/Windows execution refused). Diagnostic output is not authority. Full hop execution and trusted receipt validation remain refused on all platforms. Never authorizes upgrade.\n")
 	}
 	archive := f.String("archive", "", "local published native archive (read-only)")
 	asset := f.String("asset", "", "exact published v1.14.4 native asset name")
@@ -27,8 +27,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	f.String("bundle", "", "associated bundle directory to verify against receipt")
 
 	executeHop := f.Bool("execute-hop", false, "unsupported until offline writer execution is qualified")
-	f.String("input-bundle", "", "input legacy bundle directory")
+	inputBundle := f.String("input-bundle", "", "input sealed maintenance bundle directory")
 	f.String("output-bundle", "", "output bundle directory")
+	offlineCleanup := f.Bool("offline-cleanup", false, "run fixed cleanup-derived on a private copy; no hop authority")
+	inputDigest := f.String("input-digest", "", "expected complete input manifest digest")
+	workspace := f.String("operation-workspace", "", "new private operation workspace; parent must be 0700")
+	inspectID := f.String("inspect-offline-operation", "", "inspect completed operation diagnostics; never trusted")
+	recoverID := f.String("recover-offline-operation", "", "mark an abandoned operation interrupted; never rerun")
 
 	if err := f.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -42,13 +47,51 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
+	present := map[string]bool{}
+	f.Visit(func(f *flag.Flag) { present[f.Name] = true })
+	modes := 0
+	for _, selected := range []bool{*executeHop, present["verify-receipt"], *offlineCleanup, present["inspect-offline-operation"], present["recover-offline-operation"]} {
+		if selected {
+			modes++
+		}
+	}
+	if modes > 1 {
+		return errors.New("select one legacy artifact operation mode")
+	}
+	if (present["inspect-offline-operation"] && *inspectID == "") || (present["recover-offline-operation"] && *recoverID == "") {
+		return errors.New("explicit offline operation ID is required")
+	}
 
 	if *executeHop {
 		return legacyartifact.ErrExecutionNotQualified
 	}
 
-	if *verifyReceipt != "" {
+	if *verifyReceipt != "" || present["verify-receipt"] {
 		return legacyartifact.ErrValidationNotQualified
+	}
+	if *offlineCleanup {
+		report, err := legacyartifact.RunOfflineCleanup(ctx, legacyartifact.OfflineCleanupOptions{ArchivePath: *archive, Asset: *asset, InputBundle: *inputBundle, ExpectedInputDigest: *inputDigest, Workspace: *workspace, Timeout: *timeout})
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(report)
+	}
+	if *inspectID != "" {
+		report, err := legacyartifact.InspectOfflineCleanup(ctx, *workspace, *inspectID)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(report)
+	}
+	if *recoverID != "" {
+		if err := legacyartifact.RecoverOfflineCleanup(*workspace, *recoverID); err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(struct {
+			Status            string `json:"status"`
+			OperationID       string `json:"operationId"`
+			UpgradeAuthorized bool   `json:"upgradeAuthorized"`
+		}{Status: "interrupted-offline-operation", OperationID: *recoverID})
 	}
 
 	// Mode 3: verify artifact archive bytes (existing behavior)

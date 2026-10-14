@@ -37,12 +37,42 @@ A caller-owned HMAC key and a private journal cannot establish Manager ownership
 There is no qualified owner bootstrap yet, so production cannot issue trusted
 `ValidatedHopEvidence`, even for an otherwise consistent receipt.
 
-Exact v1.14.4 has no qualified offline writer entry point. Its full server
+Exact v1.14.4 has no qualified full forward-hop writer entry point. Its full server
 normalizes `USAGE_COLLECTOR_MODE=none` to `auto`, can restore CPA connections
 from the copied database, and starts automation and unrelated maintenance.
 Changing environment variables or binding HTTP to loopback does not isolate
 these effects. Windows graceful shutdown/reaping is also unqualified.
-No successful real published-artifact execution is claimed here.
+This slice adds a narrower Linux AMD64 diagnostic operation that runs
+only the published early-dispatch `cleanup-derived` command against a sealed
+private copy. It is a qualification primitive for process and bundle handling,
+not a forward hop and not a historical source proof.
+
+`--offline-cleanup` requires an exact pinned archive, exact platform asset,
+complete input manifest digest and a new 0700 operation workspace. The operation
+writes immutable intent before staging, holds an exclusive operation lock inherited
+by the child, revalidates input identity, copies the executable into a Linux
+anonymous `memfd`, seals it
+against writes/growth/shrinkage and seal removal, hashes the sealed object, and
+launches that exact object via inherited descriptor 4 (`/proc/self/fd/4`).
+Descriptor 3 retains the operation fence. A staging-path replacement or in-place
+write cannot change the launched bytes. Missing sealing or descriptor execution
+support fails closed. The operation records start/exit/Wait
+evidence, seals the output bundle, and records output/checkpoint digests. Invalid,
+mutated, interrupted, partial or replayed workspaces fail closed. `--inspect-
+offline-operation` only returns `observed-offline-cleanup-only`; it is diagnostic
+and has no authority. `--recover-offline-operation` tombstones a nonterminal
+workspace and never reruns it. Darwin and Windows execution are fail closed;
+their builds prove compilation only.
+Diagnostic inspection/recovery remains available on Linux/Darwin AMD64.
+
+The immutable intent's mandatory tool identity is `manager-offline-cleanup/v2`.
+This versions the sealed Linux memfd launch contract separately from the old
+`manager-offline-cleanup/v1` path-based execution. Production creates only v2;
+inspection and recovery reject v1 workspaces, including historical Darwin
+operations, even when their artifact, process, input and output bindings are
+otherwise intact. There is no fallback, automatic migration or reclassification
+of old operations. The tool identity is diagnostic format metadata, never proof
+of Manager ownership or authority.
 
 The retained foundation provides:
 
@@ -79,6 +109,10 @@ The retained foundation provides:
 - Reserved in-process preflight projection bound to the **output candidate** digest.
   The input digest describes where an operation began and cannot prove that
   the current candidate was written by v1.14.4.
+- A production diagnostic offline-cleanup lifecycle with immutable intent,
+  inherited process lock, mandatory reap, sealed output and restart/recovery
+  checks. It runs only the fixed `cleanup-derived` subcommand and does not
+  perform the full cache-accounting or schema forward hop.
 
 `ValidatedHopEvidence` is process-local and excluded from JSON. The only valid
 instances in this slice are created in `_test.go` projection fixtures, not by a
@@ -87,10 +121,12 @@ production `ValidateHop -> preflight` consumer yet; diagnostic JSON must never
 be accepted as a trusted handle. Original historical release remains unknown,
 `UpgradeAuthorized` remains false, and Supervisor has no Manager DB/key access.
 
-Full 03B-2 and Phase4A-07 remain pending until an exact offline execution
-strategy, real published writer and historical matrix, platform-specific
-shutdown/reap behavior, Manager-owned authority bootstrap, and a production
-consumer have independent evidence. Full Phase4A-03 is not accepted by this slice.
+Full 03B-2 and Phase4A-07 remain pending until the complete offline forward-hop
+execution strategy, real source-to-target migration, historical matrix,
+platform-specific shutdown/reap behavior, Manager-owned authority bootstrap,
+and a production consumer have independent evidence. This primitive does not
+make SRC-01--10 or RET-04--06 eligible. Full Phase4A-03 is not accepted by
+this slice.
 The default private paths replace the previous foundation-only paths
 `<data-dir>/.legacy-authority.key` and `<data-dir>/legacy-hop-journal.json`.
 There is no automatic fallback, migration or regeneration during verification.
@@ -99,5 +135,18 @@ Windows ACL protection remains unqualified; cross-builds prove compilation only.
 For published **artifact-byte verification only**, download an immutable asset
 separately and run the package tests with `CPAMP_LEGACY_ARTIFACT_ARCHIVE` and
 `CPAMP_LEGACY_ARTIFACT_ASSET` set. That opt-in test calls `Verify` and is skipped without those inputs.
+The separate published offline-cleanup test uses
+`CPAMP_LEGACY_OFFLINE_ARCHIVE`; it is skipped without a Linux AMD64 archive or
+on an unsupported launch platform.
+The command package also has a separate opt-in published cleanup/inspect/replay
+test, alongside ordinary CLI input, mode, JSON and dispatch regression tests.
 `CPAMP_LEGACY_ARTIFACT_DIR` enables verification and extraction of all six pinned
-archives. Neither opt-in test executes any legacy binary or qualifies a real writer.
+archives. The artifact-byte test never executes a binary. Offline cleanup may
+execute only the exact published host-platform archive and reports diagnostic
+observation; it does not mint a receipt, trusted evidence or upgrade grant.
+The initial Darwin/Linux path-based smoke is historical and does not qualify
+executable provenance after the path TOCTOU finding. The revised Linux AMD64
+published smoke exercises the sealed descriptor launch through both service and
+production command paths. Real parent-SIGKILL/orphan-child/restart tests exercise
+the inherited fence on Linux/Darwin; Darwin fence evidence does not qualify
+Darwin executable launch. These results do not qualify an older-source forward hop.
