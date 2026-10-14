@@ -18,3 +18,14 @@ func rejectMultipleLinks(f *os.File) error {
 	}
 	return nil
 }
+
+func syncDirectory(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	return errors.Join(f.Sync(), f.Close())
+}
+
+func publishDirectory(from, to string) error { return os.Rename(from, to) }
+func replaceState(from, to string) error     { return os.Rename(from, to) }

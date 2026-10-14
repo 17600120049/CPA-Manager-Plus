@@ -139,6 +139,42 @@ jobs:
         working-directory: apps/manager-server
         run: go vet ./...
 
+      - name: Record Linux bundle boundary environment
+        working-directory: apps/manager-server
+        shell: bash
+        env:
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/manager-bundle-linux"
+          python3 - <<'PY'
+          import json, os, platform, subprocess
+          def output(*args):
+              return subprocess.check_output(args, text=True).strip()
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'manager-bundle-linux/environment.json'), 'w') as f:
+              json.dump(dict(sourceHead=os.environ['SOURCE_HEAD'], testedCommit=output('git','rev-parse','HEAD'),
+                             runnerOS=os.environ['RUNNER_OS'], runnerArch=os.environ['RUNNER_ARCH'],
+                             kernel=platform.release(), goVersion=output('go','version'),
+                             sqliteDriver=output('go','list','-m','modernc.org/sqlite')), f, indent=2)
+          PY
+
+      - name: Test bundle recovery and publication boundaries with race
+        working-directory: apps/manager-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -timeout 20m -json ./internal/service/maintenancebundle ./internal/command/managerdatabundle ./internal/processlock |
+            tee "${RUNNER_TEMP}/manager-bundle-linux/boundary.jsonl"
+
+      - name: Upload Linux bundle boundary evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: manager-bundle-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/manager-bundle-linux/
+          if-no-files-found: error
+          retention-days: 14
+
   runtime-supervisor:
     name: Runtime Supervisor
     needs: changes
@@ -275,7 +311,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.windows_sqlite == 'true'
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -330,6 +366,14 @@ jobs:
       - name: Test Runtime portability
         working-directory: apps/manager-server
         run: go test ./internal/service/runtime ./internal/repository/setting ./internal/service/bootstrap
+
+      - name: Test bundle runtime recovery and Windows file semantics
+        working-directory: apps/manager-server
+        shell: pwsh
+        run: |
+          go test -count=1 -timeout 20m -json ./internal/service/maintenancebundle ./internal/command/managerdatabundle |
+            Tee-Object -FilePath "$env:RUNNER_TEMP/manager-preflight-windows/bundle-boundary.jsonl"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Manager Server
         working-directory: apps/manager-server
