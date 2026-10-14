@@ -17,13 +17,19 @@
   "codeReview": {
     "exactSource": "archive, executable, build metadata and release-info bound to pinned generation",
     "migrationAuthenticity": "natural real producer completed state; revision2 retained",
-    "readinessSemantics": "qualification-only composition of existing primitives; production preflight JSON unchanged",
+    "readinessSemantics": "controlledDirectCandidateReadiness=ready; productionBridgeReadiness=unknown; both derived from actual reports; no production Bridge grant",
     "sourceImmutability": "read-only inspection; validator private copies only; full source inventory and authoritative snapshots equal",
     "authoritySeparation": "no consumers wired; false grants; pending independent acceptance",
-    "evidenceDurability": "original immutable archive retained; source-generation unchanged; current scope-corrected runtime and clean clone regenerated",
+    "evidenceDurability": "original immutable archive and source-generation unchanged; naming-corrected macOS/Linux/race/clean clone evidence regenerated",
     "blockingFindingsRemaining": 0,
     "frozenProductScope": "PASS: product trees equal v2 base; only _test.go composition and readonly migration queries"
   },
   "runtimePlatformLimit": "Windows materialization/SQLite inspection/compilation only, no Windows runtime readiness claim",
-  "executionCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef"
+  "executionCommit": "70dfd607a0c7919cdb3cd5d56406dd3141914899",
+  "historicalProductChecksExecutionCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef",
+  "historicalProductChecks": [
+    "manager-full",
+    "manager-vet",
+    "preflight-race"
+  ]
 }

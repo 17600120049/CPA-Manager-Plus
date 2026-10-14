@@ -20,8 +20,10 @@ SRC-11 and RET-01; only their accepted exact producer identity is reused.
 invocations of qualification-only `inspectDirectCandidateReadiness` in
 `apps/manager-server/tests/qualification/src11/mig01_readiness_test.go`. It executes the
 maintained source inspector, schema classifier, exact artifact verifier and
-matching-evidence validator. `ready` means **controlled direct-candidate data
-and compatibility eligibility**. The default embedded preflight still reports
+matching-evidence validator. Results explicitly report
+`controlledDirectCandidateReadiness=ready` for **controlled direct-candidate data
+and compatibility eligibility**, and `productionBridgeReadiness=unknown`.
+The default embedded preflight still reports
 exact release and Bridge obligations as `unknown`; its production authority is
 fail-closed. Caller-supplied qualification pins cannot authorize production.
 No Upgrade API, receipt, cutover, bootstrap, UI or startup authorization was
@@ -50,10 +52,13 @@ the exact producer archive. Pins and every member digest are in
 Release API `target_commitish=main` is separately recorded as default metadata;
 the actual Git tag ref is independently verified. ZIP SHA256:
 `bca2e3d802b9c48e76e895418a7280e666915bebe3cd353bef17c45a3021607b`.
-Original bytes were downloaded again, verified and replayed from a clean clone
-at the scope-correction verifier checkpoint in `clean-checkout/checkout-record.json`.
+The existing downloaded ZIP digest was rechecked and its unchanged materialized
+source replayed from a clean clone at the readiness-naming verifier checkpoint
+in `clean-checkout/checkout-record.json`.
 
-`result.json` sets `casePass=true` for the 13 completed delivery criteria.
+`result.json` sets `casePass=true` for the 13 completed delivery criteria, including
+`controlledDirectCandidateReadinessPass`. This never records a production Bridge
+readiness pass; production obligations remain `unknown`.
 Each preserved runtime `result.json` keeps `casePass=false` because a runtime
 invocation alone cannot establish durable delivery or independent acceptance.
 **independentAcceptance=pending** everywhere. Accepted cases remain SRC-11,
@@ -105,5 +110,7 @@ Runner log files are retained as `<original-name>.txt`; generation logs have
 an additional `generation-` prefix. Tests check those bytes against the original
 runner's log digests. Historical absolute runner paths describe original
 execution locations; replay does not depend on those paths. `verification/`
-retains full Manager tests/vet, focused/race logs and actual race qualification
+retains historical unchanged-product Manager tests/vet and preflight race logs
+(bound separately in `check-record.json`), focused logs and refreshed actual
+race qualification
 outputs. No runtime database, key or executable is committed to Git.

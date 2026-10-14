@@ -8,7 +8,7 @@
     "cachePersistedCompletedRevision2": true,
     "quotaPersistedCompleted": true,
     "authenticProducerMigrationState": true,
-    "actualBridgeReadinessPass": true,
+    "controlledDirectCandidateReadinessPass": true,
     "exactCandidateIdentityVerified": true,
     "SEM01Pass": true,
     "SEM07Pass": true,
@@ -25,7 +25,6 @@
   "Cache": "completed",
   "Quota": "completed",
   "cacheRevision": 2,
-  "BridgeReadiness": "ready",
   "readinessScope": "controlled-direct-candidate-data-compatibility",
   "applicableSEM": [
     "SEM-01",
@@ -54,7 +53,9 @@
   "TrustedHopReceipt": false,
   "Phase4A07Complete": false,
   "Phase4AComplete": false,
-  "qualificationExecutionCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef",
+  "qualificationExecutionCommit": "70dfd607a0c7919cdb3cd5d56406dd3141914899",
   "productCodeChanged": false,
-  "harnessOnly": true
+  "harnessOnly": true,
+  "controlledDirectCandidateReadiness": "ready",
+  "productionBridgeReadiness": "unknown"
 }

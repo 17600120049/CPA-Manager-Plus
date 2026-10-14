@@ -1,8 +1,8 @@
 {
-  "executionCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef",
+  "executionCommit": "70dfd607a0c7919cdb3cd5d56406dd3141914899",
   "statusBefore": "",
   "statusAfter": "",
-  "method": "clean local clone of scope-correction checkpoint; original previously downloaded immutable ZIP revalidated and materialized",
+  "method": "clean local clone of readiness-naming verifier checkpoint; existing downloaded immutable ZIP digest rechecked; original materialized source reused unchanged",
   "downloadedArchiveSHA256": "bca2e3d802b9c48e76e895418a7280e666915bebe3cd353bef17c45a3021607b",
   "releaseID": 412855420,
   "assetID": 640737774,

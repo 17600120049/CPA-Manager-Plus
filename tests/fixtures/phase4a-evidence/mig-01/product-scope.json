@@ -1,6 +1,6 @@
 {
   "baselineCommit": "3f65813749a89371a3005b4a710836df587a7582",
-  "verificationCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef",
+  "verificationCommit": "70dfd607a0c7919cdb3cd5d56406dd3141914899",
   "baselineTrees": {
     "apps/manager-server/internal": "a6b7e8db1061c639d8cb88c209fa5445994337b2",
     "apps/manager-server/cmd": "5f03e520669878aa7e685bbc00ca7b6f76a53360",

@@ -11,12 +11,12 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "clean-checkout/checkout-record.json": {
-      "size": 489,
-      "sha256": "0e7f6015d245021913685272fbce14f3a67d38a969c8f90259cbc301ca2ef3f8"
+      "size": 522,
+      "sha256": "57bc502cab2427d9c7920a30a52a3cc99c5b89b5551118398ac997605f7a640d"
     },
     "clean-checkout/execution-record.json": {
-      "size": 599,
-      "sha256": "c982f224655cb91d32f6b1f83dc9479be5a07ab2dd32507725b2cc0974ffdbc7"
+      "size": 666,
+      "sha256": "1fbcbfb034b77573520d776edd46e1dc921e6c6c6d9344327ad4718423f61a24"
     },
     "clean-checkout/input-bundle.json": {
       "size": 805,
@@ -36,15 +36,15 @@
     },
     "clean-checkout/replay-execution.log.txt": {
       "size": 67,
-      "sha256": "d589af3cebc34828b33d7e3518b2b4059ea1bd1ed787e9e3d6b85fcb9d69820d"
+      "sha256": "9c171875c442f150a31a517535c9aaa0b2017df481f6e2e81719d753515c312f"
     },
     "clean-checkout/result.json": {
-      "size": 1364,
-      "sha256": "799dc268dced89c3c87e03a7bb37054871fd4376b5e31b61d1d08c79e1cb9941"
+      "size": 1425,
+      "sha256": "356ae1eceeb899d5371c4059027f1486afe6d098753b78dd98cc3c838660adec"
     },
     "clean-checkout/runner-evidence.json": {
-      "size": 71837,
-      "sha256": "011a7cc01cd207d5f6e1f0af94ff55e59938105624c0540b02fd01d37a5a756b"
+      "size": 71845,
+      "sha256": "688345c74ea1d791d741c5add249dec2cc3f9de33d204a980529691bd8368f37"
     },
     "clean-checkout/semantic-assertions.json": {
       "size": 6873,
@@ -75,8 +75,8 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "platform-replay/linux/execution-record.json": {
-      "size": 599,
-      "sha256": "c982f224655cb91d32f6b1f83dc9479be5a07ab2dd32507725b2cc0974ffdbc7"
+      "size": 666,
+      "sha256": "1fbcbfb034b77573520d776edd46e1dc921e6c6c6d9344327ad4718423f61a24"
     },
     "platform-replay/linux/input-bundle.json": {
       "size": 805,
@@ -96,15 +96,15 @@
     },
     "platform-replay/linux/replay-execution.log.txt": {
       "size": 67,
-      "sha256": "2f83ac6650b5174c6c770a51b79952ad898e0805e1fc0659a53dcde14d925b70"
+      "sha256": "4953bbb58d18bda825ed5f8b45a210d7be721046c9dcc9c1d331a7517fcc77c1"
     },
     "platform-replay/linux/result.json": {
-      "size": 1364,
-      "sha256": "799dc268dced89c3c87e03a7bb37054871fd4376b5e31b61d1d08c79e1cb9941"
+      "size": 1425,
+      "sha256": "356ae1eceeb899d5371c4059027f1486afe6d098753b78dd98cc3c838660adec"
     },
     "platform-replay/linux/runner-evidence.json": {
-      "size": 73800,
-      "sha256": "9e8d7e05e3eb023fb4944087c8a86ff345574b1d4a35d358a9967285050469ed"
+      "size": 73812,
+      "sha256": "1939eb7eb04561d043df314f9269a25e5eb6433f7181d4423dc4b8fa3178f013"
     },
     "platform-replay/linux/semantic-assertions.json": {
       "size": 6873,
@@ -112,7 +112,7 @@
     },
     "product-scope.json": {
       "size": 831,
-      "sha256": "1caaf8a91a0636939fd556b0c733bfd9dcf98d196f166649f5dd82879def84c0"
+      "sha256": "00fbdbd17e729d2c705e4106b00d15255af3221aec15a99a6db609b246f8332f"
     },
     "profile.json": {
       "size": 4509,
@@ -123,8 +123,8 @@
       "sha256": "5cfd0a555e9819241925d79f2b45683ea4336a2b6799b1df6d969bdc2a4ecbd9"
     },
     "result.json": {
-      "size": 1817,
-      "sha256": "2cd84d6dfcfd87e65f22931a0c144699c3cf5948a3a756771cb9b75a65c0d269"
+      "size": 1891,
+      "sha256": "5f00c78b2bfc6dd85200992d7ca611036bb10b95f9d8bc0ea92567b6d11a2ba5"
     },
     "runtime/authoritative-digest.json": {
       "size": 48234,
@@ -135,8 +135,8 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "runtime/execution-record.json": {
-      "size": 599,
-      "sha256": "c982f224655cb91d32f6b1f83dc9479be5a07ab2dd32507725b2cc0974ffdbc7"
+      "size": 666,
+      "sha256": "1fbcbfb034b77573520d776edd46e1dc921e6c6c6d9344327ad4718423f61a24"
     },
     "runtime/input-bundle.json": {
       "size": 805,
@@ -159,12 +159,12 @@
       "sha256": "b74f972fcc982db38c0586d03cbbe7aa0958ab1d096eafce28331c65ab094142"
     },
     "runtime/result.json": {
-      "size": 1364,
-      "sha256": "799dc268dced89c3c87e03a7bb37054871fd4376b5e31b61d1d08c79e1cb9941"
+      "size": 1425,
+      "sha256": "356ae1eceeb899d5371c4059027f1486afe6d098753b78dd98cc3c838660adec"
     },
     "runtime/runner-evidence.json": {
-      "size": 71837,
-      "sha256": "4badd2301af7d74c66c882936014d965bc109bf1393fc4fb41a8de28db26bd0f"
+      "size": 71845,
+      "sha256": "c8cd92ea2c1150534179505867e902debd31e6689ebc51b825c18aa5b3a5772f"
     },
     "runtime/semantic-assertions.json": {
       "size": 6873,
@@ -223,8 +223,8 @@
       "sha256": "e997b150c408af37c4795b34ef5a5a04c83d1b6bbcc3420394b99cdb5e36278e"
     },
     "verification/check-record.json": {
-      "size": 1963,
-      "sha256": "7af89975cc4ee915a84ae72a2592340721ea8609ae85ce827fc2edea30709779"
+      "size": 2195,
+      "sha256": "8af7d51d8dca86b3bd54a60cfd7ee289fe5b36ae7801dd38798379e00c24abcf"
     },
     "verification/initial-focused.log.txt": {
       "size": 376,
@@ -251,8 +251,8 @@
       "sha256": "59175d37bc0fb8c843238bdabedc195336f55757d4c7eb1367e78fb357a90ea9"
     },
     "verification/qualification-race/execution-record.json": {
-      "size": 599,
-      "sha256": "c982f224655cb91d32f6b1f83dc9479be5a07ab2dd32507725b2cc0974ffdbc7"
+      "size": 666,
+      "sha256": "1fbcbfb034b77573520d776edd46e1dc921e6c6c6d9344327ad4718423f61a24"
     },
     "verification/qualification-race/input-bundle.json": {
       "size": 805,
@@ -271,8 +271,8 @@
       "sha256": "d19bc49e1f2980f7242ffacd3b9f5093267fa88a2b2c54a57cf802becefae1f8"
     },
     "verification/qualification-race/result.json": {
-      "size": 1364,
-      "sha256": "799dc268dced89c3c87e03a7bb37054871fd4376b5e31b61d1d08c79e1cb9941"
+      "size": 1425,
+      "sha256": "356ae1eceeb899d5371c4059027f1486afe6d098753b78dd98cc3c838660adec"
     },
     "verification/qualification-race/semantic-assertions.json": {
       "size": 6873,
@@ -280,7 +280,7 @@
     },
     "verification/qualification-race.log.txt": {
       "size": 93,
-      "sha256": "54860ed287658a7d71990b30e4ab7b7f761d4c92bec9f08c029aa84939f79202"
+      "sha256": "26ff8adc4a80f73f3c429c9f46b6a8ce89068e2eb7ffd8e56b772e3a5633744d"
     },
     "verification/remote-pin-check.json": {
       "size": 4839,
