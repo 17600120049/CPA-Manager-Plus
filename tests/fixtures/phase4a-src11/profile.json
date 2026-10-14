@@ -28,7 +28,7 @@
       "request_id": "src11-quota-failure", "timestamp": "2026-10-01T03:00:00Z",
       "provider": "codex", "model": "fixture-paid", "auth_index": "fixture-codex",
       "auth_provider_snapshot": "codex", "auth_file_snapshot": "fixture-codex.json",
-      "failed": true, "fail_status_code": 429, "fail_body": "qualification local troubleshooting body",
+      "failed": true, "fail_status_code": 429, "fail_body": "HTTP 429 cpaManagementKey=qualification-redaction-sentinel quota exhausted",
       "session_id": "src11-session", "response_model": "fixture-paid",
       "tokens": {"input_tokens": 100, "output_tokens": 10, "total_tokens": 110},
       "response_headers": {"X-Codex-Primary-Used-Percent": ["100"], "X-Codex-Primary-Reset-At": ["4102444800000"], "X-Codex-Primary-Window-Minutes": ["300"], "X-Codex-Plan-Type": ["plus"], "X-Request-Id": ["trace-src11-quota"]}
