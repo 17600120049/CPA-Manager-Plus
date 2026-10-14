@@ -119,6 +119,7 @@ def main():
         command = [str(binary), "-test.v", "-test.run", "^TestReplayExactSource$", "-test.timeout", "4m"]
         if args.linux:
             command = ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--read-only",
+                       "--user", f"{os.getuid()}:{os.getgid()}",
                        "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,exec,mode=1777",
                        "--mount", f"type=bind,src={binary},dst=/qualification,readonly",
                        "--mount", f"type=bind,src={archive},dst=/archive,readonly",
@@ -130,7 +131,8 @@ def main():
                        IMAGE, "/qualification", "-test.v", "-test.run", "^TestReplayExactSource$", "-test.timeout", "4m"]
             build["isolation"] = {"image": IMAGE, "parentIndex": IMAGE_INDEX, "network": "none", "readOnlyRoot": True,
                                   "imageID": capture(["docker", "image", "inspect", IMAGE, "--format", "{{.Id}}"]),
-                                  "capabilities": "none", "evidenceMount": "read-only"}
+                                  "capabilities": "none", "evidenceMount": "read-only",
+                                  "user": f"{os.getuid()}:{os.getgid()}"}
         if args.evidence_archive:
             build["sealedEvidenceArchiveSHA256"] = digest(args.evidence_archive)
             build["sealedArtifactPinSHA256"] = digest(module.PIN)
