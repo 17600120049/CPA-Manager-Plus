@@ -465,6 +465,7 @@ type AccountHistoryLoadOutcome = { status: 'success' } | { status: 'error'; erro
 type CodexResetCreditRequestEntry = {
   promise: Promise<CodexResetCreditsData | null>;
   isCurrent: () => boolean;
+  quotaGenerationAtStart: number;
 };
 
 const toAccountQuotaRefreshOutcome = <TState, TData>(
@@ -5484,9 +5485,12 @@ export function AccountsPage() {
       }
 
       const cacheGeneration = captureQuotaCacheGeneration();
+      const quotaGenerationAtStart = quotaRequestVersionsRef.current.get(
+        `${CODEX_CONFIG.type}:${storeKey}`
+      ) ?? 0;
       const requestGate = beginAccountQuotaRequest(
         quotaRequestVersionsRef.current,
-        CODEX_CONFIG.type + ':' + storeKey
+        `${CODEX_CONFIG.type}:reset-credits:${storeKey}`
       );
       const capturedConnectionFingerprint = connectionFingerprint;
       const isCurrentRequest = () =>
@@ -5510,6 +5514,7 @@ export function AccountsPage() {
                   [storeKey]: {
                     ...active,
                     rateLimitResetCreditsError: data.error,
+                    resetCreditsDetailStale: true,
                   },
                 };
               }
@@ -5527,6 +5532,7 @@ export function AccountsPage() {
                     data.credits,
                     data.creditsObserved
                   ),
+                  resetCreditsCountSource: 'dedicated',
                   rateLimitResetCredits: data.credits,
                   rateLimitResetCreditsError: null,
                   resetCreditsEvidenceAtMs: data.resetCreditsEvidenceAtMs,
@@ -5560,6 +5566,7 @@ export function AccountsPage() {
                 [storeKey]: {
                   ...active,
                   rateLimitResetCreditsError: message,
+                  resetCreditsDetailStale: true,
                 },
               };
             });
@@ -5573,6 +5580,7 @@ export function AccountsPage() {
       const entry: CodexResetCreditRequestEntry = {
         promise: requestPromise,
         isCurrent: isCurrentRequest,
+        quotaGenerationAtStart,
       };
       codexResetCreditDetailRequestsRef.current.set(storeKey, entry);
       void requestPromise.finally(() => {
@@ -6263,6 +6271,16 @@ export function AccountsPage() {
       };
       switch (row.provider) {
         case CODEX_CONFIG.type: {
+          // Any ordinary Codex quota refresh supersedes a standalone reset-credit
+          // read for the same credential. Keep the request generations separate
+          // so a summary refresh cannot make an older dedicated response look
+          // current, while still forcing a fresh dedicated read before mutation.
+          const key = CODEX_CONFIG.getStoreKey?.(row.raw) ?? row.fileName;
+          beginAccountQuotaRequest(
+            quotaRequestVersionsRef.current,
+            `${CODEX_CONFIG.type}:reset-credits:${key}`
+          );
+          codexResetCreditDetailRequestsRef.current.delete(key);
           const config = mode === 'detail' ? CODEX_CONFIG : CODEX_SUMMARY_CONFIG;
           const result = await refreshWithConfig(
             config,
@@ -6770,6 +6788,18 @@ export function AccountsPage() {
       const cacheGeneration = captureQuotaCacheGeneration();
 
       const runResetTransaction = async () => {
+        // Reuse a pending dedicated read only if no ordinary quota refresh has
+        // started since it was issued. A newer ordinary generation requires a
+        // fresh dedicated read before any reset confirmation can be shown.
+        const inFlight = codexResetCreditDetailRequestsRef.current.get(storeKey);
+        const quotaGeneration = quotaRequestVersionsRef.current.get(requestKey) ?? 0;
+        if (inFlight?.isCurrent() && inFlight.quotaGenerationAtStart !== quotaGeneration) {
+          beginAccountQuotaRequest(
+            quotaRequestVersionsRef.current,
+            `${CODEX_CONFIG.type}:reset-credits:${storeKey}`
+          );
+          codexResetCreditDetailRequestsRef.current.delete(storeKey);
+        }
         let fresh: CodexResetCreditsData | null;
         try {
           fresh = await loadCodexResetCreditDetails(row);
@@ -6833,6 +6863,9 @@ export function AccountsPage() {
           );
           return;
         }
+        const verificationQuotaGeneration =
+          quotaRequestVersionsRef.current.get(requestKey) ?? 0;
+        const verificationConnectionFingerprint = connectionFingerprint;
         commitIfQuotaCacheCurrent(cacheGeneration, () => {
           setCodexQuota((prev) => {
             const current = getScopedQuotaState(CODEX_CONFIG, prev, row.raw);
@@ -6843,6 +6876,7 @@ export function AccountsPage() {
             };
             const incoming: CodexResetCreditsMergeInput = {
               rateLimitResetCreditsAvailableCount: verifiedCount,
+              resetCreditsCountSource: 'dedicated',
               rateLimitResetCredits: fresh.credits,
               rateLimitResetCreditsError: null,
               resetCreditsEvidenceAtMs: fresh.resetCreditsEvidenceAtMs,
@@ -6860,6 +6894,7 @@ export function AccountsPage() {
               [storeKey]: {
                 ...baseState,
                 rateLimitResetCreditsAvailableCount: merged.rateLimitResetCreditsAvailableCount,
+                resetCreditsCountSource: merged.resetCreditsCountSource,
                 rateLimitResetCredits: merged.rateLimitResetCredits,
                 rateLimitResetCreditsError: merged.rateLimitResetCreditsError,
                 resetCreditsEvidenceAtMs: merged.resetCreditsEvidenceAtMs,
@@ -6888,6 +6923,22 @@ export function AccountsPage() {
           onCancel: endResetTransaction,
           onConfirm: async () => {
             if (confirmed) return;
+            if (
+              oauthEditorConnectionFingerprintRef.current !== verificationConnectionFingerprint ||
+              captureQuotaCacheGeneration() !== cacheGeneration ||
+              (quotaRequestVersionsRef.current.get(requestKey) ?? 0) !==
+                verificationQuotaGeneration
+            ) {
+              endResetTransaction();
+              showNotification(
+                t('codex_quota.reset_verify_failed', {
+                  name: displayName,
+                  message: t('codex_quota.reset_credits_invalid_payload'),
+                }),
+                'error'
+              );
+              return;
+            }
             confirmed = true;
             let resetResult: unknown;
             try {
@@ -6943,6 +6994,7 @@ export function AccountsPage() {
                       [storeKey]: {
                         ...baseState,
                         rateLimitResetCreditsAvailableCount: 0,
+                        resetCreditsCountSource: 'dedicated',
                         rateLimitResetCredits: [],
                         rateLimitResetCreditsError: null,
                         resetCreditsEvidenceAtMs: nowMs,
@@ -7010,6 +7062,7 @@ export function AccountsPage() {
                   [storeKey]: {
                     ...baseState,
                     rateLimitResetCreditsAvailableCount: null,
+                    resetCreditsCountSource: 'summary',
                     rateLimitResetCredits: [],
                     rateLimitResetCreditsError: null,
                     resetCreditsEvidenceAtMs: nowMs,
@@ -7020,6 +7073,12 @@ export function AccountsPage() {
                 };
               });
             });
+            // A consumed credit invalidates any pre-mutation dedicated reads.
+            beginAccountQuotaRequest(
+              quotaRequestVersionsRef.current,
+              `${CODEX_CONFIG.type}:reset-credits:${storeKey}`
+            );
+            codexResetCreditDetailRequestsRef.current.delete(storeKey);
             setQuotaSnapshotWindowsByRowKey((current) => {
               const windows = current.get(row.selectionKey);
               if (!windows) return current;
@@ -7035,25 +7094,45 @@ export function AccountsPage() {
               return next;
             });
 
-            // Flow: reset credit succeeds → sync CPA runtime reset → refresh quota for UI
-            const authIndex = normalizeAuthIndex(row.raw['auth_index'] ?? row.raw.authIndex ?? row.authIndex);
-            let gatewaySyncSuccess = false;
-            if (authIndex && !row.raw.disabled) {
+            // Flow: reset credit succeeds → one-shot quota verification →
+            // recover a CPAMP-owned disable (if any) → sync CPA runtime cooldown.
+            // No polling or background retry is used in this transaction.
+            const authIndex = normalizeAuthIndex(
+              row.raw['auth_index'] ?? row.raw.authIndex ?? row.authIndex
+            );
+            const wasDisabled = row.raw.disabled === true;
+            let gatewaySyncSuccess = !authIndex && !wasDisabled;
+            let credentialRecoverySuccess = !wasDisabled;
+
+            if (authIndex && !wasDisabled) {
               try {
                 await authFilesApi.resetQuota(authIndex, authFilesRequestScope);
                 gatewaySyncSuccess = true;
               } catch (resetErr) {
-                console.warn('[Accounts] Failed to reset gateway cooldown quota after consuming reset credit:', resetErr);
+                console.warn(
+                  '[Accounts] Failed to reset gateway cooldown quota after consuming reset credit:',
+                  resetErr
+                );
                 gatewaySyncSuccess = false;
               }
-            } else {
-              gatewaySyncSuccess = true;
             }
 
+            const isPostMutationVerificationCurrent = () =>
+              postMutationIsCurrent() &&
+              oauthEditorConnectionFingerprintRef.current === connectionFingerprint &&
+              captureQuotaCacheGeneration() === cacheGeneration;
+
             let quotaRefreshSuccess = false;
+            let quotaHealthy = false;
             try {
               const data = await CODEX_CONFIG.fetchQuota(row.raw, t, authFilesRequestScope);
-              if (postMutationIsCurrent()) {
+              const healthState = CODEX_CONFIG.buildSuccessState(data, row.raw);
+              quotaHealthy =
+                data.windows.some(
+                  (window) =>
+                    typeof window.usedPercent === 'number' && Number.isFinite(window.usedPercent)
+                ) && isKnownHealthyCodexQuota(healthState);
+              if (isPostMutationVerificationCurrent()) {
                 commitIfQuotaCacheCurrent(cacheGeneration, () => {
                   setCodexQuota((prev) => {
                     const currentState = getScopedQuotaState(CODEX_CONFIG, prev, row.raw);
@@ -7065,23 +7144,71 @@ export function AccountsPage() {
                   });
                 });
               }
-              quotaRefreshSuccess = true;
+              quotaRefreshSuccess = isPostMutationVerificationCurrent();
+              if (!quotaRefreshSuccess) quotaHealthy = false;
             } catch (refreshErr) {
-              console.warn('[Accounts] Failed to refresh quota after consuming reset credit:', refreshErr);
+              console.warn(
+                '[Accounts] Failed to refresh quota after consuming reset credit:',
+                refreshErr
+              );
               quotaRefreshSuccess = false;
-            } finally {
-              endResetTransaction();
             }
+
+            if (
+              wasDisabled &&
+              quotaRefreshSuccess &&
+              quotaHealthy &&
+              authIndex &&
+              featureAvailability.managerServiceBase &&
+              managementKey &&
+              isPostMutationVerificationCurrent()
+            ) {
+              try {
+                const recovery = await usageServiceApi.recoverQuotaCooldown(
+                  featureAvailability.managerServiceBase,
+                  managementKey,
+                  {
+                    authFileName: row.fileName,
+                    authIndex,
+                    provider: 'codex',
+                  }
+                );
+                credentialRecoverySuccess = recovery.recovered === true;
+                if (credentialRecoverySuccess) {
+                  try {
+                    await authFilesApi.resetQuota(authIndex, authFilesRequestScope);
+                    gatewaySyncSuccess = true;
+                  } catch (resetErr) {
+                    console.warn(
+                      '[Accounts] Failed to reset gateway cooldown after recovering CPAMP quota disable:',
+                      resetErr
+                    );
+                    gatewaySyncSuccess = false;
+                  }
+                  await Promise.allSettled([loadFiles(), loadQuotaCooldowns()]);
+                }
+              } catch (recoverErr) {
+                console.warn(
+                  '[Accounts] Failed to recover CPAMP-owned quota cooldown after consuming reset credit:',
+                  recoverErr
+                );
+                credentialRecoverySuccess = false;
+              }
+            }
+
+            endResetTransaction();
 
             invalidateCodexCredentialStatusForSelectionKeys([row.selectionKey], {
               supersedeAuthenticationActionEvidence: true,
               supersedeQuotaActionEvidence: quotaRefreshSuccess,
-              supersedeCooldownEvidence: gatewaySyncSuccess,
+              supersedeCooldownEvidence: wasDisabled
+                ? credentialRecoverySuccess
+                : gatewaySyncSuccess,
             });
 
-            if (gatewaySyncSuccess && quotaRefreshSuccess) {
+            if (gatewaySyncSuccess && quotaRefreshSuccess && credentialRecoverySuccess) {
               showNotification(t('codex_quota.reset_success', { name: displayName }), 'success');
-            } else if (!gatewaySyncSuccess) {
+            } else if (!gatewaySyncSuccess && credentialRecoverySuccess) {
               showNotification(
                 t('codex_quota.reset_gateway_failed', {
                   name: displayName,
@@ -7102,9 +7229,14 @@ export function AccountsPage() {
     },
     [
       canResetCodexQuota,
+      connectionFingerprint,
+      featureAvailability.managerServiceBase,
       getDisplayAccount,
       invalidateCodexCredentialStatusForSelectionKeys,
       loadCodexResetCreditDetails,
+      loadFiles,
+      loadQuotaCooldowns,
+      managementKey,
       setCodexQuota,
       showConfirmation,
       showNotification,

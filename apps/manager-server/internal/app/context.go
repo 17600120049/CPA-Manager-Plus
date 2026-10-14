@@ -37,6 +37,10 @@ type AutomationRuntimeService interface {
 	Reload(ctx context.Context) error
 }
 
+type QuotaCooldownRecoveryService interface {
+	RecoverOwnedCooldown(ctx context.Context, authFileName string, authIndex string, provider string) (bool, error)
+}
+
 type DatabaseMaintenanceStatusProvider interface {
 	Snapshot() sqliterepo.WALMaintenanceSnapshot
 }
@@ -66,6 +70,7 @@ type Context struct {
 	AccountActionService           *accountactionsvc.Service
 	AccountProcessingPolicyService *automationsvc.Service
 	AuthFileMutationCoordinator    *cpaauthfiles.MutationCoordinator
+	QuotaCooldownRecoveryService   QuotaCooldownRecoveryService
 	ProxyService                   *proxysvc.Service
 	PanelService                   *panelsvc.Service
 	AutomationRuntimeService       AutomationRuntimeService
