@@ -1,0 +1,49 @@
+{
+  "caseID": "RET-01",
+  "inputBundle": {
+    "inventory": {
+      "config": {
+        "present": true,
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "data-key": {
+        "present": true,
+        "size": 44,
+        "sha256": "cf5726a789bf2a0059564ecb9cc24b8b5f64f1d72902062f8457cea1c8d05e3a"
+      },
+      "database": {
+        "present": true,
+        "size": 659456,
+        "sha256": "7ce02b5b7338bd6c2b43eaec255057bc793250f9c76702e64c3a851ddb3198b8"
+      },
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": false
+      },
+      "database-wal": {
+        "present": false
+      },
+      "usage-archives": {
+        "present": false
+      }
+    },
+    "manifestDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "materializedFrom": "immutable SRC-11 qualification asset; verified before extraction"
+  },
+  "inputBundleIdentity": "RET-01/input-bundle@0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "provenanceRole": "accepted SRC-11 exact-source anchor; no source regeneration or reinterpretation",
+  "sourceAnchor": {
+    "acceptance": "accepted",
+    "acceptanceEvidence": "seakee/cpamp-plan/main@2719d8466951da1ea457bd1a00dca3fa6f09dc43",
+    "caseID": "SRC-11",
+    "producerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "producerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+    "sourceRelease": "v1.14.4"
+  }
+}

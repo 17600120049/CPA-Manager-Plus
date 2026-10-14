@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "caseID": "RET-01",
+  "status": "runtime-pass-independent-acceptance-pending",
+  "sourceProvenance": "source-provenance.json",
+  "runtimeResult": "runtime/result.json",
+  "runtimeAssertions": "runtime/semantic-assertions.json",
+  "executionRecord": "runtime/execution-record.json",
+  "backupRestore": "runtime/backup-restore.json",
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-02",
+    "SEM-03",
+    "SEM-06",
+    "SEM-08"
+  ],
+  "authority": {
+    "casePass": true,
+    "independentAcceptance": "pending",
+    "UpgradeAuthorized": false,
+    "TrustedHopReceipt": false,
+    "Phase4A07Complete": false,
+    "Phase4AComplete": false
+  },
+  "externalInput": {
+    "anchorCaseID": "SRC-11",
+    "sourceRelease": "v1.14.4",
+    "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "immutableAsset": "tests/fixtures/phase4a-evidence/src-11/sealed-artifact.json"
+  },
+  "inventory": {
+    "source-provenance.json": {
+      "size": 1194,
+      "sha256": "0818dadffa71d48e3e36f16ffb1faf83e16135b1c3156014dfb2493330836814"
+    },
+    "runtime/backup-restore.json": {
+      "size": 618,
+      "sha256": "580e591a153b72882ce813223bb58a3b8c4031e73558f5d8b79f584e9ab57b25"
+    },
+    "runtime/execution-record.json": {
+      "size": 952,
+      "sha256": "52f50282adb68623cbd6ca3602459104380b0f1f364d5f0027e3dedc35988b51"
+    },
+    "runtime/input-bundle.json": {
+      "size": 1851,
+      "sha256": "7c0b44558fb10166f56ae89893b01b425de910f28ff02f106b429fb25cb2eb35"
+    },
+    "runtime/result.json": {
+      "size": 15748,
+      "sha256": "0ad00fb2e705980063bb87dd95ece654a2d720cd2649430f83ca58244a76430e"
+    },
+    "runtime/semantic-assertions.json": {
+      "size": 10793,
+      "sha256": "e44d55147fc13f6673798e369bf307bdd53b028a92e6f47d52113aa226c7cacc"
+    }
+  },
+  "replay": {
+    "runner": "bin/qualification/run-src11.py ret01",
+    "sourceMaterializer": "bin/qualification/materialize-src11.py",
+    "inputPolicy": "materialize and verify immutable SRC-11 asset before offline replay",
+    "rawArtifactsCommitted": false
+  }
+}

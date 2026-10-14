@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in SRC-11 qualification; no production admission or upgrade interface."""
+"""Opt-in Phase4A qualification; no production admission or upgrade interface."""
 import argparse
 import hashlib
 import json
@@ -42,7 +42,7 @@ def run(args, log, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["generate", "replay"])
+    parser.add_argument("action", choices=["generate", "replay", "ret01"])
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--release-info", type=Path)
     parser.add_argument("--evidence", type=Path)
@@ -55,14 +55,23 @@ def main():
     archive = args.archive.resolve(strict=True)
     if args.action == "replay" and bool(args.evidence) == bool(args.evidence_archive):
         parser.error("replay requires exactly one of --evidence or --evidence-archive")
+    if args.action == "ret01" and not args.evidence_archive:
+        parser.error("ret01 requires the pinned SRC-11 evidence archive as its provenance anchor")
+    if args.action == "ret01" and args.evidence:
+        parser.error("ret01 accepts only --evidence-archive so the accepted source anchor is revalidated")
     if args.action == "generate" and (args.evidence_archive or args.linux):
         parser.error("--evidence-archive and --linux are replay options")
+    if args.action == "generate" and args.evidence:
+        parser.error("--evidence is a replay option")
+    if args.action == "ret01" and args.release_info:
+        parser.error("--release-info is only valid for source generation")
     output = args.output.resolve()
     if output.exists():
         parser.error("output must be absent (never overwrite evidence)")
     tracked_scope = ["apps/manager-server", "bin/qualification",
                      "tests/fixtures/phase4a-src11/profile.json",
-                     "tests/fixtures/phase4a-evidence/src-11/sealed-artifact.json"]
+                     "tests/fixtures/phase4a-evidence/src-11/sealed-artifact.json",
+                     "tests/fixtures/phase4a-evidence/ret-01/source-provenance.json"]
     dirty = capture(["git", "status", "--porcelain", "--untracked-files=all", "--", *tracked_scope], cwd=ROOT)
     if dirty:
         parser.error("commit all harness, profile and Manager source first; uncommitted code cannot claim GeneratorCodeCommit")
@@ -116,7 +125,14 @@ def main():
         env.update(CPAMP_SRC11_EVIDENCE=str(evidence),
                    CPAMP_SRC11_ARCHIVE=str(archive), CPAMP_SRC11_PROFILE=str(PROFILE),
                    CPAMP_SRC11_REPLAY_OUTPUT=str(output / "runtime"))
-        command = [str(binary), "-test.v", "-test.run", "^TestReplayExactSource$", "-test.timeout", "4m"]
+        if args.action == "ret01":
+            env.update(CPAMP_RET01_SOURCE_EVIDENCE=str(evidence),
+                       CPAMP_RET01_ARCHIVE=str(archive),
+                       CPAMP_RET01_REPLAY_OUTPUT=str(output / "runtime"))
+            test_name = "^TestReplayRET01$"
+        else:
+            test_name = "^TestReplayExactSource$"
+        command = [str(binary), "-test.v", "-test.run", test_name, "-test.timeout", "4m"]
         if args.linux:
             command = ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--read-only",
                        "--user", f"{os.getuid()}:{os.getgid()}",
@@ -127,8 +143,12 @@ def main():
                        "--mount", f"type=bind,src={PROFILE},dst=/profile,readonly",
                        "--mount", f"type=bind,src={output},dst=/output",
                        "--env", "CPAMP_SRC11_EVIDENCE=/evidence", "--env", "CPAMP_SRC11_ARCHIVE=/archive",
-                       "--env", "CPAMP_SRC11_PROFILE=/profile", "--env", "CPAMP_SRC11_REPLAY_OUTPUT=/output/runtime",
-                       IMAGE, "/qualification", "-test.v", "-test.run", "^TestReplayExactSource$", "-test.timeout", "4m"]
+                       "--env", "CPAMP_SRC11_PROFILE=/profile", "--env", "CPAMP_SRC11_REPLAY_OUTPUT=/output/runtime"]
+            if args.action == "ret01":
+                command.extend(["--env", "CPAMP_RET01_SOURCE_EVIDENCE=/evidence",
+                                "--env", "CPAMP_RET01_ARCHIVE=/archive",
+                                "--env", "CPAMP_RET01_REPLAY_OUTPUT=/output/runtime"])
+            command.extend([IMAGE, "/qualification", "-test.v", "-test.run", test_name, "-test.timeout", "4m"])
             build["isolation"] = {"image": IMAGE, "parentIndex": IMAGE_INDEX, "network": "none", "readOnlyRoot": True,
                                   "imageID": capture(["docker", "image", "inspect", IMAGE, "--format", "{{.Id}}"]),
                                   "capabilities": "none", "evidenceMount": "read-only",
@@ -141,7 +161,19 @@ def main():
         build["resultSHA256"] = digest(output / "runtime/result.json")
     build["executionExitCode"] = 0
     build["UpgradeAuthorized"] = False
-    build["trustedHopReceipt"] = False
+    build["TrustedHopReceipt"] = False
+    if args.action == "ret01":
+        result = json.loads((output / "runtime/result.json").read_text(encoding="utf-8"))
+        build.update({
+            "caseID": "RET-01",
+            "runtimeEvidence": result.get("runtimeEvidence"),
+            "casePass": result.get("casePass"),
+            "independentAcceptance": result.get("independentAcceptance"),
+            "inputBundleDigest": result.get("inputBundleDigest"),
+            "beforeDigest": result.get("beforeDigest"),
+            "afterDigest": result.get("afterDigest"),
+            "applicableSEM": result.get("applicableSEM"),
+        })
     # Build/execution logs and external runner observations are independent of
     # the test's generation JSON. Regeneration qualifies equivalent evidence;
     # the pinned sealed archive authenticates the original bytes.

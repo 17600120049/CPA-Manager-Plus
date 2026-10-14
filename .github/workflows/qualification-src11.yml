@@ -9,6 +9,7 @@ on:
       - 'apps/manager-server/tests/qualification/src11/**'
       - 'tests/fixtures/phase4a-src11/**'
       - 'tests/fixtures/phase4a-evidence/src-11/**'
+      - 'tests/fixtures/phase4a-evidence/ret-01/**'
 
 permissions:
   contents: read
@@ -93,5 +94,64 @@ jobs:
             ${{ runner.temp }}/src11-replay/runtime/
             ${{ runner.temp }}/src11-materialization.json
             ${{ runner.temp }}/src11-windows-compile.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  ret01:
+    name: RET-01 exact-source replay (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Download immutable SRC-11 provenance asset
+        shell: bash
+        run: |
+          gh release download qualification-src11-0e106589baef-20261014 \
+            --repo seakee/CPA-Manager-Plus \
+            --pattern src-11-0e106589baef-sealed-evidence.tar.gz --dir "$RUNNER_TEMP/ret01-download"
+      - name: Verify committed RET-01 evidence contract
+        shell: bash
+        run: python -m unittest discover -s bin/qualification -p 'test_ret01.py' -v
+      - name: Materialize accepted SRC-11 input anchor
+        shell: bash
+        run: |
+          export CPAMP_SRC11_SEALED_ARCHIVE="$RUNNER_TEMP/ret01-download/src-11-0e106589baef-sealed-evidence.tar.gz"
+          python bin/qualification/materialize-src11.py \
+            --archive "$CPAMP_SRC11_SEALED_ARCHIVE" --output "$RUNNER_TEMP/ret01-source"
+      - name: Replay RET-01 against the v2 primitives
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+            extra=(--linux)
+          fi
+          python bin/qualification/run-src11.py ret01 \
+            --archive "$RUNNER_TEMP/ret01-source/producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
+            --evidence-archive "$RUNNER_TEMP/ret01-download/src-11-0e106589baef-sealed-evidence.tar.gz" \
+            --output "$RUNNER_TEMP/ret01-replay" "${extra[@]}"
+      - name: Upload RET-01 runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ret01-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ret01-replay/runner-evidence.json
+            ${{ runner.temp }}/ret01-replay/*.log
+            ${{ runner.temp }}/ret01-replay/runtime/
           if-no-files-found: warn
           retention-days: 14

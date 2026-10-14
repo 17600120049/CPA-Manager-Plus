@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "caseID": "RET-01",
+  "provenanceRole": "accepted-source-anchor",
+  "sourceAnchorCaseID": "SRC-11",
+  "sourceAnchorAcceptance": "accepted",
+  "sourceAnchorAcceptanceEvidence": "seakee/cpamp-plan/main@2719d8466951da1ea457bd1a00dca3fa6f09dc43",
+  "sourceRelease": "v1.14.4",
+  "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "sourceProducerKind": "published-artifact",
+  "sourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "sourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+  "immutableQualificationAsset": {
+    "releaseID": 412319673,
+    "assetID": 639129253,
+    "archiveName": "src-11-0e106589baef-sealed-evidence.tar.gz",
+    "archiveSHA256": "c6abbb0594a874708b41795de6d1035fd4263fec1c067496a8b0bb1d26fec6d2"
+  },
+  "reusePolicy": "RET-01 replays the verified source bundle as input; it does not regenerate, relabel, or authenticate source provenance."
+}

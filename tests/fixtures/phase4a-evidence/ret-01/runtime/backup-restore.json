@@ -1,0 +1,26 @@
+{
+  "authoritativeDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
+  "backupManifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
+  "inventoryMatched": true,
+  "restoredManifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
+  "sqlite": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  }
+}

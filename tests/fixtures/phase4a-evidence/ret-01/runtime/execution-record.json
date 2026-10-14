@@ -1,0 +1,35 @@
+{
+  "authority": {
+    "TrustedHopReceipt": false,
+    "UpgradeAuthorized": false
+  },
+  "caseID": "RET-01",
+  "executionCommit": "a3e316e64d30bce4b02305d44140a01fc149292d",
+  "sourceAnchorCaseID": "SRC-11",
+  "steps": [
+    {
+      "status": "pass",
+      "step": "materialize-and-verify-source-anchor"
+    },
+    {
+      "manifestDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+      "status": "pass",
+      "step": "restore-input-to-new-root"
+    },
+    {
+      "states": 5,
+      "status": "pass",
+      "step": "run-bounded-v2-migration-and-derived-rebuild"
+    },
+    {
+      "status": "pass",
+      "step": "verify-pricing-accounting-metadata-quota"
+    },
+    {
+      "backupManifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
+      "status": "pass",
+      "step": "create-and-restore-complete-backup"
+    }
+  ],
+  "verifierCodeCommit": "a3e316e64d30bce4b02305d44140a01fc149292d"
+}

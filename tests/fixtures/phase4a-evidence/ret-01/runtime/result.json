@@ -1,0 +1,546 @@
+{
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "SQLite": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "accounting": {
+    "devin": {
+      "cache_creation_tokens": 50,
+      "cache_input_mode": "read_included_creation_separate",
+      "cache_read_tokens": 900,
+      "input_tokens": 1000,
+      "normalized_cache_creation_tokens": 50,
+      "normalized_cache_read_tokens": 900,
+      "normalized_total_input_tokens": 1050,
+      "normalized_uncached_input_tokens": 100,
+      "total_tokens": 1150
+    },
+    "devinRevision": 2
+  },
+  "afterDigest": "e5f642027cb0eace36bbc1dfdfc9ab9ce4b83da85df24cb0033b24dd33a0194e",
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-02",
+    "SEM-03",
+    "SEM-06",
+    "SEM-08"
+  ],
+  "authoritativeAfterDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
+  "authoritativeBeforeDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
+  "backupRestore": {
+    "inventoryMatched": true,
+    "manifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
+    "restoredManifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
+    "sqlite": {
+      "checkpoint": [
+        {
+          "busy": 0,
+          "checkpointed": 0,
+          "log": 0
+        }
+      ],
+      "foreignKeyCheck": [],
+      "integrityCheck": [
+        {
+          "integrity_check": "ok"
+        }
+      ],
+      "journalMode": [
+        {
+          "journal_mode": "wal"
+        }
+      ]
+    }
+  },
+  "beforeDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "caseID": "RET-01",
+  "casePass": true,
+  "evidence": {
+    "backupRestore": "580e591a153b72882ce813223bb58a3b8c4031e73558f5d8b79f584e9ab57b25",
+    "executionRecord": "52f50282adb68623cbd6ca3602459104380b0f1f364d5f0027e3dedc35988b51",
+    "inputBundle": "7c0b44558fb10166f56ae89893b01b425de910f28ff02f106b429fb25cb2eb35",
+    "semanticAssertions": "e44d55147fc13f6673798e369bf307bdd53b028a92e6f47d52113aa226c7cacc"
+  },
+  "executionCommit": "a3e316e64d30bce4b02305d44140a01fc149292d",
+  "independentAcceptance": "pending",
+  "inputBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "inputBundleIdentity": "RET-01/input-bundle@0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "metadata": {
+    "digest": "4ce98e2f3117e2b28c8071646f0cddf3f7f546ac3a4eb673248d59de1b466c46",
+    "rows": 4
+  },
+  "migrationStates": [
+    {
+      "name": "usage_cache_accounting_v2",
+      "status": "completed",
+      "lastEventId": 0,
+      "targetEventId": 0,
+      "processedRows": 0,
+      "changedRows": 0,
+      "appliedRows": 0,
+      "updatedAtMs": 0
+    },
+    {
+      "Processed": 0,
+      "LastSnapshotID": 0,
+      "Pending": false,
+      "Completed": true
+    },
+    {
+      "responseMetadataChanged": 0
+    },
+    {
+      "hourly": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false
+      },
+      "identity": {
+        "processed": 2,
+        "last_processed_event_id": 2,
+        "target_event_id": 4,
+        "pending": true,
+        "rebuilt": false
+      },
+      "legacyIdentity": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringMetadata": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringProjection": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringStats": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "pricing": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      }
+    },
+    {
+      "hourly": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false
+      },
+      "identity": {
+        "processed": 2,
+        "last_processed_event_id": 4,
+        "target_event_id": 4,
+        "pending": false,
+        "rebuilt": false
+      },
+      "legacyIdentity": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringMetadata": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringProjection": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "monitoringStats": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      },
+      "pricing": {
+        "Processed": 0,
+        "LastEventID": 4,
+        "CoverageEventID": 4,
+        "TargetEventID": 4,
+        "Pending": false,
+        "Rebuilt": false,
+        "ContinueSoon": false
+      }
+    }
+  ],
+  "pricing": {
+    "explicitZero": true,
+    "manualPriceSync": {
+      "imported": 0,
+      "skipped": 0,
+      "preserved": [
+        "claude-fixture",
+        "devin/swe-2",
+        "fixture-free",
+        "fixture-paid"
+      ]
+    },
+    "v1Costs": {
+      "claude-fixture": {
+        "generated_at_ms": 1791946720974,
+        "granularity": "hour",
+        "summary": {
+          "total_calls": 1,
+          "success_calls": 1,
+          "failure_calls": 0,
+          "success_rate": 1,
+          "input_tokens": 2150,
+          "output_tokens": 100,
+          "cached_tokens": 0,
+          "cache_read_tokens": 100,
+          "cache_creation_tokens": 50,
+          "cache_hit_rate": 0.046511627906976744,
+          "reasoning_tokens": 0,
+          "total_tokens": 2250,
+          "total_cost": 0.015435,
+          "average_cost_per_call": 0.015435,
+          "average_latency_ms": null,
+          "p95_latency_ms": null,
+          "p95_ttft_ms": null,
+          "zero_token_calls": 0,
+          "rpm_30m": 0,
+          "tpm_30m": 0,
+          "avg_daily_requests": 1,
+          "avg_daily_tokens": 2250,
+          "approx_tasks": 1,
+          "approx_task_failures": 0,
+          "approx_task_success_rate": 1,
+          "zero_token_models": []
+        }
+      },
+      "devin/swe-2": {
+        "generated_at_ms": 1791946720984,
+        "granularity": "hour",
+        "summary": {
+          "total_calls": 1,
+          "success_calls": 1,
+          "failure_calls": 0,
+          "success_rate": 1,
+          "input_tokens": 1050,
+          "output_tokens": 100,
+          "cached_tokens": 0,
+          "cache_read_tokens": 900,
+          "cache_creation_tokens": 50,
+          "cache_hit_rate": 0.8571428571428571,
+          "reasoning_tokens": 0,
+          "total_tokens": 1150,
+          "total_cost": 0.0022575,
+          "average_cost_per_call": 0.0022575,
+          "average_latency_ms": null,
+          "p95_latency_ms": null,
+          "p95_ttft_ms": null,
+          "zero_token_calls": 0,
+          "rpm_30m": 0,
+          "tpm_30m": 0,
+          "avg_daily_requests": 1,
+          "avg_daily_tokens": 1150,
+          "approx_tasks": 1,
+          "approx_task_failures": 0,
+          "approx_task_success_rate": 1,
+          "zero_token_models": []
+        }
+      },
+      "fixture-free": {
+        "generated_at_ms": 1791946720993,
+        "granularity": "hour",
+        "summary": {
+          "total_calls": 1,
+          "success_calls": 1,
+          "failure_calls": 0,
+          "success_rate": 1,
+          "input_tokens": 500,
+          "output_tokens": 100,
+          "cached_tokens": 400,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate": 0.8,
+          "reasoning_tokens": 0,
+          "total_tokens": 600,
+          "total_cost": 0,
+          "average_cost_per_call": 0,
+          "average_latency_ms": null,
+          "p95_latency_ms": null,
+          "p95_ttft_ms": null,
+          "zero_token_calls": 0,
+          "rpm_30m": 0,
+          "tpm_30m": 0,
+          "avg_daily_requests": 1,
+          "avg_daily_tokens": 600,
+          "approx_tasks": 1,
+          "approx_task_failures": 0,
+          "approx_task_success_rate": 1,
+          "zero_token_models": []
+        }
+      },
+      "fixture-paid": {
+        "generated_at_ms": 1791946720999,
+        "granularity": "hour",
+        "summary": {
+          "total_calls": 1,
+          "success_calls": 0,
+          "failure_calls": 1,
+          "success_rate": 0,
+          "input_tokens": 100,
+          "output_tokens": 10,
+          "cached_tokens": 0,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate": 0,
+          "reasoning_tokens": 0,
+          "total_tokens": 110,
+          "total_cost": 0.00028000000000000003,
+          "average_cost_per_call": 0.00028000000000000003,
+          "average_latency_ms": null,
+          "p95_latency_ms": null,
+          "p95_ttft_ms": null,
+          "zero_token_calls": 0,
+          "rpm_30m": 0,
+          "tpm_30m": 0,
+          "avg_daily_requests": 1,
+          "avg_daily_tokens": 110,
+          "approx_tasks": 1,
+          "approx_task_failures": 1,
+          "approx_task_success_rate": 0,
+          "zero_token_models": []
+        }
+      }
+    },
+    "v2Costs": {
+      "claude-fixture": {
+        "generated_at_ms": 1791966299756,
+        "granularity": "hour",
+        "summary": {
+          "total_calls": 1,
+          "success_calls": 1,
+          "failure_calls": 0,
+          "success_rate": 1,
+          "input_tokens": 2150,
+          "output_tokens": 100,
+          "cached_tokens": 0,
+          "cache_read_tokens": 100,
+          "cache_creation_tokens": 50,
+          "cache_hit_rate": 0.046511627906976744,
+          "reasoning_tokens": 0,
+          "total_tokens": 2250,
+          "total_cost": 0.015435,
+          "average_cost_per_call": 0.015435,
+          "average_latency_ms": null,
+          "p95_latency_ms": null,
+          "p95_ttft_ms": null,
+          "zero_token_calls": 0,
+          "rpm_30m": 0,
+          "tpm_30m": 0,
+          "avg_daily_requests": 1,
+          "avg_daily_tokens": 2250,
+          "approx_tasks": 1,
+          "approx_task_failures": 0,
+          "approx_task_success_rate": 1,
+          "zero_token_models": []
+        }
+      },
+      "devin/swe-2": {
+        "generated_at_ms": 1791966299761,
+        "granularity": "hour",
+        "summary": {
+          "total_calls": 1,
+          "success_calls": 1,
+          "failure_calls": 0,
+          "success_rate": 1,
+          "input_tokens": 1050,
+          "output_tokens": 100,
+          "cached_tokens": 0,
+          "cache_read_tokens": 900,
+          "cache_creation_tokens": 50,
+          "cache_hit_rate": 0.8571428571428571,
+          "reasoning_tokens": 0,
+          "total_tokens": 1150,
+          "total_cost": 0.0022575,
+          "average_cost_per_call": 0.0022575,
+          "average_latency_ms": null,
+          "p95_latency_ms": null,
+          "p95_ttft_ms": null,
+          "zero_token_calls": 0,
+          "rpm_30m": 0,
+          "tpm_30m": 0,
+          "avg_daily_requests": 1,
+          "avg_daily_tokens": 1150,
+          "approx_tasks": 1,
+          "approx_task_failures": 0,
+          "approx_task_success_rate": 1,
+          "zero_token_models": []
+        }
+      },
+      "fixture-free": {
+        "generated_at_ms": 1791966299765,
+        "granularity": "hour",
+        "summary": {
+          "total_calls": 1,
+          "success_calls": 1,
+          "failure_calls": 0,
+          "success_rate": 1,
+          "input_tokens": 500,
+          "output_tokens": 100,
+          "cached_tokens": 400,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate": 0.8,
+          "reasoning_tokens": 0,
+          "total_tokens": 600,
+          "total_cost": 0,
+          "average_cost_per_call": 0,
+          "average_latency_ms": null,
+          "p95_latency_ms": null,
+          "p95_ttft_ms": null,
+          "zero_token_calls": 0,
+          "rpm_30m": 0,
+          "tpm_30m": 0,
+          "avg_daily_requests": 1,
+          "avg_daily_tokens": 600,
+          "approx_tasks": 1,
+          "approx_task_failures": 0,
+          "approx_task_success_rate": 1,
+          "zero_token_models": []
+        }
+      },
+      "fixture-paid": {
+        "generated_at_ms": 1791966299769,
+        "granularity": "hour",
+        "summary": {
+          "total_calls": 1,
+          "success_calls": 0,
+          "failure_calls": 1,
+          "success_rate": 0,
+          "input_tokens": 100,
+          "output_tokens": 10,
+          "cached_tokens": 0,
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate": 0,
+          "reasoning_tokens": 0,
+          "total_tokens": 110,
+          "total_cost": 0.00028000000000000003,
+          "average_cost_per_call": 0.00028000000000000003,
+          "average_latency_ms": null,
+          "p95_latency_ms": null,
+          "p95_ttft_ms": null,
+          "zero_token_calls": 0,
+          "rpm_30m": 0,
+          "tpm_30m": 0,
+          "avg_daily_requests": 1,
+          "avg_daily_tokens": 110,
+          "approx_tasks": 1,
+          "approx_task_failures": 1,
+          "approx_task_success_rate": 0,
+          "zero_token_models": []
+        }
+      }
+    }
+  },
+  "quota": {
+    "account_quota_cycles": 2,
+    "account_quota_snapshots": 2,
+    "account_quota_window_activations": 2,
+    "account_quota_windows": 2,
+    "quota_cooldowns": 1
+  },
+  "remainingCases": {
+    "count": 47,
+    "status": "pending"
+  },
+  "retentionArchiveState": {
+    "archiveRuns": 0,
+    "archiveSegments": 0,
+    "onlineRawComplete": true,
+    "rawDeletedAssertion": {
+      "case": "RET-03",
+      "reason": "RET-01 exact Plan variant has no archive/raw deletion dependency",
+      "sem": "SEM-09",
+      "status": "not-applicable"
+    },
+    "rawDeletedEventCount": 0,
+    "rawEventCount": 4,
+    "variant": "full raw"
+  },
+  "runtimeEvidence": "pass",
+  "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+  "sourceProvenance": {
+    "acceptance": "accepted",
+    "acceptanceEvidence": "seakee/cpamp-plan/main@2719d8466951da1ea457bd1a00dca3fa6f09dc43",
+    "anchorCaseID": "SRC-11",
+    "sourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+    "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+    "sourceRelease": "v1.14.4"
+  }
+}
