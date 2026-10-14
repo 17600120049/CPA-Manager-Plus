@@ -1,0 +1,27 @@
+{
+  "commands": {
+    "manager-full": "go test -mod=readonly -count=1 ./... (apps/manager-server)",
+    "manager-vet": "go vet -mod=readonly ./... (apps/manager-server)",
+    "preflight-race": "go test -race -count=1 ./internal/service/legacypreflight ./cmd/cpa-manager-plus (apps/manager-server)",
+    "qualification-race": "go test -race -count=1 with pinned generatorCommit and actual MIG01 source/archive/profile; -run ^TestQualifyMIG01$ ./tests/qualification/src11",
+    "python-evidence": "CPAMP_MIG01_REQUIRED=1 CPAMP_MIG01_FULL_EVIDENCE=<materialized immutable bytes> python3 -m unittest discover -s bin/qualification -p test_*.py -v"
+  },
+  "exitCodes": {
+    "manager-full": 0,
+    "manager-vet": 0,
+    "preflight-race": 0,
+    "qualification-race": 0,
+    "python-evidence": 0
+  },
+  "pythonResult": "29 tests; 3 unrelated original-asset opt-in skips; all 5 MIG-01 tests executed",
+  "codeReview": {
+    "exactSource": "archive, executable, build metadata and release-info bound to pinned generation",
+    "migrationAuthenticity": "natural real producer completed state; revision2 retained",
+    "readinessSemantics": "actual production-compatible data primitive, default production obligations unknown",
+    "sourceImmutability": "read-only inspection; validator private copies only; full source inventory and authoritative snapshots equal",
+    "authoritySeparation": "no consumers wired; false grants; pending independent acceptance",
+    "evidenceDurability": "immutable original ZIP redownloaded and clean-clone replayed; original logs retained",
+    "blockingFindingsRemaining": 0
+  },
+  "runtimePlatformLimit": "Windows materialization/SQLite inspection/compilation only, no Windows runtime readiness claim"
+}

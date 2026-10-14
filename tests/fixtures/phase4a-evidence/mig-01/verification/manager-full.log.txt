@@ -1,0 +1,115 @@
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/cmd/cpa-manager-plus	13.832s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/cpaidentityinventory	0.050s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/decisionstore	0.867s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/identityprojection	4.677s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/identitystore	9.467s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/policystore	0.448s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/quotaobservation	0.724s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app	0.340s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/credentialdeletemutation	0.376s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identitymutation	0.150s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityprojection	0.097s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityreconcile	2.858s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/quotaevaluation	7.244s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/codexquota	0.014s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/collector	2.548s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/adminreset	0.228s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/cpaconnection	5.368s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/derivedmaintenance	0.552s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/legacyartifact	4.613s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/legacypreflight	0.732s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/managerdatabundle	2.812s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/managerdatasnapshot	0.591s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/runtimeconfig	0.015s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/usagecompact	1.076s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config	0.055s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/gatewaydecision	0.009s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity	0.009s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/resourcepolicy	0.011s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/accountaction	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/apikeyalias	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/automation	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/codexinspection	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/cpaupdate	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/dashboard	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/health	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/managerconfig	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/modelprice	0.612s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/monitoring	0.635s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/panel	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/proxy	0.075s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/quotacooldown	0.016s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/quotasnapshot	0.154s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/setup	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/system	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/updatecheck	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/usage	0.472s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/middleware	0.010s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/response	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/router	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi	12.807s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpqueue	0.012s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model	0.019s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/ports/decisionstore	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/ports/identityinventory	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/ports/identityprojection	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/ports/identitystore	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/ports/policystore	[no test files]
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/ports/quotaobservation	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock	0.023s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/accountaction	0.605s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/apikeyalias	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/codexinspection	3.867s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/datamigration	2.480s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/deadletter	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/modelprice	1.186s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/quotacooldown	0.272s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/quotasnapshot	4.079s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/setting	0.173s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite	35.962s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usageaggregate	0.872s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usagearchive	17.610s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usageevent	23.508s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usagemonitoring	8.233s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usagepricing	1.241s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usageprojection	0.018s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usagerollup	1.370s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/resp	0.011s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security	0.015s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/accountaction	0.839s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/adminauth	0.120s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/apikeyalias	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/automation	0.292s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrap	1.760s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/codexinspection	16.276s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/collector	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa	0.013s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpaauthfiles	0.170s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpaupdate	0.020s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/credentialpolicy	0.008s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/dashboard	1.425s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact	12.020s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight	1.482s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyprofile	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle	122.117s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/managerconfig	0.016s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/modelprice	0.898s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/monitoring	21.036s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/panel	0.014s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/pricing	0.015s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/proxy	3.235s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/quotasnapshot	15.230s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime	0.084s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/setup	0.651s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/updatecheck	0.023s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/usage	29.670s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/usagehourly	2.473s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/usagemonitoring	0.080s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/sqliteutil	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store	3.055s
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/testutil	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage	14.275s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usageidentity	0.112s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/worker	7.009s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11	0.017s

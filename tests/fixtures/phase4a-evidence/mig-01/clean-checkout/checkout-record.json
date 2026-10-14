@@ -1,0 +1,10 @@
+{
+  "executionCommit": "d13d997e3c58c6f77eef89bc2092a3c6d5cb8c2f",
+  "statusBefore": "",
+  "statusAfter": "",
+  "method": "task-owned clean local clone of committed checkpoint; immutable ZIP re-downloaded and materialized before replay",
+  "downloadedArchiveSHA256": "bca2e3d802b9c48e76e895418a7280e666915bebe3cd353bef17c45a3021607b",
+  "releaseID": 412855420,
+  "assetID": 640737774,
+  "sourceBundleDigest": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f"
+}

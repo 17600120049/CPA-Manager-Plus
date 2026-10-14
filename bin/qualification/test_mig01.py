@@ -1,5 +1,6 @@
 """MIG-01 evidence contract; no other matrix case is qualified here."""
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -60,6 +61,8 @@ class Mig01EvidenceTests(unittest.TestCase):
         self.assertEqual(runner["codeCommit"], record["GeneratorCodeCommit"])
         self.assertEqual(runner["generationRecordSHA256"], index["SHA256"])
         self.assertEqual(runner["executionExitCode"], 0)
+        for name, sha in runner["logs"].items():
+            self.assertEqual(digest(EVIDENCE / ("generation-" + name + ".txt")), sha)
         for name, sha in record["GenerationEvidenceFiles"].items():
             self.assertEqual(digest(EVIDENCE / "source-generation" / name), sha, name)
         for other in ("src-11/source-generation/record.json", "ret-01/source-generation/record.json"):
@@ -108,6 +111,8 @@ class Mig01EvidenceTests(unittest.TestCase):
             self.assertEqual(runner["resultSHA256"], digest(root / "result.json"))
             self.assertEqual(runner["codeCommit"], result["executionCommit"])
             self.assertEqual(runner["executionExitCode"], 0)
+            for name, sha in runner["logs"].items():
+                self.assertEqual(digest(root / (name + ".txt")), sha)
             for name in ("UpgradeAuthorized", "TrustedHopReceipt", "Phase4A07Complete", "Phase4AComplete"):
                 self.assertFalse(result[name])
 
@@ -119,6 +124,16 @@ class Mig01EvidenceTests(unittest.TestCase):
         self.assertRegex(pin["archiveSHA256"], "^[a-f0-9]{64}$")
         self.assertGreater(pin["releaseID"], 0)
         self.assertGreater(pin["assetID"], 0)
+        spec = importlib.util.spec_from_file_location("mig_materializer", ROOT / "bin/qualification/materialize-src11.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.validate_ret01_release(read(EVIDENCE / "release-metadata.json"), pin,
+                                      read(EVIDENCE / "tag-metadata.json"))
+        clean = read(EVIDENCE / "clean-checkout/checkout-record.json")
+        self.assertEqual(clean["statusBefore"], "")
+        self.assertEqual(clean["statusAfter"], "")
+        self.assertEqual(clean["executionCommit"], read(EVIDENCE / "clean-checkout/result.json")["executionCommit"])
+        self.assertEqual(clean["downloadedArchiveSHA256"], pin["archiveSHA256"])
         result = read(EVIDENCE / "result.json")
         self.assertTrue(result["casePass"])
         self.assertEqual(result["independentAcceptance"], "pending")

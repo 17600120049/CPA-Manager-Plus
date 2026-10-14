@@ -1,0 +1,4 @@
+=== RUN   TestQualifyMIG01
+--- PASS: TestQualifyMIG01 (4.43s)
+PASS
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11	5.493s

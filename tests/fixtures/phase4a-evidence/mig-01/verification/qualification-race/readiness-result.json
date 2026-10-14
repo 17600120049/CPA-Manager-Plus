@@ -1,0 +1,816 @@
+{
+  "scope": "controlled-direct-candidate-data-compatibility",
+  "status": "ready",
+  "sourceRelease": "v1.14.4",
+  "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "bundleSHA256": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f",
+  "generationRecordSHA256": "a727b9abb093370a29c4e90f5756fb430df82589ee207409d6a636c70c630236",
+  "checks": {
+    "bundle-key-config-sqlite-matching": "pass",
+    "exact-source-generation": "pass",
+    "full-raw-no-active-operation": "pass",
+    "legacy-classifier": "pass",
+    "required-migrations": "pass",
+    "source-unchanged": "pass"
+  },
+  "preflight": {
+    "sourceKind": "legacy-manager",
+    "observed": {
+      "files": [
+        {
+          "role": "database",
+          "state": "present",
+          "size": 659456,
+          "mode": "-rw-------"
+        },
+        {
+          "role": "wal",
+          "state": "missing"
+        },
+        {
+          "role": "shm",
+          "state": "missing"
+        },
+        {
+          "role": "journal",
+          "state": "missing"
+        },
+        {
+          "role": "config",
+          "state": "present",
+          "size": 243,
+          "mode": "-rw-------"
+        },
+        {
+          "role": "data-key",
+          "state": "present",
+          "size": 44,
+          "mode": "-rw-------"
+        },
+        {
+          "role": "archives",
+          "state": "missing"
+        },
+        {
+          "role": "source-directory",
+          "state": "present",
+          "size": 192,
+          "mode": "drwx------"
+        },
+        {
+          "role": "process-lock",
+          "state": "missing"
+        }
+      ],
+      "sqlite": "observed",
+      "consistency": "operator-asserted-cold",
+      "tables": [
+        {
+          "name": "settings",
+          "columns": [
+            {
+              "name": "key",
+              "type": "TEXT",
+              "primaryKey": 1
+            },
+            {
+              "name": "value",
+              "type": "TEXT"
+            },
+            {
+              "name": "updated_at_ms",
+              "type": "INTEGER"
+            }
+          ]
+        },
+        {
+          "name": "usage_archive_deleted_coverage_daily",
+          "columns": [
+            {
+              "name": "utc_day",
+              "type": "INTEGER",
+              "primaryKey": 1
+            },
+            {
+              "name": "deleted_event_count",
+              "type": "INTEGER"
+            },
+            {
+              "name": "min_timestamp_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "max_timestamp_ms",
+              "type": "INTEGER"
+            }
+          ]
+        },
+        {
+          "name": "usage_archive_event_refs",
+          "columns": [
+            {
+              "name": "event_hash",
+              "type": "TEXT",
+              "primaryKey": 1
+            },
+            {
+              "name": "run_id",
+              "type": "TEXT"
+            },
+            {
+              "name": "segment_sequence",
+              "type": "INTEGER"
+            },
+            {
+              "name": "raw_event_id",
+              "type": "INTEGER"
+            },
+            {
+              "name": "timestamp_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "archived_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "raw_deleted_at_ms",
+              "type": "INTEGER"
+            }
+          ]
+        },
+        {
+          "name": "usage_archive_runs",
+          "columns": [
+            {
+              "name": "id",
+              "type": "TEXT",
+              "primaryKey": 1
+            },
+            {
+              "name": "mode",
+              "type": "TEXT"
+            },
+            {
+              "name": "schema_version",
+              "type": "INTEGER"
+            },
+            {
+              "name": "format",
+              "type": "TEXT"
+            },
+            {
+              "name": "status",
+              "type": "TEXT"
+            },
+            {
+              "name": "resume_status",
+              "type": "TEXT"
+            },
+            {
+              "name": "requested_stage",
+              "type": "TEXT"
+            },
+            {
+              "name": "progress_phase",
+              "type": "TEXT"
+            },
+            {
+              "name": "progress_current",
+              "type": "INTEGER"
+            },
+            {
+              "name": "progress_total",
+              "type": "INTEGER"
+            },
+            {
+              "name": "progress_unit",
+              "type": "TEXT"
+            },
+            {
+              "name": "progress_updated_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "cutoff_timestamp_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "target_event_id",
+              "type": "INTEGER"
+            },
+            {
+              "name": "event_count",
+              "type": "INTEGER"
+            },
+            {
+              "name": "estimated_bytes",
+              "type": "INTEGER"
+            },
+            {
+              "name": "last_archived_event_id",
+              "type": "INTEGER"
+            },
+            {
+              "name": "archived_event_count",
+              "type": "INTEGER"
+            },
+            {
+              "name": "archived_uncompressed_bytes",
+              "type": "INTEGER"
+            },
+            {
+              "name": "archived_compressed_bytes",
+              "type": "INTEGER"
+            },
+            {
+              "name": "archive_digest",
+              "type": "TEXT"
+            },
+            {
+              "name": "manifest_file",
+              "type": "TEXT"
+            },
+            {
+              "name": "manifest_sha256",
+              "type": "TEXT"
+            },
+            {
+              "name": "last_deleted_event_id",
+              "type": "INTEGER"
+            },
+            {
+              "name": "deleted_event_count",
+              "type": "INTEGER"
+            },
+            {
+              "name": "created_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "updated_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "started_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "archived_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "verified_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "delete_started_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "completed_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "last_error",
+              "type": "TEXT"
+            }
+          ]
+        },
+        {
+          "name": "usage_archive_segments",
+          "columns": [
+            {
+              "name": "run_id",
+              "type": "TEXT",
+              "primaryKey": 1
+            },
+            {
+              "name": "sequence",
+              "type": "INTEGER",
+              "primaryKey": 2
+            },
+            {
+              "name": "status",
+              "type": "TEXT"
+            },
+            {
+              "name": "file_name",
+              "type": "TEXT"
+            },
+            {
+              "name": "first_event_id",
+              "type": "INTEGER"
+            },
+            {
+              "name": "last_event_id",
+              "type": "INTEGER"
+            },
+            {
+              "name": "min_timestamp_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "max_timestamp_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "event_count",
+              "type": "INTEGER"
+            },
+            {
+              "name": "uncompressed_bytes",
+              "type": "INTEGER"
+            },
+            {
+              "name": "compressed_bytes",
+              "type": "INTEGER"
+            },
+            {
+              "name": "content_sha256",
+              "type": "TEXT"
+            },
+            {
+              "name": "event_hash_digest",
+              "type": "TEXT"
+            },
+            {
+              "name": "created_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "verified_at_ms",
+              "type": "INTEGER"
+            }
+          ]
+        },
+        {
+          "name": "usage_data_migrations",
+          "columns": [
+            {
+              "name": "name",
+              "type": "TEXT",
+              "primaryKey": 1
+            },
+            {
+              "name": "status",
+              "type": "TEXT"
+            },
+            {
+              "name": "last_event_id",
+              "type": "INTEGER"
+            },
+            {
+              "name": "target_event_id",
+              "type": "INTEGER"
+            },
+            {
+              "name": "processed_rows",
+              "type": "INTEGER"
+            },
+            {
+              "name": "changed_rows",
+              "type": "INTEGER"
+            },
+            {
+              "name": "applied_rows",
+              "type": "INTEGER"
+            },
+            {
+              "name": "started_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "updated_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "finished_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "last_error",
+              "type": "TEXT"
+            }
+          ]
+        },
+        {
+          "name": "usage_events",
+          "columns": [
+            {
+              "name": "id",
+              "type": "INTEGER",
+              "primaryKey": 1
+            },
+            {
+              "name": "request_id",
+              "type": "TEXT"
+            },
+            {
+              "name": "event_hash",
+              "type": "TEXT"
+            },
+            {
+              "name": "timestamp_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "timestamp",
+              "type": "TEXT"
+            },
+            {
+              "name": "provider",
+              "type": "TEXT"
+            },
+            {
+              "name": "executor_type",
+              "type": "TEXT"
+            },
+            {
+              "name": "model",
+              "type": "TEXT"
+            },
+            {
+              "name": "endpoint",
+              "type": "TEXT"
+            },
+            {
+              "name": "method",
+              "type": "TEXT"
+            },
+            {
+              "name": "path",
+              "type": "TEXT"
+            },
+            {
+              "name": "client_ip",
+              "type": "TEXT"
+            },
+            {
+              "name": "x_forwarded_for",
+              "type": "TEXT"
+            },
+            {
+              "name": "user_agent",
+              "type": "TEXT"
+            },
+            {
+              "name": "auth_type",
+              "type": "TEXT"
+            },
+            {
+              "name": "auth_index",
+              "type": "TEXT"
+            },
+            {
+              "name": "source",
+              "type": "TEXT"
+            },
+            {
+              "name": "source_hash",
+              "type": "TEXT"
+            },
+            {
+              "name": "api_key_hash",
+              "type": "TEXT"
+            },
+            {
+              "name": "account_snapshot",
+              "type": "TEXT"
+            },
+            {
+              "name": "auth_label_snapshot",
+              "type": "TEXT"
+            },
+            {
+              "name": "auth_file_snapshot",
+              "type": "TEXT"
+            },
+            {
+              "name": "auth_provider_snapshot",
+              "type": "TEXT"
+            },
+            {
+              "name": "auth_account_id_snapshot",
+              "type": "TEXT"
+            },
+            {
+              "name": "auth_project_id_snapshot",
+              "type": "TEXT"
+            },
+            {
+              "name": "auth_snapshot_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "requested_model",
+              "type": "TEXT"
+            },
+            {
+              "name": "resolved_model",
+              "type": "TEXT"
+            },
+            {
+              "name": "reasoning_effort",
+              "type": "TEXT"
+            },
+            {
+              "name": "service_tier",
+              "type": "TEXT"
+            },
+            {
+              "name": "request_service_tier",
+              "type": "TEXT"
+            },
+            {
+              "name": "response_service_tier",
+              "type": "TEXT"
+            },
+            {
+              "name": "cache_input_mode",
+              "type": "TEXT"
+            },
+            {
+              "name": "input_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "output_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "reasoning_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "cached_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "cache_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "cache_read_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "cache_creation_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "normalized_uncached_input_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "normalized_total_input_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "normalized_cache_read_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "normalized_cache_creation_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "total_tokens",
+              "type": "INTEGER"
+            },
+            {
+              "name": "latency_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "ttft_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "failed",
+              "type": "INTEGER"
+            },
+            {
+              "name": "fail_status_code",
+              "type": "INTEGER"
+            },
+            {
+              "name": "fail_summary",
+              "type": "TEXT"
+            },
+            {
+              "name": "response_metadata_json",
+              "type": "TEXT"
+            },
+            {
+              "name": "header_quota_recover_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "header_quota_used_percent",
+              "type": "REAL"
+            },
+            {
+              "name": "header_quota_plan_type",
+              "type": "TEXT"
+            },
+            {
+              "name": "header_error_kind",
+              "type": "TEXT"
+            },
+            {
+              "name": "header_error_code",
+              "type": "TEXT"
+            },
+            {
+              "name": "header_trace_id",
+              "type": "TEXT"
+            },
+            {
+              "name": "fail_body",
+              "type": "TEXT"
+            },
+            {
+              "name": "raw_json",
+              "type": "TEXT"
+            },
+            {
+              "name": "response_model",
+              "type": "TEXT"
+            },
+            {
+              "name": "session_id",
+              "type": "TEXT"
+            },
+            {
+              "name": "parent_session_id",
+              "type": "TEXT"
+            },
+            {
+              "name": "access_token_sha256",
+              "type": "TEXT"
+            },
+            {
+              "name": "generate",
+              "type": "INTEGER"
+            },
+            {
+              "name": "stream",
+              "type": "INTEGER"
+            },
+            {
+              "name": "created_at_ms",
+              "type": "INTEGER"
+            }
+          ]
+        },
+        {
+          "name": "usage_maintenance_locks",
+          "columns": [
+            {
+              "name": "name",
+              "type": "TEXT",
+              "primaryKey": 1
+            },
+            {
+              "name": "run_id",
+              "type": "TEXT"
+            },
+            {
+              "name": "operation",
+              "type": "TEXT"
+            },
+            {
+              "name": "acquired_at_ms",
+              "type": "INTEGER"
+            },
+            {
+              "name": "updated_at_ms",
+              "type": "INTEGER"
+            }
+          ]
+        }
+      ],
+      "schemaFingerprint": "1e4079eda59ba2275eb3dd8273ce29d435c5099acffd752cfb9937f8a3543d17",
+      "history": {
+        "archives": "none-pending-observed",
+        "maintenance": "none-observed",
+        "migrations": "none-pending-observed",
+        "rawDeleted": "none-observed"
+      },
+      "historyRowsObserved": {
+        "archives": 0,
+        "migrations": 3
+      },
+      "cacheAccountingV2": "completed-observed",
+      "quotaSnapshotLifecycleV1": "completed-observed",
+      "requiredMigrationReadiness": {
+        "cache": [
+          {
+            "status": "completed",
+            "lastId": 0,
+            "targetId": 0,
+            "processed": 0,
+            "changed": 0,
+            "applied": 0,
+            "finishedAtMs": null,
+            "hasError": false
+          }
+        ],
+        "quota": [
+          {
+            "status": "completed",
+            "lastId": 0,
+            "targetId": 0,
+            "processed": 0,
+            "changed": 0,
+            "applied": 0,
+            "finishedAtMs": 1791989746122,
+            "hasError": false
+          }
+        ],
+        "cacheRevision": "2",
+        "cacheStagingRows": 0,
+        "quotaUnattachedRows": 0
+      },
+      "connectionStorageVersion": 2,
+      "connectionStorage": {
+        "migrationVersion": 2,
+        "hasEncryptedConnection": true
+      },
+      "issues": []
+    },
+    "unknown": [
+      "exact-source-release",
+      "verified-backup",
+      "full-database-integrity",
+      "archive-content",
+      "forward-hop-evidence"
+    ],
+    "blocked": [],
+    "upgradeAuthorized": false,
+    "compatibilityProfile": {
+      "status": "recognized",
+      "family": "LegacySchemaC",
+      "reasons": [
+        "inspected-capability-shape-only"
+      ]
+    },
+    "exactSourceRelease": {
+      "status": "unknown",
+      "reason": "trusted-release-evidence-unavailable"
+    },
+    "bridgeReadiness": {
+      "status": "unknown",
+      "items": {
+        "archive-coverage": {
+          "status": "unknown",
+          "reason": "not-verified"
+        },
+        "cache-accounting-v2": {
+          "status": "observed",
+          "reason": "completed-row-observed-not-semantic-parity"
+        },
+        "database-integrity": {
+          "status": "unknown",
+          "reason": "not-verified"
+        },
+        "disk-space": {
+          "status": "unknown",
+          "reason": "not-verified"
+        },
+        "encrypted-key": {
+          "status": "observed",
+          "reason": "envelope-and-key-file-observed-decryption-unverified"
+        },
+        "foreign-keys": {
+          "status": "unknown",
+          "reason": "not-verified"
+        },
+        "maintenance": {
+          "status": "observed",
+          "reason": "no-lock-row-observed-not-full-stage-check"
+        },
+        "quota-snapshot-lifecycle-v1": {
+          "status": "observed",
+          "reason": "completed-row-observed-not-semantic-parity"
+        },
+        "raw-deletion": {
+          "status": "observed",
+          "reason": "no-deleted-coverage-row-observed-not-full-history-check"
+        },
+        "verified-backup": {
+          "status": "unknown",
+          "reason": "not-verified"
+        }
+      }
+    },
+    "plannedBridgeCandidate": {
+      "status": "planned",
+      "release": "v1.14.4",
+      "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+    }
+  },
+  "UpgradeAuthorized": false,
+  "TrustedHopReceipt": false
+}

@@ -1,0 +1,9 @@
+{
+  "inputBundleDigest": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f",
+  "producerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "producerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "readOnlySource": true,
+  "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "sourceGenerationRecordSHA256": "a727b9abb093370a29c4e90f5756fb430df82589ee207409d6a636c70c630236",
+  "sourceRelease": "v1.14.4"
+}

@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "fence": "",
+  "sourceRevision": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f",
+  "entries": {
+    "config": {
+      "present": true,
+      "size": 243,
+      "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+    },
+    "data-key": {
+      "present": true,
+      "size": 44,
+      "sha256": "e8e51a782b8ad14c0a01c5e11ef50fc5ad07cc1f8b2002bd83a207f0cd4fd7dc"
+    },
+    "database": {
+      "present": true,
+      "size": 659456,
+      "sha256": "71d54a1288c20b98a1faeea9ac98ac4a075a8623a8faac229794dd95f8430174"
+    },
+    "database-journal": {
+      "present": false
+    },
+    "database-shm": {
+      "present": false
+    },
+    "database-wal": {
+      "present": false
+    },
+    "usage-archives": {
+      "present": false
+    }
+  }
+}

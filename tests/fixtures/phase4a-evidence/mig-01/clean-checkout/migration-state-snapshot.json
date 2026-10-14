@@ -1,0 +1,113 @@
+{
+  "after": [
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": 1791989746122,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "quota_snapshot_lifecycle_v1",
+      "processed_rows": 0,
+      "started_at_ms": 1791989746122,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 1791989746122
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v1",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v2",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    }
+  ],
+  "before": [
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": 1791989746122,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "quota_snapshot_lifecycle_v1",
+      "processed_rows": 0,
+      "started_at_ms": 1791989746122,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 1791989746122
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v1",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v2",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    }
+  ],
+  "readinessInspection": {
+    "cache": [
+      {
+        "status": "completed",
+        "lastId": 0,
+        "targetId": 0,
+        "processed": 0,
+        "changed": 0,
+        "applied": 0,
+        "finishedAtMs": null,
+        "hasError": false
+      }
+    ],
+    "quota": [
+      {
+        "status": "completed",
+        "lastId": 0,
+        "targetId": 0,
+        "processed": 0,
+        "changed": 0,
+        "applied": 0,
+        "finishedAtMs": 1791989746122,
+        "hasError": false
+      }
+    ],
+    "cacheRevision": "2",
+    "cacheStagingRows": 0,
+    "quotaUnattachedRows": 0
+  }
+}
