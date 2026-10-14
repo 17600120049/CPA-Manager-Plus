@@ -124,6 +124,19 @@ class Ret02EvidenceTests(unittest.TestCase):
         self.assertFalse(result['Phase4AComplete'])
         self.assertEqual(result['remainingCases'], {'count': 46, 'status': 'pending'})
 
+    def test_clean_checkout_replay_binds_current_runtime_sources(self):
+        clean = read('clean-checkout-replay.json')
+        pin = read('source-provenance.json')['sourceArtifact']
+        self.assertEqual(clean['materializedArchiveSHA256'], pin['archiveSHA256'])
+        for platform in ('linux', 'macos'):
+            execution = clean['platforms'][platform]
+            self.assertEqual(execution['executionExitCode'], 0)
+            self.assertTrue(execution['newRootRecovery'])
+            self.assertEqual(execution['runtimeResult']['runtimeEvidence'], 'pass')
+            self.assertEqual(execution['runtimeResult']['inputBundleDigest'], pin['sourceBundleDigest'])
+            for name, sha in execution['runtimeSourceFiles'].items():
+                self.assertEqual(digest(ROOT / name), sha, name)
+
     def test_immutable_asset_pins_bind_original_bytes(self):
         provenance = read('source-provenance.json')
         pin = provenance['sourceArtifact']

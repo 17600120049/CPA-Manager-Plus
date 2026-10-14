@@ -36,6 +36,10 @@
     "artifactPin": "source-provenance.json#/sourceArtifact"
   },
   "inventory": {
+    "clean-checkout-replay.json": {
+      "size": 21221,
+      "sha256": "7ab679d5a8258a57ea798b3f6f8699775b839b667c1154ed18f39cbcfc6e3c4f"
+    },
     "diagnostic-attempts.json": {
       "size": 2868,
       "sha256": "9be3fd181467459cef9a4171e732748b414e768ceaba5168f850c1246d6cf5f2"
