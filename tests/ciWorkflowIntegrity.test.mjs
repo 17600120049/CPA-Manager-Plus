@@ -189,7 +189,8 @@ describe('GitHub Actions workflow integrity', () => {
     expect(windowsJob).toContain(
       'go test ./internal/service/runtime ./internal/repository/setting ./internal/service/bootstrap'
     );
-    expect(windowsJob).toContain("needs.changes.outputs.runtime_lifecycle == 'true'");
+    expect(windowsJob).toContain("needs.changes.outputs.manager_runtime == 'true'");
+    expect(windowsJob).not.toContain("needs.changes.outputs.runtime_lifecycle == 'true'");
     expect(windowsJob).toContain('run: go build ./cmd/cpa-manager-plus');
   });
 
@@ -199,7 +200,7 @@ describe('GitHub Actions workflow integrity', () => {
     const managerJob = jobBlock(workflow, 'manager-server');
     const windowsJob = jobBlock(workflow, 'manager-server-windows-sqlite');
 
-    for (const output of ['windows_preflight', 'bundle_boundary', 'runtime_lifecycle']) {
+    for (const output of ['windows_preflight', 'bundle_boundary', 'manager_runtime', 'runtime_lifecycle']) {
       expect(scopeJob).toContain(`${output}: \${{ steps.classify.outputs.${output} }}`);
     }
 
