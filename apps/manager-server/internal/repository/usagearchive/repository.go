@@ -311,15 +311,7 @@ func (r *Repository) ListRuns(ctx context.Context, filter RunListFilter) (RunLis
 		args = append(args, filter.BeforeCreatedAtMS, filter.BeforeCreatedAtMS, filter.BeforeID)
 	}
 	args = append(args, filter.Limit+1)
-	rows, err := r.db.QueryContext(ctx, `select
-		id, mode, schema_version, format, status, resume_status, requested_stage,
-		progress_phase, progress_current, progress_total, progress_unit, progress_updated_at_ms, cutoff_timestamp_ms,
-		target_event_id, event_count, estimated_bytes, last_archived_event_id,
-		archived_event_count, archived_uncompressed_bytes, archived_compressed_bytes,
-		archive_digest, manifest_file, manifest_sha256, last_deleted_event_id,
-		deleted_event_count, created_at_ms, updated_at_ms, started_at_ms, archived_at_ms,
-		verified_at_ms, delete_started_at_ms, completed_at_ms, last_error
-	from usage_archive_runs where `+where+` order by created_at_ms desc, id desc limit ?`, args...)
+	rows, err := r.db.QueryContext(ctx, archiveRunsSelectSQL+` where `+where+` order by created_at_ms desc, id desc limit ?`, args...)
 	if err != nil {
 		return RunListResult{}, err
 	}
@@ -560,11 +552,7 @@ func (r *Repository) Segments(ctx context.Context, runID string) ([]Segment, err
 func segmentsQuery(ctx context.Context, query interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, runID string) ([]Segment, error) {
-	rows, err := query.QueryContext(ctx, `select
-		run_id, sequence, status, file_name, first_event_id, last_event_id,
-		min_timestamp_ms, max_timestamp_ms, event_count, uncompressed_bytes,
-		compressed_bytes, content_sha256, event_hash_digest, created_at_ms, verified_at_ms
-	from usage_archive_segments where run_id = ? order by sequence`, runID)
+	rows, err := query.QueryContext(ctx, archiveSegmentsSelectSQL+` where run_id = ? order by sequence`, runID)
 	if err != nil {
 		return nil, err
 	}
@@ -881,19 +869,7 @@ func (r *Repository) Records(ctx context.Context, runID string, afterEventID int
 	if err := validateRunContract(run); err != nil {
 		return nil, err
 	}
-	rows, err := r.db.QueryContext(ctx, `select
-		e.id,
-		e.event_hash,
-		e.timestamp_ms,
-		`+archiveRecordExpression+` as payload
-	from usage_events e
-	where e.id > ? and e.id <= ? and e.timestamp_ms < ?
-		and not exists (
-			select 1 from usage_archive_event_refs archived
-			where archived.event_hash = e.event_hash
-		)
-	order by e.id asc
-	limit ?`, run.SchemaVersion, afterEventID, run.TargetEventID, run.CutoffTimestampMS, limit)
+	rows, err := r.db.QueryContext(ctx, archiveRecordsSQL, run.SchemaVersion, afterEventID, run.TargetEventID, run.CutoffTimestampMS, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -994,29 +970,10 @@ func (r *Repository) RecordSegment(ctx context.Context, runID string, segment Se
 		return Run{}, err
 	}
 	for _, ref := range refs {
-		if _, err := tx.ExecContext(ctx, `insert or ignore into usage_event_identity_ledger (
-			event_hash, raw_event_id, timestamp_ms, bucket_ms, aggregate_schema_version,
-			first_seen_at_ms, updated_at_ms
-		)
-		select
-			e.event_hash,
-			e.id,
-			e.timestamp_ms,
-			e.timestamp_ms - (e.timestamp_ms % 3600000),
-			0,
-			case when e.created_at_ms > 0 then e.created_at_ms else ? end,
-			?
-		from usage_events e
-		where e.id = ? and e.event_hash = ?`, nowMS, nowMS, ref.EventID, ref.EventHash); err != nil {
+		if _, err := tx.ExecContext(ctx, recordSegmentLedgerInsertSQL, nowMS, nowMS, ref.EventID, ref.EventHash); err != nil {
 			return Run{}, err
 		}
-		result, err := tx.ExecContext(ctx, `update usage_event_identity_ledger set
-			raw_event_id = ?,
-			timestamp_ms = (select timestamp_ms from usage_events where id = ? and event_hash = ?),
-			bucket_ms = (select timestamp_ms - (timestamp_ms % 3600000)
-				from usage_events where id = ? and event_hash = ?),
-			updated_at_ms = ?
-		where event_hash = ? and (raw_event_id is null or raw_event_id = ?)`,
+		result, err := tx.ExecContext(ctx, recordSegmentLedgerUpdateSQL,
 			ref.EventID,
 			ref.EventID,
 			ref.EventHash,
@@ -1036,13 +993,7 @@ func (r *Repository) RecordSegment(ctx context.Context, runID string, segment Se
 		if updated != 1 {
 			return Run{}, fmt.Errorf("%w: identity ledger missing archive event %d", ErrCoverageIncomplete, ref.EventID)
 		}
-		result, err = tx.ExecContext(ctx, `insert into usage_archive_event_refs (
-			event_hash, run_id, segment_sequence, raw_event_id, timestamp_ms,
-			archived_at_ms, raw_deleted_at_ms
-		)
-		select event_hash, ?, ?, raw_event_id, timestamp_ms, ?, null
-		from usage_event_identity_ledger
-		where event_hash = ? and raw_event_id = ?`,
+		result, err = tx.ExecContext(ctx, recordSegmentRefsInsertSQL,
 			runID,
 			segment.Sequence,
 			nowMS,
@@ -1310,17 +1261,7 @@ func (r *Repository) DeleteBatch(ctx context.Context, runID string, limit int, n
 	if err := checkFiles(ctx); err != nil {
 		return DeleteBatchResult{}, fmt.Errorf("recheck usage archive files before raw cleanup batch: %w", err)
 	}
-	rows, err := tx.QueryContext(ctx, `select e.id, archived.event_hash, e.timestamp_ms
-	from usage_events e
-	join usage_archive_event_refs archived
-		on archived.raw_event_id = e.id and archived.event_hash = e.event_hash
-	join usage_event_identity_ledger l
-		on l.event_hash = archived.event_hash and l.raw_event_id = e.id
-	where e.id > ? and e.id <= ? and e.timestamp_ms < ?
-		and archived.run_id = ? and archived.raw_deleted_at_ms is null
-		and l.aggregate_schema_version = ?
-		and l.aggregate_structure_revision = ?
-	order by e.id asc limit ?`,
+	rows, err := tx.QueryContext(ctx, deleteCandidatesSQL,
 		run.LastDeletedEventID,
 		run.TargetEventID,
 		run.CutoffTimestampMS,
@@ -1419,8 +1360,7 @@ func (r *Repository) DeleteBatch(ctx context.Context, runID string, limit int, n
 	type dailyDeleted struct{ count, minMS, maxMS int64 }
 	daily := make(map[int64]dailyDeleted)
 	for _, candidate := range candidates {
-		result, err := tx.ExecContext(ctx, `delete from usage_events
-			where id = ? and event_hash = ?`, candidate.ID, candidate.EventHash)
+		result, err := tx.ExecContext(ctx, deleteRawEventSQL, candidate.ID, candidate.EventHash)
 		if err != nil {
 			return DeleteBatchResult{}, err
 		}
@@ -1431,9 +1371,7 @@ func (r *Repository) DeleteBatch(ctx context.Context, runID string, limit int, n
 		if deleted != 1 {
 			return DeleteBatchResult{}, fmt.Errorf("%w: raw event %d disappeared during delete", ErrCoverageIncomplete, candidate.ID)
 		}
-		ledgerResult, err := tx.ExecContext(ctx, `update usage_event_identity_ledger set
-			raw_event_id = null, updated_at_ms = ?
-			where event_hash = ? and raw_event_id = ?`,
+		ledgerResult, err := tx.ExecContext(ctx, deleteDetachLedgerSQL,
 			nowMS,
 			candidate.EventHash,
 			candidate.ID,
@@ -1448,10 +1386,7 @@ func (r *Repository) DeleteBatch(ctx context.Context, runID string, limit int, n
 		if updatedLedger != 1 {
 			return DeleteBatchResult{}, fmt.Errorf("%w: ledger event %d disappeared during delete", ErrCoverageIncomplete, candidate.ID)
 		}
-		refResult, err := tx.ExecContext(ctx, `update usage_archive_event_refs set
-			raw_deleted_at_ms = ?
-			where run_id = ? and event_hash = ? and raw_event_id = ?
-				and raw_deleted_at_ms is null`,
+		refResult, err := tx.ExecContext(ctx, deleteMarkRefSQL,
 			nowMS,
 			runID,
 			candidate.EventHash,
@@ -1479,13 +1414,7 @@ func (r *Repository) DeleteBatch(ctx context.Context, runID string, limit int, n
 		daily[day] = entry
 	}
 	for day, entry := range daily {
-		if _, err := tx.ExecContext(ctx, `insert into usage_archive_deleted_coverage_daily (
-			utc_day, deleted_event_count, min_timestamp_ms, max_timestamp_ms
-		) values (?, ?, ?, ?)
-		on conflict(utc_day) do update set
-			deleted_event_count = deleted_event_count + excluded.deleted_event_count,
-			min_timestamp_ms = min(min_timestamp_ms, excluded.min_timestamp_ms),
-			max_timestamp_ms = max(max_timestamp_ms, excluded.max_timestamp_ms)`,
+		if _, err := tx.ExecContext(ctx, deleteDailyCoverageUpsertSQL,
 			day, entry.count, entry.minMS, entry.maxMS); err != nil {
 			return DeleteBatchResult{}, err
 		}
@@ -1652,15 +1581,7 @@ func previewQuery(ctx context.Context, queryer interface {
 func runQuery(ctx context.Context, queryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, id string) (Run, error) {
-	run, err := scanRun(queryer.QueryRowContext(ctx, `select
-		id, mode, schema_version, format, status, resume_status, requested_stage,
-		progress_phase, progress_current, progress_total, progress_unit, progress_updated_at_ms, cutoff_timestamp_ms,
-		target_event_id, event_count, estimated_bytes, last_archived_event_id,
-		archived_event_count, archived_uncompressed_bytes, archived_compressed_bytes,
-		archive_digest, manifest_file, manifest_sha256, last_deleted_event_id,
-		deleted_event_count, created_at_ms, updated_at_ms, started_at_ms, archived_at_ms,
-		verified_at_ms, delete_started_at_ms, completed_at_ms, last_error
-	from usage_archive_runs where id = ?`, id))
+	run, err := scanRun(queryer.QueryRowContext(ctx, archiveRunsSelectSQL+` where id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Run{}, ErrNotFound
 	}

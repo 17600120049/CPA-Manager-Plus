@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -13,7 +14,9 @@ import (
 	"testing"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
+	_ "modernc.org/sqlite"
 )
 
 func source(t *testing.T) (maintenancebundle.Layout, string) {
@@ -27,15 +30,34 @@ func source(t *testing.T) (maintenancebundle.Layout, string) {
 		t.Fatal(err)
 	}
 	l := maintenancebundle.BundleLayout(data)
-	for _, path := range []string{l.DatabasePath, l.DatabasePath + "-wal", l.DatabasePath + "-shm", l.DataKeyPath, l.ConfigPath} {
-		if err := os.WriteFile(path, []byte("private-fixture-secret-"+filepath.Base(path)), 0o600); err != nil {
-			t.Fatal(err)
+	seedPath := filepath.Join(root, "seed.sqlite")
+	seed, err := sql.Open("sqlite", seedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer seed.Close()
+	if _, err := seed.Exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE test_cmd (id INTEGER PRIMARY KEY, secret TEXT); INSERT INTO test_cmd VALUES (1, 'private-fixture-secret-db');"); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		data, err := os.ReadFile(seedPath + suffix)
+		if err == nil {
+			if err := os.WriteFile(l.DatabasePath+suffix, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
 		}
+	}
+	_ = seed.Close()
+	if _, _, err := security.LoadOrCreateDataKey("", l.DataKeyPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(l.ConfigPath, []byte(`{"secret":"private-fixture-secret-config"}`), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(l.ArchivesPath, "empty"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(l.ArchivesPath, "history.gz"), []byte("opaque archive"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(l.ArchivesPath, "history.gz"), []byte("opaque archive private-fixture-secret-archive"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	lock, err := processlock.Acquire(l.DatabasePath)
@@ -123,6 +145,44 @@ func TestCommandCreateVerifyRestorePreservesSource(t *testing.T) {
 	}
 	if err := maintenancebundle.Revalidate(context.Background(), maintenancebundle.BundleLayout(dest), manifest); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCommandRejectsLegacyBundleFormat(t *testing.T) {
+	l, root := source(t)
+	bundle := filepath.Join(root, "bundle")
+	run(t, createArgs(l, bundle), "created")
+	m, err := maintenancebundle.Verify(context.Background(), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version != 2 || m.SourceRevision == "" {
+		t.Fatal("CLI must create format v2 with a source revision")
+	}
+	m.Version, m.SourceRevision = 1, ""
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "manifest.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceWitness(t, bundle)
+	dest := filepath.Join(root, "restored")
+	for _, args := range [][]string{
+		{"verify", "--bundle", bundle},
+		{"restore-new", "--bundle", bundle, "--target", dest},
+	} {
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), args, &stdout, &stderr); err == nil || stdout.Len() != 0 || stderr.Len() != 0 {
+			t.Fatalf("legacy format must fail without success output: %v", err)
+		}
+	}
+	if _, err := os.Lstat(dest); !os.IsNotExist(err) {
+		t.Fatalf("legacy format published a restore root: %v", err)
+	}
+	if after := sourceWitness(t, bundle); !reflect.DeepEqual(before, after) {
+		t.Fatal("format rejection modified bundle")
 	}
 }
 
