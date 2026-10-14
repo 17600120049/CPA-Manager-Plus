@@ -49,7 +49,8 @@ type generationRecord struct {
 
 // Revalidation is qualification integrity checking, never an authority grant.
 // An independent verifier must also compare the committed runner/procedure and
-// actual source-generation execution log (or regenerate from the pinned asset).
+// actual source-generation execution log and materialize the pinned evidence
+// archive. Regeneration validates equivalent new evidence, not original bytes.
 func revalidate(t *testing.T, root, archive string) generationRecord {
 	t.Helper()
 	ctx := context.Background()
@@ -295,7 +296,7 @@ func TestReplayExactSource(t *testing.T) {
 	db = openDB(t, restored.DatabasePath, true)
 	assertPreserved(t, before, snapshot(t, db))
 	must(t, db.Close())
-	save(t, output, "sem-full-raw.json", map[string]any{"SEM-01": "pass", "SEM-02": "pass", "SEM-03": "pass", "SEM-04": "pass", "SEM-05": "pass", "SEM-06": "pass", "SEM-07": "pass", "SEM-08": "pass", "before": before, "after": after, "devinRevision2": devin, "v1Costs": v1, "v2Costs": v2, "manualPriceSync": syncResult, "duplicateReplay": imported, "currency": "USD; this profile has no persisted conversion setting"})
+	save(t, output, "sem-full-raw.json", map[string]any{"SEM-01": "runtime-pass", "SEM-02": "runtime-pass", "SEM-03": "runtime-pass", "SEM-04": "runtime-pass", "SEM-05": "runtime-pass", "SEM-06": "runtime-pass", "SEM-07": "runtime-pass", "SEM-08": "runtime-pass", "before": before, "after": after, "devinRevision2": devin, "v1Costs": v1, "v2Costs": v2, "manualPriceSync": syncResult, "duplicateReplay": imported, "currency": "USD; this profile has no persisted conversion setting"})
 	// Full-raw SOURCE stays sealed. SEM-09 is exercised by a clearly labelled v2
 	// retention branch, with archive publication/verification before raw deletion.
 	archiveStatus, e := usageService.CreateRetentionArchive(ctx, p.ToMS)
@@ -324,7 +325,7 @@ func TestReplayExactSource(t *testing.T) {
 		t.Fatal("retained history incomplete after raw deletion")
 	}
 	must(t, db.Close())
-	save(t, output, "sem09-retention-branch.json", map[string]any{"SEM-09": "pass", "sourceVariantUnchanged": "full raw", "branch": "v2 primitive descendant of SRC-11; not RET-03 source-generation evidence", "created": archiveStatus, "archived": archived, "verified": verified, "deleted": deleted, "analytics": coverage})
+	save(t, output, "sem09-retention-branch.json", map[string]any{"SEM-09": "runtime-pass", "sourceVariantUnchanged": "full raw", "branch": "v2 primitive descendant of SRC-11; not RET-03 source-generation evidence", "created": archiveStatus, "archived": archived, "verified": verified, "deleted": deleted, "analytics": coverage})
 	must(t, st.Close())
 	db = openDB(t, restored.DatabasePath, false)
 	checks := sqliteChecks(t, db, true)

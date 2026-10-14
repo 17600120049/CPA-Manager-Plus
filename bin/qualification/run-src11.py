@@ -8,6 +8,8 @@ from pathlib import Path
 import platform
 import subprocess
 import tempfile
+import importlib.util
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / "apps/manager-server"
@@ -44,14 +46,23 @@ def main():
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--release-info", type=Path)
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--evidence-archive", type=Path,
+                        help="local pinned sealed evidence archive; verified before replay")
+    parser.add_argument("--linux", action="store_true",
+                        help="replay in the pinned isolated Linux AMD64 container")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     archive = args.archive.resolve(strict=True)
+    if args.action == "replay" and bool(args.evidence) == bool(args.evidence_archive):
+        parser.error("replay requires exactly one of --evidence or --evidence-archive")
+    if args.action == "generate" and (args.evidence_archive or args.linux):
+        parser.error("--evidence-archive and --linux are replay options")
     output = args.output.resolve()
     if output.exists():
         parser.error("output must be absent (never overwrite evidence)")
-    tracked_scope = ["apps/manager-server", "bin/qualification/run-src11.py",
-                     "tests/fixtures/phase4a-src11/profile.json"]
+    tracked_scope = ["apps/manager-server", "bin/qualification",
+                     "tests/fixtures/phase4a-src11/profile.json",
+                     "tests/fixtures/phase4a-evidence/src-11/sealed-artifact.json"]
     dirty = capture(["git", "status", "--porcelain", "--untracked-files=all", "--", *tracked_scope], cwd=ROOT)
     if dirty:
         parser.error("commit all harness, profile and Manager source first; uncommitted code cannot claim GeneratorCodeCommit")
@@ -59,10 +70,17 @@ def main():
     files = capture(["git", "ls-files", "--", *tracked_scope], cwd=ROOT).splitlines()
     source_files = {name: digest(ROOT / name) for name in files}
     output.mkdir(parents=True, mode=0o700)
+    evidence = args.evidence.resolve(strict=True) if args.evidence else None
+    if args.evidence_archive:
+        sys.dont_write_bytecode = True
+        spec = importlib.util.spec_from_file_location("materialize_src11", ROOT / "bin/qualification/materialize-src11.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        evidence = module.materialize(args.evidence_archive, output / "materialized")
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CPA_", "CPAMP_", "USAGE_"))}
     env.update(GOWORK="off", GOFLAGS="-mod=readonly", CGO_ENABLED="0")
-    if args.action == "generate":
-        if not args.release_info:
+    if args.action == "generate" or args.linux:
+        if args.action == "generate" and not args.release_info:
             parser.error("generate requires --release-info")
         env.update(GOOS="linux", GOARCH="amd64")
     binary = output / ("qualification.exe" if args.action == "replay" and os.name == "nt" else "qualification")
@@ -95,12 +113,27 @@ def main():
         build["executionCommand"] = docker
         build["generationRecordSHA256"] = digest(source / "source-generation/record.json")
     else:
-        if not args.evidence:
-            parser.error("replay requires --evidence")
-        env.update(CPAMP_SRC11_EVIDENCE=str(args.evidence.resolve(strict=True)),
+        env.update(CPAMP_SRC11_EVIDENCE=str(evidence),
                    CPAMP_SRC11_ARCHIVE=str(archive), CPAMP_SRC11_PROFILE=str(PROFILE),
                    CPAMP_SRC11_REPLAY_OUTPUT=str(output / "runtime"))
         command = [str(binary), "-test.v", "-test.run", "^TestReplayExactSource$", "-test.timeout", "4m"]
+        if args.linux:
+            command = ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--read-only",
+                       "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,exec,mode=1777",
+                       "--mount", f"type=bind,src={binary},dst=/qualification,readonly",
+                       "--mount", f"type=bind,src={archive},dst=/archive,readonly",
+                       "--mount", f"type=bind,src={evidence},dst=/evidence,readonly",
+                       "--mount", f"type=bind,src={PROFILE},dst=/profile,readonly",
+                       "--mount", f"type=bind,src={output},dst=/output",
+                       "--env", "CPAMP_SRC11_EVIDENCE=/evidence", "--env", "CPAMP_SRC11_ARCHIVE=/archive",
+                       "--env", "CPAMP_SRC11_PROFILE=/profile", "--env", "CPAMP_SRC11_REPLAY_OUTPUT=/output/runtime",
+                       IMAGE, "/qualification", "-test.v", "-test.run", "^TestReplayExactSource$", "-test.timeout", "4m"]
+            build["isolation"] = {"image": IMAGE, "parentIndex": IMAGE_INDEX, "network": "none", "readOnlyRoot": True,
+                                  "imageID": capture(["docker", "image", "inspect", IMAGE, "--format", "{{.Id}}"]),
+                                  "capabilities": "none", "evidenceMount": "read-only"}
+        if args.evidence_archive:
+            build["sealedEvidenceArchiveSHA256"] = digest(args.evidence_archive)
+            build["sealedArtifactPinSHA256"] = digest(module.PIN)
         run(command, output / "replay-execution.log", env=env)
         build["executionCommand"] = command
         build["resultSHA256"] = digest(output / "runtime/result.json")
@@ -108,7 +141,8 @@ def main():
     build["UpgradeAuthorized"] = False
     build["trustedHopReceipt"] = False
     # Build/execution logs and external runner observations are independent of
-    # the test's generation JSON; a verifier checks both or regenerates.
+    # the test's generation JSON. Regeneration qualifies equivalent evidence;
+    # the pinned sealed archive authenticates the original bytes.
     build["logs"] = {p.name: digest(p) for p in output.glob("*.log")}
     (output / "runner-evidence.json").write_text(json.dumps(build, indent=2) + "\n", encoding="utf-8")
     print(output)

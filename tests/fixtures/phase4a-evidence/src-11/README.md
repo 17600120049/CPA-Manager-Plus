@@ -36,14 +36,47 @@ new-root restore and SQLite integrity/foreign-key/checkpoint results;
 `linux-replay/` repeats the same replay in the pinned Linux AMD64 container;
 its result and semantic files carry the Linux runtime observation.
 
-The production data key and SQLite bytes are intentionally not committed here:
-repository rules prohibit committing private keys or runtime SQLite data.
-Their exact verified SHA256/size and complete present/absent inventory are
-recorded in `evidence-manifest.json`, `source-generation/record.json`, and the
-sealed manifest. The task-owned run output used for independent regeneration
-was `bin/tmp/phase4a-src11/generation-20261014-evidence` and
-`bin/tmp/phase4a-src11/replay-20261014-evidence`; the pinned archive and exact
-procedure can recreate those bytes without trusting a same-schema fixture.
+The original sealed DB, disposable fixture-only data.key, producer.log, build
+and execution logs, and complete original Darwin/Linux retention backups are
+preserved in an immutable qualification Release asset. `sealed-artifact.json`
+pins its release/asset IDs, outer archive SHA256, original bundle manifest
+SHA256, generation record SHA256 and packaging inventory SHA256. These are the
+original generation bytes with source bundle digest `0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3`;
+no fixture regeneration or metadata edit was used to repair packaging. The
+archive also includes the authentic published v1.14.4 producer archive.
+
+All keys/data are disposable qualification values, never production data. The
+archive preserves the historical evidence snapshot (including its historical
+README omission statement) verbatim; its `packaging.json` explains the corrected
+packaging. Source-generation records and their original digests remain unchanged.
+
+From a clean checkout, download the qualification asset outside the Go test:
+
+```sh
+gh release download qualification-src11-0e106589baef-20261014 \
+  --repo seakee/CPA-Manager-Plus \
+  --pattern src-11-0e106589baef-sealed-evidence.tar.gz --dir <scratch>
+python3 bin/qualification/materialize-src11.py \
+  --archive <scratch>/src-11-0e106589baef-sealed-evidence.tar.gz \
+  --output <scratch>/original
+python3 bin/qualification/run-src11.py replay \
+  --archive <scratch>/original/producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz \
+  --evidence-archive <scratch>/src-11-0e106589baef-sealed-evidence.tar.gz \
+  --output <scratch>/darwin-replay
+# Repeat the same replay with --linux --output <scratch>/linux-replay.
+```
+
+Materialization verifies the pinned outer digest before extraction, rejects
+unsafe paths/links/duplicate entries, verifies every archive member against the
+complete packaging inventory, and verifies the pinned original manifests.
+Replay then performs the existing `maintenancebundle.Verify()` and full
+provenance/SEM checks offline. An absent archive or any digest/file mismatch
+fails closed; neither runner nor Go test downloads evidence automatically.
+
+Regeneration can **regenerate equivalent independently qualified evidence**.
+Random data.key bytes and runtime timestamps mean it does not recreate this
+specific archive or bundle digest. Independent verification of this exact run
+uses the pinned immutable asset and its actual bytes.
 
 Runtime assertions are complete for this slice, but independent acceptance is
 still `pending`. `casePass=false`, `UpgradeAuthorized=false`, and

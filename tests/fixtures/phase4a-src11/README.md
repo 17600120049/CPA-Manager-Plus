@@ -73,7 +73,11 @@ process lifecycle, committed controlled input, generation evidence file digests,
 source logical snapshot, complete bundle inventory/digest and matching assets.
 Self-consistent JSON alone is not authentication. Independent acceptance must
 inspect the exact committed runner/harness, outer actual execution evidence and
-replay, or regenerate using the pinned asset. These files never enter production
+replay of the pinned immutable sealed archive. Regeneration using the pinned
+producer independently qualifies equivalent new evidence; nondeterministic keys
+and timestamps do not recreate or authenticate the original bundle digest.
+The artifact materialization/download procedure is documented in
+`../phase4a-evidence/src-11/README.md`. These files never enter production
 admission/ExecuteHop/ValidateHop. Lane D provider acceptance and independent
 SRC-11 acceptance must be reported separately; this slice cannot mark all 07
 or Phase4A complete. Other cases stay pending.
