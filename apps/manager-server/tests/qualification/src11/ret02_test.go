@@ -199,6 +199,16 @@ func checkRET02Archive(t *testing.T, db *sql.DB, archives string) map[string]any
 
 func assertRET02Record(t *testing.T, row, record map[string]any) {
 	t.Helper()
+	// Frozen v1.14.4 archive JSON uses documented absence sentinels for
+	// optional strings and these three optional status/timestamp fields.
+	// Normalize only that serialization boundary, never persisted SQL values,
+	// token counts, prices, latency/TTFT or nullable stream/generate booleans.
+	emptyStrings := strings.Fields("request_id provider executor_type endpoint method path client_ip x_forwarded_for user_agent auth_type auth_index source source_hash api_key_hash account_snapshot auth_label_snapshot auth_file_snapshot auth_provider_snapshot auth_account_id_snapshot auth_project_id_snapshot requested_model resolved_model response_model session_id parent_session_id access_token_sha256 reasoning_effort service_tier request_service_tier response_service_tier cache_input_mode fail_summary response_metadata_json header_quota_plan_type header_error_kind header_error_code header_trace_id fail_body raw_json")
+	stringSentinels := map[string]bool{}
+	for _, field := range emptyStrings {
+		stringSentinels[field] = true
+	}
+	zeroSentinels := map[string]bool{"auth_snapshot_at_ms": true, "fail_status_code": true, "header_quota_recover_at_ms": true}
 	// An independent field list, not the SQL producer expression. Nullable fields
 	// may be absent in JSON merge-patch; absence preserves unknown, never zero.
 	fields := strings.Fields("request_id event_hash timestamp_ms timestamp provider executor_type model endpoint method path client_ip x_forwarded_for user_agent auth_type auth_index source source_hash api_key_hash account_snapshot auth_label_snapshot auth_file_snapshot generate stream auth_provider_snapshot auth_account_id_snapshot auth_project_id_snapshot auth_snapshot_at_ms requested_model resolved_model response_model session_id parent_session_id access_token_sha256 reasoning_effort service_tier request_service_tier response_service_tier cache_input_mode input_tokens output_tokens reasoning_tokens cached_tokens cache_tokens cache_read_tokens cache_creation_tokens normalized_uncached_input_tokens normalized_total_input_tokens normalized_cache_read_tokens normalized_cache_creation_tokens total_tokens latency_ms ttft_ms failed fail_status_code fail_summary response_metadata_json header_quota_recover_at_ms header_quota_used_percent header_quota_plan_type header_error_kind header_error_code header_trace_id fail_body raw_json created_at_ms")
@@ -208,6 +218,12 @@ func assertRET02Record(t *testing.T, row, record map[string]any) {
 			t.Fatalf("raw authoritative column missing: %s", field)
 		}
 		got := record[field]
+		if want == nil && stringSentinels[field] {
+			want = ""
+		}
+		if want == nil && zeroSentinels[field] {
+			want = int64(0)
+		}
 		if field == "generate" || field == "stream" {
 			if want != nil {
 				want = want.(int64) != 0
