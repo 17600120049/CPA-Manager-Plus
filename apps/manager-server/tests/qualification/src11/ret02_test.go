@@ -298,7 +298,31 @@ func ret02Queries(t *testing.T, ctx context.Context, st *store.Store, dbPath str
 	if scalar(t, db, "select count(*) from "+usageprojection.EventTable) != 4 {
 		t.Fatal("retained projection incomplete")
 	}
-	return map[string]any{"costs": costs, "rawDeletedCoverage": coverage, "retainedPricingRows": rows, "retainedPricingCalls": calls, "retainedPricingTokens": tokens}
+	projections := query(t, db, "select * from "+usageprojection.EventTable+" order by event_id")
+	raw := query(t, db, "select * from usage_events order by id")
+	for i, projected := range projections {
+		if projected["event_id"] != raw[i]["id"] {
+			t.Fatal("retained projection event identity differs")
+		}
+		for field, got := range projected {
+			want, shared := raw[i][field]
+			if !shared {
+				continue // Derived account/search/model fields have their own contract.
+			}
+			if want == nil {
+				if _, text := got.(string); text {
+					want = "" // Projection's documented optional-string representation.
+				}
+			}
+			if !reflect.DeepEqual(want, got) {
+				t.Fatalf("retained projection field %s differs: %v / %v", field, want, got)
+			}
+		}
+		if projected["account_key"] == "" || projected["analytics_model"] != raw[i]["requested_model"] {
+			t.Fatal("retained account/model identity missing")
+		}
+	}
+	return map[string]any{"costs": costs, "rawDeletedCoverage": coverage, "retainedPricingRows": rows, "retainedPricingCalls": calls, "retainedPricingTokens": tokens, "retainedProjection": projections, "retainedProjectionRawParity": true}
 }
 
 func TestReplayRET02(t *testing.T) {
@@ -376,7 +400,7 @@ func TestReplayRET02(t *testing.T) {
 	must(t, db.Close())
 	afterBundle, e := maintenancebundle.Inspect(ctx, restored)
 	must(t, e)
-	lock, e := processlock.AcquireExisting(restored.DatabasePath)
+	lock, e := processlock.Acquire(restored.DatabasePath)
 	must(t, e)
 	backupDir := filepath.Join(output, "backup-restore", "bundle")
 	backup, e := maintenancebundle.Create(ctx, restored, backupDir, lock)
