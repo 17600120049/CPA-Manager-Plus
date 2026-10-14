@@ -16,6 +16,9 @@ const noChecks = {
   runtime_supervisor: false,
   ingress: false,
   windows_sqlite: false,
+  windows_preflight: false,
+  bundle_boundary: false,
+  runtime_lifecycle: false,
   native_control: false,
   docker: false,
   demo_docs: false,
@@ -53,6 +56,9 @@ describe('PR check classifier', () => {
       runtime_supervisor: true,
       ingress: true,
       windows_sqlite: true,
+      windows_preflight: true,
+      bundle_boundary: true,
+      runtime_lifecycle: true,
       native_control: true,
       docker: true,
       demo_docs: true,
@@ -125,13 +131,39 @@ describe('PR check classifier', () => {
     });
   });
 
-  it('runs Linux, Windows SQLite, and Docker checks for manager-server changes', () => {
+  it('runs SQLite, preflight, bundle, and Docker checks for SQLite changes', () => {
     expect(
       classifyChangedFiles(['apps/manager-server/internal/repository/sqlite/database.go'])
     ).toEqual({
       ...noChecks,
       manager_server: true,
       windows_sqlite: true,
+      windows_preflight: true,
+      bundle_boundary: true,
+      docker: true,
+    });
+  });
+
+  it('keeps ordinary Manager Server changes off unrelated heavy gates', () => {
+    expect(
+      classifyChangedFiles([
+        'apps/manager-server/internal/repository/quotacooldown/repository.go',
+        'apps/manager-server/internal/worker/rate_limit_auto_disable.go',
+      ])
+    ).toEqual({
+      ...noChecks,
+      manager_server: true,
+      docker: true,
+    });
+  });
+
+  it('runs Windows preflight for Manager startup wiring without unrelated heavy gates', () => {
+    expect(
+      classifyChangedFiles(['apps/manager-server/cmd/cpa-manager-plus/main.go'])
+    ).toEqual({
+      ...noChecks,
+      manager_server: true,
+      windows_preflight: true,
       docker: true,
     });
   });
@@ -143,7 +175,7 @@ describe('PR check classifier', () => {
     });
   });
 
-  it('runs Supervisor and Docker checks for Supervisor module changes', () => {
+  it('runs Supervisor, Runtime lifecycle, and Docker checks for Supervisor module changes', () => {
     for (const filePath of [
       'apps/runtime-supervisor/go.mod',
       'apps/runtime-supervisor/internal/protocol/handler.go',
@@ -152,6 +184,7 @@ describe('PR check classifier', () => {
       expect(classifyChangedFiles([filePath])).toEqual({
         ...noChecks,
         runtime_supervisor: true,
+        runtime_lifecycle: true,
         docker: true,
       });
     }
@@ -167,22 +200,23 @@ describe('PR check classifier', () => {
       ...noChecks,
       manager_server: true,
       runtime_supervisor: true,
+      runtime_lifecycle: true,
       docker: true,
-      windows_sqlite: true,
     });
   });
 
-  it('runs Ingress and Docker checks for Ingress changes', () => {
+  it('runs Ingress, Runtime lifecycle, and Docker checks for Ingress changes', () => {
     for (const filePath of ['apps/ingress/internal/ingress/proxy.go', 'Dockerfile.ingress']) {
       expect(classifyChangedFiles([filePath])).toEqual({
         ...noChecks,
         ingress: true,
+        runtime_lifecycle: true,
         docker: true,
       });
     }
   });
 
-  it('runs Supervisor and Docker checks for Runtime packaging changes', () => {
+  it('runs Supervisor, Runtime lifecycle, and Docker checks for Runtime packaging changes', () => {
     for (const filePath of [
       'Dockerfile.runtime',
       'docker/runtime/entrypoint.sh',
@@ -191,6 +225,7 @@ describe('PR check classifier', () => {
       expect(classifyChangedFiles([filePath])).toEqual({
         ...noChecks,
         runtime_supervisor: true,
+        runtime_lifecycle: true,
         docker: true,
       });
     }
@@ -214,12 +249,12 @@ describe('PR check classifier', () => {
       ...noChecks,
       frontend: true,
       manager_server: true,
-      windows_sqlite: true,
+      windows_preflight: true,
       native_control: true,
     });
   });
 
-  it('runs Docker validation for Compose changes', () => {
+  it('runs Runtime lifecycle and Docker validation for Compose and Runtime E2E changes', () => {
     for (const filePath of [
       'docker-compose.yml',
       'docker-compose.manager.yml',
@@ -232,6 +267,7 @@ describe('PR check classifier', () => {
     ]) {
       expect(classifyChangedFiles([filePath])).toEqual({
         ...noChecks,
+        runtime_lifecycle: true,
         docker: true,
       });
     }
@@ -260,6 +296,7 @@ describe('PR check classifier', () => {
       'bin/ci/runtime19-phase1-exit-e2e.sh',
     ]) {
       expect(classifyChangedFiles([filePath]).docker, filePath).toBe(true);
+      expect(classifyChangedFiles([filePath]).runtime_lifecycle, filePath).toBe(true);
     }
   });
 
@@ -273,10 +310,9 @@ describe('PR check classifier', () => {
     });
   });
 
-  it('runs all checks when the classifier or any workflow changes', () => {
+  it('fails closed for the PR classifier and its own workflow', () => {
     for (const filePath of [
       '.github/workflows/pr-check.yml',
-      '.github/workflows/release.yml',
       'bin/ci/classify-pr-checks.mjs',
       'tests/prCheckClassifier.test.mjs',
     ]) {
@@ -286,10 +322,25 @@ describe('PR check classifier', () => {
         runtime_supervisor: true,
         ingress: true,
         windows_sqlite: true,
+        windows_preflight: true,
+        bundle_boundary: true,
+        runtime_lifecycle: true,
         native_control: true,
         docker: true,
         demo_docs: true,
         release_content: true,
+      });
+    }
+  });
+
+  it('runs workflow integrity without expanding unrelated product gates', () => {
+    for (const filePath of [
+      '.github/workflows/release.yml',
+      '.github/workflows/qualification-src11.yml',
+    ]) {
+      expect(classifyChangedFiles([filePath])).toEqual({
+        ...noChecks,
+        frontend: true,
       });
     }
   });
@@ -306,7 +357,7 @@ describe('PR check classifier', () => {
       ...noChecks,
       frontend: true,
       manager_server: true,
-      windows_sqlite: true,
+      windows_preflight: true,
       docker: true,
       demo_docs: true,
     });
