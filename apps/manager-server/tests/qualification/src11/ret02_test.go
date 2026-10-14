@@ -403,6 +403,7 @@ func TestReplayRET02(t *testing.T) {
 	lock, e := processlock.Acquire(restored.DatabasePath)
 	must(t, e)
 	backupDir := filepath.Join(output, "backup-restore", "bundle")
+	must(t, os.MkdirAll(filepath.Dir(backupDir), 0700))
 	backup, e := maintenancebundle.Create(ctx, restored, backupDir, lock)
 	must(t, e)
 	must(t, lock.Close())
