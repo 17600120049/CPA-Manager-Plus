@@ -183,58 +183,82 @@ export const mergeCodexResetCreditsEvidence = (
   const previousSource: 'summary' | 'dedicated' =
     previousState?.resetCreditsCountSource ??
     (resolveCodexResetCreditsDetailEvidenceAtMs(previousState) !== null ? 'dedicated' : 'summary');
+  const oldCountEvidence = resolveCodexResetCreditsCountEvidenceAtMs(previousState);
+  const oldDetailEvidence = resolveCodexResetCreditsDetailEvidenceAtMs(previousState);
+  const incomingSource =
+    incoming.resetCreditsCountSource ?? (isFullDetail ? 'dedicated' : 'summary');
+  const countAt =
+    incoming.resetCreditsCountEvidenceAtMs ??
+    incoming.resetCreditsEvidenceAtMs ??
+    incoming.observedAtMs ??
+    incomingDetailEvidence ??
+    Date.now();
+  // At equal time dedicated beats summary; equal-authority observations keep
+  // the existing value. Detail presence never upgrades an explicit count source.
+  const countIsCurrent =
+    oldCountEvidence === null ||
+    countAt > oldCountEvidence ||
+    (countAt === oldCountEvidence &&
+      incomingSource === 'dedicated' &&
+      previousSource === 'summary');
+  const preserved: CodexResetCreditsMergeResult = {
+    rateLimitResetCreditsAvailableCount: previousState?.rateLimitResetCreditsAvailableCount ?? null,
+    resetCreditsCountSource: previousSource,
+    rateLimitResetCredits: previousState?.rateLimitResetCredits ?? [],
+    rateLimitResetCreditsError: previousState?.rateLimitResetCreditsError ?? null,
+    resetCreditsEvidenceAtMs: previousState?.resetCreditsEvidenceAtMs ?? null,
+    resetCreditsCountEvidenceAtMs: oldCountEvidence,
+    resetCreditsDetailEvidenceAtMs: oldDetailEvidence,
+    resetCreditsDetailStale: previousState?.resetCreditsDetailStale ?? false,
+  };
 
   if (isFullDetail) {
     const observedAt = incomingDetailEvidence ?? incoming.observedAtMs ?? Date.now();
-    const previousDetailAt = resolveCodexResetCreditsDetailEvidenceAtMs(previousState);
-    if (previousDetailAt !== null && observedAt < previousDetailAt) {
-      return {
-        rateLimitResetCreditsAvailableCount:
-          previousState?.rateLimitResetCreditsAvailableCount ?? null,
-        resetCreditsCountSource: previousSource,
-        rateLimitResetCredits: previousState?.rateLimitResetCredits ?? [],
-        rateLimitResetCreditsError: previousState?.rateLimitResetCreditsError ?? null,
-        resetCreditsEvidenceAtMs: previousState?.resetCreditsEvidenceAtMs ?? previousDetailAt,
-        resetCreditsCountEvidenceAtMs: resolveCodexResetCreditsCountEvidenceAtMs(previousState),
-        resetCreditsDetailEvidenceAtMs: previousDetailAt,
-        resetCreditsDetailStale: previousState?.resetCreditsDetailStale ?? false,
-      };
+    const observedCount = resolveCodexResetCreditsObservationCount(
+      incoming.rateLimitResetCreditsAvailableCount,
+      incoming.rateLimitResetCredits
+    );
+    const result = { ...preserved };
+    if (observedCount !== null && countIsCurrent) {
+      result.rateLimitResetCreditsAvailableCount = observedCount;
+      result.resetCreditsCountSource = incomingSource;
+      result.resetCreditsCountEvidenceAtMs = countAt;
+      if (observedCount !== preserved.rateLimitResetCreditsAvailableCount) {
+        result.resetCreditsDetailStale = true;
+      }
     }
-
-    const count =
-      resolveCodexResetCreditsObservationCount(
-        incoming.rateLimitResetCreditsAvailableCount,
-        incoming.rateLimitResetCredits
-      ) ?? (previousState?.rateLimitResetCreditsAvailableCount ?? null);
-    const countEvidence =
-      incoming.resetCreditsCountEvidenceAtMs ?? incoming.resetCreditsEvidenceAtMs ?? observedAt;
-    return {
-      rateLimitResetCreditsAvailableCount: count,
-      resetCreditsCountSource: 'dedicated',
-      rateLimitResetCredits: count === 0 ? [] : (incoming.rateLimitResetCredits ?? []),
-      rateLimitResetCreditsError: null,
-      resetCreditsEvidenceAtMs: observedAt,
-      resetCreditsCountEvidenceAtMs: countEvidence,
-      resetCreditsDetailEvidenceAtMs: observedAt,
-      resetCreditsDetailStale: false,
-    };
+    if (oldDetailEvidence === null || observedAt > oldDetailEvidence) {
+      result.rateLimitResetCredits =
+        observedCount === 0
+          ? []
+          : (incoming.rateLimitResetCredits ?? []);
+      result.rateLimitResetCreditsError = null;
+      result.resetCreditsDetailEvidenceAtMs = observedAt;
+      result.resetCreditsDetailStale = observedCount !== result.rateLimitResetCreditsAvailableCount;
+      result.resetCreditsEvidenceAtMs = Math.max(
+        preserved.resetCreditsEvidenceAtMs ?? 0,
+        observedAt
+      );
+    }
+    return result;
   }
+
+  // Applies to dedicated count-only zero as well as summary observations.
+  if (incoming.rateLimitResetCreditsAvailableCount != null && !countIsCurrent) return preserved;
 
   const incomingCount = incoming.rateLimitResetCreditsAvailableCount;
   const detailError = incoming.rateLimitResetCreditsError ?? null;
   const oldCount = previousState?.rateLimitResetCreditsAvailableCount ?? null;
   const oldCredits = previousState?.rateLimitResetCredits ?? [];
-  const oldDetailEvidence = resolveCodexResetCreditsDetailEvidenceAtMs(previousState);
   const oldDetailStale = previousState?.resetCreditsDetailStale ?? false;
-  const oldCountEvidence = resolveCodexResetCreditsCountEvidenceAtMs(previousState);
 
   const hasNewCountObservation =
     incomingCount !== undefined &&
     incomingCount !== null &&
     (typeof incoming.resetCreditsCountEvidenceAtMs === 'number' ||
       typeof incoming.observedAtMs === 'number');
-  const incomingCountEvidence =
-    incoming.resetCreditsCountEvidenceAtMs ?? incoming.observedAtMs ?? Date.now();
+  const incomingCountEvidence = countAt;
+  const detailIsNewer = oldDetailEvidence !== null && oldDetailEvidence > incomingCountEvidence;
 
   if (!hasNewCountObservation && incomingCount == null) {
     return {
@@ -255,12 +279,12 @@ export const mergeCodexResetCreditsEvidence = (
     return {
       rateLimitResetCreditsAvailableCount: 0,
       resetCreditsCountSource: 'dedicated',
-      rateLimitResetCredits: [],
+      rateLimitResetCredits: detailIsNewer ? oldCredits : [],
       rateLimitResetCreditsError: detailError,
       resetCreditsEvidenceAtMs: incomingCountEvidence,
       resetCreditsCountEvidenceAtMs: incomingCountEvidence,
-      resetCreditsDetailEvidenceAtMs: null,
-      resetCreditsDetailStale: false,
+      resetCreditsDetailEvidenceAtMs: oldDetailEvidence,
+      resetCreditsDetailStale: detailIsNewer,
     };
   }
 
@@ -293,7 +317,7 @@ export const mergeCodexResetCreditsEvidence = (
       rateLimitResetCreditsError: detailError,
       resetCreditsEvidenceAtMs: incomingCountEvidence,
       resetCreditsCountEvidenceAtMs: incomingCountEvidence,
-      resetCreditsDetailEvidenceAtMs: null,
+      resetCreditsDetailEvidenceAtMs: oldDetailEvidence,
       resetCreditsDetailStale: false,
     };
   }
@@ -301,8 +325,7 @@ export const mergeCodexResetCreditsEvidence = (
   if (oldCount !== null && incomingCount === oldCount) {
     return {
       rateLimitResetCreditsAvailableCount: incomingCount,
-      resetCreditsCountSource:
-        incoming.resetCreditsCountSource === 'dedicated' ? 'dedicated' : previousSource,
+      resetCreditsCountSource: incomingSource,
       rateLimitResetCredits: oldCredits,
       rateLimitResetCreditsError: detailError,
       resetCreditsEvidenceAtMs:
@@ -317,10 +340,9 @@ export const mergeCodexResetCreditsEvidence = (
     rateLimitResetCreditsAvailableCount: incomingCount ?? null,
     resetCreditsCountSource:
       incoming.resetCreditsCountSource === 'dedicated' ? 'dedicated' : 'summary',
-    rateLimitResetCredits: [],
+    rateLimitResetCredits: detailIsNewer ? oldCredits : [],
     rateLimitResetCreditsError: detailError,
-    resetCreditsEvidenceAtMs:
-      previousState?.resetCreditsEvidenceAtMs ?? incomingCountEvidence,
+    resetCreditsEvidenceAtMs: previousState?.resetCreditsEvidenceAtMs ?? incomingCountEvidence,
     resetCreditsCountEvidenceAtMs: incomingCountEvidence,
     resetCreditsDetailEvidenceAtMs: oldDetailEvidence,
     resetCreditsDetailStale: true,
