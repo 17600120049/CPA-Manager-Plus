@@ -111,6 +111,7 @@ def main():
                               "readOnlyRoot": True, "capabilities": "none",
                               "mounts": "runner/archive/profile read-only; unique output writable; private tmpfs"}
         docker = ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--read-only",
+                  "--user", f"{os.getuid()}:{os.getgid()}",
                   "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,exec,mode=1777",
                   "--mount", f"type=bind,src={binary},dst=/qualification,readonly",
                   "--mount", f"type=bind,src={archive},dst=/archive,readonly",
