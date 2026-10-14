@@ -33,9 +33,17 @@ const (
 	ret02Profile    = "ret-02-archived-raw-retained-v1"
 )
 
-var ret02GenerationFiles = []string{"archive-flow.json", "pre-archive-snapshot.json", "archive-inventory.json", "raw-event-inventory.json", "v1-archived-analytics.json"}
+var ret02GenerationFiles = []string{"archive-flow.json", "archive-readiness.json", "pre-archive-snapshot.json", "archive-inventory.json", "raw-event-inventory.json", "v1-archived-analytics.json"}
 
 func generateRET02Archive(t *testing.T, base, live, generation string, p profile, costs map[string]monitoring.Response) {
+	// Producer workers are asynchronous. Observe their real readiness; never
+	// synthesize a watermark or mutate projection state to permit verification.
+	var readiness usagesvc.MaintenanceStatus
+	wait(t, func() bool {
+		must(t, json.Unmarshal(httpCall(t, "GET", base, "/v0/management/usage/maintenance", nil), &readiness))
+		return readiness.RawEventCount == 4 && readiness.MigrationCoverage.Complete && readiness.HourlyAggregateCoverage.Complete
+	})
+	save(t, generation, "archive-readiness.json", readiness)
 	db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
 	before := snapshot(t, db)
 	checkFullRaw(t, db)
