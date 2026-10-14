@@ -37,6 +37,7 @@ jobs:
       windows_sqlite: ${{ steps.classify.outputs.windows_sqlite }}
       windows_preflight: ${{ steps.classify.outputs.windows_preflight }}
       bundle_boundary: ${{ steps.classify.outputs.bundle_boundary }}
+      manager_runtime: ${{ steps.classify.outputs.manager_runtime }}
       runtime_lifecycle: ${{ steps.classify.outputs.runtime_lifecycle }}
       native_control: ${{ steps.classify.outputs.native_control }}
       docker: ${{ steps.classify.outputs.docker }}
@@ -319,7 +320,7 @@ jobs:
       needs.changes.outputs.windows_sqlite == 'true' ||
       needs.changes.outputs.windows_preflight == 'true' ||
       needs.changes.outputs.bundle_boundary == 'true' ||
-      needs.changes.outputs.runtime_lifecycle == 'true'
+      needs.changes.outputs.manager_runtime == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -377,7 +378,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test Runtime portability
-        if: needs.changes.outputs.runtime_lifecycle == 'true'
+        if: needs.changes.outputs.manager_runtime == 'true'
         working-directory: apps/manager-server
         run: go test ./internal/service/runtime ./internal/repository/setting ./internal/service/bootstrap
 
