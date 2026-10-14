@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "caseID": "RET-01",
+  "provenanceRole": "case-specific-controlled-generation",
+  "sourceRecord": "ret-01/source-generation",
+  "sourceRelease": "v1.14.4",
+  "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "sourceProducerKind": "published-artifact",
+  "sourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "sourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "sourceBundleDigest": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
+  "sourceGenerationRecordSHA256": "f958cc6df95c6c59b9bbeff70728762d3348a0521724170e34bc3e437b8ad137",
+  "generatorCodeCommit": "2c8579c77d79612c8dc5d310d9f8b09c4fa038c2",
+  "producerIdentityDependency": {
+    "caseID": "SRC-11",
+    "independentAcceptance": "accepted",
+    "planCommit": "2719d8466951da1ea457bd1a00dca3fa6f09dc43",
+    "policy": "Reuse only the independently accepted exact producer/release identity; never the SRC-11 database, key or bundle."
+  },
+  "externalGenerationFiles": {
+    "producer.log": "ab9650911eb2b820d2a685ebbafe7c952a590c7f0260c3f210a960dab1422e87"
+  },
+  "sourceArtifact": {
+    "repository": "seakee/CPA-Manager-Plus",
+    "tag": "qualification-ret01-82e2287ed64e-20261014",
+    "tagCommit": "9eeba5f442a100168f715637781cec3644d1e1bb",
+    "releaseID": 412621764,
+    "assetID": 640121411,
+    "immutableRelease": true,
+    "archiveName": "ret-01-82e2287ed64e-sealed-evidence.zip",
+    "archiveSize": 8622918,
+    "archiveSHA256": "e7f5df5ce2792a7049d2fac29f7c67b9d7e407237e52167c22b1c9eefc7ff790",
+    "downloadURL": "https://github.com/seakee/CPA-Manager-Plus/releases/download/qualification-ret01-82e2287ed64e-20261014/ret-01-82e2287ed64e-sealed-evidence.zip",
+    "sourceBundleDigest": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
+    "generationRecordSHA256": "f958cc6df95c6c59b9bbeff70728762d3348a0521724170e34bc3e437b8ad137",
+    "bundleManifestSHA256": "3e4f77a157b350a9de5bf177c17d1ef58dc259a5b7318501efb858a0bb4a7874",
+    "originActionsArtifact": {
+      "role": "historical origin only; availability is not required for verification",
+      "runID": 38548199153,
+      "runAttempt": 1,
+      "headCommit": "f265c1c4295b9bede8fa6c474e6690f34220e00d",
+      "artifactID": 11884714735,
+      "name": "ret01-source-38548199153-1",
+      "artifactDigest": "sha256:e7f5df5ce2792a7049d2fac29f7c67b9d7e407237e52167c22b1c9eefc7ff790"
+    },
+    "scope": "Complete original RET-01 source bundle, key/config, generation logs/records and exact producer archive; no SRC-11 bundle included.",
+    "inventory": {
+      "generation-execution.txt": {
+        "size": 158,
+        "sha256": "bca07a48d49e8467f535da2b6cd61349e9fcee999fc55b8e43c698aef7b17b30"
+      },
+      "generator-runner.json": {
+        "size": 72196,
+        "sha256": "7cc5daa45374945b2e8f3a950d08d54f554a05da97ea111f7c6a21c79f444173"
+      },
+      "producer.tar.gz": {
+        "size": 8564211,
+        "sha256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033"
+      },
+      "ret-01/bundle/config": {
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "ret-01/bundle/data-key": {
+        "size": 44,
+        "sha256": "3fc7424d5500819bcb0aecd3eb8fa24c335a5ae85d51e2c8ec7611087596429e"
+      },
+      "ret-01/bundle/database": {
+        "size": 659456,
+        "sha256": "4e2a14fe95302c2bef9995b095eaa538e144a0349e37da8918592abc37ac56c0"
+      },
+      "ret-01/bundle/manifest.json": {
+        "size": 829,
+        "sha256": "3e4f77a157b350a9de5bf177c17d1ef58dc259a5b7318501efb858a0bb4a7874"
+      },
+      "ret-01/generation-index.json": {
+        "size": 266,
+        "sha256": "594164e3ce1533c2d13be2428fda473b33c11afce4a252f397a3551231c42689"
+      },
+      "ret-01/source-generation/config-write.json": {
+        "size": 731,
+        "sha256": "11dd0573729796a8e394f19f296972cc502f13929da58fdaf0f3e55ca7a17560"
+      },
+      "ret-01/source-generation/controlled-input.json": {
+        "size": 4508,
+        "sha256": "c38b10f7731b396a744ed2bffb8e54a6ff14ac23c96ae2a746aea0439f6531ea"
+      },
+      "ret-01/source-generation/price-write.json": {
+        "size": 1124,
+        "sha256": "c31b39f367496f4379eba219b579d2c80aab79fbf9e1bbdca5474b70d70e8e7f"
+      },
+      "ret-01/source-generation/producer-build.json": {
+        "size": 2556,
+        "sha256": "6756bf5e99c7986090385029d8f917c4bbc2a4e0570b80d7192de650d24080cd"
+      },
+      "ret-01/source-generation/producer.log": {
+        "size": 7826,
+        "sha256": "ab9650911eb2b820d2a685ebbafe7c952a590c7f0260c3f210a960dab1422e87"
+      },
+      "ret-01/source-generation/quota-write.json": {
+        "size": 193,
+        "sha256": "cc039ce5b2f8e3aeb647d697b79fee0288a5c1d65ca7a29966ba2a448a4d7361"
+      },
+      "ret-01/source-generation/record.json": {
+        "size": 6534,
+        "sha256": "f958cc6df95c6c59b9bbeff70728762d3348a0521724170e34bc3e437b8ad137"
+      },
+      "ret-01/source-generation/release-info.json": {
+        "size": 1562,
+        "sha256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5"
+      },
+      "ret-01/source-generation/source-snapshot.json": {
+        "size": 22726,
+        "sha256": "820cbc9c8584e766cbda32f6afb1272564f12a91128f56e94f3a218febf2b1c2"
+      },
+      "ret-01/source-generation/v1-analytics.json": {
+        "size": 3511,
+        "sha256": "2cdacd4d3932f61ab2a2469714ab48dd53e4d87603e6ebeea2ecb4a855e4f8f9"
+      },
+      "ret-01/source-generation/v1-export.jsonl": {
+        "size": 3913,
+        "sha256": "d6264dee81dd731fde2ac0753634d75c8bc0768b5d1922c53e352b0dcf4e55a7"
+      }
+    }
+  },
+  "runtimeEvidence": "pass",
+  "casePass": false,
+  "independentAcceptance": "pending",
+  "UpgradeAuthorized": false,
+  "TrustedHopReceipt": false
+}

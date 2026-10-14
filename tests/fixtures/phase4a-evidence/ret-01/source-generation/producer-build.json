@@ -1,0 +1,112 @@
+{
+  "GoVersion": "go1.24.13",
+  "Path": "github.com/seakee/cpa-manager-plus/apps/manager-server/cmd/cpa-manager-plus",
+  "Main": {
+    "Path": "github.com/seakee/cpa-manager-plus/apps/manager-server",
+    "Version": "v1.14.4",
+    "Sum": "",
+    "Replace": null
+  },
+  "Deps": [
+    {
+      "Path": "github.com/dustin/go-humanize",
+      "Version": "v1.0.1",
+      "Sum": "h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=",
+      "Replace": null
+    },
+    {
+      "Path": "github.com/google/uuid",
+      "Version": "v1.6.0",
+      "Sum": "h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=",
+      "Replace": null
+    },
+    {
+      "Path": "github.com/remyoudompheng/bigfft",
+      "Version": "v0.0.0-20230129092748-24d4a6f8daec",
+      "Sum": "h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=",
+      "Replace": null
+    },
+    {
+      "Path": "golang.org/x/exp",
+      "Version": "v0.0.0-20251023183803-a4bb9ffd2546",
+      "Sum": "h1:mgKeJMpvi0yx/sU5GsxQ7p6s2wtOnGAHZWCHUM4KGzY=",
+      "Replace": null
+    },
+    {
+      "Path": "golang.org/x/sys",
+      "Version": "v0.37.0",
+      "Sum": "h1:fdNQudmxPjkdUTPnLn5mdQv7Zwvbvpaxqs831goi9kQ=",
+      "Replace": null
+    },
+    {
+      "Path": "modernc.org/libc",
+      "Version": "v1.67.6",
+      "Sum": "h1:eVOQvpModVLKOdT+LvBPjdQqfrZq+pC39BygcT+E7OI=",
+      "Replace": null
+    },
+    {
+      "Path": "modernc.org/mathutil",
+      "Version": "v1.7.1",
+      "Sum": "h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU=",
+      "Replace": null
+    },
+    {
+      "Path": "modernc.org/memory",
+      "Version": "v1.11.0",
+      "Sum": "h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI=",
+      "Replace": null
+    },
+    {
+      "Path": "modernc.org/sqlite",
+      "Version": "v1.46.1",
+      "Sum": "h1:eFJ2ShBLIEnUWlLy12raN0Z1plqmFX9Qe3rjQTKt6sU=",
+      "Replace": null
+    }
+  ],
+  "Settings": [
+    {
+      "Key": "-buildmode",
+      "Value": "exe"
+    },
+    {
+      "Key": "-compiler",
+      "Value": "gc"
+    },
+    {
+      "Key": "-trimpath",
+      "Value": "true"
+    },
+    {
+      "Key": "CGO_ENABLED",
+      "Value": "0"
+    },
+    {
+      "Key": "GOARCH",
+      "Value": "amd64"
+    },
+    {
+      "Key": "GOOS",
+      "Value": "linux"
+    },
+    {
+      "Key": "GOAMD64",
+      "Value": "v1"
+    },
+    {
+      "Key": "vcs",
+      "Value": "git"
+    },
+    {
+      "Key": "vcs.revision",
+      "Value": "166262365d506157b99968105c890f480cc7c07c"
+    },
+    {
+      "Key": "vcs.time",
+      "Value": "2026-10-06T16:12:53Z"
+    },
+    {
+      "Key": "vcs.modified",
+      "Value": "false"
+    }
+  ]
+}

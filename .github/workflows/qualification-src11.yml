@@ -5,10 +5,12 @@ on:
     branches: [v2]
     paths:
       - '.github/workflows/qualification-src11.yml'
+      - '.gitattributes'
       - 'bin/qualification/**'
       - 'apps/manager-server/tests/qualification/src11/**'
       - 'tests/fixtures/phase4a-src11/**'
       - 'tests/fixtures/phase4a-evidence/src-11/**'
+      - 'tests/fixtures/phase4a-evidence/ret-01/**'
 
 permissions:
   contents: read
@@ -44,9 +46,22 @@ jobs:
           gh release download qualification-src11-0e106589baef-20261014 \
             --repo seakee/CPA-Manager-Plus \
             --pattern src-11-0e106589baef-sealed-evidence.tar.gz --dir "$RUNNER_TEMP/src11-download"
+      - name: Download original RET-01 case bytes for strict cross-platform verification
+        shell: bash
+        run: |
+          gh release download qualification-ret01-82e2287ed64e-20261014 \
+            --repo seakee/CPA-Manager-Plus \
+            --pattern ret-01-82e2287ed64e-sealed-evidence.zip --dir "$RUNNER_TEMP/ret01-download"
+          gh api repos/seakee/CPA-Manager-Plus/releases/412621764 > "$RUNNER_TEMP/ret01-release.json"
+          python bin/qualification/materialize-src11.py --case ret-01 \
+            --release-metadata "$RUNNER_TEMP/ret01-release.json" \
+            --archive "$RUNNER_TEMP/ret01-download/ret-01-82e2287ed64e-sealed-evidence.zip" \
+            --output "$RUNNER_TEMP/ret01-original"
       - name: Verify materialization and reject adversarial archives
         shell: bash
         run: |
+          export CPAMP_RET01_FULL_EVIDENCE="$RUNNER_TEMP/ret01-original"
+          export CPAMP_RET01_SEALED_ARCHIVE="$RUNNER_TEMP/ret01-download/ret-01-82e2287ed64e-sealed-evidence.zip"
           export CPAMP_SRC11_SEALED_ARCHIVE="$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz"
           python -m unittest discover -s bin/qualification -p 'test_*.py' -v
           python bin/qualification/materialize-src11.py --archive "$CPAMP_SRC11_SEALED_ARCHIVE" --output "$RUNNER_TEMP/src11-original"
@@ -95,3 +110,62 @@ jobs:
             ${{ runner.temp }}/src11-windows-compile.txt
           if-no-files-found: warn
           retention-days: 14
+
+  ret01:
+    name: RET-01 exact-source replay (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Download and authenticate the original immutable RET-01 fixture
+        shell: bash
+        run: |
+          gh release download qualification-ret01-82e2287ed64e-20261014 \
+            --repo seakee/CPA-Manager-Plus \
+            --pattern ret-01-82e2287ed64e-sealed-evidence.zip --dir "$RUNNER_TEMP/ret01-download"
+          gh api repos/seakee/CPA-Manager-Plus/releases/412621764 > "$RUNNER_TEMP/ret01-release.json"
+          python bin/qualification/materialize-src11.py --case ret-01 \
+            --release-metadata "$RUNNER_TEMP/ret01-release.json" \
+            --archive "$RUNNER_TEMP/ret01-download/ret-01-82e2287ed64e-sealed-evidence.zip" \
+            --output "$RUNNER_TEMP/ret01-source"
+      - name: Verify committed RET-01 evidence contract
+        env:
+          CPAMP_RET01_FULL_EVIDENCE: ${{ runner.temp }}/ret01-source
+        run: python -m unittest discover -s bin/qualification -p 'test_ret01.py' -v
+      - name: Replay RET-01 against the v2 primitives
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+            extra=(--linux)
+          fi
+          python bin/qualification/run-src11.py ret01 \
+            --archive "$RUNNER_TEMP/ret01-source/producer.tar.gz" \
+            --evidence "$RUNNER_TEMP/ret01-source/ret-01" \
+            --output "$RUNNER_TEMP/ret01-replay" "${extra[@]}"
+      - name: Upload RET-01 runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ret01-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ret01-replay/runner-evidence.json
+            ${{ runner.temp }}/ret01-replay/*.log
+            ${{ runner.temp }}/ret01-replay/runtime/
+          if-no-files-found: warn
+          retention-days: 90

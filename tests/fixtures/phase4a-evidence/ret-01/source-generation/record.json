@@ -1,0 +1,196 @@
+{
+  "ControlledInputSHA256": "c38b10f7731b396a744ed2bffb8e54a6ff14ac23c96ae2a746aea0439f6531ea",
+  "GeneratedBundleSHA256": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
+  "GenerationEvidenceFiles": {
+    "config-write.json": "11dd0573729796a8e394f19f296972cc502f13929da58fdaf0f3e55ca7a17560",
+    "controlled-input.json": "c38b10f7731b396a744ed2bffb8e54a6ff14ac23c96ae2a746aea0439f6531ea",
+    "price-write.json": "c31b39f367496f4379eba219b579d2c80aab79fbf9e1bbdca5474b70d70e8e7f",
+    "producer-build.json": "6756bf5e99c7986090385029d8f917c4bbc2a4e0570b80d7192de650d24080cd",
+    "producer.log": "ab9650911eb2b820d2a685ebbafe7c952a590c7f0260c3f210a960dab1422e87",
+    "quota-write.json": "cc039ce5b2f8e3aeb647d697b79fee0288a5c1d65ca7a29966ba2a448a4d7361",
+    "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+    "source-snapshot.json": "820cbc9c8584e766cbda32f6afb1272564f12a91128f56e94f3a218febf2b1c2",
+    "v1-analytics.json": "2cdacd4d3932f61ab2a2469714ab48dd53e4d87603e6ebeea2ecb4a855e4f8f9",
+    "v1-export.jsonl": "d6264dee81dd731fde2ac0753634d75c8bc0768b5d1922c53e352b0dcf4e55a7"
+  },
+  "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation",
+  "GenerationProfile": "ret-01-full-raw-revision2-v1",
+  "GeneratorCodeCommit": "2c8579c77d79612c8dc5d310d9f8b09c4fa038c2",
+  "PlanCommit": "2719d8466951da1ea457bd1a00dca3fa6f09dc43",
+  "SQLite": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "SourceProducerArtifact": {
+    "asset": "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+    "assetID": 616064478,
+    "immutableReleaseID": 404941931,
+    "releaseInfoSHA256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5"
+  },
+  "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "SourceProducerKind": "published-artifact",
+  "SourceRelease": "v1.14.4",
+  "StoppedBeforeCheckpointInventory": {
+    "version": 2,
+    "fence": "",
+    "sourceRevision": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
+    "entries": {
+      "config": {
+        "present": true,
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "data-key": {
+        "present": true,
+        "size": 44,
+        "sha256": "3fc7424d5500819bcb0aecd3eb8fa24c335a5ae85d51e2c8ec7611087596429e"
+      },
+      "database": {
+        "present": true,
+        "size": 659456,
+        "sha256": "4e2a14fe95302c2bef9995b095eaa538e144a0349e37da8918592abc37ac56c0"
+      },
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": false
+      },
+      "database-wal": {
+        "present": false
+      },
+      "usage-archives": {
+        "present": false
+      }
+    }
+  },
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "bundleInventory": {
+    "version": 2,
+    "fence": "cooperating-manager-lock",
+    "sourceRevision": "82e2287ed64ea6584a54d53e7de06f8d657cbddf2df9c7f5e682b9c3e937da9c",
+    "entries": {
+      "config": {
+        "present": true,
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "data-key": {
+        "present": true,
+        "size": 44,
+        "sha256": "3fc7424d5500819bcb0aecd3eb8fa24c335a5ae85d51e2c8ec7611087596429e"
+      },
+      "database": {
+        "present": true,
+        "size": 659456,
+        "sha256": "4e2a14fe95302c2bef9995b095eaa538e144a0349e37da8918592abc37ac56c0"
+      },
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": false
+      },
+      "database-wal": {
+        "present": false
+      },
+      "usage-archives": {
+        "present": false
+      }
+    }
+  },
+  "caseID": "RET-01",
+  "casePass": false,
+  "generationSuccess": true,
+  "harnessToolchain": {
+    "goArch": "amd64",
+    "goOS": "linux",
+    "goVersion": "go1.24.0",
+    "qualificationOnly": true
+  },
+  "migrationState": [
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": 1791972907771,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "quota_snapshot_lifecycle_v1",
+      "processed_rows": 0,
+      "started_at_ms": 1791972907771,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 1791972907771
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v1",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v2",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    }
+  ],
+  "process": {
+    "arguments": [],
+    "deliveredPayloads": 5,
+    "environment": [
+      "CPA_MANAGER_CONFIG=\u003ctask-scratch\u003e/source/config.json",
+      "HTTP_ADDR=\u003cprivate-listener\u003e",
+      "CPA_UPSTREAM_URL=\u003cprivate-http-queue\u003e",
+      "CPA_MANAGEMENT_KEY=\u003cqualification-only-secret\u003e",
+      "CPA_MANAGER_ADMIN_KEY=\u003cqualification-only-secret\u003e",
+      "USAGE_COLLECTOR_MODE=http",
+      "USAGE_POLL_INTERVAL_MS=100",
+      "USAGE_QUOTA_COOLDOWN_ENABLED=true",
+      "TZ=UTC"
+    ],
+    "exitCode": 0,
+    "expectedUniqueEvents": 4,
+    "finishedAt": "2026-10-14T10:15:08.06380498Z",
+    "pid": 14,
+    "queueCalls": 5,
+    "reaped": true,
+    "startedAt": "2026-10-14T10:15:07.711227542Z"
+  },
+  "producerBuildIdentity": "producer-build.json",
+  "sourceVariant": "full raw; no archives and no deletion; cache/quota completed"
+}

@@ -30,6 +30,7 @@ type generationRecord struct {
 	GeneratorCodeCommit            string
 	PlanCommit                     string
 	ControlledInputSHA256          string
+	GenerationProfile              string
 	GeneratedBundleSHA256          string
 	GenerationEvidenceFiles        map[string]string
 	BundleInventory                maintenancebundle.Manifest `json:"bundleInventory"`
@@ -52,6 +53,10 @@ type generationRecord struct {
 // actual source-generation execution log and materialize the pinned evidence
 // archive. Regeneration validates equivalent new evidence, not original bytes.
 func revalidate(t *testing.T, root, archive string) generationRecord {
+	return revalidateCase(t, root, archive, "SRC-11", planCommit, "src-11-full-raw-revision2-v1")
+}
+
+func revalidateCase(t *testing.T, root, archive, caseID, plan, expectedProfile string) generationRecord {
 	t.Helper()
 	ctx := context.Background()
 	var index struct {
@@ -65,7 +70,7 @@ func revalidate(t *testing.T, root, archive string) generationRecord {
 	}
 	var r generationRecord
 	must(t, json.Unmarshal(read(t, filepath.Join(root, index.Location)), &r))
-	if r.CaseID != "SRC-11" || r.SourceRelease != "v1.14.4" || r.SourceCommit != sourceCommit || r.SourceProducerBuildCodeCommit != sourceCommit || r.SourceProducerKind != "published-artifact" || r.PlanCommit != planCommit || len(r.GeneratorCodeCommit) != 40 || r.CasePass || r.UpgradeAuthorized || r.TrustedHopReceipt || !r.GenerationSuccess {
+	if r.CaseID != caseID || r.SourceRelease != "v1.14.4" || r.SourceCommit != sourceCommit || r.SourceProducerBuildCodeCommit != sourceCommit || r.SourceProducerKind != "published-artifact" || r.PlanCommit != plan || r.GenerationProfile != expectedProfile || len(r.GeneratorCodeCommit) != 40 || r.CasePass || r.UpgradeAuthorized || r.TrustedHopReceipt || !r.GenerationSuccess {
 		t.Fatal("invalid source-generation chain/boundary")
 	}
 	if !r.Process.Reaped || r.Process.PID <= 0 || r.Process.ExitCode != 0 || !r.Process.Finished.After(r.Process.Started) || r.Process.Delivered != 5 {
@@ -90,7 +95,7 @@ func revalidate(t *testing.T, root, archive string) generationRecord {
 	}
 	p, input := loadProfile(t, filepath.Join(root, "source-generation", "controlled-input.json"))
 	_, contract := loadProfile(t, envRequired(t, "CPAMP_SRC11_PROFILE"))
-	if digestBytes(input) != digestBytes(contract) || r.ControlledInputSHA256 != digestBytes(contract) || p.Profile == "" {
+	if digestBytes(input) != digestBytes(contract) || r.ControlledInputSHA256 != digestBytes(contract) || p.Profile != expectedProfile {
 		t.Fatal("input does not match committed generation profile")
 	}
 	m, e := maintenancebundle.Verify(ctx, filepath.Join(root, "bundle"))

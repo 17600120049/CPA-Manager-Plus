@@ -1,0 +1,340 @@
+{
+  "additionalRequiredAssertions": {
+    "quotaResetEvidence": {
+      "counts": {
+        "account_quota_cycles": 2,
+        "account_quota_snapshots": 2,
+        "account_quota_window_activations": 2,
+        "account_quota_windows": 2,
+        "quota_cooldowns": 1
+      },
+      "status": "runtime-pass"
+    },
+    "retainedHistoricalPricing": {
+      "explicitZeroPreserved": true,
+      "manualPriceAuthority": true,
+      "status": "runtime-pass",
+      "syncImported": 0
+    },
+    "retentionArchiveState": {
+      "archiveRuns": 0,
+      "archiveSegments": 0,
+      "onlineRawComplete": true,
+      "rawDeletedAssertion": {
+        "case": "RET-03",
+        "reason": "RET-01 exact Plan variant has no archive/raw deletion dependency",
+        "sem": "SEM-09",
+        "status": "not-applicable"
+      },
+      "rawDeletedEventCount": 0,
+      "rawEventCount": 4,
+      "variant": "full raw"
+    }
+  },
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-02",
+    "SEM-03",
+    "SEM-06",
+    "SEM-08"
+  ],
+  "assertions": {
+    "SEM-01": {
+      "authoritativeAfterDigest": "52840329f39a59c9dddcd857362a4609259d1298ea3afc9a4cbb9b4914c742cc",
+      "authoritativeBeforeDigest": "52840329f39a59c9dddcd857362a4609259d1298ea3afc9a4cbb9b4914c742cc",
+      "authoritativeFieldsPreserved": true,
+      "status": "runtime-pass"
+    },
+    "SEM-02": {
+      "distinctEventHashes": 4,
+      "eventCount": 4,
+      "status": "runtime-pass"
+    },
+    "SEM-03": {
+      "historicalProjectionStable": true,
+      "status": "runtime-pass",
+      "v1Costs": {
+        "claude-fixture": {
+          "generated_at_ms": 1791972908032,
+          "granularity": "hour",
+          "summary": {
+            "total_calls": 1,
+            "success_calls": 1,
+            "failure_calls": 0,
+            "success_rate": 1,
+            "input_tokens": 2150,
+            "output_tokens": 100,
+            "cached_tokens": 0,
+            "cache_read_tokens": 100,
+            "cache_creation_tokens": 50,
+            "cache_hit_rate": 0.046511627906976744,
+            "reasoning_tokens": 0,
+            "total_tokens": 2250,
+            "total_cost": 0.015435,
+            "average_cost_per_call": 0.015435,
+            "average_latency_ms": null,
+            "p95_latency_ms": null,
+            "p95_ttft_ms": null,
+            "zero_token_calls": 0,
+            "rpm_30m": 0,
+            "tpm_30m": 0,
+            "avg_daily_requests": 1,
+            "avg_daily_tokens": 2250,
+            "approx_tasks": 1,
+            "approx_task_failures": 0,
+            "approx_task_success_rate": 1,
+            "zero_token_models": []
+          }
+        },
+        "devin/swe-2": {
+          "generated_at_ms": 1791972908040,
+          "granularity": "hour",
+          "summary": {
+            "total_calls": 1,
+            "success_calls": 1,
+            "failure_calls": 0,
+            "success_rate": 1,
+            "input_tokens": 1050,
+            "output_tokens": 100,
+            "cached_tokens": 0,
+            "cache_read_tokens": 900,
+            "cache_creation_tokens": 50,
+            "cache_hit_rate": 0.8571428571428571,
+            "reasoning_tokens": 0,
+            "total_tokens": 1150,
+            "total_cost": 0.0022575,
+            "average_cost_per_call": 0.0022575,
+            "average_latency_ms": null,
+            "p95_latency_ms": null,
+            "p95_ttft_ms": null,
+            "zero_token_calls": 0,
+            "rpm_30m": 0,
+            "tpm_30m": 0,
+            "avg_daily_requests": 1,
+            "avg_daily_tokens": 1150,
+            "approx_tasks": 1,
+            "approx_task_failures": 0,
+            "approx_task_success_rate": 1,
+            "zero_token_models": []
+          }
+        },
+        "fixture-free": {
+          "generated_at_ms": 1791972908047,
+          "granularity": "hour",
+          "summary": {
+            "total_calls": 1,
+            "success_calls": 1,
+            "failure_calls": 0,
+            "success_rate": 1,
+            "input_tokens": 500,
+            "output_tokens": 100,
+            "cached_tokens": 400,
+            "cache_read_tokens": 0,
+            "cache_creation_tokens": 0,
+            "cache_hit_rate": 0.8,
+            "reasoning_tokens": 0,
+            "total_tokens": 600,
+            "total_cost": 0,
+            "average_cost_per_call": 0,
+            "average_latency_ms": null,
+            "p95_latency_ms": null,
+            "p95_ttft_ms": null,
+            "zero_token_calls": 0,
+            "rpm_30m": 0,
+            "tpm_30m": 0,
+            "avg_daily_requests": 1,
+            "avg_daily_tokens": 600,
+            "approx_tasks": 1,
+            "approx_task_failures": 0,
+            "approx_task_success_rate": 1,
+            "zero_token_models": []
+          }
+        },
+        "fixture-paid": {
+          "generated_at_ms": 1791972908053,
+          "granularity": "hour",
+          "summary": {
+            "total_calls": 1,
+            "success_calls": 0,
+            "failure_calls": 1,
+            "success_rate": 0,
+            "input_tokens": 100,
+            "output_tokens": 10,
+            "cached_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_creation_tokens": 0,
+            "cache_hit_rate": 0,
+            "reasoning_tokens": 0,
+            "total_tokens": 110,
+            "total_cost": 0.00028000000000000003,
+            "average_cost_per_call": 0.00028000000000000003,
+            "average_latency_ms": null,
+            "p95_latency_ms": null,
+            "p95_ttft_ms": null,
+            "zero_token_calls": 0,
+            "rpm_30m": 0,
+            "tpm_30m": 0,
+            "avg_daily_requests": 1,
+            "avg_daily_tokens": 110,
+            "approx_tasks": 1,
+            "approx_task_failures": 1,
+            "approx_task_success_rate": 0,
+            "zero_token_models": []
+          }
+        }
+      },
+      "v2Costs": {
+        "claude-fixture": {
+          "generated_at_ms": 1791973173856,
+          "granularity": "hour",
+          "summary": {
+            "total_calls": 1,
+            "success_calls": 1,
+            "failure_calls": 0,
+            "success_rate": 1,
+            "input_tokens": 2150,
+            "output_tokens": 100,
+            "cached_tokens": 0,
+            "cache_read_tokens": 100,
+            "cache_creation_tokens": 50,
+            "cache_hit_rate": 0.046511627906976744,
+            "reasoning_tokens": 0,
+            "total_tokens": 2250,
+            "total_cost": 0.015435,
+            "average_cost_per_call": 0.015435,
+            "average_latency_ms": null,
+            "p95_latency_ms": null,
+            "p95_ttft_ms": null,
+            "zero_token_calls": 0,
+            "rpm_30m": 0,
+            "tpm_30m": 0,
+            "avg_daily_requests": 1,
+            "avg_daily_tokens": 2250,
+            "approx_tasks": 1,
+            "approx_task_failures": 0,
+            "approx_task_success_rate": 1,
+            "zero_token_models": []
+          }
+        },
+        "devin/swe-2": {
+          "generated_at_ms": 1791973173860,
+          "granularity": "hour",
+          "summary": {
+            "total_calls": 1,
+            "success_calls": 1,
+            "failure_calls": 0,
+            "success_rate": 1,
+            "input_tokens": 1050,
+            "output_tokens": 100,
+            "cached_tokens": 0,
+            "cache_read_tokens": 900,
+            "cache_creation_tokens": 50,
+            "cache_hit_rate": 0.8571428571428571,
+            "reasoning_tokens": 0,
+            "total_tokens": 1150,
+            "total_cost": 0.0022575,
+            "average_cost_per_call": 0.0022575,
+            "average_latency_ms": null,
+            "p95_latency_ms": null,
+            "p95_ttft_ms": null,
+            "zero_token_calls": 0,
+            "rpm_30m": 0,
+            "tpm_30m": 0,
+            "avg_daily_requests": 1,
+            "avg_daily_tokens": 1150,
+            "approx_tasks": 1,
+            "approx_task_failures": 0,
+            "approx_task_success_rate": 1,
+            "zero_token_models": []
+          }
+        },
+        "fixture-free": {
+          "generated_at_ms": 1791973173864,
+          "granularity": "hour",
+          "summary": {
+            "total_calls": 1,
+            "success_calls": 1,
+            "failure_calls": 0,
+            "success_rate": 1,
+            "input_tokens": 500,
+            "output_tokens": 100,
+            "cached_tokens": 400,
+            "cache_read_tokens": 0,
+            "cache_creation_tokens": 0,
+            "cache_hit_rate": 0.8,
+            "reasoning_tokens": 0,
+            "total_tokens": 600,
+            "total_cost": 0,
+            "average_cost_per_call": 0,
+            "average_latency_ms": null,
+            "p95_latency_ms": null,
+            "p95_ttft_ms": null,
+            "zero_token_calls": 0,
+            "rpm_30m": 0,
+            "tpm_30m": 0,
+            "avg_daily_requests": 1,
+            "avg_daily_tokens": 600,
+            "approx_tasks": 1,
+            "approx_task_failures": 0,
+            "approx_task_success_rate": 1,
+            "zero_token_models": []
+          }
+        },
+        "fixture-paid": {
+          "generated_at_ms": 1791973173868,
+          "granularity": "hour",
+          "summary": {
+            "total_calls": 1,
+            "success_calls": 0,
+            "failure_calls": 1,
+            "success_rate": 0,
+            "input_tokens": 100,
+            "output_tokens": 10,
+            "cached_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_creation_tokens": 0,
+            "cache_hit_rate": 0,
+            "reasoning_tokens": 0,
+            "total_tokens": 110,
+            "total_cost": 0.00028000000000000003,
+            "average_cost_per_call": 0.00028000000000000003,
+            "average_latency_ms": null,
+            "p95_latency_ms": null,
+            "p95_ttft_ms": null,
+            "zero_token_calls": 0,
+            "rpm_30m": 0,
+            "tpm_30m": 0,
+            "avg_daily_requests": 1,
+            "avg_daily_tokens": 110,
+            "approx_tasks": 1,
+            "approx_task_failures": 1,
+            "approx_task_success_rate": 0,
+            "zero_token_models": []
+          }
+        }
+      }
+    },
+    "SEM-06": {
+      "metadataContinuity": true,
+      "metadataRows": 4,
+      "sessionRows": 3,
+      "status": "runtime-pass"
+    },
+    "SEM-08": {
+      "devinRevision": 2,
+      "record": {
+        "cache_creation_tokens": 50,
+        "cache_input_mode": "read_included_creation_separate",
+        "cache_read_tokens": 900,
+        "input_tokens": 1000,
+        "normalized_cache_creation_tokens": 50,
+        "normalized_cache_read_tokens": 900,
+        "normalized_total_input_tokens": 1050,
+        "normalized_uncached_input_tokens": 100,
+        "total_tokens": 1150
+      },
+      "status": "runtime-pass"
+    }
+  },
+  "caseID": "RET-01"
+}

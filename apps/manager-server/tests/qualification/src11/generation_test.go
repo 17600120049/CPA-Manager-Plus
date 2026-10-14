@@ -25,6 +25,17 @@ import (
 // No SQL writes or schema constructors generate historical data. The published
 // executable creates the database and handles collector / HTTP inputs itself.
 func TestGenerateExactSource(t *testing.T) {
+	generateExactSource(t, "SRC-11", planCommit, "src-11-full-raw-revision2-v1")
+}
+
+func TestGenerateRET01(t *testing.T) {
+	if os.Getenv("CPAMP_RET01_GENERATE") != "1" {
+		t.Skip("opt-in RET-01 controlled generation")
+	}
+	generateExactSource(t, ret01CaseID, ret01PlanCommit, "ret-01-full-raw-revision2-v1")
+}
+
+func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	if os.Getenv("CPAMP_SRC11_GENERATE") != "1" {
 		t.Skip("opt-in exact historical executable execution")
 	}
@@ -56,6 +67,9 @@ func TestGenerateExactSource(t *testing.T) {
 		t.Fatal("release/source commit binding mismatch")
 	}
 	p, input := loadProfile(t, envRequired(t, "CPAMP_SRC11_PROFILE"))
+	if p.Profile != expectedProfile {
+		t.Fatal("case generation profile mismatch")
+	}
 	code := codeIdentity(t)
 	generation := filepath.Join(root, "source-generation")
 	must(t, os.MkdirAll(generation, 0700))
@@ -248,7 +262,7 @@ func TestGenerateExactSource(t *testing.T) {
 	}
 	migrationState := querySourceState(t, layout.DatabasePath)
 	save(t, generation, "source-snapshot.json", before)
-	record := map[string]any{"caseID": "SRC-11", "SourceRelease": "v1.14.4", "SourceCommit": sourceCommit, "SourceProducerKind": "published-artifact", "SourceProducerArtifact": map[string]any{"immutableReleaseID": 404941931, "assetID": 616064478, "asset": asset, "releaseInfoSHA256": releaseInfoDigest}, "SourceProducerArchiveSHA256": report.ArchiveSHA256, "SourceProducerExecutableSHA256": exeBefore, "SourceProducerBuildCodeCommit": vcsRevision, "GeneratorCodeCommit": code, "PlanCommit": planCommit, "GenerationProfile": p.Profile, "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation", "ControlledInputSHA256": digestBytes(input), "process": map[string]any{"pid": cmd.Process.Pid, "arguments": []string{}, "environment": safeEnvironment(cmd.Env), "startedAt": started.UTC(), "finishedAt": finished.UTC(), "exitCode": cmd.ProcessState.ExitCode(), "reaped": reaped, "queueCalls": queueCalls.Load(), "deliveredPayloads": 5, "expectedUniqueEvents": 4}, "producerBuildIdentity": "producer-build.json", "harnessToolchain": platformIdentity(), "StoppedBeforeCheckpointInventory": preCheckpoint, "SQLite": checks, "GeneratedBundleSHA256": sealed.SourceRevision, "bundleInventory": sealed, "migrationState": migrationState, "sourceVariant": "full raw; no archives and no deletion; cache/quota completed", "generationSuccess": true, "casePass": false, "UpgradeAuthorized": false, "TrustedHopReceipt": false}
+	record := map[string]any{"caseID": caseID, "SourceRelease": "v1.14.4", "SourceCommit": sourceCommit, "SourceProducerKind": "published-artifact", "SourceProducerArtifact": map[string]any{"immutableReleaseID": 404941931, "assetID": 616064478, "asset": asset, "releaseInfoSHA256": releaseInfoDigest}, "SourceProducerArchiveSHA256": report.ArchiveSHA256, "SourceProducerExecutableSHA256": exeBefore, "SourceProducerBuildCodeCommit": vcsRevision, "GeneratorCodeCommit": code, "PlanCommit": plan, "GenerationProfile": p.Profile, "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation", "ControlledInputSHA256": digestBytes(input), "process": map[string]any{"pid": cmd.Process.Pid, "arguments": []string{}, "environment": safeEnvironment(cmd.Env), "startedAt": started.UTC(), "finishedAt": finished.UTC(), "exitCode": cmd.ProcessState.ExitCode(), "reaped": reaped, "queueCalls": queueCalls.Load(), "deliveredPayloads": 5, "expectedUniqueEvents": 4}, "producerBuildIdentity": "producer-build.json", "harnessToolchain": platformIdentity(), "StoppedBeforeCheckpointInventory": preCheckpoint, "SQLite": checks, "GeneratedBundleSHA256": sealed.SourceRevision, "bundleInventory": sealed, "migrationState": migrationState, "sourceVariant": "full raw; no archives and no deletion; cache/quota completed", "generationSuccess": true, "casePass": false, "UpgradeAuthorized": false, "TrustedHopReceipt": false}
 	hashes := map[string]string{}
 	for _, name := range []string{"controlled-input.json", "release-info.json", "producer-build.json", "producer.log", "config-write.json", "price-write.json", "quota-write.json", "v1-analytics.json", "v1-export.jsonl", "source-snapshot.json"} {
 		hashes[name] = fileDigest(t, filepath.Join(generation, name))
@@ -256,7 +270,7 @@ func TestGenerateExactSource(t *testing.T) {
 	record["GenerationEvidenceFiles"] = hashes
 	generationDigest := save(t, generation, "record.json", record)
 	save(t, root, "generation-index.json", map[string]any{"location": "source-generation/record.json", "SHA256": generationDigest, "bundleDigest": sealed.SourceRevision, "generationSuccess": true, "casePass": false})
-	t.Log("source generation succeeded; SRC-11 case remains pending until primitive/SEM verification")
+	t.Log("source generation succeeded; case acceptance remains pending")
 }
 
 func safeEnvironment(env []string) []string {
