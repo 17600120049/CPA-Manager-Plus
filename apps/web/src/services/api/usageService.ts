@@ -168,6 +168,8 @@ export interface AccountProcessingPolicyPatch {
 }
 
 export interface QuotaCooldownInfo {
+  cooldownId?: number;
+  updatedAtMs?: number;
   authFileName: string;
   authIndex?: string;
   accountSnapshot?: string;
@@ -186,6 +188,8 @@ export interface QuotaCooldownsResponse {
 }
 
 export interface QuotaCooldownRecoveryRequest {
+  cooldownId: number;
+  updatedAtMs: number;
   authFileName: string;
   authIndex: string;
   provider: 'codex';

@@ -7124,6 +7124,44 @@ export function AccountsPage() {
 
             let quotaRefreshSuccess = false;
             let quotaHealthy = false;
+            // Pin the cooldown generation before starting the healthy quota
+            // observation. Never replace this token with a later list refresh.
+            let recoveryGeneration: { cooldownId: number; updatedAtMs: number } | null = null;
+            if (
+              wasDisabled &&
+              authIndex &&
+              featureAvailability.managerServiceBase &&
+              managementKey
+            ) {
+              try {
+                const cooldowns = await usageServiceApi.getActiveQuotaCooldowns(
+                  featureAvailability.managerServiceBase,
+                  managementKey
+                );
+                const matches = cooldowns.filter(
+                  (cooldown) =>
+                    cooldown.authFileName === row.fileName &&
+                    cooldown.authIndex === authIndex &&
+                    cooldown.provider === 'codex' &&
+                    cooldown.owner === 'cpamp_usage_429'
+                );
+                const cooldown = matches.length === 1 ? matches[0] : null;
+                if (
+                  cooldown &&
+                  Number.isSafeInteger(cooldown.cooldownId) &&
+                  Number.isSafeInteger(cooldown.updatedAtMs) &&
+                  cooldown.cooldownId! > 0 &&
+                  cooldown.updatedAtMs! > 0
+                ) {
+                  recoveryGeneration = {
+                    cooldownId: cooldown.cooldownId!,
+                    updatedAtMs: cooldown.updatedAtMs!,
+                  };
+                }
+              } catch (error) {
+                console.warn('[Accounts] Failed to pin quota cooldown recovery generation:', error);
+              }
+            }
             try {
               const data = await CODEX_CONFIG.fetchQuota(row.raw, t, authFilesRequestScope);
               const healthState = CODEX_CONFIG.buildSuccessState(data, row.raw);
@@ -7159,6 +7197,7 @@ export function AccountsPage() {
               quotaRefreshSuccess &&
               quotaHealthy &&
               authIndex &&
+              recoveryGeneration &&
               featureAvailability.managerServiceBase &&
               managementKey &&
               isPostMutationVerificationCurrent()
@@ -7171,6 +7210,7 @@ export function AccountsPage() {
                     authFileName: row.fileName,
                     authIndex,
                     provider: 'codex',
+                    ...recoveryGeneration,
                   }
                 );
                 credentialRecoverySuccess = recovery.recovered === true;

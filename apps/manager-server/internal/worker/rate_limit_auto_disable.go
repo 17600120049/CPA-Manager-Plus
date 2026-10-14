@@ -616,6 +616,8 @@ func (w *RateLimitAutoDisableWorker) RecoverOwnedCooldown(
 	authFileName string,
 	authIndex string,
 	provider string,
+	cooldownID int64,
+	updatedAtMS int64,
 ) (bool, error) {
 	if w == nil {
 		return false, errors.New("quota cooldown recovery worker is unavailable")
@@ -623,8 +625,8 @@ func (w *RateLimitAutoDisableWorker) RecoverOwnedCooldown(
 	authFileName = strings.TrimSpace(authFileName)
 	authIndex = strings.TrimSpace(authIndex)
 	provider = normalizeQuotaProvider(provider)
-	if authFileName == "" || authIndex == "" {
-		return false, errors.New("quota cooldown recovery requires auth file name and auth index")
+	if authFileName == "" || authIndex == "" || cooldownID <= 0 || updatedAtMS <= 0 {
+		return false, errors.New("quota cooldown recovery requires credential identity and expected generation")
 	}
 	if provider != "codex" {
 		return false, errors.New("early quota cooldown recovery is only supported for Codex")
@@ -661,6 +663,11 @@ func (w *RateLimitAutoDisableWorker) RecoverOwnedCooldown(
 		matched = item
 	}
 	if matched == nil {
+		return false, nil
+	}
+	// The healthy observation belongs to this exact cooldown generation. A new
+	// 429 can update the same row without changing the credential identity.
+	if matched.ID != cooldownID || matched.UpdatedAtMS != updatedAtMS {
 		return false, nil
 	}
 
@@ -729,6 +736,22 @@ func (w *RateLimitAutoDisableWorker) recoverCooldown(ctx context.Context, baseUR
 		return false, err
 	}
 	defer releaseMutation()
+	// Re-read after acquiring the credential mutation lock as well. Waiting for
+	// another auth-file action must not turn an old generation into enable intent.
+	active, err := w.store.QuotaCooldowns.ListActive(ctx)
+	if err != nil {
+		return false, err
+	}
+	current := false
+	for _, candidate := range active {
+		if candidate.ID == item.ID && candidate.UpdatedAtMS == item.UpdatedAtMS {
+			current = true
+			break
+		}
+	}
+	if !current {
+		return false, nil
+	}
 	target, ok, err := w.currentAuthFileTarget(ctx, baseURL, managementKey, cpaauthfiles.Identity{
 		AuthFileName:      item.AuthFileName,
 		AuthIndex:         authIndex,

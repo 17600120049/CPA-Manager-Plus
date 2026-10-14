@@ -38,7 +38,7 @@ type AutomationRuntimeService interface {
 }
 
 type QuotaCooldownRecoveryService interface {
-	RecoverOwnedCooldown(ctx context.Context, authFileName string, authIndex string, provider string) (bool, error)
+	RecoverOwnedCooldown(ctx context.Context, authFileName string, authIndex string, provider string, cooldownID int64, updatedAtMS int64) (bool, error)
 }
 
 type DatabaseMaintenanceStatusProvider interface {

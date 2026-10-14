@@ -12,6 +12,8 @@ import (
 )
 
 type quotaCooldownRecoveryStub struct {
+	cooldownID   int64
+	updatedAtMS  int64
 	authFileName string
 	authIndex    string
 	provider     string
@@ -24,10 +26,14 @@ func (s *quotaCooldownRecoveryStub) RecoverOwnedCooldown(
 	authFileName string,
 	authIndex string,
 	provider string,
+	cooldownID int64,
+	updatedAtMS int64,
 ) (bool, error) {
 	s.authFileName = authFileName
 	s.authIndex = authIndex
 	s.provider = provider
+	s.cooldownID = cooldownID
+	s.updatedAtMS = updatedAtMS
 	return s.recovered, s.err
 }
 
@@ -61,6 +67,8 @@ func TestServerCompatQuotaCooldownsList(t *testing.T) {
 
 	var resp struct {
 		Items []struct {
+			CooldownID      int64  `json:"cooldownId"`
+			UpdatedAtMs     int64  `json:"updatedAtMs"`
 			AuthFileName    string `json:"authFileName"`
 			AuthIndex       string `json:"authIndex"`
 			AccountSnapshot string `json:"accountSnapshot"`
@@ -87,7 +95,7 @@ func TestServerCompatQuotaCooldownsList(t *testing.T) {
 	if item.AuthFileName != "xai-1.json" || item.AccountSnapshot != "xai-user@example.com" || item.Provider != "xai" || item.Owner != model.QuotaCooldownOwnerXAIFreeUsage {
 		t.Fatalf("item = %#v", item)
 	}
-	if item.RecoverAtMs != now+3_600_000 || item.DisabledAtMs != now || item.CreatedAtMs <= 0 {
+	if item.RecoverAtMs != now+3_600_000 || item.DisabledAtMs != now || item.CreatedAtMs <= 0 || item.CooldownID != persisted.ID || item.UpdatedAtMs != persisted.UpdatedAtMS {
 		t.Fatalf("timestamps = %#v", item)
 	}
 	if item.Evidence.Provider != "xai" || item.Evidence.Actual != 1_024_413 || item.Evidence.Limit != 1_000_000 || item.Evidence.Remaining != 0 || item.Evidence.Overage != 24_413 || !item.Evidence.RecoverAtEstimated {
@@ -116,7 +124,7 @@ func TestServerCompatQuotaCooldownRecoverUsesEventDrivenRecoveryService(t *testi
 		server.Handler(),
 		http.MethodPost,
 		"/usage-service/quota-cooldowns/recover",
-		`{"authFileName":"codex.json","authIndex":"auth-1","provider":"codex"}`,
+		`{"authFileName":"codex.json","authIndex":"auth-1","provider":"codex","cooldownId":1,"updatedAtMs":3000}`,
 		testutil.AdminKey,
 	)
 	testutil.RequireStatus(t, rr, http.StatusOK)
@@ -128,8 +136,24 @@ func TestServerCompatQuotaCooldownRecoverUsesEventDrivenRecoveryService(t *testi
 	if !resp.Recovered {
 		t.Fatal("recovered = false, want true")
 	}
-	if recovery.authFileName != "codex.json" || recovery.authIndex != "auth-1" || recovery.provider != "codex" {
+	if recovery.authFileName != "codex.json" || recovery.authIndex != "auth-1" || recovery.provider != "codex" || recovery.cooldownID != 1 || recovery.updatedAtMS != 3000 {
 		t.Fatalf("recovery request = %#v", recovery)
+	}
+}
+
+func TestServerCompatQuotaCooldownRecoverRejectsMissingGeneration(t *testing.T) {
+	cfg := testutil.NewConfig(t)
+	db := testutil.NewStore(t, cfg)
+	server := New(cfg, db, collector.NewManager(cfg, db))
+	recovery := &quotaCooldownRecoveryStub{recovered: true}
+	server.AppContext().QuotaCooldownRecoveryService = recovery
+	for _, generation := range []string{"", `,"cooldownId":1`, `,"cooldownId":1,"updatedAtMs":0`} {
+		rr := testutil.Request(t, server.Handler(), http.MethodPost, "/usage-service/quota-cooldowns/recover",
+			`{"authFileName":"codex.json","authIndex":"auth-1","provider":"codex"`+generation+`}`, testutil.AdminKey)
+		testutil.RequireStatus(t, rr, http.StatusBadRequest)
+	}
+	if recovery.authFileName != "" {
+		t.Fatal("missing generation invoked mutation service")
 	}
 }
 

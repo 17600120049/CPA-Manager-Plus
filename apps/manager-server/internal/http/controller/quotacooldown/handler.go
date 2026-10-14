@@ -21,6 +21,8 @@ type Handler struct {
 // snapshot is included only as the credential discriminator required to avoid
 // assigning one shared-file cooldown to a sibling account.
 type cooldownItem struct {
+	CooldownID      int64                        `json:"cooldownId"`
+	UpdatedAtMs     int64                        `json:"updatedAtMs"`
 	AuthFileName    string                       `json:"authFileName"`
 	AuthIndex       string                       `json:"authIndex"`
 	AccountSnapshot string                       `json:"accountSnapshot,omitempty"`
@@ -38,10 +40,8 @@ type listResponse struct {
 	Items []cooldownItem `json:"items"`
 }
 
-// Handle exposes the currently active quota cooldowns so the panel can show a
-// derived "CPAMP cooldown in progress" hint next to the affected auth files.
-// It is read-only and never modifies cooldown ownership or the native CPA
-// disabled state.
+// Handle exposes the read-only active cooldown list and generation-bound,
+// event-driven recovery for CPAMP-owned Codex cooldowns.
 func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
@@ -87,6 +87,8 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 type recoverRequest struct {
+	CooldownID   int64  `json:"cooldownId"`
+	UpdatedAtMs  int64  `json:"updatedAtMs"`
 	AuthFileName string `json:"authFileName"`
 	AuthIndex    string `json:"authIndex"`
 	Provider     string `json:"provider"`
@@ -105,9 +107,9 @@ func (h *Handler) handleRecover(w http.ResponseWriter, r *http.Request) {
 	req.AuthFileName = strings.TrimSpace(req.AuthFileName)
 	req.AuthIndex = strings.TrimSpace(req.AuthIndex)
 	req.Provider = strings.ToLower(strings.TrimSpace(req.Provider))
-	if req.AuthFileName == "" || req.AuthIndex == "" || req.Provider != "codex" {
+	if req.AuthFileName == "" || req.AuthIndex == "" || req.Provider != "codex" || req.CooldownID <= 0 || req.UpdatedAtMs <= 0 {
 		response.JSON(w, http.StatusBadRequest, map[string]string{
-			"error": "authFileName, authIndex, and provider=codex are required",
+			"error": "authFileName, authIndex, provider=codex, cooldownId, and updatedAtMs are required",
 		})
 		return
 	}
@@ -122,6 +124,8 @@ func (h *Handler) handleRecover(w http.ResponseWriter, r *http.Request) {
 		req.AuthFileName,
 		req.AuthIndex,
 		req.Provider,
+		req.CooldownID,
+		req.UpdatedAtMs,
 	)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err)
@@ -131,6 +135,8 @@ func (h *Handler) handleRecover(w http.ResponseWriter, r *http.Request) {
 }
 func mapCooldown(c model.QuotaCooldown) cooldownItem {
 	return cooldownItem{
+		CooldownID:      c.ID,
+		UpdatedAtMs:     c.UpdatedAtMS,
 		AuthFileName:    c.AuthFileName,
 		AuthIndex:       c.AuthIndex,
 		AccountSnapshot: c.AccountSnapshot,

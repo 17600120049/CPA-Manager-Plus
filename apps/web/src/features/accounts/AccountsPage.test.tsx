@@ -14520,6 +14520,17 @@ describe('AccountsPage replacement flows', () => {
       disabled: true,
     };
     mocks.files = [file];
+    mocks.getActiveQuotaCooldowns.mockResolvedValue([
+      {
+        authFileName: file.name,
+        authIndex: 'auth-recovery-1',
+        provider: 'codex',
+        owner: 'cpamp_usage_429',
+        recoverAtMs: Date.now() + 3600000,
+        cooldownId: 42,
+        updatedAtMs: 3000,
+      },
+    ]);
     mocks.quotaState.codexQuota = buildCredentialScopedQuotaRecord(file, {
       status: 'success' as const,
       windows: [],
@@ -14563,6 +14574,8 @@ describe('AccountsPage replacement flows', () => {
         authFileName: 'codex-disabled-recovery.json',
         authIndex: 'auth-recovery-1',
         provider: 'codex',
+        cooldownId: 42,
+        updatedAtMs: 3000,
       }
     );
     expect(mocks.resetQuota).toHaveBeenCalledWith(
@@ -14578,55 +14591,91 @@ describe('AccountsPage replacement flows', () => {
     );
   });
 
-  it('keeps disabled credentials fail-closed when CPAMP-owned recovery is not confirmed', async () => {
-    const file = {
-      ...makeCodexFile('codex-disabled-unconfirmed.json', 'auth-unconfirmed-1', 'unconfirmed@example.com'),
-      disabled: true,
-    };
-    mocks.files = [file];
-    mocks.quotaState.codexQuota = buildCredentialScopedQuotaRecord(file, {
-      status: 'success' as const,
-      windows: [],
-      rateLimitResetCreditsAvailableCount: 1,
-    });
-    mocks.recoverQuotaCooldown.mockResolvedValueOnce({ recovered: false });
-    vi.spyOn(CODEX_SUMMARY_CONFIG, 'fetchQuota').mockResolvedValue(
-      makeCodexQuotaData(1, [makeResetCredit('unconfirmed-credit-1')])
-    );
-    vi.spyOn(CODEX_CONFIG, 'fetchQuota').mockResolvedValue({
-      ...makeCodexQuotaData(0),
-      windows: [
-        {
-          id: 'five-hour',
-          label: '5h',
-          usedPercent: 20,
-          resetLabel: 'later',
-          resetAtMs: Date.now() + 60 * 60 * 1000,
-        },
-      ],
-    });
+  it.each(['changed generation', 'missing generation'])(
+    'keeps disabled credentials fail-closed with %s after quota verification',
+    async (scenario) => {
+      const file = {
+        ...makeCodexFile(
+          'codex-disabled-unconfirmed.json',
+          'auth-unconfirmed-1',
+          'unconfirmed@example.com'
+        ),
+        disabled: true,
+      };
+      mocks.files = [file];
+      const cooldown: QuotaCooldownInfo = {
+        authFileName: file.name,
+        authIndex: 'auth-unconfirmed-1',
+        provider: 'codex',
+        owner: 'cpamp_usage_429',
+        recoverAtMs: Date.now() + 3600000,
+        ...(scenario === 'changed generation' ? { cooldownId: 42, updatedAtMs: 3000 } : {}),
+      };
+      mocks.getActiveQuotaCooldowns.mockResolvedValue([cooldown]);
+      mocks.quotaState.codexQuota = buildCredentialScopedQuotaRecord(file, {
+        status: 'success' as const,
+        windows: [],
+        rateLimitResetCreditsAvailableCount: 1,
+      });
+      mocks.recoverQuotaCooldown.mockResolvedValueOnce({ recovered: false });
+      vi.spyOn(CODEX_SUMMARY_CONFIG, 'fetchQuota').mockResolvedValue(
+        makeCodexQuotaData(1, [makeResetCredit('unconfirmed-credit-1')])
+      );
+      vi.spyOn(CODEX_CONFIG, 'fetchQuota').mockImplementation(async () => {
+        // A new 429 updates even the in-memory object while verification is in
+        // flight. The recovery request must retain the pre-observation token.
+        if (scenario === 'changed generation') cooldown.updatedAtMs = 4000;
+        return {
+          ...makeCodexQuotaData(0),
+          windows: [
+            {
+              id: 'five-hour',
+              label: '5h',
+              usedPercent: 20,
+              resetLabel: 'later',
+              resetAtMs: Date.now() + 60 * 60 * 1000,
+            },
+          ],
+        };
+      });
 
-    const renderer = await renderAccountsPage();
-    await openCodexQuotaTab(renderer, 'codex-disabled-unconfirmed.json');
-    await act(async () => {
-      renderer.root.findByProps({ 'data-quota-reset-action': 'true' }).props.onClick();
-    });
-    await flushPromises();
-    const confirmation = mocks.showConfirmation.mock.calls[0]?.[0] as {
-      onConfirm: () => Promise<void>;
-    };
-    await act(async () => {
-      await confirmation.onConfirm();
-    });
-    await flushPromises();
+      const renderer = await renderAccountsPage();
+      await openCodexQuotaTab(renderer, 'codex-disabled-unconfirmed.json');
+      await act(async () => {
+        renderer.root.findByProps({ 'data-quota-reset-action': 'true' }).props.onClick();
+      });
+      await flushPromises();
+      const confirmation = mocks.showConfirmation.mock.calls[0]?.[0] as {
+        onConfirm: () => Promise<void>;
+      };
+      await act(async () => {
+        await confirmation.onConfirm();
+      });
+      await flushPromises();
 
-    expect(mocks.recoverQuotaCooldown).toHaveBeenCalledTimes(1);
-    expect(mocks.resetQuota).not.toHaveBeenCalled();
-    expect(mocks.showNotification).toHaveBeenCalledWith(
-      'codex_quota.reset_partial_success:unconfirmed@example.com',
-      'warning'
-    );
-  });
+      expect(mocks.recoverQuotaCooldown).toHaveBeenCalledTimes(
+        scenario === 'changed generation' ? 1 : 0
+      );
+      if (scenario === 'changed generation') {
+        expect(mocks.recoverQuotaCooldown).toHaveBeenCalledWith(
+          'http://manager.local:18317',
+          'manager-key',
+          {
+            authFileName: file.name,
+            authIndex: 'auth-unconfirmed-1',
+            provider: 'codex',
+            cooldownId: 42,
+            updatedAtMs: 3000,
+          }
+        );
+      }
+      expect(mocks.resetQuota).not.toHaveBeenCalled();
+      expect(mocks.showNotification).toHaveBeenCalledWith(
+        'codex_quota.reset_partial_success:unconfirmed@example.com',
+        'warning'
+      );
+    }
+  );
 
   it('does not reset gateway cooldown on normal healthy quota refresh', async () => {
     const file = makeCodexFile('codex-healthy.json', 'auth-healthy-1', 'healthy@example.com');

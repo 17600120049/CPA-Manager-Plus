@@ -1799,7 +1799,11 @@ func TestRateLimitAutoDisableWorkerEarlyRecoveryIsEventDriven(t *testing.T) {
 		CPAUpstreamURL: server.URL,
 		ManagementKey:  "mgmt",
 	})
-	recovered, err := worker.RecoverOwnedCooldown(ctx, "codex-auth.json", "auth-1", "codex")
+	verified, err := st.QuotaCooldowns.ListActive(ctx)
+	if err != nil || len(verified) != 1 {
+		t.Fatalf("read recovery generation: %v, %#v", err, verified)
+	}
+	recovered, err := worker.RecoverOwnedCooldown(ctx, "codex-auth.json", "auth-1", "codex", verified[0].ID, verified[0].UpdatedAtMS)
 	if err != nil {
 		t.Fatalf("early recover: %v", err)
 	}
@@ -1816,6 +1820,121 @@ func TestRateLimitAutoDisableWorkerEarlyRecoveryIsEventDriven(t *testing.T) {
 	if len(active) != 0 {
 		t.Fatalf("active cooldowns = %#v, want recovered", active)
 	}
+}
+
+func TestRateLimitAutoDisableWorkerEarlyRecoveryRejectsNew429Generation(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	upsert := store.QuotaCooldownUpsert{
+		AuthFileName: "codex-auth.json", AuthIndex: "auth-1", Provider: "codex",
+		AccountSnapshot: "alice@example.com",
+		EvidenceJSON:    codexCooldownIdentityEvidenceJSON("workspace-1", "alice@example.com"),
+		Owner:           model.QuotaCooldownOwnerUsage429,
+		RecoverAtMS:     time.Now().Add(time.Hour).UnixMilli(), EventHash: "old-429",
+	}
+	verified, err := st.UpsertQuotaCooldown(ctx, upsert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The one-shot healthy observation has completed for verified. A new 429
+	// arrives before the recovery request acquires operationMu.
+	upsert.EventHash = "new-429"
+	upsert.RecoverAtMS += 3600000
+	current, err := st.UpsertQuotaCooldown(ctx, upsert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ID != verified.ID || current.UpdatedAtMS <= verified.UpdatedAtMS {
+		t.Fatalf("new generation not advanced: old=%+v new=%+v", verified, current)
+	}
+	patchCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			patchCalls++
+		}
+		http.Error(w, "stale recovery must not contact CPA", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	worker := NewRateLimitAutoDisableWorker(st, collectorpkg.RuntimeConfig{
+		CPAUpstreamURL: server.URL, ManagementKey: "mgmt",
+	})
+	for _, generation := range [][2]int64{
+		{verified.ID, verified.UpdatedAtMS},
+		{verified.ID + 1, current.UpdatedAtMS},
+	} {
+		recovered, err := worker.RecoverOwnedCooldown(ctx, "codex-auth.json", "auth-1", "codex", generation[0], generation[1])
+		if err != nil || recovered {
+			t.Fatalf("stale recovery = %v, %v", recovered, err)
+		}
+	}
+	active, err := st.QuotaCooldowns.ListActive(ctx)
+	if err != nil || len(active) != 1 || active[0] != current || patchCalls != 0 {
+		t.Fatalf("new cooldown changed: active=%+v err=%v patchCalls=%d", active, err, patchCalls)
+	}
+
+	// Also force the update after the first active-list snapshot, but before
+	// recovery takes the credential mutation lock. The second read must fence it.
+	read, resume := make(chan struct{}), make(chan struct{})
+	st.QuotaCooldowns = &pausedActiveQuotaCooldownRepository{
+		Repository: st.QuotaCooldowns, read: read, resume: resume,
+	}
+	result := make(chan struct {
+		recovered bool
+		err       error
+	}, 1)
+	go func() {
+		recovered, err := worker.RecoverOwnedCooldown(ctx, "codex-auth.json", "auth-1", "codex", current.ID, current.UpdatedAtMS)
+		result <- struct {
+			recovered bool
+			err       error
+		}{recovered, err}
+	}()
+	select {
+	case <-read:
+	case <-time.After(5 * time.Second):
+		close(resume)
+		t.Fatal("recovery did not capture the initial generation")
+	}
+	upsert.EventHash = "concurrent-new-429"
+	upsert.RecoverAtMS += 3600000
+	latest, upsertErr := st.UpsertQuotaCooldown(ctx, upsert)
+	close(resume)
+	if upsertErr != nil {
+		t.Fatal(upsertErr)
+	}
+	select {
+	case outcome := <-result:
+		if outcome.err != nil || outcome.recovered {
+			t.Fatalf("late generation recovery = %+v", outcome)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("recovery did not finish")
+	}
+	active, err = st.QuotaCooldowns.ListActive(ctx)
+	if err != nil || len(active) != 1 || active[0] != latest || patchCalls != 0 {
+		t.Fatalf("concurrent cooldown changed: active=%+v err=%v patchCalls=%d", active, err, patchCalls)
+	}
+}
+
+type pausedActiveQuotaCooldownRepository struct {
+	quotacooldownrepo.Repository
+	read   chan struct{}
+	resume chan struct{}
+	paused bool
+}
+
+func (r *pausedActiveQuotaCooldownRepository) ListActive(ctx context.Context) ([]model.QuotaCooldown, error) {
+	items, err := r.Repository.ListActive(ctx)
+	if !r.paused {
+		r.paused = true
+		close(r.read)
+		<-r.resume
+	}
+	return items, err
 }
 
 func TestRateLimitAutoDisableWorkerEarlyRecoveryDoesNotEnablePreDisabledCredential(t *testing.T) {
@@ -1856,6 +1975,8 @@ func TestRateLimitAutoDisableWorkerEarlyRecoveryDoesNotEnablePreDisabledCredenti
 		"manual-disabled.json",
 		"auth-manual",
 		"codex",
+		1,
+		now.UnixMilli(),
 	)
 	if err != nil {
 		t.Fatalf("early recover: %v", err)
