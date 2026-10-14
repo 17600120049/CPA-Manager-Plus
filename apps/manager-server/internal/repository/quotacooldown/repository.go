@@ -119,7 +119,7 @@ func (r *repository) UpsertActive(ctx context.Context, cooldown model.QuotaCoold
 			status = ?,
 			recovered_at_ms = ?,
 			last_error = null,
-			updated_at_ms = ?
+			updated_at_ms = max(updated_at_ms + 1, ?)
 			where id = ? and status = ?`,
 			model.QuotaCooldownStatusRecovered,
 			cooldown.ObservedEnabledAtMS,
@@ -185,7 +185,7 @@ func (r *repository) UpsertActive(ctx context.Context, cooldown model.QuotaCoold
 			end,
 			disabled_at_ms = min(disabled_at_ms, ?),
 			last_error = null,
-			updated_at_ms = ?
+			updated_at_ms = max(updated_at_ms + 1, ?)
 		where id = ?`,
 			nullString(cooldown.AuthIndex),
 			nullString(cooldown.AccountSnapshot),
@@ -302,7 +302,7 @@ func (r *repository) MarkSkipped(ctx context.Context, id int64, reason string) e
 
 func (r *repository) RecordFailure(ctx context.Context, id int64, reason string) error {
 	now := time.Now().UnixMilli()
-	_, err := r.db.ExecContext(ctx, `update quota_cooldowns set last_error = ?, updated_at_ms = ? where id = ? and status = ?`, nullString(reason), now, id, model.QuotaCooldownStatusActive)
+	_, err := r.db.ExecContext(ctx, `update quota_cooldowns set last_error = ?, updated_at_ms = max(updated_at_ms + 1, ?) where id = ? and status = ?`, nullString(reason), now, id, model.QuotaCooldownStatusActive)
 	return err
 }
 

@@ -156,7 +156,7 @@ describe('getCodexQuotaStoreKey', () => {
       expect(nextState.resetCreditsDetailStale).toBe(true);
     });
 
-    it('clears credits and detail evidence when full refresh receives count=0 without credits', () => {
+    it('clears displayed credits but preserves historical detail evidence when a newer dedicated count-only observation reports zero', () => {
       const currentState: CodexQuotaState = {
         status: 'success',
         windows: [],
@@ -187,7 +187,7 @@ describe('getCodexQuotaStoreKey', () => {
       expect(nextState.rateLimitResetCreditsAvailableCount).toBe(0);
       expect(nextState.resetCreditsCountEvidenceAtMs).toBe(2_000);
       expect(nextState.rateLimitResetCredits).toEqual([]);
-      expect(nextState.resetCreditsDetailEvidenceAtMs).toBeNull();
+      expect(nextState.resetCreditsDetailEvidenceAtMs).toBe(1_000);
       expect(nextState.resetCreditsDetailStale).toBe(false);
     });
 
