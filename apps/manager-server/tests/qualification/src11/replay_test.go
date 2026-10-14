@@ -118,7 +118,8 @@ func TestReplayExactSource(t *testing.T) {
 	}
 	must(t, os.MkdirAll(output, 0700))
 	// Restore into a NEW task-owned root. Never open/migrate the sealed fixture.
-	restored, e := maintenancebundle.RestoreNew(ctx, filepath.Join(root, "bundle"), filepath.Join(t.TempDir(), "replay"))
+	replayRoot := taskScratch(t, output, "replay-")
+	restored, e := maintenancebundle.RestoreNew(ctx, filepath.Join(root, "bundle"), replayRoot)
 	must(t, e)
 	restoredBefore, e := maintenancebundle.Inspect(ctx, restored)
 	must(t, e)
@@ -325,19 +326,20 @@ func TestReplayExactSource(t *testing.T) {
 	backup, e := maintenancebundle.Create(ctx, restored, filepath.Join(output, "retention-backup"), lock)
 	must(t, e)
 	must(t, lock.Close())
-	_, e = maintenancebundle.RestoreNew(ctx, filepath.Join(output, "retention-backup"), filepath.Join(t.TempDir(), "retention-restore"))
+	retentionRestore := taskScratch(t, output, "retention-restore-")
+	_, e = maintenancebundle.RestoreNew(ctx, filepath.Join(output, "retention-backup"), retentionRestore)
 	must(t, e)
 	// Wrong key, modified archive and added sidecars must not pass revalidation.
-	testTamperedInventory(t, root)
+	testTamperedInventory(t, root, output)
 	sameInventory(t, sealed, inventory(t, filepath.Join(root, "bundle")))
 	revalidate(t, root, envRequired(t, "CPAMP_SRC11_ARCHIVE"))
 	save(t, output, "result.json", map[string]any{"caseID": "SRC-11", "runtimeAssertions": "pass", "independentAcceptance": "pending", "SourceGeneratorCodeCommit": r.GeneratorCodeCommit, "VerifierCodeCommit": code, "SourceBundleDigest": sealed.SourceRevision, "BeforeDigest": restoredBefore.SourceRevision, "AfterDigest": afterMigration.SourceRevision, "SourceAfterDigest": inventory(t, filepath.Join(root, "bundle")).SourceRevision, "sourceGenerationRecordSHA256": fileDigest(t, filepath.Join(root, "source-generation", "record.json")), "migrationStates": states, "SQLite": checks, "retentionBackupDigest": backup.SourceRevision, "platform": platformIdentity(), "UpgradeAuthorized": false, "TrustedHopReceipt": false, "other48Cases": "pending", "Phase4A07Complete": false, "Phase4AComplete": false})
 }
 
-func testTamperedInventory(t *testing.T, root string) {
+func testTamperedInventory(t *testing.T, root, scratchParent string) {
 	t.Helper()
 	ctx := context.Background()
-	l, e := maintenancebundle.RestoreNew(ctx, filepath.Join(root, "bundle"), filepath.Join(t.TempDir(), "tamper"))
+	l, e := maintenancebundle.RestoreNew(ctx, filepath.Join(root, "bundle"), taskScratch(t, scratchParent, "tamper-"))
 	must(t, e)
 	baseline, e := maintenancebundle.Inspect(ctx, l)
 	must(t, e)
@@ -352,4 +354,12 @@ func testTamperedInventory(t *testing.T, root string) {
 	if maintenancebundle.ValidateMatchingEvidence(ctx, l) == nil {
 		t.Fatal("nonempty journal accepted")
 	}
+}
+
+func taskScratch(t *testing.T, parent, pattern string) string {
+	t.Helper()
+	path, err := os.MkdirTemp(parent, pattern)
+	must(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+	return path
 }
