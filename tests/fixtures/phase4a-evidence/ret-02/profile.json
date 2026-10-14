@@ -2,24 +2,24 @@
   "profile": "ret-02-archived-raw-retained-v1",
   "events": [
     {
-      "request_id": "ret02-devin-mixed",
+      "request_id": "ret02-codex-cached",
       "timestamp": "2026-10-01T00:00:00Z",
-      "provider": "devin",
-      "executor_type": "DevinExecutor",
-      "model": "devin/swe-2",
+      "provider": "codex",
+      "executor_type": "CodexExecutor",
+      "model": "fixture-archive-cached",
       "session_id": "ret02-session",
       "parent_session_id": "ret02-parent",
-      "auth_index": "fixture-devin",
-      "auth_file_snapshot": "fixture-devin.json",
-      "auth_provider_snapshot": "devin",
-      "account_snapshot": "fixture-devin@example.invalid",
+      "auth_index": "fixture-codex",
+      "auth_file_snapshot": "fixture-codex.json",
+      "auth_provider_snapshot": "codex",
+      "account_snapshot": "fixture-codex@example.invalid",
       "tokens": {
         "input_tokens": 1000,
         "output_tokens": 100,
         "cached_tokens": 900,
         "cache_read_tokens": 900,
-        "cache_creation_tokens": 50,
-        "total_tokens": 1150
+        "cache_creation_tokens": 0,
+        "total_tokens": 1100
       },
       "response_headers": {
         "X-Request-Id": [
@@ -33,9 +33,9 @@
         ]
       },
       "api_key": "sk-qualification-redaction-sentinel",
-      "response_model": "devin/swe-2",
-      "requested_model": "devin/swe-2",
-      "resolved_model": "devin/swe-2",
+      "response_model": "fixture-archive-cached",
+      "requested_model": "fixture-archive-cached",
+      "resolved_model": "fixture-archive-cached",
       "endpoint": "responses",
       "method": "POST",
       "path": "/v1/responses",
@@ -43,7 +43,8 @@
       "stream": true,
       "generate": true,
       "latency_ms": 125,
-      "ttft_ms": 25
+      "ttft_ms": 25,
+      "cache_input_mode": "included_in_input"
     },
     {
       "request_id": "ret02-claude-tier",
@@ -140,18 +141,6 @@
     }
   ],
   "prices": {
-    "devin/swe-2": {
-      "prompt": 3,
-      "completion": 15,
-      "cache": 0.3,
-      "cacheRead": 0.3,
-      "cacheCreation": 3.75,
-      "promptConfigured": true,
-      "completionConfigured": true,
-      "cacheReadConfigured": true,
-      "cacheCreationConfigured": true,
-      "source": "manual"
-    },
     "claude-fixture": {
       "prompt": 3,
       "completion": 15,
@@ -198,6 +187,18 @@
       "promptConfigured": true,
       "completionConfigured": true,
       "source": "manual"
+    },
+    "fixture-archive-cached": {
+      "prompt": 3,
+      "completion": 15,
+      "cache": 0.3,
+      "cacheRead": 0.3,
+      "cacheCreation": 3.75,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "cacheReadConfigured": true,
+      "cacheCreationConfigured": true,
+      "source": "manual"
     }
   },
   "quota": {
@@ -239,9 +240,9 @@
   "fromMS": 1790812800000,
   "toMS": 1790899200000,
   "expectedUSD": {
-    "devin/swe-2": 0.0022575,
     "claude-fixture": 0.015435,
     "fixture-free": 0,
-    "fixture-paid": 0.00028
+    "fixture-paid": 0.00028,
+    "fixture-archive-cached": 0.00207
   }
 }
