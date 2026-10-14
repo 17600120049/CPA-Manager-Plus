@@ -5,9 +5,10 @@ on:
     branches: [v2]
     paths:
       - '.github/workflows/qualification-aut03.yml'
-      - 'bin/qualification/materialize-src11.py'
-      - 'bin/qualification/test_materialize_src11.py'
-      - 'apps/manager-server/internal/service/legacyartifact/**'
+      - 'bin/qualification/**'
+      - 'apps/manager-server/internal/**'
+      - 'apps/manager-server/go.mod'
+      - 'apps/manager-server/go.sum'
       - 'tests/fixtures/phase4a-evidence/src-11/**'
       - 'tests/fixtures/phase4a-evidence/aut-03/**'
 
@@ -48,26 +49,19 @@ jobs:
         run: |
           export CPAMP_SRC11_SEALED_ARCHIVE="$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz"
           python -m unittest discover -s bin/qualification -p 'test_*.py' -v
-          python bin/qualification/materialize-src11.py \
-            --archive "$CPAMP_SRC11_SEALED_ARCHIVE" \
-            --output "$RUNNER_TEMP/src11-original"
       - name: Run AUT-03 real mutation matrix
-        working-directory: apps/manager-server
         shell: bash
-        env:
-          CPAMP_AUT03_ARCHIVE: ${{ runner.temp }}/src11-original/producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz
-          CPAMP_AUT03_ASSET: cpa-manager-plus_v1.14.4_linux_amd64.tar.gz
-          CPAMP_AUT03_INPUT_BUNDLE: ${{ runner.temp }}/src11-original/src-11/bundle
-          CPAMP_AUT03_CODE_COMMIT: ${{ github.sha }}
-          CPAMP_AUT03_EVIDENCE: ${{ runner.temp }}/aut-03/evidence.json
         run: |
-          go test ./internal/service/legacyartifact \
-            -run '^TestAUT03Qualification$' -count=1 -timeout 10m
+          python bin/qualification/run-aut03.py \
+            --sealed-archive "$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz" \
+            --output "$RUNNER_TEMP/aut-03"
       - name: Upload AUT-03 runtime evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: aut03-runtime-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/aut-03/evidence.json
-          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/aut-03/*.json
+            ${{ runner.temp }}/aut-03/*.log
+          if-no-files-found: error
           retention-days: 14

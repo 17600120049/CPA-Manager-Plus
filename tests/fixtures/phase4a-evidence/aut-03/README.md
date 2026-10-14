@@ -15,6 +15,14 @@ AUT-03 is the Phase4A-07 Lane A direct-candidate case from Plan main
 - authority: this is diagnostic qualification evidence only. It never creates a
   trusted hop receipt or `UpgradeAuthorized=true`.
 
+Plan's frozen `reject / ErrUnverified` is the case-level artifact-integrity
+rejection description. This harness records the production stage-specific
+typed errors without changing them: archive rejection is `ErrUnverified`,
+executable rejection is `ErrExecutableMismatch`. These are not Go error aliases
+(`errors.Is(ErrExecutableMismatch, ErrUnverified)` is not asserted). This typed
+refinement is explicit for the subsequent independent acceptance/Plan closeout;
+no independent acceptance or Plan amendment is performed by this PR.
+
 The executable harness is
 `apps/manager-server/internal/service/legacyartifact/aut03_qualification_test.go`.
 It consumes the existing deployment-owned artifact pins and existing offline
@@ -37,10 +45,47 @@ record-byte consistency checking:
 | v1.14.4 archive claimed as v1.14.5 | release/source identity rejects |
 | sealed input manifest digest replacement | existing offline input preflight rejects before workspace creation; this is a boundary control, not AUT-05 qualification |
 
-The manifest/inventory, missing/extra file, unsafe path, symlink/hardlink and
-duplicate-member cases remain owned by the existing sealed materializer and
-artifact-parser tests. They are referenced by the AUT-03 runtime evidence and
-are not copied or reclassified as AUT-03 authority qualification.
+The materializer verifies the entire inventory on the real trusted input.
+Its existing adversarial tests exercise outer-digest mismatch, unsafe paths,
+links, duplicates and preserving existing output; they do not separately mutate
+every missing/extra/replaced inventory member. Those categories are not claimed
+as additional AUT-03 runtime mutations or authority qualification.
+
+The workspace parent uses the existing `testTempDir` private-storage helper.
+The real trusted archive verifies and extracts successfully; its executable
+also passes sealed memfd preparation, which is closed without launching it.
+A `RunOfflineCleanup` precondition control uses the real SRC-11 sealed bundle,
+the same private parent, manifest digest and timeout as the altered-archive run.
+It must pass artifact/bundle validation and reach real sealed launch, child
+exit zero and reap, proving that the same parameters do not hit the earlier
+`ErrOfflineInputs` or `ErrUnverified`. The **later post-launch source
+revalidation** returns `ErrInvalidSource`, nil observation and a durable
+`failed` control operation, with no sealed output. These actual control results
+are recorded separately; this is not a successful cleanup or source
+qualification. Full cleanup/source compatibility is outside AUT-03 and the
+production error/recovery behavior is unchanged, never converted to warning.
+Only archive bytes differ for the altered-archive run; its observation must be
+nil and error must be `ErrUnverified`, never an earlier `ErrOfflineInputs`.
+All **mutation** workspaces/output must remain absent. Final directory inventory
+must contain only the isolated failed control and deliberate mutation/extraction
+files; the sealed source and its parent inventory/modes must remain unchanged.
+The failed control is retained under the existing diagnostic failure contract
+until disposable test workspace cleanup, never mislabeled as a successful
+operation, trusted receipt or upgrade grant.
+
+## Code provenance
+
+The old evidence in `8e015ce7` bound `testedCommit` to the base without this
+harness and is withdrawn, not corrected by editing its SHA. Schema v2 separates
+the product identity (`trustedInput.sourceCommit`, the immutable v1.14.4
+producer) from `qualificationHarnessCommit`, `testedTree` and `harnessSHA256`.
+The runner rejects dirty runtime source, pins, workflow or harness, and embeds
+these values in the test binary at build time. Runtime environment claims
+cannot override them. `runner-evidence.json` separately records source-file,
+binary, input and log digests plus the actual commands. Formal evidence is
+generated only after the harness commit; an evidence-only follow-up commit
+does not change what code was actually tested. CI records its actual checkout
+merge commit/tree, not an assumed PR head.
 
 ## Re-run from a clean checkout
 
@@ -54,21 +99,17 @@ gh release download qualification-src11-0e106589baef-20261014 \
   --pattern src-11-0e106589baef-sealed-evidence.tar.gz --dir <scratch>
 export CPAMP_SRC11_SEALED_ARCHIVE=<scratch>/src-11-0e106589baef-sealed-evidence.tar.gz
 python3 -m unittest discover -s bin/qualification -p 'test_*.py' -v
-python3 bin/qualification/materialize-src11.py \
-  --archive <scratch>/src-11-0e106589baef-sealed-evidence.tar.gz \
-  --output <scratch>/src11-original
-
-mkdir -p <scratch>/aut-03
-(
-  cd apps/manager-server
-  CPAMP_AUT03_ARCHIVE=<scratch>/src11-original/producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz \
-  CPAMP_AUT03_ASSET=cpa-manager-plus_v1.14.4_linux_amd64.tar.gz \
-  CPAMP_AUT03_INPUT_BUNDLE=<scratch>/src11-original/src-11/bundle \
-  CPAMP_AUT03_CODE_COMMIT="$(git rev-parse HEAD)" \
-  CPAMP_AUT03_EVIDENCE=<scratch>/aut-03/evidence.json \
-  go test ./internal/service/legacyartifact -run '^TestAUT03Qualification$' -count=1 -timeout 10m
-)
+python3 bin/qualification/run-aut03.py \
+  --sealed-archive <scratch>/src-11-0e106589baef-sealed-evidence.tar.gz \
+  --output <scratch>/aut-03
 ```
+
+On non-Linux hosts add `--linux` to run the cross-built test in the existing
+pinned isolated Linux AMD64 image from `run-src11.py`. The sealed bundle and
+executable inputs are read-only mounts; their disposable materialized parent
+allows the primitive's temporary inspection copy. Output must be absent.
+CI path filters cover all Manager internal transitive dependencies and Go
+module changes; this adds no duplicate full-repository workflow.
 
 The generated `evidence.json` has `runtimeAssertions=pass`,
 `casePass=true`, and `independentAcceptance=pending` when all runtime

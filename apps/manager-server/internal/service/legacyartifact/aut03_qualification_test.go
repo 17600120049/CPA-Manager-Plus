@@ -30,23 +30,53 @@ const (
 	aut03ProducerAssetID      = 616064478
 )
 
+// Embedded by the committed-source runner, never taken from runtime claims.
+var aut03HarnessCommit, aut03TestedTree, aut03HarnessSHA256 string
+
 type aut03Evidence struct {
-	SchemaVersion         int                      `json:"schemaVersion"`
-	CaseID                string                   `json:"caseID"`
-	PlanCommit            string                   `json:"planCommit"`
-	TestedCommit          string                   `json:"testedCommit"`
-	Lane                  string                   `json:"lane"`
-	Contract              aut03Contract            `json:"contract"`
-	TrustedInput          aut03TrustedInput        `json:"trustedInput"`
-	Mutations             []aut03Mutation          `json:"mutations"`
-	ExistingCoverage      []aut03CoverageReference `json:"existingCoverage"`
-	RuntimeAssertions     string                   `json:"runtimeAssertions"`
-	CasePass              bool                     `json:"casePass"`
-	IndependentAcceptance string                   `json:"independentAcceptance"`
-	UpgradeAuthorized     bool                     `json:"UpgradeAuthorized"`
-	TrustedHopReceipt     bool                     `json:"TrustedHopReceipt"`
-	Phase4A07Complete     bool                     `json:"Phase4A07Complete"`
-	Phase4AComplete       bool                     `json:"Phase4AComplete"`
+	SchemaVersion                      int                      `json:"schemaVersion"`
+	CaseID                             string                   `json:"caseID"`
+	PlanCommit                         string                   `json:"planCommit"`
+	QualificationHarnessCommit         string                   `json:"qualificationHarnessCommit"`
+	TestedTree                         string                   `json:"testedTree"`
+	HarnessSHA256                      string                   `json:"harnessSHA256"`
+	RuntimePlatform                    string                   `json:"runtimePlatform"`
+	Control                            aut03PreflightControl    `json:"control"`
+	TrustedExecutablePreparationPassed bool                     `json:"trustedExecutablePreparationPassed"`
+	SourceBeforeSHA256                 string                   `json:"sourceBeforeSHA256"`
+	SourceAfterSHA256                  string                   `json:"sourceAfterSHA256"`
+	SourceParentUnchanged              bool                     `json:"sourceParentUnchanged"`
+	Lane                               string                   `json:"lane"`
+	Contract                           aut03Contract            `json:"contract"`
+	TrustedInput                       aut03TrustedInput        `json:"trustedInput"`
+	Mutations                          []aut03Mutation          `json:"mutations"`
+	ExistingCoverage                   []aut03CoverageReference `json:"existingCoverage"`
+	RuntimeAssertions                  string                   `json:"runtimeAssertions"`
+	CasePass                           bool                     `json:"casePass"`
+	IndependentAcceptance              string                   `json:"independentAcceptance"`
+	UpgradeAuthorized                  bool                     `json:"UpgradeAuthorized"`
+	TrustedHopReceipt                  bool                     `json:"TrustedHopReceipt"`
+	Phase4A07Complete                  bool                     `json:"Phase4A07Complete"`
+	Phase4AComplete                    bool                     `json:"Phase4AComplete"`
+}
+
+type aut03PreflightControl struct {
+	InputKind                string          `json:"inputKind"`
+	InputManifestDigest      string          `json:"inputManifestDigest"`
+	Scope                    string          `json:"scope"`
+	ArtifactValidationPassed bool            `json:"artifactValidationPassed"`
+	BundleValidationPassed   bool            `json:"bundleValidationPassed"`
+	ExpectedError            string          `json:"expectedError"`
+	ActualError              string          `json:"actualError"`
+	Stage                    string          `json:"stage"`
+	ExecutableStarted        bool            `json:"executableStarted"`
+	OperationMinted          bool            `json:"operationMinted"`
+	OperationPhase           string          `json:"operationPhase"`
+	Process                  ProcessEvidence `json:"process"`
+	Reaped                   bool            `json:"reaped"`
+	OutputCreated            bool            `json:"outputCreated"`
+	UpgradeAuthorized        bool            `json:"UpgradeAuthorized"`
+	TrustedHopReceipt        bool            `json:"TrustedHopReceipt"`
 }
 
 type aut03Contract struct {
@@ -74,6 +104,7 @@ type aut03TrustedInput struct {
 
 type aut03Mutation struct {
 	ID                        string `json:"id"`
+	OfflineInputKind          string `json:"offlineInputKind,omitempty"`
 	Operation                 string `json:"operation"`
 	OriginalArchiveSHA256     string `json:"originalArchiveSHA256"`
 	MutatedArtifactSHA256     string `json:"mutatedArtifactSHA256,omitempty"`
@@ -116,6 +147,12 @@ func TestAUT03Qualification(t *testing.T) {
 	if archivePath == "" {
 		t.Skip("requires the immutable sealed qualification archive materialization")
 	}
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Fatal("AUT-03 qualification requires the actual Linux AMD64 integration path")
+	}
+	if len(aut03HarnessCommit) != 40 || len(aut03TestedTree) != 40 || !offlineDigest(aut03HarnessSHA256) {
+		t.Fatal("AUT-03 requires committed-source build provenance; use bin/qualification/run-aut03.py")
+	}
 	asset := strings.TrimSpace(os.Getenv("CPAMP_AUT03_ASSET"))
 	if asset == "" {
 		asset = aut03LinuxAsset
@@ -129,7 +166,10 @@ func TestAUT03Qualification(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	root := t.TempDir()
+	root := testTempDir(t)
+	if err := checkPrivateDirectory(root); err != nil {
+		t.Fatalf("AUT-03 private workspace parent: %v", err)
+	}
 	originalArchive, err := os.ReadFile(archivePath)
 	if err != nil {
 		t.Fatal(err)
@@ -176,21 +216,46 @@ func TestAUT03Qualification(t *testing.T) {
 	} else {
 		t.Fatal("AUT-03 runtime requires the sealed input bundle on every platform")
 	}
-
-	testedCommit := strings.TrimSpace(os.Getenv("CPAMP_AUT03_CODE_COMMIT"))
-	if testedCommit == "" {
-		testedCommit = "local-working-tree"
+	parentBefore, err := aut03TreeDigest(filepath.Dir(bundlePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only artifact/preconditions are under qualification. Correct bytes must
+	// reach real sealed launch and reap, never the earlier ErrOfflineInputs.
+	// The subsequent source revalidation rejects cleanup's changed shape; this
+	// remains a FAILED diagnostic control, not successful source qualification.
+	controlWorkspace := filepath.Join(root, "control")
+	control, controlErr := RunOfflineCleanup(ctx, OfflineCleanupOptions{
+		ArchivePath: archivePath, Asset: asset, InputBundle: bundlePath,
+		ExpectedInputDigest: bundleDigest, Workspace: controlWorkspace,
+		Timeout: 2 * time.Minute,
+	})
+	if !errors.Is(controlErr, ErrInvalidSource) || control != nil {
+		t.Fatalf("trusted artifact/precondition control: observation=%+v err=%v", control, controlErr)
+	}
+	var controlState offlineState
+	if _, err := offlineRead(filepath.Join(controlWorkspace, "state.json"), 0o600, &controlState); err != nil {
+		t.Fatal(err)
+	}
+	controlIntent, controlState, err := offlineLoad(controlWorkspace, controlState.OperationID)
+	if err != nil || controlState.Phase != "failed" || controlState.Process.Validate() != nil || !controlState.Reaped || controlState.OutputManifestDigest != "" || aut03Exists(filepath.Join(controlWorkspace, "output")) || controlIntent.InputManifestDigest != bundleDigest {
+		t.Fatalf("trusted artifact control did not reach launch/reap with honest failed state: state=%+v err=%v", controlState, err)
 	}
 	evidence := aut03Evidence{
-		SchemaVersion: 1,
-		CaseID:        "AUT-03",
-		PlanCommit:    aut03PlanCommit,
-		TestedCommit:  testedCommit,
-		Lane:          "Lane A",
+		SchemaVersion:              2,
+		CaseID:                     "AUT-03",
+		PlanCommit:                 aut03PlanCommit,
+		QualificationHarnessCommit: aut03HarnessCommit,
+		TestedTree:                 aut03TestedTree,
+		HarnessSHA256:              aut03HarnessSHA256,
+		RuntimePlatform:            runtime.GOOS + "/" + runtime.GOARCH,
+		Control:                    aut03PreflightControl{InputKind: "immutable SRC-11 sealed bundle", InputManifestDigest: bundleDigest, Scope: "artifact/offline preconditions only; FAILED cleanup control, not source qualification", ArtifactValidationPassed: true, BundleValidationPassed: true, ExpectedError: "ErrInvalidSource", ActualError: aut03ErrorName(controlErr), Stage: "post-launch source revalidation after child exit/reap", ExecutableStarted: true, OperationMinted: true, OperationPhase: controlState.Phase, Process: controlState.Process, Reaped: controlState.Reaped},
+		SourceBeforeSHA256:         sourceBefore,
+		Lane:                       "Lane A",
 		Contract: aut03Contract{
 			ExactRelease:      Release,
 			ExactSourceCommit: SourceCommit,
-			ExpectedResult:    "reject / ErrUnverified for a wrong archive or identity; ErrExecutableMismatch for altered staged executable; no authority",
+			ExpectedResult:    "reject / ErrUnverified (upper-level integrity rejection); executable-stage typed rejection is ErrExecutableMismatch; no authority",
 			ArtifactScope:     "published v1.14.4 archive and executable identity only",
 			AuthorityBoundary: "qualification evidence is diagnostic; no trusted receipt or upgrade grant",
 		},
@@ -209,8 +274,7 @@ func TestAUT03Qualification(t *testing.T) {
 			BundleManifestSHA256: bundleManifestSHA256,
 		},
 		ExistingCoverage: []aut03CoverageReference{
-			{Category: "manifest/inventory mismatch", Status: "reused-existing-coverage", Location: "bin/qualification/test_materialize_src11.py", Reason: "SRC-11 materializer owns sealed evidence archive inventory; AUT-03 does not duplicate it."},
-			{Category: "missing/extra/replace required file", Status: "reused-existing-coverage", Location: "bin/qualification/test_materialize_src11.py", Reason: "Covered by complete packaging inventory validation, not an AUT-03 authority claim."},
+			{Category: "manifest/inventory mismatch; missing/extra/replace required file", Status: "verified-on-trusted-input-only", Location: "bin/qualification/materialize-src11.py", Reason: "Existing materializer validates the complete inventory. Its current adversarial suite does not exercise each inventory mutation; no additional AUT-03 runtime PASS is claimed."},
 			{Category: "unsafe path, symlink, hardlink, duplicate", Status: "reused-existing-coverage", Location: "bin/qualification/test_materialize_src11.py and internal/service/legacyartifact/artifact_test.go", Reason: "Existing fail-closed materializer/parser primitives are exercised without copying their implementation."},
 			{Category: "target/source metadata mismatch", Status: "covered-by-pinned-identity", Location: "internal/service/legacyartifact/artifact.go", Reason: "Release/source commit and asset are deployment-owned constants; caller claims cannot replace them."},
 		},
@@ -228,17 +292,20 @@ func TestAUT03Qualification(t *testing.T) {
 		t.Fatalf("altered archive accepted: %v", archiveErr)
 	}
 	if bundlePath != "" && runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
-		_, archiveErr = RunOfflineCleanup(ctx, OfflineCleanupOptions{
+		var rejected *OfflineCleanupObservation
+		rejected, archiveErr = RunOfflineCleanup(ctx, OfflineCleanupOptions{
 			ArchivePath: mutatedArchive, Asset: asset, InputBundle: bundlePath,
 			ExpectedInputDigest: bundleDigest, Workspace: archiveWorkspace,
 			Timeout: 2 * time.Minute,
 		})
-		if !errors.Is(archiveErr, ErrUnverified) {
+		if !errors.Is(archiveErr, ErrUnverified) || rejected != nil {
 			t.Fatalf("altered archive crossed offline preflight: %v", archiveErr)
 		}
 	}
 	evidence.Mutations = append(evidence.Mutations, aut03Mutation{
 		ID:                        "archive-sha256-mismatch",
+		OfflineInputKind:          evidence.Control.InputKind,
+		OriginalBundleDigest:      bundleDigest,
 		Operation:                 "flip one byte in a copied immutable producer archive before verification",
 		OriginalArchiveSHA256:     originalArchiveSHA256,
 		MutatedArtifactSHA256:     mutatedArchiveSHA256,
@@ -321,6 +388,14 @@ func TestAUT03Qualification(t *testing.T) {
 	if err != nil || trustedExecutableSHA256 != pin.ExecutableSHA256 {
 		t.Fatalf("trusted executable extraction: digest=%s err=%v", trustedExecutableSHA256, err)
 	}
+	trustedSeal, sealErr := prepareOfflineExecutable(ctx, trustedExecutable, pin.ExecutableSHA256)
+	if sealErr != nil || trustedSeal == nil {
+		t.Fatalf("trusted executable did not pass sealed preparation: %v", sealErr)
+	}
+	if err := trustedSeal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	evidence.TrustedExecutablePreparationPassed = true
 	executableBytes, err := os.ReadFile(trustedExecutable)
 	if err != nil {
 		t.Fatal(err)
@@ -372,17 +447,18 @@ func TestAUT03Qualification(t *testing.T) {
 			t.Fatalf("mismatched input bundle digest accepted: %v", bundleErr)
 		}
 		if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
-			_, runtimeErr := RunOfflineCleanup(ctx, OfflineCleanupOptions{
+			rejected, runtimeErr := RunOfflineCleanup(ctx, OfflineCleanupOptions{
 				ArchivePath: archivePath, Asset: asset, InputBundle: bundlePath,
 				ExpectedInputDigest: wrongBundleDigest, Workspace: bundleWorkspace,
 				Timeout: 2 * time.Minute,
 			})
-			if !errors.Is(runtimeErr, ErrOfflineInputs) {
+			if !errors.Is(runtimeErr, ErrOfflineInputs) || rejected != nil {
 				t.Fatalf("mismatched bundle digest crossed offline preflight: %v", runtimeErr)
 			}
 		}
 		evidence.Mutations = append(evidence.Mutations, aut03Mutation{
 			ID:                        "bundle-digest-mismatch-control",
+			OfflineInputKind:          "immutable SRC-11 sealed bundle",
 			Operation:                 "replace the sealed input manifest digest in the operation request",
 			OriginalArchiveSHA256:     originalArchiveSHA256,
 			MutatedArtifactSHA256:     originalArchiveSHA256,
@@ -416,6 +492,32 @@ func TestAUT03Qualification(t *testing.T) {
 		if sourceAfter != sourceBefore {
 			t.Fatalf("qualification input bundle changed: before=%s after=%s", sourceBefore, sourceAfter)
 		}
+		evidence.SourceAfterSHA256 = sourceAfter
+	}
+	parentAfter, err := aut03TreeDigest(filepath.Dir(bundlePath))
+	if err != nil || parentAfter != parentBefore {
+		t.Fatalf("input parent changed or inspection temp files remain: %v", err)
+	}
+	evidence.SourceParentUnchanged = true
+	// Apart from the isolated failed diagnostic control and deliberate files, no
+	// rejection may leave staging, journal, output, moved/restored files or logs.
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := map[string]bool{"control": true, "altered-archive.tar.gz": true, "trusted-executable": true, "altered-executable": true}
+	if len(entries) != len(allowed) {
+		t.Fatalf("unexpected rejection artifacts: %v", entries)
+	}
+	for _, entry := range entries {
+		if !allowed[entry.Name()] {
+			t.Fatalf("unexpected rejection artifact: %s", entry.Name())
+		}
+	}
+	for _, mutation := range evidence.Mutations {
+		if !mutation.ValidationRejected || mutation.ExecutableStarted || mutation.SourceChanged || mutation.OutputCreated || mutation.OperationMinted || mutation.ReceiptMinted || mutation.TrustedEvidenceMinted || mutation.UpgradeAuthorized || mutation.TrustedHopReceipt {
+			t.Fatalf("fail-closed assertion failed: %+v", mutation)
+		}
 	}
 	evidence.RuntimeAssertions = "pass"
 	evidence.CasePass = true
@@ -431,7 +533,7 @@ func TestAUT03Qualification(t *testing.T) {
 }
 
 func aut03VerifyAndExtractReject(ctx context.Context, archivePath, asset, target string) error {
-	if report, err := Verify(ctx, archivePath, asset); err == nil || report != (Report{}) {
+	if report, err := Verify(ctx, archivePath, asset); !errors.Is(err, ErrUnverified) || report != (Report{}) {
 		return fmt.Errorf("verify accepted report=%+v err=%v", report, err)
 	}
 	_, _, err := ExtractExecutable(ctx, archivePath, asset, target)
@@ -497,7 +599,12 @@ func aut03TreeDigest(root string) (string, error) {
 		if err != nil {
 			return err
 		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
 		if info.IsDir() {
+			entries = append(entries, filepath.ToSlash(rel)+"|directory|"+info.Mode().Perm().String()+"\n")
 			return nil
 		}
 		if !info.Mode().IsRegular() {
@@ -507,11 +614,7 @@ func aut03TreeDigest(root string) (string, error) {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		entries = append(entries, filepath.ToSlash(rel)+"|"+digest+"\n")
+		entries = append(entries, filepath.ToSlash(rel)+"|"+digest+"|"+info.Mode().Perm().String()+"\n")
 		return nil
 	})
 	if err != nil {
@@ -531,7 +634,8 @@ func aut03SourceChanged(bundlePath, before string) bool {
 
 func aut03Exists(path string) bool {
 	_, err := os.Lstat(path)
-	return err == nil
+	// Inspection failure cannot certify absence.
+	return !errors.Is(err, os.ErrNotExist)
 }
 
 func aut03ErrorName(err error) string {
@@ -542,6 +646,8 @@ func aut03ErrorName(err error) string {
 		return "ErrExecutableMismatch"
 	case errors.Is(err, ErrOfflineInputs):
 		return "ErrOfflineInputs"
+	case errors.Is(err, ErrInvalidSource):
+		return "ErrInvalidSource"
 	case err == nil:
 		return "<nil>"
 	default:
@@ -555,7 +661,7 @@ func aut03WriteEvidence(t *testing.T, path string, record aut03Evidence) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope := aut03EvidenceEnvelope{Format: "aut-03-runtime-v1", Record: recordData, RecordSHA256: aut03Digest(recordData)}
+	envelope := aut03EvidenceEnvelope{Format: "aut-03-runtime-v2", Record: recordData, RecordSHA256: aut03Digest(recordData)}
 	data, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {
 		t.Fatal(err)
