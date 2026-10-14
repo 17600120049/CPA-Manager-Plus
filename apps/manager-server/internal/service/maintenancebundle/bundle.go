@@ -58,10 +58,11 @@ type Entry struct {
 }
 
 type Manifest struct {
-	Version        int              `json:"version"`
-	Fence          string           `json:"fence"`
-	SourceRevision string           `json:"sourceRevision"`
-	Entries        map[string]Entry `json:"entries"`
+	Version        int               `json:"version"`
+	Fence          string            `json:"fence"`
+	SourceRevision string            `json:"sourceRevision"`
+	Entries        map[string]Entry  `json:"entries"`
+	Recovery       *RecoveryEvidence `json:"recovery,omitempty"`
 }
 
 // BundleLayout returns storage paths shared by backup, restore and maintenance
@@ -309,7 +310,7 @@ func validateWALHeader(walPath string, expectedPageSize uint32) error {
 
 func sqliteURI(path string) string {
 	clean := filepath.ToSlash(filepath.Clean(path))
-	if runtime.GOOS != "windows" && !strings.HasPrefix(clean, "/") {
+	if !strings.HasPrefix(clean, "/") {
 		clean = "/" + clean
 	}
 	dsn := &url.URL{Scheme: "file", Path: clean}
@@ -958,6 +959,9 @@ func validateArchiveMaintenanceLocks(ctx context.Context, db *sql.DB, runs map[s
 type createHooks struct {
 	beforeRevalidate func()
 	copy             func(context.Context, string, string) error
+	// Package-private, synchronous checkpoints for controlled subprocess tests.
+	at            func(string)
+	syncDirectory func(string) error
 }
 
 // Create requires a held lock bound to this database. The fence excludes
@@ -968,6 +972,10 @@ func Create(ctx context.Context, layout Layout, bundleDir string, lock *processl
 }
 
 func create(ctx context.Context, layout Layout, bundleDir string, lock *processlock.Lock, h createHooks) (Manifest, error) {
+	return createBundle(ctx, layout, bundleDir, lock, h, false)
+}
+
+func createBundle(ctx context.Context, layout Layout, bundleDir string, lock *processlock.Lock, h createHooks, recoverJournal bool) (result Manifest, resultErr error) {
 	l, err := normalize(layout)
 	if err != nil {
 		return Manifest{}, err
@@ -990,14 +998,20 @@ func create(ctx context.Context, layout Layout, bundleDir string, lock *processl
 		return Manifest{}, err
 	}
 	before.Fence = CooperatingFence
-	if err := ValidateMatchingEvidence(ctx, l); err != nil {
-		return Manifest{}, fmt.Errorf("source matching evidence invalid: %w", err)
+	if !recoverJournal {
+		if err := ValidateMatchingEvidence(ctx, l); err != nil {
+			return Manifest{}, fmt.Errorf("source matching evidence invalid: %w", err)
+		}
+	} else if err := requireRollbackJournal(l); err != nil {
+		return Manifest{}, err
 	}
-	tmp, err := os.MkdirTemp(filepath.Dir(dest), ".manager-bundle-unpublished-")
+	p, err := beginPublication(ctx, dest, l, h)
 	if err != nil {
 		return Manifest{}, err
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { resultErr = errors.Join(resultErr, p.finish()) }()
+	tmp := p.staging()
+	h.checkpoint("staging-created")
 	copyFn := h.copy
 	if copyFn == nil {
 		copyFn = copyFile
@@ -1017,32 +1031,37 @@ func create(ctx context.Context, layout Layout, bundleDir string, lock *processl
 	if err := Revalidate(ctx, BundleLayout(tmp), before); err != nil {
 		return Manifest{}, err
 	}
+	sealed := before
+	if recoverJournal {
+		if err := recoverRollbackJournal(ctx, BundleLayout(tmp)); err != nil {
+			return Manifest{}, err
+		}
+		sealed, err = Inspect(ctx, BundleLayout(tmp))
+		if err != nil {
+			return Manifest{}, err
+		}
+		sealed.Fence = CooperatingFence
+		sealed.Recovery = &RecoveryEvidence{Method: rollbackRecoveryMethod, SourceRevision: before.SourceRevision}
+	}
 	if err := ValidateMatchingEvidence(ctx, BundleLayout(tmp)); err != nil {
 		return Manifest{}, fmt.Errorf("bundle matching evidence invalid: %w", err)
 	}
-	data, err := json.MarshalIndent(before, "", "  ")
-	if err != nil {
+	h.checkpoint("matching-validated")
+	if err := writeManifest(tmp, sealed); err != nil {
 		return Manifest{}, err
 	}
-	if len(data)+1 > maxManifestBytes {
-		return Manifest{}, errors.New("Manager bundle manifest exceeds supported bound")
-	}
-	if err := writeFile(filepath.Join(tmp, "manifest.json"), append(data, '\n')); err != nil {
+	h.checkpoint("manifest-written")
+	// The expensive matching/production checks must precede the final source
+	// observation. This still requires external writer isolation by the owner.
+	if err := p.publish(ctx, sealed, func() error {
+		if err := validateLock(); err != nil {
+			return err
+		}
+		return RevalidateSource(ctx, l, before)
+	}); err != nil {
 		return Manifest{}, err
 	}
-	if err := ctx.Err(); err != nil {
-		return Manifest{}, err
-	}
-	if err := validateLock(); err != nil {
-		return Manifest{}, err
-	}
-	if err := absent(dest); err != nil {
-		return Manifest{}, err
-	}
-	if err := os.Rename(tmp, dest); err != nil {
-		return Manifest{}, err
-	}
-	return before, nil
+	return sealed, nil
 }
 
 func materialize(ctx context.Context, l Layout, dest string, m Manifest, copyFn func(context.Context, string, string) error) error {
@@ -1072,12 +1091,21 @@ func materialize(ctx context.Context, l Layout, dest string, m Manifest, copyFn 
 // Verify rejects missing, extra and changed files. An editable manifest remains
 // an integrity description; it is not an authenticated maintenance receipt.
 func Verify(ctx context.Context, bundleDir string) (Manifest, error) {
+	return verify(ctx, bundleDir, false)
+}
+
+// The private exception is used only by a held publication owner on its exact
+// recorded staging root. Public callers can never verify an unpublished root.
+func verify(ctx context.Context, bundleDir string, allowUnpublished bool) (Manifest, error) {
 	root, err := filepath.Abs(bundleDir)
 	if err != nil {
 		return Manifest{}, err
 	}
 	if err := safePath(root); err != nil {
 		return Manifest{}, err
+	}
+	if !allowUnpublished && unpublishedPath(root) {
+		return Manifest{}, errors.New("unpublished operation roots are not committed bundles")
 	}
 	manifestPath := filepath.Join(root, "manifest.json")
 	if err := safePath(manifestPath); err != nil {
@@ -1121,6 +1149,9 @@ func Verify(ctx context.Context, bundleDir string) (Manifest, error) {
 	if expectedRev := computeSourceRevision(m.Entries); m.SourceRevision != expectedRev {
 		return Manifest{}, errors.New("bundle manifest source revision mismatch")
 	}
+	if err := validateRecoveryEvidence(m); err != nil {
+		return Manifest{}, err
+	}
 	if err := Revalidate(ctx, BundleLayout(root), m); err != nil {
 		return Manifest{}, err
 	}
@@ -1147,7 +1178,7 @@ func RestoreNew(ctx context.Context, bundleDir, newRoot string) (Layout, error) 
 	return restoreNew(ctx, bundleDir, newRoot, createHooks{})
 }
 
-func restoreNew(ctx context.Context, bundleDir, newRoot string, h createHooks) (Layout, error) {
+func restoreNew(ctx context.Context, bundleDir, newRoot string, h createHooks) (result Layout, resultErr error) {
 	m, err := Verify(ctx, bundleDir)
 	if err != nil {
 		return Layout{}, err
@@ -1157,11 +1188,24 @@ func restoreNew(ctx context.Context, bundleDir, newRoot string, h createHooks) (
 	if err != nil {
 		return Layout{}, err
 	}
-	tmp, err := os.MkdirTemp(filepath.Dir(dest), ".manager-restore-unpublished-")
+	bundleRoot, err := filepath.Abs(bundleDir)
 	if err != nil {
 		return Layout{}, err
 	}
-	defer os.RemoveAll(tmp)
+	physical, err := physicalOverlap(bundleRoot, dest)
+	if err != nil {
+		return Layout{}, err
+	}
+	if overlaps(bundleRoot, dest) || overlaps(dest, bundleRoot) || physical {
+		return Layout{}, errors.New("restore target overlaps source bundle root")
+	}
+	p, err := beginPublication(ctx, dest, l, h)
+	if err != nil {
+		return Layout{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, p.finish()) }()
+	tmp := p.staging()
+	h.checkpoint("staging-created")
 	copyFn := h.copy
 	if copyFn == nil {
 		copyFn = copyFile
@@ -1178,20 +1222,21 @@ func restoreNew(ctx context.Context, bundleDir, newRoot string, h createHooks) (
 	if err := ValidateMatchingEvidence(ctx, BundleLayout(tmp)); err != nil {
 		return Layout{}, fmt.Errorf("restore matching evidence failed: %w", err)
 	}
-	current, err := Verify(ctx, bundleDir)
-	if err != nil {
+	h.checkpoint("matching-validated")
+	if err := writeManifest(tmp, m); err != nil {
 		return Layout{}, err
 	}
-	if !reflect.DeepEqual(current, m) {
-		return Layout{}, errors.New("Manager bundle changed during restoration")
-	}
-	if err := ctx.Err(); err != nil {
-		return Layout{}, err
-	}
-	if err := absent(dest); err != nil {
-		return Layout{}, err
-	}
-	if err := os.Rename(tmp, dest); err != nil {
+	h.checkpoint("manifest-written")
+	if err := p.publish(ctx, m, func() error {
+		current, err := Verify(ctx, bundleDir)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(current, m) {
+			return errors.New("Manager bundle changed before publication")
+		}
+		return nil
+	}); err != nil {
 		return Layout{}, err
 	}
 	return BundleLayout(dest), nil
@@ -1204,6 +1249,9 @@ func prepareDestination(path string, l Layout) (string, error) {
 	dest, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
+	}
+	if unpublishedPath(dest) {
+		return "", errors.New("reserved unpublished destination")
 	}
 	if err := safePath(dest); err != nil {
 		return "", err
