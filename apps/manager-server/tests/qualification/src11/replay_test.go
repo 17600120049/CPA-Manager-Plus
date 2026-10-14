@@ -292,12 +292,14 @@ func TestReplayExactSource(t *testing.T) {
 	// retention branch, with archive publication/verification before raw deletion.
 	archiveStatus, e := usageService.CreateRetentionArchive(ctx, p.ToMS)
 	must(t, e)
+	archived, e := usageService.ResumeArchive(ctx, archiveStatus.Run.ID)
+	must(t, e)
 	verified, e := usageService.VerifyArchive(ctx, archiveStatus.Run.ID)
 	must(t, e)
 	deleted, e := usageService.DeleteArchive(ctx, archiveStatus.Run.ID)
 	must(t, e)
-	if verified.Run.Status != "verified" || deleted.Run.Status != "completed" || deleted.Run.DeletedEventCount != 4 {
-		t.Fatalf("retention evidence incomplete: %#v", deleted.Run)
+	if archived.Run.Status != "archived" || verified.Run.Status != "verified" || deleted.Run.Status != "completed" || deleted.Run.DeletedEventCount != 4 {
+		t.Fatalf("retention evidence incomplete: archived=%#v verified=%#v deleted=%#v", archived.Run, verified.Run, deleted.Run)
 	}
 	coverage, e := svc.Analytics(ctx, analyticsRequest(p, ""))
 	must(t, e)
@@ -314,7 +316,7 @@ func TestReplayExactSource(t *testing.T) {
 		t.Fatal("retained history incomplete after raw deletion")
 	}
 	must(t, db.Close())
-	save(t, output, "sem09-retention-branch.json", map[string]any{"SEM-09": "pass", "sourceVariantUnchanged": "full raw", "branch": "v2 primitive descendant of SRC-11; not RET-03 source-generation evidence", "archived": archiveStatus, "verified": verified, "deleted": deleted, "analytics": coverage})
+	save(t, output, "sem09-retention-branch.json", map[string]any{"SEM-09": "pass", "sourceVariantUnchanged": "full raw", "branch": "v2 primitive descendant of SRC-11; not RET-03 source-generation evidence", "created": archiveStatus, "archived": archived, "verified": verified, "deleted": deleted, "analytics": coverage})
 	must(t, st.Close())
 	db = openDB(t, restored.DatabasePath, false)
 	checks := sqliteChecks(t, db, true)
