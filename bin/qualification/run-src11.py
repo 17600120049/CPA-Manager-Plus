@@ -13,7 +13,10 @@ ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / "apps/manager-server"
 PKG = "github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11"
 PROFILE = ROOT / "tests/fixtures/phase4a-src11/profile.json"
-IMAGE = "debian@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
+# The parent index is pinned by the qualification profile; use its AMD64 child
+# manifest so Docker Desktop cannot resolve the same index to a local ARM64 tag.
+IMAGE_INDEX = "sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
+IMAGE = "debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b"
 
 
 def capture(args, **kwargs):
@@ -74,7 +77,7 @@ def main():
         source = output / "src-11"
         release_info = args.release_info.resolve(strict=True)
         image_id = capture(["docker", "image", "inspect", IMAGE, "--format", "{{.Id}}"])
-        build["isolation"] = {"image": IMAGE, "imageID": image_id, "network": "none",
+        build["isolation"] = {"image": IMAGE, "parentIndex": IMAGE_INDEX, "imageID": image_id, "network": "none",
                               "readOnlyRoot": True, "capabilities": "none",
                               "mounts": "runner/archive/profile read-only; unique output writable; private tmpfs"}
         docker = ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--read-only",
