@@ -105,6 +105,7 @@ const triggersBundleBoundary = (filePath) =>
   managerServerDependencyFile(filePath);
 
 const triggersRuntimeLifecycle = (filePath) =>
+  managerServerModuleFile(filePath, 'internal/command/runtimeconfig') ||
   managerServerModuleFile(filePath, 'internal/service/cpaupdate') ||
   managerServerModuleFile(filePath, 'internal/service/runtime') ||
   managerServerModuleFile(filePath, 'internal/repository/setting') ||
