@@ -1,7 +1,9 @@
 # SRC-11 exact v1.14.4 evidence
 
-This directory contains the latest real SRC-11 source-generation and v2
-primitive replay evidence. It is bound to the Phase4A-07 Plan main commit
+This directory indexes the real SRC-11 source-generation and v2 primitive
+replay evidence. Original sealed bytes live in the pinned immutable archive,
+and `packaging-replay/` records clean-checkout materialization/replay checks.
+The source generation is bound to the Phase4A-07 Plan main commit
 `26b5d6bde1c30e8187135c87a8b84b6c808f23f0` and to generator/verifier commit
 `c43a0542da81d5b60638a2f89d0d54ac75cc66ff`.
 
@@ -77,6 +79,25 @@ Regeneration can **regenerate equivalent independently qualified evidence**.
 Random data.key bytes and runtime timestamps mean it does not recreate this
 specific archive or bundle digest. Independent verification of this exact run
 uses the pinned immutable asset and its actual bytes.
+
+The original outer runner log paths are mapped by
+`evidence-manifest.json.sealedArtifact.originalRunnerLogLocations`; for example,
+the generation runner's `build.log` is archived as `src-11/generation-build.log`.
+New local replay observations are under `packaging-replay/`; each unchanged
+runner record has a `log-locations.json` mapping its original `.log` names to
+the committed `.log.txt` bytes and their recorded digests. Historical source
+generation used `c43a0542...`; packaging/replay verifier identity is recorded
+separately. Original NO-GO at `b86ecacc...` remains review history; packaging
+repair does not claim independent acceptance.
+
+Windows archive materialization ran successfully in CI. The subsequent full
+Windows replay attempt failed before SEM at the existing matching-evidence
+SQLite `quick_check` (`SQL logic error: out of memory (1)`). The actual failure
+logs and CI pointer are preserved in `packaging-replay/windows-attempt/`.
+Windows CI therefore checks materialization runtime and native compilation;
+Windows bundle/SQLite replay qualification remains pending under the Plan's
+existing gap. It is not a SRC-11 Windows runtime PASS. This repair changes no
+production SQLite code.
 
 Runtime assertions are complete for this slice, but independent acceptance is
 still `pending`. `casePass=false`, `UpgradeAuthorized=false`, and

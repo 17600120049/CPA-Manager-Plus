@@ -1,0 +1,58 @@
+{
+  "AfterDigest": "d8bf8aa812d4febb368c23b729036c4e09088cf1c42bf75e8659a4da4b4041b8",
+  "BeforeDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "SQLite": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "SourceAfterDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "SourceBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
+  "SourceGeneratorCodeCommit": "c43a0542da81d5b60638a2f89d0d54ac75cc66ff",
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "VerifierCodeCommit": "e6e74cd9435359dc0b157e71df569f7ca8415de1",
+  "backupRestoreEvidenceSHA256": "5bcda291d42842ce073a9444b3871adbb98987ec21cba4d64909678981ec8cf1",
+  "caseID": "SRC-11",
+  "independentAcceptance": "pending",
+  "migrationStates": [
+    {
+      "name": "usage_cache_accounting_v2",
+      "status": "completed",
+      "lastEventId": 0,
+      "targetEventId": 0,
+      "processedRows": 0,
+      "changedRows": 0,
+      "appliedRows": 0,
+      "updatedAtMs": 0
+    }
+  ],
+  "other48Cases": "pending",
+  "platform": {
+    "goArch": "amd64",
+    "goOS": "linux",
+    "goVersion": "go1.26.1",
+    "qualificationOnly": true
+  },
+  "retentionBackupDigest": "d8bf8aa812d4febb368c23b729036c4e09088cf1c42bf75e8659a4da4b4041b8",
+  "runtimeAssertions": "pass",
+  "sourceGenerationRecordSHA256": "ae3c5ee073aab01b07428afca7375d4ea9da27cae55d7bb2fabca07f3112fcd9",
+  "tamperRejectionEvidenceSHA256": "4a6da03c7469d74ac6e9791d8fe036d892c8753e8995d40c165895462d67f7bb"
+}

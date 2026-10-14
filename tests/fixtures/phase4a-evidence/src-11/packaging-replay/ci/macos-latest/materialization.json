@@ -1,0 +1,9 @@
+{
+  "scope": "archive materialization only; not SQLite/migration qualification",
+  "runtimeAssertions": "pass",
+  "independentAcceptance": "pending",
+  "archiveSHA256": "c6abbb0594a874708b41795de6d1035fd4263fec1c067496a8b0bb1d26fec6d2",
+  "testedCommit": "8e483cb73402056aadd450d0680af072c6564379",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "pythonVersion": "3.13.15"
+}

@@ -1,0 +1,25 @@
+{
+  "backupManifestDigest": "d8bf8aa812d4febb368c23b729036c4e09088cf1c42bf75e8659a4da4b4041b8",
+  "inventoryMatched": true,
+  "restoredManifestDigest": "d8bf8aa812d4febb368c23b729036c4e09088cf1c42bf75e8659a4da4b4041b8",
+  "sqlite": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  }
+}
