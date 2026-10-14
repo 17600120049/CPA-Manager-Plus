@@ -1,0 +1,67 @@
+name: AUT-03 artifact integrity
+
+on:
+  pull_request:
+    branches: [v2]
+    paths:
+      - '.github/workflows/qualification-aut03.yml'
+      - 'bin/qualification/**'
+      - 'apps/manager-server/internal/**'
+      - 'apps/manager-server/go.mod'
+      - 'apps/manager-server/go.sum'
+      - 'tests/fixtures/phase4a-evidence/src-11/**'
+      - 'tests/fixtures/phase4a-evidence/aut-03/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aut03-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  qualification:
+    name: AUT-03 Linux AMD64 runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Download immutable SRC-11 sealed input
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/src11-download"
+          gh release download qualification-src11-0e106589baef-20261014 \
+            --repo seakee/CPA-Manager-Plus \
+            --pattern src-11-0e106589baef-sealed-evidence.tar.gz \
+            --dir "$RUNNER_TEMP/src11-download"
+      - name: Reuse sealed materializer and adversarial coverage
+        shell: bash
+        run: |
+          export CPAMP_SRC11_SEALED_ARCHIVE="$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz"
+          python -m unittest discover -s bin/qualification -p 'test_*.py' -v
+      - name: Run AUT-03 real mutation matrix
+        shell: bash
+        run: |
+          python bin/qualification/run-aut03.py \
+            --sealed-archive "$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz" \
+            --output "$RUNNER_TEMP/aut-03"
+      - name: Upload AUT-03 runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aut03-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/aut-03/*.json
+            ${{ runner.temp }}/aut-03/*.log
+          if-no-files-found: error
+          retention-days: 14
