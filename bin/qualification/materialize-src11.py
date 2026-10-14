@@ -102,8 +102,15 @@ def validate_ret01_release(metadata, pin):
 
 def materialize_ret01(archive, output, pin=None):
     """Authenticate the original ZIP, then reuse the existing safe writer."""
+    return materialize_case(archive, output, "ret-01", pin)
+
+
+def materialize_case(archive, output, case_name, pin=None):
+    """Authenticate one case's original ZIP against its independent pins."""
+    if case_name not in ("ret-01", "mig-01"):
+        raise ValueError("unknown qualification case")
     if pin is None:
-        provenance = ROOT / "tests/fixtures/phase4a-evidence/ret-01/source-provenance.json"
+        provenance = ROOT / f"tests/fixtures/phase4a-evidence/{case_name}/source-provenance.json"
         pin = json.loads(provenance.read_text())["sourceArtifact"]
     output = Path(output)
     if os.path.lexists(output):
@@ -139,31 +146,31 @@ def materialize_ret01(archive, output, pin=None):
     for name, entry in inventory.items():
         if len(members[name]) != entry["size"] or sha256(members[name]) != entry["sha256"]:
             raise ValueError(f"RET-01 source member mismatch: {name}")
-    for name, field in (("ret-01/source-generation/record.json", "generationRecordSHA256"),
-                        ("ret-01/bundle/manifest.json", "bundleManifestSHA256")):
+    for name, field in ((f"{case_name}/source-generation/record.json", "generationRecordSHA256"),
+                        (f"{case_name}/bundle/manifest.json", "bundleManifestSHA256")):
         if sha256(members[name]) != pin[field]:
             raise ValueError(f"RET-01 pinned evidence mismatch: {name}")
-    record = json.loads(members["ret-01/source-generation/record.json"])
-    bundle = json.loads(members["ret-01/bundle/manifest.json"])
-    if (record["caseID"] != "RET-01" or record["GeneratedBundleSHA256"] != pin["sourceBundleDigest"]
+    record = json.loads(members[f"{case_name}/source-generation/record.json"])
+    bundle = json.loads(members[f"{case_name}/bundle/manifest.json"])
+    if (record["caseID"] != case_name.upper() or record["GeneratedBundleSHA256"] != pin["sourceBundleDigest"]
             or bundle["sourceRevision"] != pin["sourceBundleDigest"]):
         raise ValueError("RET-01 source bundle binding mismatch")
     write_members(output, members)
-    return output / "ret-01"
+    return output / case_name
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=["src-11", "ret-01"], default="src-11")
+    parser.add_argument("--case", choices=["src-11", "ret-01", "mig-01"], default="src-11")
     parser.add_argument("--release-metadata", type=Path, help="optional local RET-01 Release API response")
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    if args.case == "ret-01":
+    if args.case in ("ret-01", "mig-01"):
         if args.release_metadata:
-            pin = json.loads((ROOT / "tests/fixtures/phase4a-evidence/ret-01/source-provenance.json").read_text())["sourceArtifact"]
+            pin = json.loads((ROOT / f"tests/fixtures/phase4a-evidence/{args.case}/source-provenance.json").read_text())["sourceArtifact"]
             validate_ret01_release(json.loads(args.release_metadata.read_text()), pin)
-        print(materialize_ret01(args.archive, args.output))
+        print(materialize_case(args.archive, args.output, args.case))
     else:
         if args.release_metadata:
             parser.error("--release-metadata is only applicable to RET-01")

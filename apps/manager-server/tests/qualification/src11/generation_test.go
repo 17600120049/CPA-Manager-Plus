@@ -35,6 +35,13 @@ func TestGenerateRET01(t *testing.T) {
 	generateExactSource(t, ret01CaseID, ret01PlanCommit, "ret-01-full-raw-revision2-v1")
 }
 
+func TestGenerateMIG01(t *testing.T) {
+	if os.Getenv("CPAMP_MIG01_GENERATE") != "1" {
+		t.Skip("opt-in MIG-01 controlled generation")
+	}
+	generateExactSource(t, mig01CaseID, mig01PlanCommit, mig01Profile)
+}
+
 func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	if os.Getenv("CPAMP_SRC11_GENERATE") != "1" {
 		t.Skip("opt-in exact historical executable execution")
