@@ -1,7 +1,8 @@
 # Phase4A-04-3 — Migration Boundary Qualification
 
-Status: implementation submitted for independent acceptance. Phase4A-04 remains
-**pending / not accepted**. BAK-05/06/07/08 and AUT-08 remain **pending**, with no
+Status: **04-3 not independently accepted**; revised implementation awaits
+independent acceptance. Phase4A-04 remains
+**pending / not accepted**. BAK-05/06/07/08 and AUT-08 remain **blocked / pending**, with no
 Phase4A-07 fixture PASS claimed by this slice. Baseline: independently accepted
 04-1 and 04-2 / PR #958, merged at `1a9c868ce41718f9f65e71d821e165cfdc21fb00`.
 
@@ -45,27 +46,36 @@ independent acceptance without treating submission as acceptance.
 5. Recovery never deletes/repairs original source data, blindly cleans siblings,
    adopts unknown output, grants UpgradeAuthorized, or starts old/runtime servers.
 
+Journal restart reconciliation recognizes a complete `state.next` only after
+strict record decoding, a legal transition from `state.json` (or initial intent),
+and exact artifact/target/staging checks. Initial, retry-preparing, manifest,
+committed and aborted writes have subprocess crash tests after temporary-file
+fsync and after replacement but before directory sync. Partial, foreign or
+inconsistent intent remains fail closed and preserved for inspection. A target
+cannot be recovered as committed while its recorded staging still exists, even
+when both copies have the same complete manifest.
+
 ## Phase4A-07 Lane C dependency update
 
-Eligibility to execute is distinct from a case PASS. The primitives below become
-eligible inputs only **after independent 04-3 acceptance and successful runtime
-evidence for the platform under test**. Every real case additionally needs its
-own exact-source generation provenance, isolated fixture, bundle digests,
-applicable SEM assertions and durable execution evidence from Phase4A-07.
+The current cpamp-plan/main Lane C gate remains unchanged: execution waits for
+independent acceptance of non-cooperative/external writer isolation,
+crash/power-loss publication boundaries, rollback-journal recovery and live
+restore. Acceptance of these 04-3 primitives alone does not unlock any Lane C
+fixture. Every real case also needs its own exact-source generation provenance,
+isolated fixture, bundle digests, applicable SEM assertions and durable evidence.
 
-| Case | Dependency after 04-3 acceptance | Case status |
+| Case | Primitive supplied for future qualification | Case status |
 | --- | --- | --- |
-| BAK-05 | Controlled concurrent-writer/stale-rejection primitive available. Fixture must define actual writer isolation and mutation timing; no claim that observations fence arbitrary writers | pending; controlled rejection fixture eligible subject to provenance/isolation; general quiescence unqualified |
-| BAK-06 | Complete sidecar inventory and final revalidation available; mutation/addition/deletion fixtures may execute under the ownership contract | pending; fixture execution/evidence required |
-| BAK-07 | Cancellation commit point, exact staging cleanup, recoverable state and same-target retry available | pending; fixture execution/evidence required |
-| BAK-08 | Process-crash/restart and flush-failure branches may execute using recorded per-target state | pending; **power-loss branch remains gated** by storage/platform qualification; do not mark the whole case PASS from Kill tests |
-| AUT-08 | Post-reap content revalidation primitive available for a controlled child and immutable expected inventory | pending; real hop semantics still require **Lane B qualified writer + Lane E trusted authority consumer**, in addition to Lane C evidence |
+| BAK-05 | Controlled concurrent-writer/stale rejection; observations do not fence arbitrary writers | blocked / pending; full Lane C gate applies |
+| BAK-06 | Complete sidecar inventory and final revalidation | blocked / pending; full Lane C gate applies |
+| BAK-07 | Cancellation commit point, exact staging cleanup, restart and same-target retry | blocked / pending; full Lane C gate applies |
+| BAK-08 | Process-crash/restart and flush-failure branches; Kill tests do not prove physical power-loss durability | blocked / pending; full Lane C gate applies |
+| AUT-08 | Post-reap content revalidation for a controlled child and immutable inventory | blocked / pending; full Lane C gate plus Lane B writer and Lane E trusted consumer apply |
 
-Full live restore is not a prerequisite for executing the offline/new-root Lane C
-branches above. It remains required for the eventual product migration workflow
-and must be implemented/accepted with Phase4-04 backend ownership orchestration.
-Removing that unrelated prerequisite does not waive the per-case isolation,
-physical power-loss or trusted-authority gates.
+Live restore remains a Lane C prerequisite under the current Plan. Its product
+ownership orchestration belongs to Phase4-04 backend; this implementation does
+not waive that dependency. Splitting offline/new-root execution from live restore
+would require a separately reviewed and accepted cpamp-plan change first.
 
 ## Verification and evidence location
 

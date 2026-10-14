@@ -290,3 +290,6 @@ replacement and delete. Runtime evidence must come from the actual successful
 job's tested SHA/environment and JSON artifact; workflow presence and successful
 cross-compilation alone confer no qualification. See [BOUNDARIES.md](BOUNDARIES.md)
 for Phase4A-04 and Phase4A-07 Lane C dependency status and remaining gates.
+BAK-05/06/07/08 and AUT-08 remain blocked/pending under the current Plan's full
+Lane C gate, including live restore; accepting 04-3 primitives alone does not
+authorize fixture execution or establish a Phase4A-07 PASS.

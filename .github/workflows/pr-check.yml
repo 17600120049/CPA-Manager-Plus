@@ -163,7 +163,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go test -race -count=1 -timeout 15m -json ./internal/service/maintenancebundle ./internal/command/managerdatabundle ./internal/processlock |
+          go test -race -count=1 -timeout 20m -json ./internal/service/maintenancebundle ./internal/command/managerdatabundle ./internal/processlock |
             tee "${RUNNER_TEMP}/manager-bundle-linux/boundary.jsonl"
 
       - name: Upload Linux bundle boundary evidence
@@ -371,7 +371,7 @@ jobs:
         working-directory: apps/manager-server
         shell: pwsh
         run: |
-          go test -count=1 -timeout 15m -json ./internal/service/maintenancebundle ./internal/command/managerdatabundle |
+          go test -count=1 -timeout 20m -json ./internal/service/maintenancebundle ./internal/command/managerdatabundle |
             Tee-Object -FilePath "$env:RUNNER_TEMP/manager-preflight-windows/bundle-boundary.jsonl"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

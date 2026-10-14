@@ -51,8 +51,13 @@ func TestBoundarySubprocess(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-	case "crash-create", "crash-restore", "crash-recover":
+	case "crash-create", "crash-restore", "crash-recover", "crash-create-abort":
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		h := createHooks{at: func(phase string) {
+			if mode == "crash-create-abort" && phase == "staging-created" {
+				cancel()
+			}
 			if phase == os.Getenv("CPAMP_BOUNDARY_PHASE") {
 				fmt.Println("BOUNDARY-READY")
 				var command [1]byte
@@ -70,7 +75,7 @@ func TestBoundarySubprocess(t *testing.T) {
 				t.Fatal(lockErr)
 			}
 			defer lock.Close()
-			_, err = createBundle(context.Background(), l, dest, lock, h, mode == "crash-recover")
+			_, err = createBundle(ctx, l, dest, lock, h, mode == "crash-recover")
 		}
 		if err != nil {
 			t.Fatal(err)

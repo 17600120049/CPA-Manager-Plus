@@ -162,12 +162,19 @@ func (p *publication) staging() string { return filepath.Join(p.root, stagingPre
 // own only its exact staging directory; any other entry could be an interrupted
 // replacement or an unrelated writer's artifact and must remain for inspection.
 func (p *publication) validateArtifacts() error {
+	return p.validateArtifactsWithNext(false)
+}
+
+func (p *publication) validateArtifactsWithNext(allowNext bool) error {
 	entries, err := os.ReadDir(p.root)
 	if err != nil {
 		return err
 	}
 	stagingName := filepath.Base(p.staging())
 	for _, entry := range entries {
+		if allowNext && entry.Name() == "state.next" {
+			continue
+		}
 		switch entry.Name() {
 		case publicationStateName, publicationLockName:
 			continue
@@ -187,7 +194,71 @@ func validDigest(value string) bool {
 }
 
 func (p *publication) readRecord() error {
-	name := filepath.Join(p.root, publicationStateName)
+	err := p.readRecordFile(publicationStateName)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	previous, initial := p.record, os.IsNotExist(err)
+	next := &publication{dest: p.dest, root: p.root}
+	if nextErr := next.readRecordFile("state.next"); os.IsNotExist(nextErr) {
+		return err
+	} else if nextErr != nil {
+		return nextErr // Partial/foreign journals are preserved for inspection.
+	}
+	if !validRecordTransition(previous, next.record, initial) {
+		return errors.New("invalid interrupted publication transition")
+	}
+	if err := next.validateArtifactsWithNext(true); err != nil {
+		return err
+	}
+	// Initial intent precedes staging creation; abort precedes retry intent.
+	// A committed intent can only follow a rename that consumed staging.
+	if initial || next.record.State != "preparing" || previous.ID != next.record.ID {
+		if err := absent(next.staging()); err != nil {
+			return errors.New("interrupted journal has unexpected staging")
+		}
+	}
+	if initial || next.record.State == "aborted" || previous.ID != next.record.ID {
+		if err := absent(p.dest); err != nil {
+			return errors.New("interrupted journal has unexpected target")
+		}
+	}
+	if err := replaceState(filepath.Join(p.root, "state.next"), filepath.Join(p.root, publicationStateName)); err != nil {
+		return err
+	}
+	if err := syncDirectory(p.root); err != nil {
+		return err
+	}
+	p.record = next.record
+	return nil
+}
+
+func validRecordTransition(old, next publicationRecord, initial bool) bool {
+	if initial {
+		return next.State == "preparing" && next.Manifest == nil
+	}
+	if old.ID != next.ID {
+		return old.State == "aborted" && next.State == "preparing" && next.Manifest == nil
+	}
+	if reflect.DeepEqual(old, next) {
+		return true // Idempotent recovery/abort journal writes.
+	}
+	if old.State != "preparing" {
+		return false
+	}
+	switch next.State {
+	case "aborted":
+		return next.Manifest == nil
+	case "preparing":
+		return old.Manifest == nil && next.Manifest != nil
+	case "committed":
+		return old.Manifest != nil && reflect.DeepEqual(old.Manifest, next.Manifest)
+	}
+	return false
+}
+
+func (p *publication) readRecordFile(base string) error {
+	name := filepath.Join(p.root, base)
 	if err := safePath(name); err != nil {
 		return err
 	}
@@ -221,6 +292,9 @@ func (p *publication) readRecord() error {
 		(r.State != "preparing" && r.State != "committed" && r.State != "aborted") {
 		return errors.New("invalid publication journal contract")
 	}
+	if (r.State == "aborted" && r.Manifest != nil) || (r.State == "committed" && r.Manifest == nil) {
+		return errors.New("invalid publication journal manifest state")
+	}
 	return nil
 }
 
@@ -233,19 +307,29 @@ func (p *publication) writeRecord() error {
 		return errors.New("publication journal exceeds bound")
 	}
 	next := filepath.Join(p.root, "state.next")
-	// A valid record and the held fence authorize only this exact journal temp.
+	// Never overwrite an unreconciled or unknown journal temporary.
 	if err := safePath(next); err != nil {
 		return err
 	}
-	if err := os.Remove(next); err != nil && !os.IsNotExist(err) {
+	if err := absent(next); err != nil {
 		return err
 	}
 	if err := writeFile(next, data); err != nil {
 		return err
 	}
+	phase := p.record.State
+	if phase == "preparing" {
+		if p.record.Manifest != nil {
+			phase = "manifest"
+		} else if _, err := os.Lstat(filepath.Join(p.root, publicationStateName)); os.IsNotExist(err) {
+			phase = "initial"
+		}
+	}
+	p.hooks.checkpoint("journal-" + phase + "-next-synced")
 	if err := replaceState(next, filepath.Join(p.root, "state.json")); err != nil {
 		return err
 	}
+	p.hooks.checkpoint("journal-" + phase + "-replaced")
 	return syncDirectory(p.root)
 }
 
@@ -399,7 +483,10 @@ func RecoverPublication(ctx context.Context, destination string) (string, error)
 		return "", err
 	}
 	// Recovery does not create journals for unknown destinations.
-	if _, err := os.Stat(filepath.Join(operationRoot(dest), publicationStateName)); err != nil {
+	if _, err := os.Lstat(operationRoot(dest)); err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	p, err := openPublication(dest, createHooks{})
@@ -429,6 +516,9 @@ func RecoverPublication(ctx context.Context, destination string) (string, error)
 	}
 	if p.record.State == "aborted" || p.record.Manifest == nil {
 		return "", errors.New("unexpected target; publication recovery refused")
+	}
+	if err := absent(p.staging()); err != nil {
+		return "", errors.New("target and recorded staging coexist; publication recovery refused")
 	}
 	m, err := Verify(ctx, dest)
 	if err != nil {
