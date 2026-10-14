@@ -9,6 +9,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 import sys
 import stat
 import warnings
@@ -108,6 +109,9 @@ class Ret01MaterializeTests(unittest.TestCase):
             with zipfile.ZipFile(self.archive, "w") as zipped:
                 for name, data in files:
                     entry = zipfile.ZipInfo(name)
+                    # Bypass Windows-only constructor normalization so negative
+                    # tests serialize the actual hostile name on every platform.
+                    entry.filename = name
                     entry.create_system = 3
                     entry.external_attr = mode << 16
                     zipped.writestr(entry, data)
@@ -131,7 +135,8 @@ class Ret01MaterializeTests(unittest.TestCase):
 
     def test_paths_links_and_duplicates_before_output(self):
         for name in ("../escape", "/absolute", "ret-01/../../escape", "ret-01/./alias",
-                     "ret-01\\escape", "ret-01/C:drive", "ret-01//alias", "ret-01/directory/"):
+                     "ret-01\\escape", "ret-01/C:drive", "ret-01//alias", "ret-01/directory/",
+                     "ret-01/file\x00suffix"):
             with self.subTest(name=name):
                 self.reject(self.make_archive([(name, b"x")]), "archive member")
         for mode in (stat.S_IFLNK | 0o777, stat.S_IFIFO | 0o600):
@@ -158,6 +163,12 @@ class Ret01MaterializeTests(unittest.TestCase):
                 else:
                     pin["sourceBundleDigest"] = "different-bundle"
                 self.reject(pin, message)
+
+    def test_windows_zipinfo_normalization_rejected_before_inventory(self):
+        pin = self.make_archive([("ret-01\\escape", b"x")])
+        # Exercise Windows' ZipInfo constructor branch on non-Windows hosts too.
+        with mock.patch.object(zipfile.os, "sep", "\\"):
+            self.reject(pin, "archive member")
 
     def test_extraction_budget_before_output(self):
         pin = self.make_archive()

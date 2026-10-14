@@ -116,10 +116,12 @@ def materialize_ret01(archive, output, pin=None):
     total = 0
     with zipfile.ZipFile(io.BytesIO(data)) as zipped:
         for entry in zipped.infolist():
-            name = entry.filename
+            # ZipInfo normalizes backslashes on Windows (and truncates NULs).
+            # Reject aliases using the raw member name before any filesystem use.
+            name = entry.orig_filename
             path = PurePosixPath(name)
             mode = entry.external_attr >> 16
-            if (entry.is_dir() or path.is_absolute() or ".." in path.parts
+            if (entry.filename != name or entry.is_dir() or path.is_absolute() or ".." in path.parts
                     or str(path) != name or "\\" in name or ":" in name
                     or name in members or entry.file_size < 0
                     or stat.S_IFMT(mode) not in (0, stat.S_IFREG)):
