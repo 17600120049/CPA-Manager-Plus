@@ -192,6 +192,8 @@ func TestReplayExactSource(t *testing.T) {
 	must(t, st.RunDerivedStartupMaintenance(ctx))
 	// Reuse the production retained, hourly and pricing projections until caught up.
 	for i := 0; i < 100; i++ {
+		identity, e := st.CatchUpIdentityProjection(ctx, 2, p.ToMS)
+		must(t, e)
 		a, e := st.CatchUpUsageMonitoringProjection(ctx, 2, p.ToMS)
 		must(t, e)
 		d, e := st.CatchUpUsageMonitoringStats(ctx, 2, p.ToMS)
@@ -206,7 +208,7 @@ func TestReplayExactSource(t *testing.T) {
 		must(t, e)
 		_, e = st.CatchUpAccountHistoryRollups(ctx, 2, p.ToMS)
 		must(t, e)
-		if !a.Pending && !d.Pending && !metadata.Pending && !legacyIdentity.Pending && !b.Pending && !c.Pending {
+		if !identity.Pending && !a.Pending && !d.Pending && !metadata.Pending && !legacyIdentity.Pending && !b.Pending && !c.Pending {
 			break
 		}
 		if i == 99 {
