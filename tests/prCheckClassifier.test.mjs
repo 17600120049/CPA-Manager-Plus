@@ -18,6 +18,7 @@ const noChecks = {
   windows_sqlite: false,
   windows_preflight: false,
   bundle_boundary: false,
+  manager_runtime: false,
   runtime_lifecycle: false,
   native_control: false,
   docker: false,
@@ -58,6 +59,7 @@ describe('PR check classifier', () => {
       windows_sqlite: true,
       windows_preflight: true,
       bundle_boundary: true,
+      manager_runtime: true,
       runtime_lifecycle: true,
       native_control: true,
       docker: true,
@@ -157,13 +159,15 @@ describe('PR check classifier', () => {
     });
   });
 
-  it('runs Windows preflight for Manager startup wiring without unrelated heavy gates', () => {
+  it('runs Windows preflight and Runtime lifecycle checks for Manager startup wiring', () => {
     expect(
       classifyChangedFiles(['apps/manager-server/cmd/cpa-manager-plus/main.go'])
     ).toEqual({
       ...noChecks,
       manager_server: true,
       windows_preflight: true,
+      manager_runtime: true,
+      runtime_lifecycle: true,
       docker: true,
     });
   });
@@ -200,6 +204,7 @@ describe('PR check classifier', () => {
       ...noChecks,
       manager_server: true,
       runtime_supervisor: true,
+      manager_runtime: true,
       runtime_lifecycle: true,
       docker: true,
     });
@@ -301,8 +306,13 @@ describe('PR check classifier', () => {
       'bin/ci/runtime18-secret-state-e2e.sh',
       'bin/ci/runtime19-phase1-exit-e2e.sh',
     ]) {
-      expect(classifyChangedFiles([filePath]).docker, filePath).toBe(true);
-      expect(classifyChangedFiles([filePath]).runtime_lifecycle, filePath).toBe(true);
+      const checks = classifyChangedFiles([filePath]);
+      expect(checks.docker, filePath).toBe(true);
+      expect(checks.runtime_lifecycle, filePath).toBe(true);
+      expect(
+        checks.manager_runtime,
+        filePath
+      ).toBe(filePath.startsWith('apps/manager-server/'));
     }
   });
 
@@ -330,6 +340,7 @@ describe('PR check classifier', () => {
         windows_sqlite: true,
         windows_preflight: true,
         bundle_boundary: true,
+        manager_runtime: true,
         runtime_lifecycle: true,
         native_control: true,
         docker: true,
@@ -364,6 +375,7 @@ describe('PR check classifier', () => {
       frontend: true,
       manager_server: true,
       windows_preflight: true,
+      manager_runtime: true,
       runtime_lifecycle: true,
       docker: true,
       demo_docs: true,
