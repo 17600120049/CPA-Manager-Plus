@@ -16,15 +16,12 @@ import (
 )
 
 const (
-	ret01CaseID             = "RET-01"
-	ret01PlanCommit         = "2719d8466951da1ea457bd1a00dca3fa6f09dc43"
-	ret01SourceBundleDigest = "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3"
+	ret01CaseID     = "RET-01"
+	ret01PlanCommit = "2719d8466951da1ea457bd1a00dca3fa6f09dc43"
 )
 
-// RET-01 consumes the already accepted SRC-11 exact-source provenance as an
-// immutable input anchor. It never regenerates the v1.14.4 source and never
-// changes the sealed source bundle. The replay, assertions and output bundle
-// are owned by this case and are intentionally separate from SRC-11 output.
+// RET-01 uses its own controlled generation by the exact producer already
+// independently accepted for SRC-11. No SRC-11 database or bundle is reused.
 func TestReplayRET01(t *testing.T) {
 	root := os.Getenv("CPAMP_RET01_SOURCE_EVIDENCE")
 	if root == "" {
@@ -32,11 +29,10 @@ func TestReplayRET01(t *testing.T) {
 	}
 	ctx := context.Background()
 	archive := envRequired(t, "CPAMP_RET01_ARCHIVE")
-	anchor := revalidate(t, root, archive)
+	anchor := revalidateCase(t, root, archive, ret01CaseID, ret01PlanCommit, "ret-01-full-raw-revision2-v1")
 	if anchor.SourceRelease != "v1.14.4" || anchor.SourceCommit != sourceCommit ||
-		anchor.GeneratedBundleSHA256 != ret01SourceBundleDigest ||
 		anchor.SourceProducerBuildCodeCommit != sourceCommit {
-		t.Fatal("RET-01 source anchor is not the accepted exact SRC-11 v1.14.4 provenance")
+		t.Fatal("RET-01 source generation does not match exact v1.14.4 producer provenance")
 	}
 
 	p, _ := loadProfile(t, filepath.Join(root, "source-generation", "controlled-input.json"))
@@ -46,8 +42,8 @@ func TestReplayRET01(t *testing.T) {
 	}
 	must(t, os.MkdirAll(output, 0700))
 	sealed := inventory(t, filepath.Join(root, "bundle"))
-	if sealed.SourceRevision != ret01SourceBundleDigest {
-		t.Fatalf("RET-01 input bundle digest %s != accepted SRC-11 digest %s", sealed.SourceRevision, ret01SourceBundleDigest)
+	if sealed.SourceRevision != anchor.GeneratedBundleSHA256 {
+		t.Fatalf("RET-01 input bundle digest %s != RET-01 generated digest %s", sealed.SourceRevision, anchor.GeneratedBundleSHA256)
 	}
 
 	replayRoot := taskScratch(t, output, "replay-")
@@ -56,22 +52,27 @@ func TestReplayRET01(t *testing.T) {
 	restoredBefore, err := maintenancebundle.Inspect(ctx, restored)
 	must(t, err)
 	sameInventory(t, sealed, restoredBefore)
-	if restoredBefore.SourceRevision != ret01SourceBundleDigest {
+	if restoredBefore.SourceRevision != anchor.GeneratedBundleSHA256 {
 		t.Fatal("RET-01 restored input bundle digest changed")
 	}
 
 	db := openDB(t, restored.DatabasePath, true)
 	before := snapshot(t, db)
+	var generated map[string][]map[string]any
+	must(t, json.Unmarshal(read(t, filepath.Join(root, "source-generation", "source-snapshot.json")), &generated))
+	if ret01SnapshotDigest(before) != ret01SnapshotDigest(generated) {
+		t.Fatal("RET-01 generated/restored authoritative snapshot mismatch")
+	}
 	checkFullRaw(t, db)
 	if scalar(t, db, "select count(*) from usage_events") != 4 {
-		t.Fatal("RET-01 input is not the accepted four-event full-raw fixture")
+		t.Fatal("RET-01 input is not the case-generated four-event full-raw fixture")
 	}
 	must(t, db.Close())
 
 	key, created, err := security.LoadOrCreateDataKey("", restored.DataKeyPath)
 	must(t, err)
 	if created {
-		t.Fatal("RET-01 replay must use the accepted source data.key")
+		t.Fatal("RET-01 replay must use the case-generated source data.key")
 	}
 	protector, err := security.NewProtector(key)
 	must(t, err)
@@ -159,7 +160,7 @@ func TestReplayRET01(t *testing.T) {
 	devin := query(t, db, `select input_tokens,cache_read_tokens,cache_creation_tokens,total_tokens,
  cache_input_mode,normalized_uncached_input_tokens,normalized_total_input_tokens,
  normalized_cache_read_tokens,normalized_cache_creation_tokens from usage_events
- where request_id='src11-devin-mixed'`)
+ where request_id='ret01-devin-mixed'`)
 	if len(devin) != 1 {
 		t.Fatal("RET-01 Devin revision 2 evidence is missing")
 	}
@@ -177,11 +178,11 @@ func TestReplayRET01(t *testing.T) {
  response_metadata_json,generate,stream from usage_events order by rowid`)
 	sessionRows := int64(0)
 	for _, row := range metadataRows {
-		if row["session_id"] == "src11-session" {
+		if row["session_id"] == "ret01-session" {
 			sessionRows++
 		}
 	}
-	if scalar(t, db, "select count(*) from usage_events where session_id='src11-session'") < 2 ||
+	if scalar(t, db, "select count(*) from usage_events where session_id='ret01-session'") < 2 ||
 		scalar(t, db, "select count(*) from usage_events where response_metadata_json is not null and response_metadata_json != ''") < 2 {
 		t.Fatal("RET-01 request/response/session metadata fixture is vacuous")
 	}
@@ -300,11 +301,11 @@ func TestReplayRET01(t *testing.T) {
 	inputEvidence := save(t, output, "input-bundle.json", map[string]any{
 		"caseID":              ret01CaseID,
 		"inputBundleIdentity": ret01CaseID + "/input-bundle@" + sealed.SourceRevision,
-		"provenanceRole":      "accepted SRC-11 exact-source anchor; no source regeneration or reinterpretation",
+		"provenanceRole":      "RET-01 controlled generation using the independently accepted exact v1.14.4 producer identity",
 		"sourceAnchor": map[string]any{
-			"caseID": "SRC-11", "acceptance": "accepted",
-			"acceptanceEvidence": "seakee/cpamp-plan/main@" + ret01PlanCommit,
-			"sourceRelease":      anchor.SourceRelease, "sourceCommit": anchor.SourceCommit,
+			"caseID": ret01CaseID, "acceptance": "pending",
+			"sourceRecord":  "ret-01/source-generation",
+			"sourceRelease": anchor.SourceRelease, "sourceCommit": anchor.SourceCommit,
 			"sourceGenerationRecordSHA256": fileDigest(t, filepath.Join(root, "source-generation", "record.json")),
 			"sourceBundleDigest":           sealed.SourceRevision,
 			"producerArchiveSHA256":        anchor.SourceProducerArchiveSHA256,
@@ -313,7 +314,7 @@ func TestReplayRET01(t *testing.T) {
 		"inputBundle": map[string]any{
 			"manifestDigest":   sealed.SourceRevision,
 			"inventory":        sealed.Entries,
-			"materializedFrom": "immutable SRC-11 qualification asset; verified before extraction",
+			"materializedFrom": "RET-01 controlled generation; complete case bundle verified before replay",
 		},
 	})
 	assertionsEvidence := save(t, output, "semantic-assertions.json", map[string]any{
@@ -333,12 +334,12 @@ func TestReplayRET01(t *testing.T) {
 		},
 	})
 	executionEvidence := save(t, output, "execution-record.json", map[string]any{
-		"caseID":             ret01CaseID,
-		"executionCommit":    code,
-		"verifierCodeCommit": code,
-		"sourceAnchorCaseID": "SRC-11",
+		"caseID":                 ret01CaseID,
+		"executionCommit":        code,
+		"verifierCodeCommit":     code,
+		"sourceGenerationCaseID": ret01CaseID,
 		"steps": []map[string]any{
-			{"step": "materialize-and-verify-source-anchor", "status": "pass"},
+			{"step": "verify-ret01-source-generation-and-bundle", "status": "pass"},
 			{"step": "restore-input-to-new-root", "status": "pass", "manifestDigest": sealed.SourceRevision},
 			{"step": "run-bounded-v2-migration-and-derived-rebuild", "status": "pass", "states": len(migrationStates)},
 			{"step": "verify-pricing-accounting-metadata-quota", "status": "pass"},
@@ -349,17 +350,17 @@ func TestReplayRET01(t *testing.T) {
 	result := map[string]any{
 		"caseID":                ret01CaseID,
 		"runtimeEvidence":       "pass",
-		"casePass":              true,
+		"casePass":              false,
 		"independentAcceptance": "pending",
 		"UpgradeAuthorized":     false,
 		"TrustedHopReceipt":     false,
 		"Phase4A07Complete":     false,
 		"Phase4AComplete":       false,
-		"remainingCases":        map[string]any{"count": 47, "status": "pending"},
+		"remainingCases":        map[string]any{"count": 48, "status": "pending"},
 		"sourceProvenance": map[string]any{
-			"anchorCaseID": "SRC-11", "sourceRelease": anchor.SourceRelease, "sourceCommit": anchor.SourceCommit,
+			"caseID": ret01CaseID, "sourceRecord": "ret-01/source-generation", "sourceRelease": anchor.SourceRelease, "sourceCommit": anchor.SourceCommit,
 			"sourceBundleDigest": sealed.SourceRevision, "sourceGenerationRecordSHA256": fileDigest(t, filepath.Join(root, "source-generation", "record.json")),
-			"acceptance": "accepted", "acceptanceEvidence": "seakee/cpamp-plan/main@" + ret01PlanCommit,
+			"acceptance": "pending", "producerIdentityDependency": "SRC-11 accepted; no fixture reuse",
 		},
 		"inputBundleIdentity":          ret01CaseID + "/input-bundle@" + sealed.SourceRevision,
 		"inputBundleDigest":            sealed.SourceRevision,
@@ -381,7 +382,7 @@ func TestReplayRET01(t *testing.T) {
 		"backupRestore":                map[string]any{"manifestDigest": backup.SourceRevision, "restoredManifestDigest": restoredBackupManifest.SourceRevision, "inventoryMatched": true, "sqlite": restoredBackupSQLite},
 	}
 	save(t, output, "result.json", result)
-	t.Log("RET-01 runtime case passed; independent acceptance remains pending")
+	t.Log("RET-01 runtime assertions passed; independent acceptance remains pending")
 }
 
 func ret01SnapshotDigest(snapshot map[string][]map[string]any) string {
