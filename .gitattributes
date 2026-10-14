@@ -11,3 +11,4 @@ tests/fixtures/phase4a-evidence/src-11/** -text
 tests/fixtures/phase4a-evidence/src-11/packaging-replay/ci/windows-latest/*.json -text whitespace=cr-at-eol
 
 tests/fixtures/phase4a-evidence/ret-01/** text eol=lf
+tests/fixtures/phase4a-evidence/mig-01/** -text

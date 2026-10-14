@@ -1,0 +1,30 @@
+{
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-07"
+  ],
+  "controlledDirectCandidateReadiness": "ready",
+  "executionCommit": "70dfd607a0c7919cdb3cd5d56406dd3141914899",
+  "productionBridgeReadiness": "unknown",
+  "sourceMutation": false,
+  "sqlite": {
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "delete"
+      }
+    ]
+  },
+  "steps": [
+    "verify-own-generation-producer-and-bundle",
+    "readonly-source-snapshot",
+    "controlled-direct-candidate-readiness",
+    "missing-exact-evidence-guard",
+    "readonly-snapshot-and-inventory-recheck"
+  ]
+}

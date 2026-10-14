@@ -1,0 +1,4 @@
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11	0.028s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight	0.645s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite	14.883s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/cmd/cpa-manager-plus	6.585s

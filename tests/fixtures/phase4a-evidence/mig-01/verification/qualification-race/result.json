@@ -1,0 +1,37 @@
+{
+  "Cache": "completed",
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "PlanCommit": "7eefdbf50d3596890a75e97a400dc1f5286e6498",
+  "Quota": "completed",
+  "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "SourceGeneratorCodeCommit": "fe5f11349d876b57c7cb6929bb270bce3a869fb6",
+  "SourceRelease": "v1.14.4",
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "acceptedCases": [
+    "SRC-11",
+    "RET-01",
+    "AUT-03"
+  ],
+  "afterDigest": "931aab5d621371bac69140433cc41925c510b9b15d4b146084fbe0989ecb3021",
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-07"
+  ],
+  "beforeDigest": "931aab5d621371bac69140433cc41925c510b9b15d4b146084fbe0989ecb3021",
+  "cacheRevision": 2,
+  "caseID": "MIG-01",
+  "casePass": false,
+  "controlledDirectCandidateReadiness": "ready",
+  "executionCommit": "70dfd607a0c7919cdb3cd5d56406dd3141914899",
+  "independentAcceptance": "pending",
+  "independentAcceptancePendingCases": 46,
+  "inputBundleDigest": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f",
+  "productionBridgeReadiness": "unknown",
+  "runtimeAssertions": "pass",
+  "runtimeEvidence": "pass",
+  "sourceAfterDigest": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f",
+  "sourceBeforeDigest": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f",
+  "sourceGenerationRecordSHA256": "a727b9abb093370a29c4e90f5756fb430df82589ee207409d6a636c70c630236"
+}

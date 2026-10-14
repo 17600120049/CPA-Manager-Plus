@@ -1,0 +1,10 @@
+{
+  "executionCommit": "70dfd607a0c7919cdb3cd5d56406dd3141914899",
+  "statusBefore": "",
+  "statusAfter": "",
+  "method": "clean local clone of readiness-naming verifier checkpoint; existing downloaded immutable ZIP digest rechecked; original materialized source reused unchanged",
+  "downloadedArchiveSHA256": "bca2e3d802b9c48e76e895418a7280e666915bebe3cd353bef17c45a3021607b",
+  "releaseID": 412855420,
+  "assetID": 640737774,
+  "sourceBundleDigest": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f"
+}

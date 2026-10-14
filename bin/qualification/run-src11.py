@@ -42,7 +42,7 @@ def run(args, log, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["generate", "generate-ret01", "replay", "ret01"])
+    parser.add_argument("action", choices=["generate", "generate-ret01", "generate-mig01", "replay", "ret01", "mig01"])
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--release-info", type=Path)
     parser.add_argument("--evidence", type=Path)
@@ -53,13 +53,16 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     archive = args.archive.resolve(strict=True)
-    generating = args.action in ("generate", "generate-ret01")
+    generating = args.action in ("generate", "generate-ret01", "generate-mig01")
     ret01 = args.action in ("generate-ret01", "ret01")
-    profile = ROOT / "tests/fixtures/phase4a-evidence/ret-01/profile.json" if ret01 else PROFILE
+    mig01 = args.action in ("generate-mig01", "mig01")
+    profile = ROOT / f"tests/fixtures/phase4a-evidence/{'mig-01' if mig01 else 'ret-01'}/profile.json" if (ret01 or mig01) else PROFILE
     if args.action == "replay" and bool(args.evidence) == bool(args.evidence_archive):
         parser.error("replay requires exactly one of --evidence or --evidence-archive")
     if args.action == "ret01" and (not args.evidence or args.evidence_archive):
         parser.error("ret01 requires --evidence pointing to its own complete generated fixture")
+    if args.action == "mig01" and (not args.evidence or args.evidence_archive or args.release_info):
+        parser.error("mig01 requires --evidence pointing to its own complete generated fixture")
     if generating and (args.evidence_archive or args.linux):
         parser.error("--evidence-archive and --linux are replay options")
     if generating and args.evidence:
@@ -72,7 +75,8 @@ def main():
     tracked_scope = ["apps/manager-server", "bin/qualification",
                      "tests/fixtures/phase4a-src11/profile.json",
                      "tests/fixtures/phase4a-evidence/src-11/sealed-artifact.json",
-                     "tests/fixtures/phase4a-evidence/ret-01/profile.json"]
+                     "tests/fixtures/phase4a-evidence/ret-01/profile.json",
+                     "tests/fixtures/phase4a-evidence/mig-01/profile.json"]
     dirty = capture(["git", "status", "--porcelain", "--untracked-files=all", "--", *tracked_scope], cwd=ROOT)
     if dirty:
         parser.error("commit all harness, profile and Manager source first; uncommitted code cannot claim GeneratorCodeCommit")
@@ -102,8 +106,8 @@ def main():
              "executableSHA256": digest(binary), "profileSHA256": digest(profile),
              "archiveSHA256": digest(archive), "host": platform.platform()}
     if generating:
-        case_dir = "ret-01" if ret01 else "src-11"
-        test_name = "^TestGenerateRET01$" if ret01 else "^TestGenerateExactSource$"
+        case_dir = "mig-01" if mig01 else "ret-01" if ret01 else "src-11"
+        test_name = "^TestGenerateMIG01$" if mig01 else "^TestGenerateRET01$" if ret01 else "^TestGenerateExactSource$"
         source = output / case_dir
         release_info = args.release_info.resolve(strict=True)
         image_id = capture(["docker", "image", "inspect", IMAGE, "--format", "{{.Id}}"])
@@ -120,6 +124,7 @@ def main():
                   "--mount", f"type=bind,src={output},dst=/output",
                   "--env", "CPAMP_SRC11_GENERATE=1", "--env", f"CPAMP_SRC11_OUTPUT=/output/{case_dir}",
                   "--env", f"CPAMP_RET01_GENERATE={int(ret01)}",
+                  "--env", f"CPAMP_MIG01_GENERATE={int(mig01)}",
                   "--env", "CPAMP_SRC11_ARCHIVE=/archive", "--env", "CPAMP_SRC11_RELEASE_INFO=/release-info",
                   "--env", "CPAMP_SRC11_PROFILE=/profile", IMAGE,
                   "/qualification", "-test.v", "-test.run", test_name, "-test.timeout", "4m"]
@@ -137,6 +142,9 @@ def main():
             test_name = "^TestReplayRET01$"
         else:
             test_name = "^TestReplayExactSource$"
+        if mig01:
+            env.update(CPAMP_MIG01_SOURCE=str(evidence), CPAMP_MIG01_OUTPUT=str(output / "runtime"))
+            test_name = "^TestQualifyMIG01$"
         command = [str(binary), "-test.v", "-test.run", test_name, "-test.timeout", "4m"]
         if args.linux:
             command = ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--read-only",
@@ -153,6 +161,9 @@ def main():
                 command.extend(["--env", "CPAMP_RET01_SOURCE_EVIDENCE=/evidence",
                                 "--env", "CPAMP_RET01_ARCHIVE=/archive",
                                 "--env", "CPAMP_RET01_REPLAY_OUTPUT=/output/runtime"])
+            if mig01:
+                command.extend(["--env", "CPAMP_MIG01_SOURCE=/evidence",
+                                "--env", "CPAMP_MIG01_OUTPUT=/output/runtime"])
             command.extend([IMAGE, "/qualification", "-test.v", "-test.run", test_name, "-test.timeout", "4m"])
             build["isolation"] = {"image": IMAGE, "parentIndex": IMAGE_INDEX, "network": "none", "readOnlyRoot": True,
                                   "imageID": capture(["docker", "image", "inspect", IMAGE, "--format", "{{.Id}}"]),

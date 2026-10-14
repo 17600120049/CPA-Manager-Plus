@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "caseID": "MIG-01",
+  "casePass": true,
+  "casePassScope": "completed 13 delivery criteria; independent acceptance remains pending",
+  "completionCriteria": {
+    "exactV1144Provenance": true,
+    "cachePersistedCompletedRevision2": true,
+    "quotaPersistedCompleted": true,
+    "authenticProducerMigrationState": true,
+    "controlledDirectCandidateReadinessPass": true,
+    "exactCandidateIdentityVerified": true,
+    "SEM01Pass": true,
+    "SEM07Pass": true,
+    "noUnauthorizedSourceMutation": true,
+    "authoritativeDigestsPreserved": true,
+    "machineCheckableEvidence": true,
+    "cleanCheckoutReplay": true,
+    "noSyntheticHistoricalRuntimeState": true
+  },
+  "independentAcceptance": "pending",
+  "SourceRelease": "v1.14.4",
+  "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "PlanCommit": "7eefdbf50d3596890a75e97a400dc1f5286e6498",
+  "Cache": "completed",
+  "Quota": "completed",
+  "cacheRevision": 2,
+  "readinessScope": "controlled-direct-candidate-data-compatibility",
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-07"
+  ],
+  "sourceMutation": false,
+  "sourceBundleDigest": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f",
+  "authoritativeHistoryDigest": "931aab5d621371bac69140433cc41925c510b9b15d4b146084fbe0989ecb3021",
+  "acceptedCases": [
+    "SRC-11",
+    "RET-01",
+    "AUT-03"
+  ],
+  "independentAcceptancePendingCases": 46,
+  "remainingMIGCases": [
+    "MIG-02",
+    "MIG-03",
+    "MIG-04",
+    "MIG-05",
+    "MIG-06",
+    "MIG-07",
+    "MIG-08",
+    "MIG-09"
+  ],
+  "UpgradeAuthorized": false,
+  "TrustedHopReceipt": false,
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "qualificationExecutionCommit": "70dfd607a0c7919cdb3cd5d56406dd3141914899",
+  "productCodeChanged": false,
+  "harnessOnly": true,
+  "controlledDirectCandidateReadiness": "ready",
+  "productionBridgeReadiness": "unknown"
+}
