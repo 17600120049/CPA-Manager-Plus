@@ -14,10 +14,12 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
 )
 
-const usage = `Usage: cpa-manager-plus manager-data-bundle <create|verify|restore-new> [flags]
+const usage = `Usage: cpa-manager-plus manager-data-bundle <create|recover-create|verify|restore-new|recover-publication> [flags]
 create: --db PATH --data-key PATH --config PATH --archives PATH --bundle PATH --source-stopped
+recover-create: same source flags as create; recover a rollback journal on a private copy
 verify: --bundle PATH
 restore-new: --bundle PATH --target PATH
+recover-publication: --bundle DESTINATION (the create/restore target to reconcile)
 All actions accept --timeout DURATION (positive; default 2m).
 Create requires an existing Manager ownership marker and a held matching lock.
 All source writers must actually be stopped or isolated. --source-stopped is an
@@ -38,22 +40,26 @@ type summary struct {
 type operationError struct{ cause error }
 
 func (e operationError) Error() string {
+	if errors.Is(e.cause, maintenancebundle.ErrPublicationUncertain) {
+		return "Manager bundle publication outcome requires recover-publication; no upgrade authority was granted"
+	}
 	return "Manager bundle operation failed; no upgrade authority was granted"
 }
 func (e operationError) Unwrap() error { return e.cause }
 
 // Run is an offline maintenance command. It neither resolves default runtime
-// locations nor dispatches startup, creates keys, or opens a writable database.
+// locations nor dispatches startup or creates keys. Explicit recover-create may
+// open only a task-owned private database copy for SQLite journal recovery.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
 		_, err := io.WriteString(stderr, usage)
 		return err
 	}
 	if len(args) == 0 {
-		return errors.New("Manager bundle action required: create, verify, or restore-new")
+		return errors.New("Manager bundle action required; use --help")
 	}
 	action := args[0]
-	if action != "create" && action != "verify" && action != "restore-new" {
+	if action != "create" && action != "recover-create" && action != "verify" && action != "restore-new" && action != "recover-publication" {
 		return errors.New("unsupported Manager bundle action")
 	}
 	fs := flag.NewFlagSet("manager-data-bundle "+action, flag.ContinueOnError)
@@ -66,7 +72,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	var layout maintenancebundle.Layout
 	var stopped bool
 	var target string
-	if action == "create" {
+	isCreate := action == "create" || action == "recover-create"
+	if isCreate {
 		fs.StringVar(&layout.DatabasePath, "db", "", "existing Manager database")
 		fs.StringVar(&layout.DataKeyPath, "data-key", "", "existing Manager key")
 		fs.StringVar(&layout.ConfigPath, "config", "", "explicit source config path")
@@ -86,7 +93,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if fs.NArg() != 0 || strings.TrimSpace(*bundle) == "" || *timeout <= 0 {
 		return errors.New("explicit --bundle and positive --timeout required; no positional arguments")
 	}
-	if action == "create" && (!stopped || strings.TrimSpace(layout.DatabasePath) == "" || strings.TrimSpace(layout.DataKeyPath) == "" || strings.TrimSpace(layout.ConfigPath) == "" || strings.TrimSpace(layout.ArchivesPath) == "") {
+	if isCreate && (!stopped || strings.TrimSpace(layout.DatabasePath) == "" || strings.TrimSpace(layout.DataKeyPath) == "" || strings.TrimSpace(layout.ConfigPath) == "" || strings.TrimSpace(layout.ArchivesPath) == "") {
 		return errors.New("create requires explicit --db, --data-key, --config, --archives and --source-stopped")
 	}
 	if action == "restore-new" && strings.TrimSpace(target) == "" {
@@ -99,12 +106,17 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	var m maintenancebundle.Manifest
 	var err error
+	var recoveredState string
 	switch action {
-	case "create":
+	case "create", "recover-create":
 		var lock *processlock.Lock
 		lock, err = processlock.AcquireExisting(layout.DatabasePath)
 		if err == nil {
-			m, err = maintenancebundle.Create(ctx, layout, *bundle, lock)
+			if action == "recover-create" {
+				m, err = maintenancebundle.RecoverCreate(ctx, layout, *bundle, lock)
+			} else {
+				m, err = maintenancebundle.Create(ctx, layout, *bundle, lock)
+			}
 			err = errors.Join(err, lock.Close())
 		}
 	case "verify":
@@ -114,6 +126,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err == nil {
 			_, err = maintenancebundle.RestoreNew(ctx, *bundle, target)
 		}
+	case "recover-publication":
+		recoveredState, err = maintenancebundle.RecoverPublication(ctx, *bundle)
 	}
 	if err != nil {
 		return operationError{err}
@@ -124,7 +138,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			files++
 		}
 	}
-	status := map[string]string{"create": "created", "verify": "verified", "restore-new": "restored"}[action]
+	status := map[string]string{"create": "created", "recover-create": "recovered-created", "verify": "verified", "restore-new": "restored"}[action]
+	if action == "recover-publication" {
+		status = "publication-" + recoveredState
+		m.Fence = maintenancebundle.CooperatingFence
+	}
 	if err := json.NewEncoder(stdout).Encode(summary{Status: status, Fence: m.Fence, Files: files}); err != nil {
 		return fmt.Errorf("Manager bundle %s; result output failed", status)
 	}
