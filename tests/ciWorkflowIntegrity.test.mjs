@@ -200,7 +200,7 @@ describe('GitHub Actions workflow integrity', () => {
     const windowsJob = jobBlock(workflow, 'manager-server-windows-sqlite');
 
     for (const output of ['windows_preflight', 'bundle_boundary', 'runtime_lifecycle']) {
-      expect(scopeJob).toContain(`${output}: ${{ steps.classify.outputs.${output} }}`);
+      expect(scopeJob).toContain(`${output}: \${{ steps.classify.outputs.${output} }}`);
     }
 
     expect(managerJob).toContain("if: needs.changes.outputs.bundle_boundary == 'true'");
