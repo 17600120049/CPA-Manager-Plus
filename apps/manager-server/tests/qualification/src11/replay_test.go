@@ -360,6 +360,7 @@ func taskScratch(t *testing.T, parent, pattern string) string {
 	t.Helper()
 	path, err := os.MkdirTemp(parent, pattern)
 	must(t, err)
+	must(t, os.Remove(path))
 	t.Cleanup(func() { _ = os.RemoveAll(path) })
 	return path
 }
