@@ -203,8 +203,10 @@ jobs:
           release_id=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["sourceArtifact"]["releaseID"])' "$pin")
           gh release download "$tag" --repo seakee/CPA-Manager-Plus --pattern "$asset" --dir "$RUNNER_TEMP/mig01-download"
           gh api "repos/seakee/CPA-Manager-Plus/releases/$release_id" > "$RUNNER_TEMP/mig01-release.json"
+          gh api "repos/seakee/CPA-Manager-Plus/git/ref/tags/$tag" > "$RUNNER_TEMP/mig01-tag.json"
           python bin/qualification/materialize-src11.py --case mig-01 \
             --release-metadata "$RUNNER_TEMP/mig01-release.json" \
+            --tag-metadata "$RUNNER_TEMP/mig01-tag.json" \
             --archive "$RUNNER_TEMP/mig01-download/$asset" --output "$RUNNER_TEMP/mig01-original"
       - name: Verify MIG-01 committed evidence and actual persisted source
         shell: bash

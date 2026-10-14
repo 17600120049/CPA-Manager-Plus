@@ -83,10 +83,10 @@ def write_members(output, members):
         raise
 
 
-def validate_ret01_release(metadata, pin):
+def validate_ret01_release(metadata, pin, tag_metadata=None):
     """Check durable hosting identity, not production admission or acceptance."""
     if (metadata.get("id") != pin["releaseID"] or metadata.get("tag_name") != pin["tag"]
-            or metadata.get("target_commitish") != pin["tagCommit"]
+            or metadata.get("target_commitish") != pin.get("releaseTargetCommitish", pin["tagCommit"])
             or metadata.get("draft") is not False or metadata.get("prerelease") is not True
             or metadata.get("immutable") is not True):
         raise ValueError("RET-01 immutable qualification release mismatch")
@@ -98,6 +98,11 @@ def validate_ret01_release(metadata, pin):
             or asset.get("size") != pin["archiveSize"] or asset.get("state") != "uploaded"
             or asset.get("digest") != "sha256:" + pin["archiveSHA256"]):
         raise ValueError("RET-01 release asset identity mismatch")
+    if "releaseTargetCommitish" in pin:
+        if (not tag_metadata or tag_metadata.get("ref") != "refs/tags/" + pin["tag"]
+                or tag_metadata.get("object", {}).get("type") != "commit"
+                or tag_metadata["object"].get("sha") != pin["tagCommit"]):
+            raise ValueError("qualification tag commit mismatch")
 
 
 def materialize_ret01(archive, output, pin=None):
@@ -163,13 +168,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", choices=["src-11", "ret-01", "mig-01"], default="src-11")
     parser.add_argument("--release-metadata", type=Path, help="optional local RET-01 Release API response")
+    parser.add_argument("--tag-metadata", type=Path, help="local Git ref API response when release target differs from the pinned tag commit")
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     if args.case in ("ret-01", "mig-01"):
         if args.release_metadata:
             pin = json.loads((ROOT / f"tests/fixtures/phase4a-evidence/{args.case}/source-provenance.json").read_text())["sourceArtifact"]
-            validate_ret01_release(json.loads(args.release_metadata.read_text()), pin)
+            validate_ret01_release(json.loads(args.release_metadata.read_text()), pin,
+                                   json.loads(args.tag_metadata.read_text()) if args.tag_metadata else None)
         print(materialize_case(args.archive, args.output, args.case))
     else:
         if args.release_metadata:

@@ -212,6 +212,21 @@ class Ret01MaterializeTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, "identity mismatch"):
                 module.validate_ret01_release(altered, pin)
 
+    def test_release_target_requires_separate_actual_tag_identity(self):
+        pin = json.loads((module.ROOT / "tests/fixtures/phase4a-evidence/ret-01/source-provenance.json").read_text())["sourceArtifact"]
+        pin["releaseTargetCommitish"] = "main"
+        metadata = {"id": pin["releaseID"], "tag_name": pin["tag"], "target_commitish": "main",
+                    "draft": False, "prerelease": True, "immutable": True,
+                    "assets": [{"id": pin["assetID"], "name": pin["archiveName"], "size": pin["archiveSize"],
+                                "state": "uploaded", "digest": "sha256:" + pin["archiveSHA256"]}]}
+        tag = {"ref": "refs/tags/" + pin["tag"], "object": {"type": "commit", "sha": pin["tagCommit"]}}
+        module.validate_ret01_release(metadata, pin, tag)
+        for altered in (None, {}, {"ref": "refs/tags/other", "object": tag["object"]},
+                        {"ref": tag["ref"], "object": {"type": "tag", "sha": pin["tagCommit"]}},
+                        {"ref": tag["ref"], "object": {"type": "commit", "sha": "0" * 40}}):
+            with self.subTest(tag=altered), self.assertRaisesRegex(ValueError, "tag commit mismatch"):
+                module.validate_ret01_release(metadata, pin, altered)
+
     @unittest.skipUnless(os.environ.get("CPAMP_RET01_SEALED_ARCHIVE"), "opt-in original immutable RET-01 ZIP")
     def test_original_ret01_zip(self):
         root = module.materialize_ret01(Path(os.environ["CPAMP_RET01_SEALED_ARCHIVE"]), self.output)
