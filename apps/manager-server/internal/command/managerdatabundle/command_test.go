@@ -191,27 +191,41 @@ func TestCommandFailsWithoutOwnershipAndNeverCreatesSourceMarker(t *testing.T) {
 	for _, kind := range []string{"marker-missing", "lock-held", "database-missing"} {
 		t.Run(kind, func(t *testing.T) {
 			l, root := source(t)
+			var heldLock *processlock.Lock
+			var before map[string]witness
 			switch kind {
 			case "marker-missing":
 				if err := os.Remove(l.DatabasePath + ".manager.lock"); err != nil {
 					t.Fatal(err)
 				}
 			case "lock-held":
+				// Windows byte-range locks also block a second reader of the
+				// marker. Capture the source witness before taking the fence and
+				// release it before reading the post-operation witness below.
+				before = sourceWitness(t, filepath.Dir(l.DatabasePath))
 				lock, err := processlock.Acquire(l.DatabasePath)
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer lock.Close()
+				heldLock = lock
+				defer heldLock.Close()
 			case "database-missing":
 				if err := os.Remove(l.DatabasePath); err != nil {
 					t.Fatal(err)
 				}
 			}
-			before := sourceWitness(t, filepath.Dir(l.DatabasePath))
+			if before == nil {
+				before = sourceWitness(t, filepath.Dir(l.DatabasePath))
+			}
 			var stdout, stderr bytes.Buffer
 			err := Run(context.Background(), createArgs(l, filepath.Join(root, "bundle")), &stdout, &stderr)
 			if err == nil || stdout.Len() != 0 || stderr.Len() != 0 {
 				t.Fatalf("failure reported success: %v %s %s", err, stdout.String(), stderr.String())
+			}
+			if heldLock != nil {
+				if err := heldLock.Close(); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if after := sourceWitness(t, filepath.Dir(l.DatabasePath)); !reflect.DeepEqual(before, after) {
 				t.Fatal("failure changed source")

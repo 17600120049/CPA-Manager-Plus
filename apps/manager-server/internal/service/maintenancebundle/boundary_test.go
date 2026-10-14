@@ -464,6 +464,21 @@ func TestBoundaryUnknownOperationArtifactsFailClosed(t *testing.T) {
 func TestBoundaryRestoreActiveTargetAndSeparateRoot(t *testing.T) {
 	l, root, lock := fixture(t)
 	bundle, _ := mustCreate(t, l, root, lock)
+	checkpoint, err := sql.Open("sqlite", l.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkpoint.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		_ = checkpoint.Close()
+		t.Fatal(err)
+	}
+	if err := checkpoint.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := Inspect(context.Background(), l)
+	if err != nil {
+		t.Fatal(err)
+	}
 	db, err := sql.Open("sqlite", l.DatabasePath)
 	if err != nil {
 		t.Fatal(err)
@@ -488,10 +503,6 @@ func TestBoundaryRestoreActiveTargetAndSeparateRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer writer.ExecContext(context.Background(), "ROLLBACK")
-	before, err := Inspect(context.Background(), l)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := RestoreNew(context.Background(), bundle, root); err == nil {
 		t.Fatal("active target replaced")
 	}
@@ -505,12 +516,24 @@ func TestBoundaryRestoreActiveTargetAndSeparateRoot(t *testing.T) {
 	if _, err := Verify(context.Background(), newRoot); err != nil {
 		t.Fatal(err)
 	}
+	if err := reader.QueryRow("SELECT count(*) FROM test_table").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("active reader changed: %d %v", count, err)
+	}
+	if _, err := writer.ExecContext(context.Background(), "ROLLBACK"); err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 	after, err := Inspect(context.Background(), l)
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatalf("restore touched active source: %v", err)
-	}
-	if err := reader.QueryRow("SELECT count(*) FROM test_table").Scan(&count); err != nil || count != 1 {
-		t.Fatalf("active reader changed: %d %v", count, err)
 	}
 }
 
