@@ -184,7 +184,8 @@ describe('GitHub Actions workflow integrity', () => {
     expect(managerJob).toContain(
       'go test -race ./internal/service/cpaupdate ./internal/service/runtime ./internal/repository/setting ./internal/service/bootstrap'
     );
-    expect(managerJob).toContain("if: needs.changes.outputs.runtime_lifecycle == 'true'");
+    expect(managerJob).toContain("if: needs.changes.outputs.manager_runtime == 'true'");
+    expect(managerJob).not.toContain("if: needs.changes.outputs.runtime_lifecycle == 'true'");
     expect(managerJob).toContain('run: go vet ./...');
     expect(windowsJob).toContain(
       'go test ./internal/service/runtime ./internal/repository/setting ./internal/service/bootstrap'
