@@ -276,6 +276,7 @@ describe('PR check classifier', () => {
   it('runs Docker failure validation for every combined Runtime lifecycle family', () => {
     for (const filePath of [
       'apps/ingress/internal/ingress/proxy.go',
+      'apps/manager-server/internal/command/runtimeconfig/command.go',
       'apps/manager-server/internal/service/runtime/reconciler.go',
       'apps/manager-server/internal/repository/setting/repository.go',
       'apps/manager-server/internal/service/bootstrap/service.go',
