@@ -4,7 +4,7 @@
     "UpgradeAuthorized": false
   },
   "caseID": "RET-01",
-  "executionCommit": "a3e316e64d30bce4b02305d44140a01fc149292d",
+  "executionCommit": "389e86ae37815fa9a0fa4d741cee9c86a2c94a14",
   "sourceAnchorCaseID": "SRC-11",
   "steps": [
     {
@@ -26,10 +26,10 @@
       "step": "verify-pricing-accounting-metadata-quota"
     },
     {
-      "backupManifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
+      "backupManifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
       "status": "pass",
       "step": "create-and-restore-complete-backup"
     }
   ],
-  "verifierCodeCommit": "a3e316e64d30bce4b02305d44140a01fc149292d"
+  "verifierCodeCommit": "389e86ae37815fa9a0fa4d741cee9c86a2c94a14"
 }

@@ -37,7 +37,7 @@
     },
     "devinRevision": 2
   },
-  "afterDigest": "e5f642027cb0eace36bbc1dfdfc9ab9ce4b83da85df24cb0033b24dd33a0194e",
+  "afterDigest": "9d07b488eab5515a1d157a099e3f5a8e6e5101b7c993bc8ecc76e14c5f858d80",
   "applicableSEM": [
     "SEM-01",
     "SEM-02",
@@ -49,8 +49,8 @@
   "authoritativeBeforeDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
   "backupRestore": {
     "inventoryMatched": true,
-    "manifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
-    "restoredManifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
+    "manifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
+    "restoredManifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
     "sqlite": {
       "checkpoint": [
         {
@@ -76,12 +76,12 @@
   "caseID": "RET-01",
   "casePass": true,
   "evidence": {
-    "backupRestore": "580e591a153b72882ce813223bb58a3b8c4031e73558f5d8b79f584e9ab57b25",
-    "executionRecord": "52f50282adb68623cbd6ca3602459104380b0f1f364d5f0027e3dedc35988b51",
+    "backupRestore": "9c1e67da614ed60a911f497437f223c3960183a2ef73b96dd803b477da6a3286",
+    "executionRecord": "25ae68fb1228a643e9f4eb61fa01327101f2cf3c60ca1377e1f6b99ad2a9a8a7",
     "inputBundle": "7c0b44558fb10166f56ae89893b01b425de910f28ff02f106b429fb25cb2eb35",
-    "semanticAssertions": "e44d55147fc13f6673798e369bf307bdd53b028a92e6f47d52113aa226c7cacc"
+    "semanticAssertions": "32109dd2785629815305af8cb50ddefb98d651fc616969182e34e8a2a62125b9"
   },
-  "executionCommit": "a3e316e64d30bce4b02305d44140a01fc149292d",
+  "executionCommit": "389e86ae37815fa9a0fa4d741cee9c86a2c94a14",
   "independentAcceptance": "pending",
   "inputBundleDigest": "0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
   "inputBundleIdentity": "RET-01/input-bundle@0e106589baef4148ee075ed77ce93bc71e83ca315a377311d62daeb9144236e3",
@@ -378,7 +378,7 @@
     },
     "v2Costs": {
       "claude-fixture": {
-        "generated_at_ms": 1791966299756,
+        "generated_at_ms": 1791967025851,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -410,7 +410,7 @@
         }
       },
       "devin/swe-2": {
-        "generated_at_ms": 1791966299761,
+        "generated_at_ms": 1791967025856,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -442,7 +442,7 @@
         }
       },
       "fixture-free": {
-        "generated_at_ms": 1791966299765,
+        "generated_at_ms": 1791967025860,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,
@@ -474,7 +474,7 @@
         }
       },
       "fixture-paid": {
-        "generated_at_ms": 1791966299769,
+        "generated_at_ms": 1791967025864,
         "granularity": "hour",
         "summary": {
           "total_calls": 1,

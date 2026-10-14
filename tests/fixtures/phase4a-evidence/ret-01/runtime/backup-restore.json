@@ -1,8 +1,8 @@
 {
   "authoritativeDigest": "39c58d46da1e9881f8734463139ae4ad7bce6ffd2b9b1c6f459c054cd9c19835",
-  "backupManifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
+  "backupManifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
   "inventoryMatched": true,
-  "restoredManifestDigest": "ef6a4602f0547f308b7dd90a71fa454aba474c4db780276f2116d551990dfc67",
+  "restoredManifestDigest": "8ceef5b5d960a24721ac0571e002fd275f6e8ed84cd4ad2becdd4964fcbe108e",
   "sqlite": {
     "checkpoint": [
       {

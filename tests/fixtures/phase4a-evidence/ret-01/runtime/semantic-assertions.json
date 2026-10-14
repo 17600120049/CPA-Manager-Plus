@@ -185,7 +185,7 @@
       },
       "v2Costs": {
         "claude-fixture": {
-          "generated_at_ms": 1791966299756,
+          "generated_at_ms": 1791967025851,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -217,7 +217,7 @@
           }
         },
         "devin/swe-2": {
-          "generated_at_ms": 1791966299761,
+          "generated_at_ms": 1791967025856,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -249,7 +249,7 @@
           }
         },
         "fixture-free": {
-          "generated_at_ms": 1791966299765,
+          "generated_at_ms": 1791967025860,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -281,7 +281,7 @@
           }
         },
         "fixture-paid": {
-          "generated_at_ms": 1791966299769,
+          "generated_at_ms": 1791967025864,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
