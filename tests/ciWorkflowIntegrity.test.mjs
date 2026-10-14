@@ -156,6 +156,7 @@ describe('GitHub Actions workflow integrity', () => {
     const segmentationE2E = dockerJob.indexOf('run: bin/ci/runtime18-secret-state-e2e.sh');
     const exitE2E = dockerJob.indexOf('run: bin/ci/runtime19-phase1-exit-e2e.sh');
 
+    expect(dockerJob.match(/if: needs\.changes\.outputs\.runtime_lifecycle == 'true'/g)).toHaveLength(6);
     expect(focusedSmoke).toBeGreaterThan(-1);
     expect(failureE2E).toBeGreaterThan(focusedSmoke);
     expect(activationE2E).toBeGreaterThan(failureE2E);
@@ -183,11 +184,36 @@ describe('GitHub Actions workflow integrity', () => {
     expect(managerJob).toContain(
       'go test -race ./internal/service/cpaupdate ./internal/service/runtime ./internal/repository/setting ./internal/service/bootstrap'
     );
+    expect(managerJob).toContain("if: needs.changes.outputs.manager_runtime == 'true'");
+    expect(managerJob).not.toContain("if: needs.changes.outputs.runtime_lifecycle == 'true'");
     expect(managerJob).toContain('run: go vet ./...');
     expect(windowsJob).toContain(
       'go test ./internal/service/runtime ./internal/repository/setting ./internal/service/bootstrap'
     );
+    expect(windowsJob).toContain("needs.changes.outputs.manager_runtime == 'true'");
+    expect(windowsJob).not.toContain("needs.changes.outputs.runtime_lifecycle == 'true'");
     expect(windowsJob).toContain('run: go build ./cmd/cpa-manager-plus');
+  });
+
+  it('keeps bundle and Windows preflight validation as conditional required gates', () => {
+    const workflow = readWorkflow('pr-check.yml');
+    const scopeJob = jobBlock(workflow, 'changes');
+    const managerJob = jobBlock(workflow, 'manager-server');
+    const windowsJob = jobBlock(workflow, 'manager-server-windows-sqlite');
+
+    for (const output of ['windows_preflight', 'bundle_boundary', 'manager_runtime', 'runtime_lifecycle']) {
+      expect(scopeJob).toContain(`${output}: \${{ steps.classify.outputs.${output} }}`);
+    }
+
+    expect(managerJob).toContain("if: needs.changes.outputs.bundle_boundary == 'true'");
+    expect(managerJob).toContain(
+      'go test -race -count=1 -timeout 20m -json ./internal/service/maintenancebundle ./internal/command/managerdatabundle ./internal/processlock'
+    );
+    expect(windowsJob).toContain("needs.changes.outputs.windows_preflight == 'true'");
+    expect(windowsJob).toContain("needs.changes.outputs.bundle_boundary == 'true'");
+    expect(windowsJob).toContain(
+      'go test -count=1 -timeout 20m -json ./internal/service/maintenancebundle ./internal/command/managerdatabundle'
+    );
   });
 
   it('fails Required checks when required Runtime validation fails or is cancelled', () => {
