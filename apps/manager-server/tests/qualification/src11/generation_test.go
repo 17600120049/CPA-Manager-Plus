@@ -107,7 +107,7 @@ func TestGenerateExactSource(t *testing.T) {
 				w.Write([]byte("[]"))
 			}
 		case "/v0/management/auth-files":
-			json.NewEncoder(w).Encode(map[string]any{"files": []any{map[string]any{"name": "fixture-codex.json", "auth_index": "fixture-codex", "provider": "codex", "disabled": disabled.Load()}}})
+			json.NewEncoder(w).Encode(map[string]any{"files": []any{map[string]any{"id": "runtime-fixture-codex", "name": "fixture-codex.json", "auth_index": "fixture-codex", "provider": "codex", "disabled": disabled.Load()}}})
 		case "/v0/management/config":
 			w.Write([]byte(`{"usage-statistics-enabled":true,"redis-usage-queue-retention-seconds":60}`))
 		case "/v0/management/usage-statistics-enabled":
