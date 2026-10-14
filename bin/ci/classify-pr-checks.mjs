@@ -107,6 +107,7 @@ const triggersBundleBoundary = (filePath) =>
 
 const triggersManagerRuntime = (filePath) =>
   filePath === 'apps/manager-server/cmd/cpa-manager-plus/main.go' ||
+  filePath === 'apps/manager-server/internal/app/app.go' ||
   filePath === 'apps/manager-server/internal/config/config.go' ||
   filePath === 'apps/manager-server/internal/model/runtime.go' ||
   filePath === 'apps/manager-server/internal/http/router/router.go' ||
