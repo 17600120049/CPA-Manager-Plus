@@ -44,7 +44,9 @@ raw_json/fail_body and sentinel secrets. Record sensitive environment parameters
 as safe profile references. No real CPA queue, supervisor or installed server is
 started or modified.
 
-The process is signalled and waited on; a nonzero exit or missing reap fails.
+The process first persists its disposable CPA binding through the old
+`/usage-service/config` handler, then is signalled and waited on; a nonzero exit
+or missing reap fails.
 Stopped DB/WAL/SHM/journal inventory is captured before an explicit SQLite
 checkpoint. Integrity, foreign keys, completed Cache/Quota migration state and
 revision 2 are checked. Logical authoritative fields must survive checkpoint.

@@ -155,6 +155,16 @@ func TestGenerateExactSource(t *testing.T) {
 		r.Body.Close()
 		return r.StatusCode == 200
 	})
+	// v1.14.4 reads the persisted Manager configuration for its collector.
+	// The environment only supplies the bootstrap credential; this API write
+	// records the exact disposable CPA binding through the old public handler.
+	managerConfig := map[string]any{"config": map[string]any{
+		"cpaConnection":        map[string]any{"cpaBaseUrl": queue.URL, "managementKey": "qualification-only-management-key"},
+		"collector":            map[string]any{"enabled": true, "collectorMode": "http", "queue": "usage", "popSide": "right", "batchSize": 100, "pollIntervalMs": 100, "queryLimit": 50000},
+		"externalUsageService": map[string]any{"enabled": false},
+	}}
+	configResponse := httpCall(t, "PUT", base, "/usage-service/config", managerConfig)
+	must(t, os.WriteFile(filepath.Join(generation, "config-write.json"), configResponse, 0600))
 	priceResponse := httpCall(t, "PUT", base, "/v0/management/model-prices", map[string]any{"prices": p.Prices})
 	must(t, os.WriteFile(filepath.Join(generation, "price-write.json"), priceResponse, 0600))
 	deliver.Store(true)
@@ -232,7 +242,7 @@ func TestGenerateExactSource(t *testing.T) {
 	save(t, generation, "source-snapshot.json", before)
 	record := map[string]any{"caseID": "SRC-11", "SourceRelease": "v1.14.4", "SourceCommit": sourceCommit, "SourceProducerKind": "published-artifact", "SourceProducerArtifact": map[string]any{"immutableReleaseID": 404941931, "assetID": 616064478, "asset": asset, "releaseInfoSHA256": releaseInfoDigest}, "SourceProducerArchiveSHA256": report.ArchiveSHA256, "SourceProducerExecutableSHA256": exeBefore, "SourceProducerBuildCodeCommit": vcsRevision, "GeneratorCodeCommit": code, "PlanCommit": planCommit, "GenerationProfile": p.Profile, "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation", "ControlledInputSHA256": digestBytes(input), "process": map[string]any{"pid": cmd.Process.Pid, "arguments": []string{}, "environment": cmd.Env, "startedAt": started.UTC(), "finishedAt": finished.UTC(), "exitCode": cmd.ProcessState.ExitCode(), "reaped": reaped, "queueCalls": queueCalls.Load(), "deliveredPayloads": 5, "expectedUniqueEvents": 4}, "producerBuildIdentity": "producer-build.json", "harnessToolchain": platformIdentity(), "StoppedBeforeCheckpointInventory": preCheckpoint, "SQLite": checks, "GeneratedBundleSHA256": sealed.SourceRevision, "bundleInventory": sealed, "migrationState": querySourceState(t, filepath.Join(root, "bundle", "database")), "sourceVariant": "full raw; no archives and no deletion; cache/quota completed", "generationSuccess": true, "casePass": false, "UpgradeAuthorized": false, "TrustedHopReceipt": false}
 	hashes := map[string]string{}
-	for _, name := range []string{"controlled-input.json", "release-info.json", "producer-build.json", "producer.log", "price-write.json", "quota-write.json", "v1-analytics.json", "v1-export.jsonl", "source-snapshot.json"} {
+	for _, name := range []string{"controlled-input.json", "release-info.json", "producer-build.json", "producer.log", "config-write.json", "price-write.json", "quota-write.json", "v1-analytics.json", "v1-export.jsonl", "source-snapshot.json"} {
 		hashes[name] = fileDigest(t, filepath.Join(generation, name))
 	}
 	record["GenerationEvidenceFiles"] = hashes

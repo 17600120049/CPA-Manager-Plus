@@ -70,7 +70,7 @@ func revalidate(t *testing.T, root, archive string) generationRecord {
 	if !r.Process.Reaped || r.Process.PID <= 0 || r.Process.ExitCode != 0 || !r.Process.Finished.After(r.Process.Started) || r.Process.Delivered != 5 {
 		t.Fatal("generation process/exit evidence incomplete")
 	}
-	expected := []string{"controlled-input.json", "release-info.json", "producer-build.json", "producer.log", "price-write.json", "quota-write.json", "v1-analytics.json", "v1-export.jsonl", "source-snapshot.json"}
+	expected := []string{"controlled-input.json", "release-info.json", "producer-build.json", "producer.log", "config-write.json", "price-write.json", "quota-write.json", "v1-analytics.json", "v1-export.jsonl", "source-snapshot.json"}
 	if len(r.GenerationEvidenceFiles) != len(expected) {
 		t.Fatal("generation evidence inventory incomplete")
 	}
