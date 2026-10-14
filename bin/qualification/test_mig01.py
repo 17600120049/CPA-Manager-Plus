@@ -84,13 +84,13 @@ class Mig01EvidenceTests(unittest.TestCase):
             self.assertNotEqual(record["GeneratedBundleSHA256"], old["GeneratedBundleSHA256"])
 
     def test_actual_readiness_semantics_and_source_immutability(self):
-        for prefix in ("runtime", "platform-replay/linux", "clean-checkout"):
+        for prefix in ("runtime", "platform-replay/linux", "clean-checkout", "verification/qualification-race"):
             root = EVIDENCE / prefix
             result = read(root / "result.json")
             ready = read(root / "readiness-result.json")
             state = read(root / "migration-state-snapshot.json")
             semantic = read(root / "semantic-assertions.json")
-            runner = read(root / "runner-evidence.json")
+            runner = read(root / "runner-evidence.json") if prefix != "verification/qualification-race" else None
             self.assertEqual(result["runtimeEvidence"], "pass")
             self.assertEqual(result["independentAcceptance"], "pending")
             self.assertEqual(result["applicableSEM"], ["SEM-01", "SEM-07"])
@@ -99,6 +99,12 @@ class Mig01EvidenceTests(unittest.TestCase):
             self.assertEqual(ready["sourceCommit"], SOURCE_COMMIT)
             self.assertEqual(ready["preflight"]["exactSourceRelease"]["status"], "unknown")
             self.assertEqual(ready["preflight"]["bridgeReadiness"]["status"], "unknown")
+            self.assertEqual(result["controlledDirectCandidateReadiness"], ready["status"])
+            self.assertEqual(result["productionBridgeReadiness"], ready["preflight"]["bridgeReadiness"]["status"])
+            self.assertNotIn("BridgeReadiness", result)
+            execution = read(root / "execution-record.json")
+            for key in ("controlledDirectCandidateReadiness", "productionBridgeReadiness"):
+                self.assertEqual(execution[key], result[key])
             self.assertFalse(ready["preflight"]["upgradeAuthorized"])
             self.assertNotIn("requiredMigrationReadiness", ready["preflight"]["observed"])
             self.assertEqual(set(ready["checks"].values()), {"pass"})
@@ -123,11 +129,12 @@ class Mig01EvidenceTests(unittest.TestCase):
             self.assertTrue(semantic["SEM-07"]["cooldownEvidence"])
             self.assertFalse(semantic["sourceMutation"]["detected"])
             self.assertEqual(semantic["guard"]["missingExactGenerationEvidence"], "rejected")
-            self.assertEqual(runner["resultSHA256"], digest(root / "result.json"))
-            self.assertEqual(runner["codeCommit"], result["executionCommit"])
-            self.assertEqual(runner["executionExitCode"], 0)
-            for name, sha in runner["logs"].items():
-                self.assertEqual(digest(root / (name + ".txt")), sha)
+            if runner is not None:
+                self.assertEqual(runner["resultSHA256"], digest(root / "result.json"))
+                self.assertEqual(runner["codeCommit"], result["executionCommit"])
+                self.assertEqual(runner["executionExitCode"], 0)
+                for name, sha in runner["logs"].items():
+                    self.assertEqual(digest(root / (name + ".txt")), sha)
             for name in ("UpgradeAuthorized", "TrustedHopReceipt", "Phase4A07Complete", "Phase4AComplete"):
                 self.assertFalse(result[name])
 
@@ -154,6 +161,12 @@ class Mig01EvidenceTests(unittest.TestCase):
         self.assertEqual(result["independentAcceptance"], "pending")
         self.assertEqual(len(result["completionCriteria"]), 13)
         self.assertTrue(all(result["completionCriteria"].values()))
+        self.assertNotIn("actualBridgeReadinessPass", result["completionCriteria"])
+        self.assertTrue(result["completionCriteria"]["controlledDirectCandidateReadinessPass"])
+        self.assertNotIn("BridgeReadiness", result)
+        runtime = read(EVIDENCE / "runtime/result.json")
+        for key in ("controlledDirectCandidateReadiness", "productionBridgeReadiness"):
+            self.assertEqual(result[key], runtime[key])
         self.assertEqual(result["acceptedCases"], ["SRC-11", "RET-01", "AUT-03"])
         self.assertEqual(result["independentAcceptancePendingCases"], 46)
         for name in ("UpgradeAuthorized", "TrustedHopReceipt", "Phase4A07Complete", "Phase4AComplete"):
