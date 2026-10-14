@@ -221,6 +221,21 @@ describe('PR check classifier', () => {
     }
   });
 
+  it('keeps mixed ordinary Manager and external Runtime changes off Manager Runtime gates', () => {
+    expect(
+      classifyChangedFiles([
+        'apps/manager-server/internal/worker/rate_limit_auto_disable.go',
+        'apps/ingress/internal/ingress/proxy.go',
+      ])
+    ).toEqual({
+      ...noChecks,
+      manager_server: true,
+      ingress: true,
+      runtime_lifecycle: true,
+      docker: true,
+    });
+  });
+
   it('runs Supervisor, Runtime lifecycle, and Docker checks for Runtime packaging changes', () => {
     for (const filePath of [
       'Dockerfile.runtime',
@@ -290,6 +305,7 @@ describe('PR check classifier', () => {
       'apps/manager-server/internal/service/runtime/reconciler.go',
       'apps/manager-server/internal/repository/setting/repository.go',
       'apps/manager-server/internal/service/bootstrap/service.go',
+      'apps/manager-server/internal/store/store.go',
       'apps/runtime-supervisor/internal/protocol/handler.go',
       'apps/runtime-supervisor/internal/lifecycle/recovery.go',
       'apps/runtime-supervisor/internal/readiness/readiness.go',
