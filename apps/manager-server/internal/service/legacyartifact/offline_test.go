@@ -347,6 +347,12 @@ func TestOfflineInvalidArtifactReplayAndTargetsFailClosed(t *testing.T) {
 	root, inputBundle, digest := offlineFixtureBundle(t)
 	workspace := filepath.Join(root, "new-operation")
 	base := OfflineCleanupOptions{Asset: offlineRuntimeAsset(), InputBundle: inputBundle, ExpectedInputDigest: digest, Workspace: workspace, Timeout: time.Minute}
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		if got, err := RunOfflineCleanup(context.Background(), base); !errors.Is(err, ErrOfflinePlatform) || got != nil {
+			t.Fatalf("unsupported launch accepted: %v", err)
+		}
+		return
+	}
 	if _, err := RunOfflineCleanup(context.Background(), base); !errors.Is(err, ErrUnverified) {
 		t.Fatalf("missing artifact accepted: %v", err)
 	}
@@ -377,8 +383,8 @@ func TestOfflineProductionEntrypointsRemainFailClosed(t *testing.T) {
 }
 
 func TestPublishedOfflineCleanupOptIn(t *testing.T) {
-	if !offlineSupported() {
-		t.Skip("published offline runtime qualification is limited to Linux/Darwin AMD64")
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("published offline execution requires Linux AMD64 sealed launch")
 	}
 	archive := strings.TrimSpace(os.Getenv("CPAMP_LEGACY_OFFLINE_ARCHIVE"))
 	if archive == "" {

@@ -13,7 +13,7 @@ import (
 )
 
 func TestLegacyWriterArtifactDispatchNeverStartsManager(t *testing.T) {
-	for _, kind := range []string{"forged", "help"} {
+	for _, kind := range []string{"forged", "help", "offline-cleanup", "inspect", "recover", "mixed-modes"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
 			db := filepath.Join(dir, "usage.sqlite")
@@ -26,6 +26,16 @@ func TestLegacyWriterArtifactDispatchNeverStartsManager(t *testing.T) {
 			if kind == "help" {
 				args = []string{"legacy-writer-artifact", "--help"}
 			}
+			switch kind {
+			case "offline-cleanup":
+				args = []string{"legacy-writer-artifact", "--offline-cleanup", "--archive", archive, "--asset", "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz", "--input-bundle", dir, "--input-digest", strings.Repeat("0", 64), "--operation-workspace", filepath.Join(dir, "operation")}
+			case "inspect":
+				args = []string{"legacy-writer-artifact", "--inspect-offline-operation", strings.Repeat("a", 32), "--operation-workspace", filepath.Join(dir, "missing")}
+			case "recover":
+				args = []string{"legacy-writer-artifact", "--recover-offline-operation", strings.Repeat("a", 32), "--operation-workspace", filepath.Join(dir, "missing")}
+			case "mixed-modes":
+				args = []string{"legacy-writer-artifact", "--offline-cleanup", "--execute-hop"}
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"-test.run=^TestLegacyPreflightCLIHelperProcess$", "--"}, args...)...)
@@ -34,7 +44,7 @@ func TestLegacyWriterArtifactDispatchNeverStartsManager(t *testing.T) {
 			cmd.Stdout = &out
 			cmd.Stderr = &stderr
 			err := cmd.Run()
-			if ctx.Err() != nil || (kind == "forged" && err == nil) || (kind == "help" && err != nil) {
+			if ctx.Err() != nil || (kind != "help" && err == nil) || (kind == "help" && err != nil) {
 				t.Fatalf("CLI outcome %v", err)
 			}
 			if out.Len() != 0 || strings.Contains(stderr.String(), "listening on") || strings.Contains(stderr.String(), "secret forged") {

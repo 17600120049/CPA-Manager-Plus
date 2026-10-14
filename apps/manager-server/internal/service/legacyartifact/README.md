@@ -42,7 +42,7 @@ normalizes `USAGE_COLLECTOR_MODE=none` to `auto`, can restore CPA connections
 from the copied database, and starts automation and unrelated maintenance.
 Changing environment variables or binding HTTP to loopback does not isolate
 these effects. Windows graceful shutdown/reaping is also unqualified.
-This slice adds a narrower Linux/Darwin AMD64 diagnostic operation that runs
+This slice adds a narrower Linux AMD64 diagnostic operation that runs
 only the published early-dispatch `cleanup-derived` command against a sealed
 private copy. It is a qualification primitive for process and bundle handling,
 not a forward hop and not a historical source proof.
@@ -50,12 +50,20 @@ not a forward hop and not a historical source proof.
 `--offline-cleanup` requires an exact pinned archive, exact platform asset,
 complete input manifest digest and a new 0700 operation workspace. The operation
 writes immutable intent before staging, holds an exclusive operation lock inherited
-by the child, revalidates input and executable identity, records start/exit/Wait
+by the child, revalidates input identity, copies the executable into a Linux
+anonymous `memfd`, seals it
+against writes/growth/shrinkage and seal removal, hashes the sealed object, and
+launches that exact object via inherited descriptor 4 (`/proc/self/fd/4`).
+Descriptor 3 retains the operation fence. A staging-path replacement or in-place
+write cannot change the launched bytes. Missing sealing or descriptor execution
+support fails closed. The operation records start/exit/Wait
 evidence, seals the output bundle, and records output/checkpoint digests. Invalid,
 mutated, interrupted, partial or replayed workspaces fail closed. `--inspect-
 offline-operation` only returns `observed-offline-cleanup-only`; it is diagnostic
 and has no authority. `--recover-offline-operation` tombstones a nonterminal
-workspace and never reruns it. Windows is compile-only for this path.
+workspace and never reruns it. Darwin and Windows execution are fail closed;
+their builds prove compilation only.
+Diagnostic inspection/recovery remains available on Linux/Darwin AMD64.
 
 The retained foundation provides:
 
@@ -119,12 +127,17 @@ For published **artifact-byte verification only**, download an immutable asset
 separately and run the package tests with `CPAMP_LEGACY_ARTIFACT_ARCHIVE` and
 `CPAMP_LEGACY_ARTIFACT_ASSET` set. That opt-in test calls `Verify` and is skipped without those inputs.
 The separate published offline-cleanup test uses
-`CPAMP_LEGACY_OFFLINE_ARCHIVE`; it is skipped without a host-platform archive.
+`CPAMP_LEGACY_OFFLINE_ARCHIVE`; it is skipped without a Linux AMD64 archive or
+on an unsupported launch platform.
+The command package also has a separate opt-in published cleanup/inspect/replay
+test, alongside ordinary CLI input, mode, JSON and dispatch regression tests.
 `CPAMP_LEGACY_ARTIFACT_DIR` enables verification and extraction of all six pinned
 archives. The artifact-byte test never executes a binary. Offline cleanup may
 execute only the exact published host-platform archive and reports diagnostic
 observation; it does not mint a receipt, trusted evidence or upgrade grant.
-This slice's published smoke passed with the immutable Darwin AMD64 archive on
-the host and with the immutable Linux AMD64 archive in a Linux container. Those
-results qualify the fixed cleanup process/bundle/reap boundary only; they do not
-qualify an older-source forward hop.
+The initial Darwin/Linux path-based smoke is historical and does not qualify
+executable provenance after the path TOCTOU finding. The revised Linux AMD64
+published smoke exercises the sealed descriptor launch through both service and
+production command paths. Real parent-SIGKILL/orphan-child/restart tests exercise
+the inherited fence on Linux/Darwin; Darwin fence evidence does not qualify
+Darwin executable launch. These results do not qualify an older-source forward hop.

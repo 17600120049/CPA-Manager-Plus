@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	ErrOfflinePlatform = errors.New("offline cleanup execution is qualified only on Linux AMD64 and Darwin AMD64")
+	ErrOfflinePlatform = errors.New("offline cleanup execution requires Linux AMD64 sealed executable launch")
 	ErrOfflineBusy     = errors.New("offline operation workspace is still owned by a process")
 	ErrOfflineState    = errors.New("offline operation state is missing, invalid, changed or incomplete")
 	ErrOfflineReuse    = errors.New("offline workspace already exists; retry requires a new workspace")
@@ -96,7 +96,7 @@ func offlineSupported() bool {
 // cleanup-derived command, never the legacy server. It cannot migrate SchemaA/B
 // or complete cache accounting. All failures return no success observation.
 func RunOfflineCleanup(ctx context.Context, opts OfflineCleanupOptions) (result *OfflineCleanupObservation, err error) {
-	if !offlineSupported() {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		return nil, ErrOfflinePlatform
 	}
 	if ctx.Err() != nil {
@@ -194,15 +194,17 @@ func RunOfflineCleanup(ctx context.Context, opts OfflineCleanupOptions) (result 
 	if err := offlineSource(ctx, working); err != nil {
 		return nil, err
 	}
-	if err := offlineExecutable(ctx, exe, intent.ExecutableSHA256); err != nil {
+	launch, err := prepareOfflineExecutable(ctx, exe, intent.ExecutableSHA256)
+	if err != nil {
 		return nil, err
 	}
+	defer launch.Close()
 	// Recheck immutable authorization after staging; ordinary artifact JSON is
 	// never used to authorize execution.
 	if err := offlineCheckIntent(opts.Workspace, intentData, state); err != nil {
 		return nil, err
 	}
-	if err := offlineRunProcess(ctx, exe, opts.Workspace, working.DatabasePath, lock, &state); err != nil {
+	if err := offlineRunPinnedProcess(ctx, launch, opts.Workspace, working.DatabasePath, lock, &state); err != nil {
 		return nil, err
 	}
 	if err := offlineCheckIntent(opts.Workspace, intentData, state); err != nil {
@@ -256,15 +258,27 @@ func RunOfflineCleanup(ctx context.Context, opts OfflineCleanupOptions) (result 
 	return offlineInspectChecked(ctx, opts.Workspace, id)
 }
 
-// Private lifecycle primitive: the exported producer authenticates its own
-// executable before reaching this function. Tests of arbitrary processes here
-// establish lifecycle behavior only, never published writer qualification.
+// Arbitrary-process lifecycle fixture helper. The production producer uses
+// offlineRunPinnedProcess with sealed authenticated bytes. This helper provides
+// no receipt, trusted evidence or published writer qualification.
 func offlineRunProcess(ctx context.Context, exe, root, dbPath string, lock *offlineLock, state *offlineState) error {
 	cmd := exec.CommandContext(ctx, exe, "cleanup-derived", "--db-path", dbPath)
+	configureOfflineProcess(cmd, lock)
+	return offlineWaitProcess(ctx, cmd, root, state)
+}
+
+func offlineRunPinnedProcess(ctx context.Context, executable *os.File, root, dbPath string, lock *offlineLock, state *offlineState) error {
+	cmd, err := pinnedOfflineCommand(ctx, executable, dbPath, lock)
+	if err != nil {
+		return err
+	}
+	return offlineWaitProcess(ctx, cmd, root, state)
+}
+
+func offlineWaitProcess(ctx context.Context, cmd *exec.Cmd, root string, state *offlineState) error {
 	cmd.Dir = root
 	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + root, "TMPDIR=" + filepath.Join(root, "tmp")}
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
-	configureOfflineProcess(cmd, lock)
 	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		return ErrProcessExecutionFailed
