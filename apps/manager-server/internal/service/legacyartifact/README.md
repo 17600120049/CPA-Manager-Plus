@@ -65,6 +65,15 @@ workspace and never reruns it. Darwin and Windows execution are fail closed;
 their builds prove compilation only.
 Diagnostic inspection/recovery remains available on Linux/Darwin AMD64.
 
+The immutable intent's mandatory tool identity is `manager-offline-cleanup/v2`.
+This versions the sealed Linux memfd launch contract separately from the old
+`manager-offline-cleanup/v1` path-based execution. Production creates only v2;
+inspection and recovery reject v1 workspaces, including historical Darwin
+operations, even when their artifact, process, input and output bindings are
+otherwise intact. There is no fallback, automatic migration or reclassification
+of old operations. The tool identity is diagnostic format metadata, never proof
+of Manager ownership or authority.
+
 The retained foundation provides:
 
 - Authenticated pinned archive extraction and canonical input/output digests.

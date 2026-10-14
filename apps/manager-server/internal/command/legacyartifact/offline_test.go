@@ -328,7 +328,7 @@ func cliWorkspace(t *testing.T, phase string) (string, string) {
 	if runtime.GOOS == "darwin" {
 		archiveHash, exeHash = "ea55a5e85ceeaf63f430d965727bff5de7c85c4305f6e4d3d1eb9c87af6410d1", "7c320f6109768a76c8ca93e2db62238fd99442cb1687f76c433b37b8a98ec4ce"
 	}
-	intent := offlineIntent{Tool: "manager-offline-cleanup/v1", OperationID: id, Release: artifactservice.Release, SourceCommit: artifactservice.SourceCommit, Asset: asset, ArchiveSHA256: archiveHash, ExecutableSHA256: exeHash, InputBundle: bundle, InputManifestDigest: digest, TimeoutMS: 60000}
+	intent := offlineIntent{Tool: "manager-offline-cleanup/v2", OperationID: id, Release: artifactservice.Release, SourceCommit: artifactservice.SourceCommit, Asset: asset, ArchiveSHA256: archiveHash, ExecutableSHA256: exeHash, InputBundle: bundle, InputManifestDigest: digest, TimeoutMS: 60000}
 	data := cliJSON(t, intent)
 	state := offlineState{OperationID: id, IntentDigest: cliDigest(data), Phase: phase, Process: artifactservice.ProcessEvidence{PID: 1, ExitCode: 0, StartedAtMS: 1000, FinishedAtMS: 1100, DurationMS: 100}, Reaped: true, OutputManifestDigest: outputDigest, Checkpoints: artifactservice.CheckpointEvidence{CacheAccountingV2: "completed-observed", QuotaSnapshotLifecycleV1: "completed-observed", MaintenanceLock: "none-observed"}}
 	if err := os.WriteFile(filepath.Join(workspace, "intent.json"), data, 0400); err != nil {
@@ -410,7 +410,7 @@ func TestOfflineInspectAndRecoverCommandJSONCannotClaimAuthority(t *testing.T) {
 	if fields["writerEvidence"] != false || fields["upgradeAuthorized"] != false {
 		t.Fatalf("diagnostic JSON must explicitly deny authority: %s", out.String())
 	}
-	if got.Status != "observed-offline-cleanup-only" || got.OperationID != id || got.WriterEvidence || got.UpgradeAuthorized || got.InputManifestDigest == "" || got.OutputManifestDigest == "" {
+	if got.Tool != "manager-offline-cleanup/v2" || got.Status != "observed-offline-cleanup-only" || got.OperationID != id || got.WriterEvidence || got.UpgradeAuthorized || got.InputManifestDigest == "" || got.OutputManifestDigest == "" {
 		t.Fatalf("inspect authority: %+v", got)
 	}
 	for _, wrong := range []string{strings.Repeat("f", 32), "bad"} {
@@ -439,6 +439,58 @@ func TestOfflineInspectAndRecoverCommandJSONCannotClaimAuthority(t *testing.T) {
 	out.Reset()
 	if err := Run(context.Background(), []string{"--recover-offline-operation", id, "--operation-workspace", workspace}, &out, &stderr); !errors.Is(err, artifactservice.ErrOfflineReuse) || out.Len() != 0 {
 		t.Fatal("recovery replay accepted")
+	}
+}
+
+func TestOfflineLegacyFormatCommandFailsClosed(t *testing.T) {
+	if runtime.GOARCH != "amd64" || (runtime.GOOS != "linux" && runtime.GOOS != "darwin") {
+		t.Skip("Unix AMD64 diagnostic storage")
+	}
+	for _, phase := range []string{"sealed", "running"} {
+		t.Run(phase, func(t *testing.T) {
+			workspace, id := cliWorkspace(t, phase)
+			intentPath, statePath := filepath.Join(workspace, "intent.json"), filepath.Join(workspace, "state.json")
+			data, err := os.ReadFile(intentPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var intent offlineIntent
+			if err := json.Unmarshal(data, &intent); err != nil {
+				t.Fatal(err)
+			}
+			intent.Tool = "manager-offline-cleanup/v1"
+			data = cliJSON(t, intent)
+			if err := os.Remove(intentPath); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(intentPath, data, 0400); err != nil {
+				t.Fatal(err)
+			}
+			stateData, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var state offlineState
+			if err := json.Unmarshal(stateData, &state); err != nil {
+				t.Fatal(err)
+			}
+			state.IntentDigest = cliDigest(data)
+			stateData = cliJSON(t, state)
+			if err := os.WriteFile(statePath, stateData, 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, mode := range []string{"--inspect-offline-operation", "--recover-offline-operation"} {
+				var out, stderr bytes.Buffer
+				err := Run(context.Background(), []string{mode, id, "--operation-workspace", workspace}, &out, &stderr)
+				if !errors.Is(err, artifactservice.ErrOfflineState) || out.Len() != 0 || strings.Contains(err.Error(), workspace) || strings.Contains(stderr.String(), workspace) {
+					t.Fatalf("legacy format %s: output=%q stderr=%q err=%v", mode, out.String(), stderr.String(), err)
+				}
+			}
+			after, err := os.ReadFile(statePath)
+			if err != nil || !bytes.Equal(after, stateData) {
+				t.Fatalf("legacy CLI state was changed: %v", err)
+			}
+		})
 	}
 }
 
@@ -480,7 +532,7 @@ func TestPublishedOfflineCleanupCommandOptIn(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.WriterEvidence || got.UpgradeAuthorized || !got.Reaped || got.Process.ExitCode != 0 || got.InputManifestDigest != digest {
+	if got.Tool != "manager-offline-cleanup/v2" || got.WriterEvidence || got.UpgradeAuthorized || !got.Reaped || got.Process.ExitCode != 0 || got.InputManifestDigest != digest {
 		t.Fatalf("published CLI: %+v", got)
 	}
 	out.Reset()

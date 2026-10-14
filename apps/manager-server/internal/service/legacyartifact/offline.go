@@ -30,7 +30,9 @@ var (
 	ErrOfflineInputs   = errors.New("offline operation inputs are invalid or changed")
 )
 
-const offlineTool = "manager-offline-cleanup/v1"
+// v2 requires sealed Linux memfd launch. The v1 path-based launch contract is
+// rejected on load, including inspection/recovery; it has no automatic upgrade.
+const offlineTool = "manager-offline-cleanup/v2"
 
 // OfflineCleanupOptions authorizes one fixed command on a private copy of a
 // complete sealed bundle. No runner, executable, authority or target override is

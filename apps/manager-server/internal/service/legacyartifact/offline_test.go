@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -292,6 +293,67 @@ func TestOfflineInspectionBindsOperationAndInputOutputDigests(t *testing.T) {
 	}
 }
 
+func TestOfflineLegacyPathLaunchFormatRejected(t *testing.T) {
+	if !offlineSupported() {
+		t.Skip("Unix AMD64 diagnostic storage")
+	}
+	for _, platform := range []string{"linux", "darwin"} {
+		t.Run(platform, func(t *testing.T) {
+			_, workspace, id, _, _ := offlineSealedFixture(t)
+			current, err := InspectOfflineCleanup(context.Background(), workspace, id)
+			if err != nil || current == nil || current.Tool != "manager-offline-cleanup/v2" || current.WriterEvidence || current.UpgradeAuthorized {
+				t.Fatalf("current format observation = %+v, err=%v", current, err)
+			}
+			in, state, err := offlineLoad(workspace, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			asset := "cpa-manager-plus_v1.14.4_" + platform + "_amd64.tar.gz"
+			pin := nativePins[asset]
+			// Freeze the exact intent layout from 06779fe5: no optional new
+			// fields, and all artifact/input/state/output bindings remain valid.
+			legacy := struct {
+				Tool                string `json:"tool"`
+				OperationID         string `json:"operationId"`
+				Release             string `json:"release"`
+				SourceCommit        string `json:"sourceCommit"`
+				Asset               string `json:"asset"`
+				ArchiveSHA256       string `json:"archiveSHA256"`
+				ExecutableSHA256    string `json:"executableSHA256"`
+				InputBundle         string `json:"inputBundle"`
+				InputManifestDigest string `json:"inputManifestDigest"`
+				TimeoutMS           int64  `json:"timeoutMs"`
+			}{"manager-offline-cleanup/v1", id, in.Release, in.SourceCommit, asset, pin.ArchiveSHA256, pin.ExecutableSHA256, in.InputBundle, in.InputManifestDigest, in.TimeoutMS}
+			data, err := offlineJSON(legacy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Test-only replacement of immutable intent, with a matching state
+			// digest: rejection must come from the old contract identity.
+			if err := os.Remove(filepath.Join(workspace, "intent.json")); err != nil {
+				t.Fatal(err)
+			}
+			if err := offlineWriteNew(filepath.Join(workspace, "intent.json"), data, 0o400); err != nil {
+				t.Fatal(err)
+			}
+			state.IntentDigest = offlineHash(data)
+			if err := offlineSave(workspace, state); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := InspectOfflineCleanup(context.Background(), workspace, id); !errors.Is(err, ErrOfflineState) || got != nil {
+				t.Fatalf("legacy path launch inspected: %+v, err=%v", got, err)
+			}
+			if err := RecoverOfflineCleanup(workspace, id); !errors.Is(err, ErrOfflineState) {
+				t.Fatalf("legacy path launch recovered: %v", err)
+			}
+			var after offlineState
+			if _, err := offlineRead(filepath.Join(workspace, "state.json"), 0o600, &after); err != nil || !reflect.DeepEqual(after, state) {
+				t.Fatalf("legacy state was changed: %+v, err=%v", after, err)
+			}
+		})
+	}
+}
+
 func TestOfflineOutputMutationAndRecoveryFailClosed(t *testing.T) {
 	_, workspace, operationID, _, _ := offlineSealedFixture(t)
 	if err := os.WriteFile(filepath.Join(workspace, "output", "database"), []byte("mutated"), 0o600); err != nil {
@@ -400,7 +462,10 @@ func TestPublishedOfflineCleanupOptIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != "observed-offline-cleanup-only" || !got.Reaped || got.WriterEvidence || got.UpgradeAuthorized || got.Process.ExitCode != 0 {
+	if got.Tool != "manager-offline-cleanup/v2" || got.Status != "observed-offline-cleanup-only" || !got.Reaped || got.WriterEvidence || got.UpgradeAuthorized || got.Process.ExitCode != 0 {
 		t.Fatalf("unexpected published offline observation: %+v", got)
+	}
+	if inspected, err := InspectOfflineCleanup(context.Background(), workspace, got.OperationID); err != nil || !reflect.DeepEqual(inspected, got) {
+		t.Fatalf("published v2 inspection = %+v, err=%v", inspected, err)
 	}
 }
