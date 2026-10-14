@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 )
 
@@ -18,8 +19,12 @@ var (
 // that both required v1 migrations are completed, no maintenance lock is active,
 // and no unresolved issues exist.
 func InspectCheckpoints(ctx context.Context, databasePath string) (CheckpointEvidence, error) {
+	return inspectCheckpoints(ctx, databasePath, nil)
+}
+
+func inspectCheckpoints(ctx context.Context, databasePath string, managerLock *processlock.Lock) (CheckpointEvidence, error) {
 	paths := sqlite.InspectionPaths{Database: databasePath}
-	options := sqlite.InspectionOptions{SourceStopped: true}
+	options := sqlite.InspectionOptions{SourceStopped: true, ManagerLock: managerLock}
 
 	observed, err := sqlite.InspectLegacySource(ctx, paths, options)
 	if err != nil {
