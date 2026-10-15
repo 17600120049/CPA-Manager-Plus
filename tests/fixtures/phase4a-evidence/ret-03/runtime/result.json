@@ -1,0 +1,138 @@
+{
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "afterDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+  "afterRawCount": 0,
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-02",
+    "SEM-03",
+    "SEM-06",
+    "SEM-09"
+  ],
+  "archiveEventCount": 4,
+  "backupRestore": "pass",
+  "beforeDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+  "beforeRawCount": 4,
+  "caseID": "RET-03",
+  "casePass": false,
+  "deletedCount": 4,
+  "evidence": {
+    "archiveInventory": "2864fce8176cdf86e9aa3f2676640ac33685e27f4265911e83a1fd68c3b7dc9d",
+    "backupRestore": "efc29143c8dc43f438d0f2a2b1c1e076565dc62aea5bb3aeca2d8fc08e464b65",
+    "executionRecord": "3455fa46f61a928f9de7bcd8bee58ba4402476fe9ac0a62d750e837e8e6c4d19",
+    "inputBundle": "f04faf530834cd206b43a63c23617d9894c600e70c8ac46928fb3ddbe4c7b460",
+    "rawEventInventory": "ddd60f4b723d20bc94a7887f7d10f28cceed196f1cef5a1abb4f29a5316c995f",
+    "retainedProjectionSnapshot": "001f7c34a5ee2000d1ce7d8e149f7cf7b978aabd22b0157d3f819f349faca822",
+    "semanticAssertions": "4e83e348072e204180c95fd33c4860c9f52b492d4f809e78b376d8e1d90e09bb"
+  },
+  "independentAcceptance": "pending",
+  "inputBundleDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+  "inputBundleIdentity": "RET-03/input-bundle@f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+  "onlineRawComplete": false,
+  "rawEventCount": 0,
+  "remainingCases": {
+    "count": 44,
+    "status": "pending"
+  },
+  "retainedProjectionCount": 4,
+  "runtimeEvidence": "pass",
+  "sourceProvenance": {
+    "caseID": "RET-03",
+    "SourceRelease": "v1.14.4",
+    "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "SourceProducerKind": "published-artifact",
+    "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "GeneratorCodeCommit": "61291586999216515c4b42f9c5fecf7ae4cdbe45",
+    "PlanCommit": "06a47aaefff1629b3d556f8a49e0544648bfd4bc",
+    "ControlledInputSHA256": "e8dea6f72f9d199a27b88898a4b604c970ba9e698019825de3c82cf8c2201d7c",
+    "GenerationProfile": "ret-03-archived-raw-deleted-v1",
+    "GeneratedBundleSHA256": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+    "GenerationEvidenceFiles": {
+      "archive-flow.json": "a7ec07af927fa66592b92669a153d8a7409f921ff56e97b321d5a138ff248629",
+      "archive-inventory.json": "2864fce8176cdf86e9aa3f2676640ac33685e27f4265911e83a1fd68c3b7dc9d",
+      "archive-readiness.json": "9623fa44dff531432fe888947891927d58e0ceae683b8ca2c5a42914ff40a5e0",
+      "config-write.json": "fbcde2069f3f35ef00f62f4c09a51419103fdf03194f92a2f1cb634ad9782877",
+      "controlled-input.json": "e8dea6f72f9d199a27b88898a4b604c970ba9e698019825de3c82cf8c2201d7c",
+      "post-delete-snapshot.json": "72534729c858478aa4cbeb89501a0ae6fc08701c19a36cd258ed67cf2e768c09",
+      "pre-archive-snapshot.json": "2e374eaa040e9ca86250145692028f84706dc9af7f5d074d7be9b6dacc20cc6b",
+      "pre-delete-snapshot.json": "2e374eaa040e9ca86250145692028f84706dc9af7f5d074d7be9b6dacc20cc6b",
+      "price-write.json": "94d8aea3ed2f1b00cbe05864bc903b91ccaf8acb908b6e96adb2498513578417",
+      "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+      "producer.log": "6e91f79ab862c75f4e9810e85dfb309f3b8fb5e5e58b8348df99a4e83b37c4f5",
+      "quota-write.json": "0c41d1b3ea485c216d1c36ea71d818db438394e658d5cd0f1b11bfaeea71ef77",
+      "raw-event-inventory.json": "b5ce5b2f112ce598639c9a7a4d4d9064fd8b8f71f5b3564ab9bf022b19b3cf3f",
+      "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "retained-projection-snapshot.json": "001f7c34a5ee2000d1ce7d8e149f7cf7b978aabd22b0157d3f819f349faca822",
+      "source-snapshot.json": "72534729c858478aa4cbeb89501a0ae6fc08701c19a36cd258ed67cf2e768c09",
+      "v1-analytics.json": "ec69f6af57445147036b602257d87ed4c1e7aa73bef22301e194c2a206b5d2e5",
+      "v1-archived-analytics.json": "f9dd53e72f9f14324755d2a325b9e684e89196153a41a2e528e961e89242513d",
+      "v1-export.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "bundleInventory": {
+      "version": 2,
+      "fence": "cooperating-manager-lock",
+      "sourceRevision": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+      "entries": {
+        "config": {
+          "present": true,
+          "size": 243,
+          "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+        },
+        "data-key": {
+          "present": true,
+          "size": 44,
+          "sha256": "0030e06e7db86ea577e82ad7303c4f1c84a7caf645ffe8d0343b482777699b25"
+        },
+        "database": {
+          "present": true,
+          "size": 659456,
+          "sha256": "e6680c7bce21970a1a5561887cebaf7de0bc51b5441579523b70f2221faa7347"
+        },
+        "database-journal": {
+          "present": false
+        },
+        "database-shm": {
+          "present": false
+        },
+        "database-wal": {
+          "present": false
+        },
+        "usage-archives": {
+          "present": true,
+          "directory": true
+        },
+        "usage-archives/bb5e71cea8079660248716324edc1103": {
+          "present": true,
+          "directory": true
+        },
+        "usage-archives/bb5e71cea8079660248716324edc1103/manifest.json": {
+          "present": true,
+          "size": 1099,
+          "sha256": "78a82a20c21ae20f7ca94547b92f788c2bb0c6ccfbe4764e4c6f6e773d9b0f03"
+        },
+        "usage-archives/bb5e71cea8079660248716324edc1103/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+          "present": true,
+          "size": 2911,
+          "sha256": "c6fee0bf549e02f37eafae2e01f70c053da2994e347d13e4062c1258943c0d25"
+        }
+      }
+    },
+    "process": {
+      "pid": 15,
+      "exitCode": 0,
+      "reaped": true,
+      "startedAt": "2026-10-15T01:04:45.962943296Z",
+      "finishedAt": "2026-10-15T01:05:16.176089612Z",
+      "deliveredPayloads": 5
+    },
+    "generationSuccess": true,
+    "casePass": false,
+    "UpgradeAuthorized": false,
+    "TrustedHopReceipt": false
+  }
+}
