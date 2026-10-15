@@ -1,9 +1,10 @@
 {
   "caseID": "RET-03",
-  "checkout": "task-owned local clone at a detached committed checkout without copied worktree or runtime files",
-  "checkoutCommit": "d252f1cc65be12495e9b6d19865f5aaa0b7b5c35",
+  "checkout": "clean task-owned clone with core.autocrlf=true; committed harness; original immutable bytes verified with release and tag metadata",
+  "checkoutCommit": "30d2da8406f55ab82df8dc92c93dd5775c5bb3f6",
   "materializedArchiveSHA256": "6de91fb033927db62f1fb6f06aa1e3e7e598a62a9d57c97cc6434a7004e36db1",
   "materializer": "bin/qualification/materialize-src11.py --case ret-03 --release-metadata --tag-metadata",
+  "metadataAuthorityCheck": "complete pre-delete raw/archive field parity, retained projection parity, pricing authority unchanged, distinct archived event IDs; repeated after imports and new-root restore",
   "platforms": {
     "linux": {
       "executionCommand": [
@@ -24,15 +25,15 @@
         "--tmpfs",
         "/tmp:rw,exec,mode=1777",
         "--mount",
-        "type=bind,src=/private/tmp/cpamp-ret03-20261015/clean-replay-linux/qualification,dst=/qualification,readonly",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/strengthened-replay-linux/qualification,dst=/qualification,readonly",
         "--mount",
-        "type=bind,src=/private/tmp/cpamp-ret03-20261015/materialized/producer.tar.gz,dst=/archive,readonly",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/materialized-final/producer.tar.gz,dst=/archive,readonly",
         "--mount",
-        "type=bind,src=/private/tmp/cpamp-ret03-20261015/materialized/ret-03,dst=/evidence,readonly",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/materialized-final/ret-03,dst=/evidence,readonly",
         "--mount",
-        "type=bind,src=/private/tmp/cpamp-ret03-20261015/clean-checkout/tests/fixtures/phase4a-evidence/ret-03/profile.json,dst=/profile,readonly",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/clean-checkout-strengthened/tests/fixtures/phase4a-evidence/ret-03/profile.json,dst=/profile,readonly",
         "--mount",
-        "type=bind,src=/private/tmp/cpamp-ret03-20261015/clean-replay-linux,dst=/output",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/strengthened-replay-linux,dst=/output",
         "--env",
         "CPAMP_SRC11_EVIDENCE=/evidence",
         "--env",
@@ -60,10 +61,10 @@
       "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
       "logs": {
         "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "replay-execution.log": "da14bd4a5b60b0ccb4eb887af70f258186dd325988931d2333b2b6e00c448622"
+        "replay-execution.log": "c8722bd1cfea65d05f788661080c91b29fd2ad5ca1d43663cb07b1cfb3f242de"
       },
       "newRootRecovery": true,
-      "runnerEvidenceSHA256": "229b4aed0f777dbeea8dece0208540ae8b3ee1ebd90900a6949763df14daea6d",
+      "runnerEvidenceSHA256": "899e8e69ceea62d780767245a6f3f905249d0c4e9d24245ac68e17da2e370ace",
       "runtimeResult": {
         "Phase4A07Complete": false,
         "Phase4AComplete": false,
@@ -87,12 +88,12 @@
         "deletedCount": 4,
         "evidence": {
           "archiveInventory": "2864fce8176cdf86e9aa3f2676640ac33685e27f4265911e83a1fd68c3b7dc9d",
-          "backupRestore": "51e43b39ddf5aca98fda062bca8d70ff127b622c2746e7fd73b1b7ee7276b7aa",
-          "executionRecord": "6368509ef775101d0479ea27a07abcb24c4b944059d4eae706116134c1362d15",
+          "backupRestore": "25a4da5b0a04f080199e0775609186099f3bffee82fc13579b06dd5fae97791a",
+          "executionRecord": "a260d3e9ef7308ee026a35c816e11ea949ce8f365474e4d77c691502f77b03e5",
           "inputBundle": "f04faf530834cd206b43a63c23617d9894c600e70c8ac46928fb3ddbe4c7b460",
           "rawEventInventory": "ddd60f4b723d20bc94a7887f7d10f28cceed196f1cef5a1abb4f29a5316c995f",
           "retainedProjectionSnapshot": "001f7c34a5ee2000d1ce7d8e149f7cf7b978aabd22b0157d3f819f349faca822",
-          "semanticAssertions": "6b21f1d43c830dc6b51900504eb561bb373c86dc9b9fd9f8496fe0fdb7083ef9"
+          "semanticAssertions": "4617fe33b128ddfa55e4c035902c6463e287e5ccf9dd57e3d9281632a9eb1953"
         },
         "independentAcceptance": "pending",
         "inputBundleDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
@@ -202,11 +203,11 @@
           }
         }
       },
-      "testedCommit": "d252f1cc65be12495e9b6d19865f5aaa0b7b5c35"
+      "testedCommit": "30d2da8406f55ab82df8dc92c93dd5775c5bb3f6"
     },
     "macos": {
       "executionCommand": [
-        "/private/tmp/cpamp-ret03-20261015/clean-replay-macos/qualification",
+        "/private/tmp/cpamp-ret03-20261015/strengthened-replay-macos/qualification",
         "-test.v",
         "-test.run",
         "^TestReplayRET03$",
@@ -221,7 +222,7 @@
         "replay-execution.log": "e8ac50879caf2e84b22376d9af4d8b238bdb59268b88273181e5f3bbb8d86af7"
       },
       "newRootRecovery": true,
-      "runnerEvidenceSHA256": "7a652b0fb07b4b2932034dddbf4f3bb3a92a0dc24f6b07838cb8e03fde602c7b",
+      "runnerEvidenceSHA256": "fd6f7f739a4f3eaed47836ffb08a371d968ceb65d56b20c43e648d12522b2cfd",
       "runtimeResult": {
         "Phase4A07Complete": false,
         "Phase4AComplete": false,
@@ -245,12 +246,12 @@
         "deletedCount": 4,
         "evidence": {
           "archiveInventory": "2864fce8176cdf86e9aa3f2676640ac33685e27f4265911e83a1fd68c3b7dc9d",
-          "backupRestore": "1c226844e62b2de917822fafdc26debd60f26fa14016c7fea3d6bec9f04e4dcf",
-          "executionRecord": "6368509ef775101d0479ea27a07abcb24c4b944059d4eae706116134c1362d15",
+          "backupRestore": "f512aba86eafb667c11c651258ea8d3e79202348ac84574f0acfa58eebd506f4",
+          "executionRecord": "a260d3e9ef7308ee026a35c816e11ea949ce8f365474e4d77c691502f77b03e5",
           "inputBundle": "f04faf530834cd206b43a63c23617d9894c600e70c8ac46928fb3ddbe4c7b460",
           "rawEventInventory": "ddd60f4b723d20bc94a7887f7d10f28cceed196f1cef5a1abb4f29a5316c995f",
           "retainedProjectionSnapshot": "001f7c34a5ee2000d1ce7d8e149f7cf7b978aabd22b0157d3f819f349faca822",
-          "semanticAssertions": "38024bad2d50b3cf44bc06e0fb7b90e83c64e26a63d9ec217b9f1d8b7cf0bf44"
+          "semanticAssertions": "12d98403785ef6d1d91cd90fe6b3a054aa74d83934621caba0e6eabe957fa24c"
         },
         "independentAcceptance": "pending",
         "inputBundleDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
@@ -360,7 +361,7 @@
           }
         }
       },
-      "testedCommit": "d252f1cc65be12495e9b6d19865f5aaa0b7b5c35"
+      "testedCommit": "30d2da8406f55ab82df8dc92c93dd5775c5bb3f6"
     }
   },
   "scope": "clean committed checkout; immutable download/materialization; full Linux/macOS SQLite replay",
