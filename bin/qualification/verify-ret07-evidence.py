@@ -243,7 +243,8 @@ def verify_pricing_source(root: Path) -> dict[str, Any]:
         if event_id == 3:
             require(row.get("pricingAuthority") == "manual" and row.get("pricingStatus") == "explicit-zero",
                     "event 3 is not an explicit manual zero")
-            require(identity.get("explicitZero") is True and identity.get("unknownUnpriced") is False,
+            require(identity.get("configured") is True and identity.get("allFieldsConfigured") is True and
+                    identity.get("explicitZero") is True and identity.get("unknownUnpriced") is False,
                     "event 3 zero/unknown semantics collapsed")
         elif event_id == 4:
             require(row.get("pricingAuthority") == "unknown" and row.get("pricingStatus") == "unknown-unpriced",
@@ -253,7 +254,8 @@ def verify_pricing_source(root: Path) -> dict[str, Any]:
         else:
             require(row.get("pricingAuthority") == "manual" and row.get("pricingStatus") == "priced",
                     f"event {event_id} manual authority missing")
-            require(identity.get("source") == "manual" and identity.get("unknownUnpriced") is False,
+            require(identity.get("source") == "manual" and identity.get("configured") is True and
+                    identity.get("unknownUnpriced") is False,
                     f"event {event_id} manual price identity missing")
     return source
 

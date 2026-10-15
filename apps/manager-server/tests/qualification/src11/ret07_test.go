@@ -227,21 +227,23 @@ func retainedPricingEvidence(t *testing.T, db *sql.DB, revision string, priceRow
 		pricingAuthority := "unknown"
 		pricingStatus := "unknown-unpriced"
 		priceIdentity := map[string]any{
-			"model":           modelName,
-			"provider":        event["provider"],
-			"pricingRevision": revision,
-			"source":          "",
-			"sourceModelID":   "",
-			"configured":      false,
-			"explicitZero":    false,
-			"unknownUnpriced": true,
-			"rates":           map[string]any{},
+			"model":               modelName,
+			"provider":            event["provider"],
+			"pricingRevision":     revision,
+			"source":              "",
+			"sourceModelID":       "",
+			"configured":          false,
+			"allFieldsConfigured": false,
+			"configuredFields":    map[string]any{},
+			"explicitZero":        false,
+			"unknownUnpriced":     true,
+			"rates":               map[string]any{},
 		}
 		if hasPrice {
 			source, _ := priceRow["source"].(string)
 			sourceModelID, _ := priceRow["source_model_id"].(string)
-			configured := pricingRowConfigured(priceRow)
-			zero := configured && pricingRowRatesAreZero(priceRow)
+			allFieldsConfigured := pricingRowConfigured(priceRow)
+			zero := allFieldsConfigured && pricingRowRatesAreZero(priceRow)
 			if source != "" {
 				pricingAuthority = source
 				pricingStatus = "priced"
@@ -254,15 +256,17 @@ func retainedPricingEvidence(t *testing.T, db *sql.DB, revision string, priceRow
 				}
 			}
 			priceIdentity = map[string]any{
-				"model":           modelName,
-				"provider":        event["provider"],
-				"pricingRevision": revision,
-				"source":          source,
-				"sourceModelID":   sourceModelID,
-				"configured":      configured,
-				"explicitZero":    zero,
-				"unknownUnpriced": pricingStatus == "unknown-unpriced",
-				"rates":           pricingRowRates(priceRow),
+				"model":               modelName,
+				"provider":            event["provider"],
+				"pricingRevision":     revision,
+				"source":              source,
+				"sourceModelID":       sourceModelID,
+				"configured":          pricingRowHasAnyConfigured(priceRow),
+				"allFieldsConfigured": allFieldsConfigured,
+				"configuredFields":    pricingRowConfiguredFields(priceRow),
+				"explicitZero":        zero,
+				"unknownUnpriced":     pricingStatus == "unknown-unpriced",
+				"rates":               pricingRowRates(priceRow),
 			}
 		} else {
 			unknown = append(unknown, eventID)
@@ -300,10 +304,26 @@ func retainedPricingEvidence(t *testing.T, db *sql.DB, revision string, priceRow
 }
 
 func pricingRowConfigured(row map[string]any) bool {
-	return configuredValue(row["prompt_configured"]) &&
-		configuredValue(row["completion_configured"]) &&
-		configuredValue(row["cache_read_configured"]) &&
-		configuredValue(row["cache_creation_configured"])
+	fields := pricingRowConfiguredFields(row)
+	return fields["prompt"] && fields["completion"] && fields["cacheRead"] && fields["cacheCreation"]
+}
+
+func pricingRowHasAnyConfigured(row map[string]any) bool {
+	for _, configured := range pricingRowConfiguredFields(row) {
+		if configured {
+			return true
+		}
+	}
+	return false
+}
+
+func pricingRowConfiguredFields(row map[string]any) map[string]bool {
+	return map[string]bool{
+		"prompt":        configuredValue(row["prompt_configured"]),
+		"completion":    configuredValue(row["completion_configured"]),
+		"cacheRead":     configuredValue(row["cache_read_configured"]),
+		"cacheCreation": configuredValue(row["cache_creation_configured"]),
+	}
 }
 
 func configuredValue(value any) bool {
