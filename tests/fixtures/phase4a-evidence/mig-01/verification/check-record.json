@@ -1,0 +1,35 @@
+{
+  "commands": {
+    "manager-full": "go test -mod=readonly -count=1 ./... (apps/manager-server)",
+    "manager-vet": "go vet -mod=readonly ./... (apps/manager-server)",
+    "preflight-race": "go test -race -count=1 ./internal/service/legacypreflight ./cmd/cpa-manager-plus (apps/manager-server)",
+    "qualification-race": "go test -race -count=1 with pinned generatorCommit and actual MIG01 source/archive/profile; -run ^TestQualifyMIG01$ ./tests/qualification/src11",
+    "python-evidence": "CPAMP_MIG01_REQUIRED=1 CPAMP_MIG01_FULL_EVIDENCE=<materialized immutable bytes> python3 -m unittest discover -s bin/qualification -p test_*.py -v"
+  },
+  "exitCodes": {
+    "manager-full": 0,
+    "manager-vet": 0,
+    "preflight-race": 0,
+    "qualification-race": 0,
+    "python-evidence": 0
+  },
+  "pythonResult": "30 tests; 3 unrelated original-asset opt-in skips; all 6 MIG-01 tests executed",
+  "codeReview": {
+    "exactSource": "archive, executable, build metadata and release-info bound to pinned generation",
+    "migrationAuthenticity": "natural real producer completed state; revision2 retained",
+    "readinessSemantics": "controlledDirectCandidateReadiness=ready; productionBridgeReadiness=unknown; both derived from actual reports; no production Bridge grant",
+    "sourceImmutability": "read-only inspection; validator private copies only; full source inventory and authoritative snapshots equal",
+    "authoritySeparation": "no consumers wired; false grants; pending independent acceptance",
+    "evidenceDurability": "original immutable archive and source-generation unchanged; naming-corrected macOS/Linux/race/clean clone evidence regenerated",
+    "blockingFindingsRemaining": 0,
+    "frozenProductScope": "PASS: product trees equal v2 base; only _test.go composition and readonly migration queries"
+  },
+  "runtimePlatformLimit": "Windows materialization/SQLite inspection/compilation only, no Windows runtime readiness claim",
+  "executionCommit": "70dfd607a0c7919cdb3cd5d56406dd3141914899",
+  "historicalProductChecksExecutionCommit": "831d6e3e052671d8434f6e3624d6bc9e913e7fef",
+  "historicalProductChecks": [
+    "manager-full",
+    "manager-vet",
+    "preflight-race"
+  ]
+}

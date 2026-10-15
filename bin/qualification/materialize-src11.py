@@ -83,14 +83,14 @@ def write_members(output, members):
         raise
 
 
-def validate_ret01_release(metadata, pin):
-    return validate_retention_release(metadata, pin, "ret-01")
+def validate_ret01_release(metadata, pin, tag_metadata=None):
+    return validate_retention_release(metadata, pin, "ret-01", tag_metadata)
 
 
-def validate_retention_release(metadata, pin, case):
+def validate_retention_release(metadata, pin, case, tag_metadata=None):
     """Check durable hosting identity, not production admission or acceptance."""
     if (metadata.get("id") != pin["releaseID"] or metadata.get("tag_name") != pin["tag"]
-            or metadata.get("target_commitish") != pin["tagCommit"]
+            or metadata.get("target_commitish") != pin.get("releaseTargetCommitish", pin["tagCommit"])
             or metadata.get("draft") is not False or metadata.get("prerelease") is not True
             or metadata.get("immutable") is not True):
         raise ValueError(f"{case.upper()} immutable qualification release mismatch")
@@ -102,16 +102,28 @@ def validate_retention_release(metadata, pin, case):
             or asset.get("size") != pin["archiveSize"] or asset.get("state") != "uploaded"
             or asset.get("digest") != "sha256:" + pin["archiveSHA256"]):
         raise ValueError(f"{case.upper()} release asset identity mismatch")
+    if "releaseTargetCommitish" in pin:
+        if (not tag_metadata or tag_metadata.get("ref") != "refs/tags/" + pin["tag"]
+                or tag_metadata.get("object", {}).get("type") != "commit"
+                or tag_metadata["object"].get("sha") != pin["tagCommit"]):
+            raise ValueError("qualification tag commit mismatch")
 
 
 def materialize_ret01(archive, output, pin=None):
-    return materialize_retention(archive, output, "ret-01", pin)
+    return materialize_case(archive, output, "ret-01", pin)
 
 
 def materialize_retention(archive, output, case, pin=None):
     """Authenticate the original ZIP, then reuse the existing safe writer."""
     if case not in ("ret-01", "ret-02"):
         raise ValueError("unknown retention case")
+    return materialize_case(archive, output, case, pin)
+
+
+def materialize_case(archive, output, case, pin=None):
+    """Authenticate one case's original ZIP against its independent pins."""
+    if case not in ("ret-01", "ret-02", "mig-01"):
+        raise ValueError("unknown qualification case")
     if pin is None:
         provenance = ROOT / f"tests/fixtures/phase4a-evidence/{case}/source-provenance.json"
         pin = json.loads(provenance.read_text())["sourceArtifact"]
@@ -164,19 +176,21 @@ def materialize_retention(archive, output, case, pin=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=["src-11", "ret-01", "ret-02"], default="src-11")
-    parser.add_argument("--release-metadata", type=Path, help="optional local retention qualification Release API response")
+    parser.add_argument("--case", choices=["src-11", "ret-01", "ret-02", "mig-01"], default="src-11")
+    parser.add_argument("--release-metadata", type=Path, help="optional local qualification Release API response")
+    parser.add_argument("--tag-metadata", type=Path, help="local Git ref API response when release target differs from the pinned tag commit")
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    if args.case in ("ret-01", "ret-02"):
+    if args.case in ("ret-01", "ret-02", "mig-01"):
         if args.release_metadata:
             pin = json.loads((ROOT / f"tests/fixtures/phase4a-evidence/{args.case}/source-provenance.json").read_text())["sourceArtifact"]
-            validate_retention_release(json.loads(args.release_metadata.read_text()), pin, args.case)
-        print(materialize_retention(args.archive, args.output, args.case))
+            validate_retention_release(json.loads(args.release_metadata.read_text()), pin, args.case,
+                                       json.loads(args.tag_metadata.read_text()) if args.tag_metadata else None)
+        print(materialize_case(args.archive, args.output, args.case))
     else:
         if args.release_metadata:
-            parser.error("--release-metadata is only applicable to retention cases")
+            parser.error("--release-metadata is only applicable to qualification ZIP cases")
         print(materialize(args.archive, args.output))
 
 

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "caseID": "MIG-01",
+  "sourceRelease": "v1.14.4",
+  "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "sourceProducerKind": "published-artifact",
+  "sourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "sourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "generatorCodeCommit": "fe5f11349d876b57c7cb6929bb270bce3a869fb6",
+  "sourceArtifact": {
+    "repository": "seakee/CPA-Manager-Plus",
+    "tag": "qualification-mig01-d337ad0eeef2-20261014",
+    "tagCommit": "fe5f11349d876b57c7cb6929bb270bce3a869fb6",
+    "releaseTargetCommitish": "main",
+    "releaseID": 412855420,
+    "assetID": 640737774,
+    "immutable": true,
+    "archiveName": "mig-01-d337ad0eeef2-sealed-evidence.zip",
+    "archiveSize": 8624487,
+    "archiveSHA256": "bca2e3d802b9c48e76e895418a7280e666915bebe3cd353bef17c45a3021607b",
+    "downloadURL": "https://github.com/seakee/CPA-Manager-Plus/releases/download/qualification-mig01-d337ad0eeef2-20261014/mig-01-d337ad0eeef2-sealed-evidence.zip",
+    "sourceBundleDigest": "d337ad0eeef26b669a141723b1da0b931b7b2dc6b7b8b563e321c87db2deae7f",
+    "generationRecordSHA256": "a727b9abb093370a29c4e90f5756fb430df82589ee207409d6a636c70c630236",
+    "bundleManifestSHA256": "bcfec6b453acdad9c224004a888fb3a38126f9dca9c9d3cc164b7e28e5a3c8a8",
+    "inventory": {
+      "mig-01/.manager-bundle-operation-a1cab7d43fa4b49959026969e09bd29f837203159d5b5f7256d00d1ec7aa556a/state.json": {
+        "size": 735,
+        "sha256": "3a4967f008039e3499b2de5d58fb077389879da1b8b241316755815998dd6b08"
+      },
+      "mig-01/.manager-bundle-operation-a1cab7d43fa4b49959026969e09bd29f837203159d5b5f7256d00d1ec7aa556a/state.json.manager.lock": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "mig-01/bundle/config": {
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "mig-01/bundle/data-key": {
+        "size": 44,
+        "sha256": "e8e51a782b8ad14c0a01c5e11ef50fc5ad07cc1f8b2002bd83a207f0cd4fd7dc"
+      },
+      "mig-01/bundle/database": {
+        "size": 659456,
+        "sha256": "71d54a1288c20b98a1faeea9ac98ac4a075a8623a8faac229794dd95f8430174"
+      },
+      "mig-01/bundle/manifest.json": {
+        "size": 829,
+        "sha256": "bcfec6b453acdad9c224004a888fb3a38126f9dca9c9d3cc164b7e28e5a3c8a8"
+      },
+      "mig-01/generation-index.json": {
+        "size": 266,
+        "sha256": "d675270f442be3e85664dd609567e1859525e86339396c715238d3030db4e1e9"
+      },
+      "mig-01/source-generation/config-write.json": {
+        "size": 731,
+        "sha256": "ae6d1981ff09a28b3935a7f7e83dacfcfdbfdcc900f37a8f78693a5de099df81"
+      },
+      "mig-01/source-generation/controlled-input.json": {
+        "size": 4509,
+        "sha256": "e1f3b010db4a510388676d7dda5075a68a2cc09a7b80f3a6745a620afe15a33f"
+      },
+      "mig-01/source-generation/price-write.json": {
+        "size": 1124,
+        "sha256": "34243d10ddfc325e6032039c6fa73a7f45ecf82a5e799adcad844a4e8fa5cd79"
+      },
+      "mig-01/source-generation/producer-build.json": {
+        "size": 2313,
+        "sha256": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7"
+      },
+      "mig-01/source-generation/producer.log": {
+        "size": 7723,
+        "sha256": "1a62238cd6ce0a236c20f0d10816f1deb69edf8eaa8839b9a8b7eb3941216aaa"
+      },
+      "mig-01/source-generation/quota-write.json": {
+        "size": 193,
+        "sha256": "84f457970e0a1f3bf70584cd6afd4105c2fb354cca32f43c44a80d780b5e0c15"
+      },
+      "mig-01/source-generation/record.json": {
+        "size": 6536,
+        "sha256": "a727b9abb093370a29c4e90f5756fb430df82589ee207409d6a636c70c630236"
+      },
+      "mig-01/source-generation/release-info.json": {
+        "size": 1562,
+        "sha256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5"
+      },
+      "mig-01/source-generation/source-snapshot.json": {
+        "size": 22726,
+        "sha256": "e4d37b2ebf8a51d95d098aa23cdf915e4ee52ee8a18901139d916889ffd444d8"
+      },
+      "mig-01/source-generation/v1-analytics.json": {
+        "size": 3511,
+        "sha256": "6f88f9dfa17c6bebfef3fbb003bc1c735f025186c22c853ee9529b9f4e2e14b6"
+      },
+      "mig-01/source-generation/v1-export.jsonl": {
+        "size": 3913,
+        "sha256": "bbc803525146111625cacd535a107cf2ebeb19613ea500c1860054b5c03cc26b"
+      },
+      "producer.tar.gz": {
+        "size": 8564211,
+        "sha256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033"
+      },
+      "generation-runner-evidence.json": {
+        "size": 74005,
+        "sha256": "29c3712d14686fe46fcf628b0a4bacac361e46fb9fac0d33ae3bb1b91659e5a0"
+      },
+      "generation-build.log": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "generation-generation-execution.log": {
+        "size": 158,
+        "sha256": "67ee15ef098016a24e3142844b3d42dbb9e0749dba45a623ec56d40afe51635d"
+      }
+    }
+  },
+  "independentAcceptance": "pending",
+  "UpgradeAuthorized": false,
+  "TrustedHopReceipt": false
+}

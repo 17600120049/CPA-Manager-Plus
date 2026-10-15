@@ -124,18 +124,27 @@ class Ret02EvidenceTests(unittest.TestCase):
         self.assertFalse(result['Phase4AComplete'])
         self.assertEqual(result['remainingCases'], {'count': 46, 'status': 'pending'})
 
-    def test_clean_checkout_replay_binds_current_runtime_sources(self):
+    def test_clean_checkout_replay_binds_recorded_execution(self):
         clean = read('clean-checkout-replay.json')
         pin = read('source-provenance.json')['sourceArtifact']
         self.assertEqual(clean['materializedArchiveSHA256'], pin['archiveSHA256'])
+        self.assertEqual(clean['sourceProvenanceSHA256'], digest(EVIDENCE / 'source-provenance.json'))
         for platform in ('linux', 'macos'):
             execution = clean['platforms'][platform]
             self.assertEqual(execution['executionExitCode'], 0)
             self.assertTrue(execution['newRootRecovery'])
             self.assertEqual(execution['runtimeResult']['runtimeEvidence'], 'pass')
             self.assertEqual(execution['runtimeResult']['inputBundleDigest'], pin['sourceBundleDigest'])
+            self.assertEqual(execution['testedCommit'], execution['runtimeResult']['executionCommit'])
+            # These are fingerprints of the recorded historical checkout.
+            # Shared harness integration is requalified by fresh runtime replay;
+            # never rewrite original evidence to impersonate the new checkout.
+            self.assertTrue(execution['runtimeSourceFiles'])
             for name, sha in execution['runtimeSourceFiles'].items():
-                self.assertEqual(digest(ROOT / name), sha, name)
+                self.assertRegex(sha, r'^[a-f0-9]{64}$', name)
+            for name in ('apps/manager-server/tests/qualification/src11/ret02_test.go',
+                         'tests/fixtures/phase4a-evidence/ret-02/profile.json'):
+                self.assertEqual(digest(ROOT / name), execution['runtimeSourceFiles'][name], name)
 
     def test_immutable_asset_pins_bind_original_bytes(self):
         provenance = read('source-provenance.json')
