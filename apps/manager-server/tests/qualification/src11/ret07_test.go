@@ -82,7 +82,7 @@ func generateRET07Archive(t *testing.T, base, live, generation string, p profile
 	postDelete := snapshot(t, db)
 	assertRET03Preserved(t, preDelete, postDelete, archiveState)
 	beforeRevision := scalarString(t, db, "select structure_revision from usage_pricing_rollup_state where rollup_name='pricing_v1'")
-	beforePrices := query(t, db, "select model,prompt_per_1m,completion_per_1m,cache_read_per_1m,cache_creation_per_1m,prompt_configured,completion_configured,cache_read_configured,cache_creation_configured,source from model_prices order by model")
+	beforePrices := query(t, db, "select model,prompt_per_1m,completion_per_1m,cache_per_1m,cache_read_per_1m,cache_creation_per_1m,prompt_configured,completion_configured,cache_read_configured,cache_creation_configured,source,source_model_id from model_prices order by model")
 	must(t, db.Close())
 	save(t, generation, "post-delete-snapshot.json", postDelete)
 	save(t, generation, "archive-inventory.json", archiveState)
@@ -107,7 +107,7 @@ func generateRET07Archive(t *testing.T, base, live, generation string, p profile
 	db = openDB(t, filepath.Join(live, "usage.sqlite"), true)
 	var priceRows []map[string]any
 	wait(t, func() bool {
-		priceRows = query(t, db, "select model,prompt_per_1m,completion_per_1m,cache_read_per_1m,cache_creation_per_1m,prompt_configured,completion_configured,cache_read_configured,cache_creation_configured,source from model_prices order by model")
+		priceRows = query(t, db, "select model,prompt_per_1m,completion_per_1m,cache_per_1m,cache_read_per_1m,cache_creation_per_1m,prompt_configured,completion_configured,cache_read_configured,cache_creation_configured,source,source_model_id from model_prices order by model")
 		state := query(t, db, "select status,structure_revision,coverage_event_id,target_event_id from usage_pricing_rollup_state where rollup_name='pricing_v1'")
 		return len(state) == 1 && state[0]["status"] == "ready" && state[0]["coverage_event_id"] == state[0]["target_event_id"] && state[0]["structure_revision"] != beforeRevision
 	})
@@ -185,6 +185,12 @@ func checkRET07Archive(t *testing.T, db *sql.DB, archives string) map[string]any
 
 func retainedPricingEvidence(t *testing.T, db *sql.DB, revision string, priceRows []map[string]any) map[string]any {
 	t.Helper()
+	expectedRows := query(t, db, `select raw_event_id
+		from usage_archive_event_refs where raw_deleted_at_ms is not null order by raw_event_id`)
+	expected := make([]any, 0, len(expectedRows))
+	for _, row := range expectedRows {
+		expected = append(expected, row["raw_event_id"])
+	}
 	events := query(t, db, `select archived.raw_event_id, archived.event_hash, p.model, p.provider,
  p.source, p.source_hash, p.account_snapshot, p.event_id
  from usage_archive_event_refs archived join usage_monitoring_event_projection_v1 p
@@ -192,27 +198,160 @@ func retainedPricingEvidence(t *testing.T, db *sql.DB, revision string, priceRow
 	if len(events) != 4 {
 		t.Fatalf("RET-07 retained pricing source event coverage=%d", len(events))
 	}
+	priceByModel := make(map[string]map[string]any, len(priceRows))
+	for _, row := range priceRows {
+		modelName, ok := row["model"].(string)
+		if !ok || modelName == "" {
+			t.Fatalf("RET-07 retained pricing source has an invalid price identity: %#v", row)
+		}
+		priceByModel[modelName] = row
+	}
 	covered := make([]any, 0, len(events))
 	manual := []any{}
+	explicitZero := []any{}
 	unknown := []any{}
+	coveredIDs := make(map[string]any, len(events))
+	duplicates := []any{}
 	for _, event := range events {
-		modelName := event["model"].(string)
-		status := "manual"
-		if modelName == "fixture-unknown-ret07" {
-			status = "unknown"
-			unknown = append(unknown, event["raw_event_id"])
+		modelName, ok := event["model"].(string)
+		if !ok || modelName == "" {
+			t.Fatalf("RET-07 retained pricing source event has no model identity: %#v", event)
 		}
-		if status == "manual" {
-			manual = append(manual, event["raw_event_id"])
+		eventID := event["raw_event_id"]
+		idKey := fmt.Sprintf("%v", eventID)
+		if _, exists := coveredIDs[idKey]; exists {
+			duplicates = append(duplicates, eventID)
 		}
-		covered = append(covered, map[string]any{"eventID": event["raw_event_id"], "eventHash": event["event_hash"], "model": modelName, "provider": event["provider"], "source": event["source"], "sourceHash": event["source_hash"], "pricingAuthority": status, "retainedProjectionEventID": event["event_id"]})
+		coveredIDs[idKey] = eventID
+		priceRow, hasPrice := priceByModel[modelName]
+		pricingAuthority := "unknown"
+		pricingStatus := "unknown-unpriced"
+		priceIdentity := map[string]any{
+			"model":           modelName,
+			"provider":        event["provider"],
+			"pricingRevision": revision,
+			"source":          "",
+			"sourceModelID":   "",
+			"configured":      false,
+			"explicitZero":    false,
+			"unknownUnpriced": true,
+			"rates":           map[string]any{},
+		}
+		if hasPrice {
+			source, _ := priceRow["source"].(string)
+			sourceModelID, _ := priceRow["source_model_id"].(string)
+			configured := pricingRowConfigured(priceRow)
+			zero := configured && pricingRowRatesAreZero(priceRow)
+			if source != "" {
+				pricingAuthority = source
+				pricingStatus = "priced"
+				if zero {
+					pricingStatus = "explicit-zero"
+					explicitZero = append(explicitZero, eventID)
+				}
+				if source == "manual" {
+					manual = append(manual, eventID)
+				}
+			}
+			priceIdentity = map[string]any{
+				"model":           modelName,
+				"provider":        event["provider"],
+				"pricingRevision": revision,
+				"source":          source,
+				"sourceModelID":   sourceModelID,
+				"configured":      configured,
+				"explicitZero":    zero,
+				"unknownUnpriced": pricingStatus == "unknown-unpriced",
+				"rates":           pricingRowRates(priceRow),
+			}
+		} else {
+			unknown = append(unknown, eventID)
+		}
+		if pricingStatus == "unknown-unpriced" && hasPrice {
+			unknown = append(unknown, eventID)
+		}
+		covered = append(covered, map[string]any{
+			"eventID":                   eventID,
+			"eventHash":                 event["event_hash"],
+			"model":                     modelName,
+			"provider":                  event["provider"],
+			"source":                    event["source"],
+			"sourceHash":                event["source_hash"],
+			"pricingAuthority":          pricingAuthority,
+			"pricingStatus":             pricingStatus,
+			"priceIdentity":             priceIdentity,
+			"retainedProjectionEventID": event["event_id"],
+		})
 	}
+	missing := make([]any, 0)
+	for _, eventID := range expected {
+		if _, ok := coveredIDs[fmt.Sprintf("%v", eventID)]; !ok {
+			missing = append(missing, eventID)
+		}
+	}
+	complete := len(expected) > 0 && len(missing) == 0 && len(duplicates) == 0 && len(covered) == len(expected)
 	return map[string]any{
 		"pricingRevision": revision, "priceRows": priceRows,
-		"expectedHistoricalEvents": []int{1, 2, 3, 4}, "coveredPricingEvents": covered,
-		"missingPricingEvents": []any{}, "retainedPricingSourceComplete": true,
-		"manualPriceAuthorityEvents": manual, "explicitZeroEvents": []any{},
-		"unknownUnpricedEvents": unknown, "duplicateEventIDs": []any{},
+		"expectedHistoricalEvents": expected, "coveredPricingEvents": covered,
+		"missingPricingEvents": missing, "retainedPricingSourceComplete": complete,
+		"manualPriceAuthorityEvents": manual, "explicitZeroEvents": explicitZero,
+		"unknownUnpricedEvents": unknown, "duplicateEventIDs": duplicates,
+	}
+}
+
+func pricingRowConfigured(row map[string]any) bool {
+	return configuredValue(row["prompt_configured"]) &&
+		configuredValue(row["completion_configured"]) &&
+		configuredValue(row["cache_read_configured"]) &&
+		configuredValue(row["cache_creation_configured"])
+}
+
+func configuredValue(value any) bool {
+	switch value := value.(type) {
+	case int64:
+		return value != 0
+	case int:
+		return value != 0
+	case float64:
+		return value != 0
+	case bool:
+		return value
+	default:
+		return false
+	}
+}
+
+func pricingRowRatesAreZero(row map[string]any) bool {
+	for _, key := range []string{"prompt_per_1m", "completion_per_1m", "cache_per_1m", "cache_read_per_1m", "cache_creation_per_1m"} {
+		if numericValue(row[key]) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func pricingRowRates(row map[string]any) map[string]any {
+	return map[string]any{
+		"promptPer1M":        row["prompt_per_1m"],
+		"completionPer1M":    row["completion_per_1m"],
+		"cachePer1M":         row["cache_per_1m"],
+		"cacheReadPer1M":     row["cache_read_per_1m"],
+		"cacheCreationPer1M": row["cache_creation_per_1m"],
+	}
+}
+
+func numericValue(value any) float64 {
+	switch value := value.(type) {
+	case int64:
+		return float64(value)
+	case int:
+		return float64(value)
+	case float64:
+		return value
+	case float32:
+		return float64(value)
+	default:
+		return 0
 	}
 }
 
@@ -364,7 +503,7 @@ func ret07Queries(t *testing.T, ctx context.Context, st *store.Store, dbPath str
 	if scalar(t, db, "select count(*) from usage_archive_event_refs where raw_deleted_at_ms is not null") != 4 {
 		t.Fatal("RET-07 raw deletion coverage is incomplete")
 	}
-	return map[string]any{"analytics": queries, "pricingSource": retainedPricingEvidence(t, db, scalarString(t, db, "select structure_revision from usage_pricing_rollup_state where rollup_name='pricing_v1'"), query(t, db, "select model,prompt_per_1m,completion_per_1m,cache_read_per_1m,cache_creation_per_1m,prompt_configured,completion_configured,cache_read_configured,cache_creation_configured,source from model_prices order by model"))}
+	return map[string]any{"analytics": queries, "pricingSource": retainedPricingEvidence(t, db, scalarString(t, db, "select structure_revision from usage_pricing_rollup_state where rollup_name='pricing_v1'"), query(t, db, "select model,prompt_per_1m,completion_per_1m,cache_per_1m,cache_read_per_1m,cache_creation_per_1m,prompt_configured,completion_configured,cache_read_configured,cache_creation_configured,source,source_model_id from model_prices order by model"))}
 }
 
 func jsonDigest(value any) string {
