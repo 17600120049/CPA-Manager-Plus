@@ -348,7 +348,13 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	} else {
 		checkFullRaw(t, db)
 	}
-	if scalar(t, db, "select count(*) from account_quota_snapshots") < 2 {
+	minimumQuotaSnapshots := int64(2)
+	if caseID == ret07CaseID {
+		// RET-07 has no quota-failure usage event; its controlled quota API
+		// write is the single required snapshot.
+		minimumQuotaSnapshots = 1
+	}
+	if scalar(t, db, "select count(*) from account_quota_snapshots") < minimumQuotaSnapshots {
 		t.Fatal("required quota/reset evidence missing")
 	}
 	revision := query(t, db, "select value from settings where key='usage_cache_accounting_semantics_revision'")
