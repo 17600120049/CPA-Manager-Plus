@@ -274,7 +274,7 @@ func TestReplayRET07(t *testing.T) {
 		imports = append(imports, result)
 	}
 	after := ret07Queries(t, ctx, st, restored.DatabasePath, p, v1)
-	if jsonDigest(first) != jsonDigest(after) {
+	if ret07StableDigest(first) != ret07StableDigest(after) {
 		t.Fatal("RET-07 repeated retained pricing reconciliation drifted")
 	}
 	must(t, st.Close())
@@ -370,4 +370,28 @@ func ret07Queries(t *testing.T, ctx context.Context, st *store.Store, dbPath str
 func jsonDigest(value any) string {
 	b, _ := json.Marshal(value)
 	return fmt.Sprintf("%x", digestBytes(b))
+}
+
+func ret07StableDigest(value any) string {
+	b, _ := json.Marshal(value)
+	var normalized any
+	if json.Unmarshal(b, &normalized) == nil {
+		stripRET07VolatileFields(normalized)
+		b, _ = json.Marshal(normalized)
+	}
+	return fmt.Sprintf("%x", digestBytes(b))
+}
+
+func stripRET07VolatileFields(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		delete(typed, "generated_at_ms")
+		for _, child := range typed {
+			stripRET07VolatileFields(child)
+		}
+	case []any:
+		for _, child := range typed {
+			stripRET07VolatileFields(child)
+		}
+	}
 }
