@@ -1,0 +1,32 @@
+{
+  "aggregate": {
+    "actualHistorical": 0.0023499999999999997,
+    "currentProjection": 0.0023499999999999997,
+    "expectedHistorical": 0.0023499999999999997,
+    "reconciled": true
+  },
+  "fixture-free-ret07": {
+    "afterStructuralChangeHistorical": 0,
+    "beforeStructuralChange": 0,
+    "calls": 1,
+    "currentProjection": 0
+  },
+  "fixture-manual-ret07": {
+    "afterStructuralChangeHistorical": 0.00207,
+    "beforeStructuralChange": 0.00207,
+    "calls": 1,
+    "currentProjection": 0.00207
+  },
+  "fixture-paid-ret07": {
+    "afterStructuralChangeHistorical": 0.00028000000000000003,
+    "beforeStructuralChange": 0.00028000000000000003,
+    "calls": 1,
+    "currentProjection": 0.00028000000000000003
+  },
+  "fixture-unknown-ret07": {
+    "afterStructuralChangeHistorical": 0,
+    "beforeStructuralChange": 0,
+    "calls": 1,
+    "currentProjection": 0
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "afterPrices": [
+    {
+      "cache_creation_configured": 1,
+      "cache_creation_per_1m": 0,
+      "cache_per_1m": 0,
+      "cache_read_configured": 1,
+      "cache_read_per_1m": 0,
+      "completion_configured": 1,
+      "completion_per_1m": 0,
+      "model": "fixture-free-ret07",
+      "prompt_configured": 1,
+      "prompt_per_1m": 0,
+      "source": "manual",
+      "source_model_id": null
+    },
+    {
+      "cache_creation_configured": 1,
+      "cache_creation_per_1m": 3.75,
+      "cache_per_1m": 0.3,
+      "cache_read_configured": 1,
+      "cache_read_per_1m": 0.3,
+      "completion_configured": 1,
+      "completion_per_1m": 15,
+      "model": "fixture-manual-ret07",
+      "prompt_configured": 1,
+      "prompt_per_1m": 3,
+      "source": "manual",
+      "source_model_id": null
+    },
+    {
+      "cache_creation_configured": 0,
+      "cache_creation_per_1m": 0,
+      "cache_per_1m": 0.2,
+      "cache_read_configured": 0,
+      "cache_read_per_1m": 0,
+      "completion_configured": 1,
+      "completion_per_1m": 8,
+      "model": "fixture-paid-ret07",
+      "prompt_configured": 1,
+      "prompt_per_1m": 2,
+      "source": "manual",
+      "source_model_id": null
+    }
+  ],
+  "afterRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+  "beforePrices": [
+    {
+      "cache_creation_configured": 1,
+      "cache_creation_per_1m": 0,
+      "cache_per_1m": 0,
+      "cache_read_configured": 1,
+      "cache_read_per_1m": 0,
+      "completion_configured": 1,
+      "completion_per_1m": 0,
+      "model": "fixture-free-ret07",
+      "prompt_configured": 1,
+      "prompt_per_1m": 0,
+      "source": "manual",
+      "source_model_id": null
+    },
+    {
+      "cache_creation_configured": 1,
+      "cache_creation_per_1m": 3.75,
+      "cache_per_1m": 0.3,
+      "cache_read_configured": 1,
+      "cache_read_per_1m": 0.3,
+      "completion_configured": 1,
+      "completion_per_1m": 15,
+      "model": "fixture-manual-ret07",
+      "prompt_configured": 1,
+      "prompt_per_1m": 3,
+      "source": "manual",
+      "source_model_id": null
+    },
+    {
+      "cache_creation_configured": 0,
+      "cache_creation_per_1m": 0,
+      "cache_per_1m": 0.2,
+      "cache_read_configured": 0,
+      "cache_read_per_1m": 0,
+      "completion_configured": 1,
+      "completion_per_1m": 8,
+      "model": "fixture-paid-ret07",
+      "prompt_configured": 1,
+      "prompt_per_1m": 2,
+      "source": "manual",
+      "source_model_id": null
+    }
+  ],
+  "beforeRevision": "model-1:identity-3:codex-2:context-v1:887de26ffa04ba790858d8c40395ca5039ad7ea11d32f9453640571653074272",
+  "explicitZeroModel": "fixture-free-ret07",
+  "manualAuthorityModels": [
+    "fixture-manual-ret07",
+    "fixture-paid-ret07",
+    "fixture-free-ret07"
+  ],
+  "unknownModel": "fixture-unknown-ret07"
+}

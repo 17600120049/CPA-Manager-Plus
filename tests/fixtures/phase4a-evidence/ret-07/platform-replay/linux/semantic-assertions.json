@@ -1,0 +1,803 @@
+{
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-02",
+    "SEM-03",
+    "SEM-04",
+    "SEM-05",
+    "SEM-09"
+  ],
+  "assertions": {
+    "SEM-01": {
+      "historicalIdentityPreserved": true,
+      "pricingAuthorityExplained": true,
+      "rawRowsPhysicallyAbsent": true,
+      "status": "runtime-pass"
+    },
+    "SEM-02": {
+      "archiveImports": [
+        {
+          "format": "usage_service_jsonl",
+          "added": 0,
+          "skipped": 4,
+          "total": 4,
+          "failed": 0,
+          "unsupported": 0,
+          "warnings": null
+        },
+        {
+          "format": "usage_service_jsonl",
+          "added": 0,
+          "skipped": 4,
+          "total": 4,
+          "failed": 0,
+          "unsupported": 0,
+          "warnings": null
+        }
+      ],
+      "duplicateEventIDs": [],
+      "reconciliationRepeated": true,
+      "status": "runtime-pass"
+    },
+    "SEM-03": {
+      "historicalPricingAuthorityPreserved": true,
+      "reconciliation": {
+        "analytics": {
+          "": [
+            {
+              "generated_at_ms": 1792050078395,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 4,
+                "success_calls": 4,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 1700,
+                "output_tokens": 220,
+                "cached_tokens": 400,
+                "cache_read_tokens": 900,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0.7647058823529411,
+                "reasoning_tokens": 0,
+                "total_tokens": 1920,
+                "total_cost": 0.0023499999999999997,
+                "average_cost_per_call": 0.0005874999999999999,
+                "average_latency_ms": 67.5,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 4,
+                "avg_daily_tokens": 1920,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            },
+            {
+              "generated_at_ms": 1792050078398,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 4,
+                "success_calls": 4,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 1700,
+                "output_tokens": 220,
+                "cached_tokens": 400,
+                "cache_read_tokens": 900,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0.7647058823529411,
+                "reasoning_tokens": 0,
+                "total_tokens": 1920,
+                "total_cost": 0.0023499999999999997,
+                "average_cost_per_call": 0.0005874999999999999,
+                "average_latency_ms": 67.5,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 4,
+                "avg_daily_tokens": 1920,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            }
+          ],
+          "fixture-free-ret07": [
+            {
+              "generated_at_ms": 1792050078367,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 1,
+                "success_calls": 1,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 500,
+                "output_tokens": 100,
+                "cached_tokens": 400,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0.8,
+                "reasoning_tokens": 0,
+                "total_tokens": 600,
+                "total_cost": 0,
+                "average_cost_per_call": 0,
+                "average_latency_ms": null,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 1,
+                "avg_daily_tokens": 600,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            },
+            {
+              "generated_at_ms": 1792050078370,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 1,
+                "success_calls": 1,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 500,
+                "output_tokens": 100,
+                "cached_tokens": 400,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0.8,
+                "reasoning_tokens": 0,
+                "total_tokens": 600,
+                "total_cost": 0,
+                "average_cost_per_call": 0,
+                "average_latency_ms": null,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 1,
+                "avg_daily_tokens": 600,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            }
+          ],
+          "fixture-manual-ret07": [
+            {
+              "generated_at_ms": 1792050078375,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 1,
+                "success_calls": 1,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 1000,
+                "output_tokens": 100,
+                "cached_tokens": 0,
+                "cache_read_tokens": 900,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0.9,
+                "reasoning_tokens": 0,
+                "total_tokens": 1100,
+                "total_cost": 0.00207,
+                "average_cost_per_call": 0.00207,
+                "average_latency_ms": 125,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 1,
+                "avg_daily_tokens": 1100,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            },
+            {
+              "generated_at_ms": 1792050078377,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 1,
+                "success_calls": 1,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 1000,
+                "output_tokens": 100,
+                "cached_tokens": 0,
+                "cache_read_tokens": 900,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0.9,
+                "reasoning_tokens": 0,
+                "total_tokens": 1100,
+                "total_cost": 0.00207,
+                "average_cost_per_call": 0.00207,
+                "average_latency_ms": 125,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 1,
+                "avg_daily_tokens": 1100,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            }
+          ],
+          "fixture-paid-ret07": [
+            {
+              "generated_at_ms": 1792050078382,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 1,
+                "success_calls": 1,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 100,
+                "output_tokens": 10,
+                "cached_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0,
+                "reasoning_tokens": 0,
+                "total_tokens": 110,
+                "total_cost": 0.00028000000000000003,
+                "average_cost_per_call": 0.00028000000000000003,
+                "average_latency_ms": 10,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 1,
+                "avg_daily_tokens": 110,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            },
+            {
+              "generated_at_ms": 1792050078384,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 1,
+                "success_calls": 1,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 100,
+                "output_tokens": 10,
+                "cached_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0,
+                "reasoning_tokens": 0,
+                "total_tokens": 110,
+                "total_cost": 0.00028000000000000003,
+                "average_cost_per_call": 0.00028000000000000003,
+                "average_latency_ms": 10,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 1,
+                "avg_daily_tokens": 110,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            }
+          ],
+          "fixture-unknown-ret07": [
+            {
+              "generated_at_ms": 1792050078388,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 1,
+                "success_calls": 1,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 100,
+                "output_tokens": 10,
+                "cached_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0,
+                "reasoning_tokens": 0,
+                "total_tokens": 110,
+                "total_cost": 0,
+                "average_cost_per_call": 0,
+                "average_latency_ms": null,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 1,
+                "avg_daily_tokens": 110,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            },
+            {
+              "generated_at_ms": 1792050078391,
+              "granularity": "hour",
+              "coverage": {
+                "scope": "requested_ranges",
+                "mode": "aggregate_only",
+                "raw_complete": false,
+                "core_aggregate_used": true,
+                "raw_deleted_event_count": 4,
+                "min_deleted_timestamp_ms": 1790899200000,
+                "max_deleted_timestamp_ms": 1790910000000,
+                "auxiliary_ranges": [
+                  {
+                    "scope": "rolling_30m",
+                    "from_ms": 1790983800000,
+                    "to_ms": 1790985600000,
+                    "raw_deleted_event_count": 0
+                  }
+                ],
+                "fidelity_limitations": [
+                  "extended_summary_metrics_require_raw_events"
+                ]
+              },
+              "summary": {
+                "total_calls": 1,
+                "success_calls": 1,
+                "failure_calls": 0,
+                "success_rate": 1,
+                "input_tokens": 100,
+                "output_tokens": 10,
+                "cached_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "cache_hit_rate": 0,
+                "reasoning_tokens": 0,
+                "total_tokens": 110,
+                "total_cost": 0,
+                "average_cost_per_call": 0,
+                "average_latency_ms": null,
+                "p95_latency_ms": null,
+                "p95_ttft_ms": null,
+                "zero_token_calls": 0,
+                "rpm_30m": 0,
+                "tpm_30m": 0,
+                "avg_daily_requests": 1,
+                "avg_daily_tokens": 110,
+                "approx_tasks": 0,
+                "approx_task_failures": 0,
+                "approx_task_success_rate": 0,
+                "zero_token_models": []
+              }
+            }
+          ],
+          "rawOnlyQuery": {
+            "generated_at_ms": 1792050078402,
+            "granularity": "hour",
+            "coverage": {
+              "scope": "time_range",
+              "mode": "aggregate_only",
+              "raw_complete": false,
+              "core_aggregate_used": false,
+              "raw_deleted_event_count": 4,
+              "min_deleted_timestamp_ms": 1790899200000,
+              "max_deleted_timestamp_ms": 1790910000000,
+              "fidelity_limitations": [
+                "event_details_require_raw_events"
+              ]
+            },
+            "events": {
+              "items": [],
+              "next_before_ms": 0,
+              "next_before_id": 0,
+              "has_more": false,
+              "total_count": 0
+            }
+          },
+          "retainedPricingCalls": 4,
+          "retainedPricingTokens": 1920,
+          "retainedProjectionCount": 4
+        },
+        "pricingSource": {
+          "coveredPricingEvents": [
+            {
+              "eventHash": "6caa3b6be7d27c5c32e513de42757365eb41885b2e1b5f4555da23afc5221efa",
+              "eventID": 1,
+              "model": "fixture-manual-ret07",
+              "priceIdentity": {
+                "configured": true,
+                "explicitZero": false,
+                "model": "fixture-manual-ret07",
+                "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+                "provider": "codex",
+                "rates": {
+                  "cacheCreationPer1M": 3.75,
+                  "cachePer1M": 0.3,
+                  "cacheReadPer1M": 0.3,
+                  "completionPer1M": 15,
+                  "promptPer1M": 3
+                },
+                "source": "manual",
+                "sourceModelID": "",
+                "unknownUnpriced": false
+              },
+              "pricingAuthority": "manual",
+              "pricingStatus": "priced",
+              "provider": "codex",
+              "retainedProjectionEventID": 1,
+              "source": "",
+              "sourceHash": ""
+            },
+            {
+              "eventHash": "b7b5fb010be583c7a7c8e7115d0346f389f63503851342c1bc0d6153e761db89",
+              "eventID": 2,
+              "model": "fixture-paid-ret07",
+              "priceIdentity": {
+                "configured": false,
+                "explicitZero": false,
+                "model": "fixture-paid-ret07",
+                "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+                "provider": "codex",
+                "rates": {
+                  "cacheCreationPer1M": 0,
+                  "cachePer1M": 0.2,
+                  "cacheReadPer1M": 0,
+                  "completionPer1M": 8,
+                  "promptPer1M": 2
+                },
+                "source": "manual",
+                "sourceModelID": "",
+                "unknownUnpriced": false
+              },
+              "pricingAuthority": "manual",
+              "pricingStatus": "priced",
+              "provider": "codex",
+              "retainedProjectionEventID": 2,
+              "source": "",
+              "sourceHash": ""
+            },
+            {
+              "eventHash": "301deb70c053bf4e76da3ae9bab07a57fe9e05ef591bc575ec2ab77ba5999b51",
+              "eventID": 3,
+              "model": "fixture-free-ret07",
+              "priceIdentity": {
+                "configured": true,
+                "explicitZero": true,
+                "model": "fixture-free-ret07",
+                "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+                "provider": "codex",
+                "rates": {
+                  "cacheCreationPer1M": 0,
+                  "cachePer1M": 0,
+                  "cacheReadPer1M": 0,
+                  "completionPer1M": 0,
+                  "promptPer1M": 0
+                },
+                "source": "manual",
+                "sourceModelID": "",
+                "unknownUnpriced": false
+              },
+              "pricingAuthority": "manual",
+              "pricingStatus": "explicit-zero",
+              "provider": "codex",
+              "retainedProjectionEventID": 3,
+              "source": "",
+              "sourceHash": ""
+            },
+            {
+              "eventHash": "91e65e0d396878e23eafeaf27db16ebb2c5a58a0f3a74f085ceaaffe853c23b3",
+              "eventID": 4,
+              "model": "fixture-unknown-ret07",
+              "priceIdentity": {
+                "configured": false,
+                "explicitZero": false,
+                "model": "fixture-unknown-ret07",
+                "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+                "provider": "codex",
+                "rates": {},
+                "source": "",
+                "sourceModelID": "",
+                "unknownUnpriced": true
+              },
+              "pricingAuthority": "unknown",
+              "pricingStatus": "unknown-unpriced",
+              "provider": "codex",
+              "retainedProjectionEventID": 4,
+              "source": "",
+              "sourceHash": ""
+            }
+          ],
+          "duplicateEventIDs": [],
+          "expectedHistoricalEvents": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "explicitZeroEvents": [
+            3
+          ],
+          "manualPriceAuthorityEvents": [
+            1,
+            2,
+            3
+          ],
+          "missingPricingEvents": [],
+          "priceRows": [
+            {
+              "cache_creation_configured": 1,
+              "cache_creation_per_1m": 0,
+              "cache_per_1m": 0,
+              "cache_read_configured": 1,
+              "cache_read_per_1m": 0,
+              "completion_configured": 1,
+              "completion_per_1m": 0,
+              "model": "fixture-free-ret07",
+              "prompt_configured": 1,
+              "prompt_per_1m": 0,
+              "source": "manual",
+              "source_model_id": null
+            },
+            {
+              "cache_creation_configured": 1,
+              "cache_creation_per_1m": 3.75,
+              "cache_per_1m": 0.3,
+              "cache_read_configured": 1,
+              "cache_read_per_1m": 0.3,
+              "completion_configured": 1,
+              "completion_per_1m": 15,
+              "model": "fixture-manual-ret07",
+              "prompt_configured": 1,
+              "prompt_per_1m": 3,
+              "source": "manual",
+              "source_model_id": null
+            },
+            {
+              "cache_creation_configured": 0,
+              "cache_creation_per_1m": 0,
+              "cache_per_1m": 0.2,
+              "cache_read_configured": 0,
+              "cache_read_per_1m": 0,
+              "completion_configured": 1,
+              "completion_per_1m": 8,
+              "model": "fixture-paid-ret07",
+              "prompt_configured": 1,
+              "prompt_per_1m": 2,
+              "source": "manual",
+              "source_model_id": null
+            }
+          ],
+          "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+          "retainedPricingSourceComplete": true,
+          "unknownUnpricedEvents": [
+            4
+          ]
+        }
+      },
+      "status": "runtime-pass",
+      "structuralPriceChange": true
+    },
+    "SEM-04": {
+      "manualEventsRemainManual": true,
+      "manualPriceAuthority": true,
+      "status": "runtime-pass"
+    },
+    "SEM-05": {
+      "explicitZeroDistinctFromUnknown": true,
+      "status": "runtime-pass",
+      "unknownDistinctFromMissingAsZero": true
+    },
+    "SEM-09": {
+      "archiveComplete": true,
+      "onlineRawComplete": false,
+      "rawDeleted": true,
+      "rawOnlyQueryDegraded": true,
+      "retainedPricingSourceComplete": true,
+      "status": "runtime-pass",
+      "supportedHistoryQuery": true
+    }
+  },
+  "caseID": "RET-07"
+}

@@ -1,0 +1,140 @@
+{
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "afterRawCount": 0,
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-02",
+    "SEM-03",
+    "SEM-04",
+    "SEM-05",
+    "SEM-09"
+  ],
+  "archiveEventCount": 4,
+  "backupRestore": "pass",
+  "beforeRawCount": 4,
+  "caseID": "RET-07",
+  "casePass": false,
+  "deletedCount": 4,
+  "evidence": {
+    "backupRestore": "63b7e71bcbebdf785cc681a104c8a8f37f195168b9ff86a0b3d7cc65e43c9046",
+    "executionRecord": "06b0140591ba64ebdb1dfbf77eca140a294632aa88697512d0dd4b2c4f0a2441",
+    "inputBundle": "679aa4c33fa3ac85fa16e13ea94dc962bffabfbfea317c3b0e09110bcc668868",
+    "rawEventInventory": "65e9d3146aa8741cfd39077082ad7a1664682606770fabe8f0273e7d4a321275",
+    "retainedPricingSource": "2042d1dc249190193ad5bed5fc78b56302ac936b0eba7119a6c29c99c991c6ee",
+    "semanticAssertions": "a7e9e582083fb6f3ba6d94f675cd259b47389dbf4d2e66e60bddf0782d807c5c"
+  },
+  "independentAcceptance": "pending",
+  "inputBundleDigest": "be77ef500972ff6aed6ef1f9c2362e0a1d63f316fa76cf62a25faf12fb3e55e2",
+  "inputBundleIdentity": "RET-07/input-bundle@be77ef500972ff6aed6ef1f9c2362e0a1d63f316fa76cf62a25faf12fb3e55e2",
+  "onlineRawComplete": false,
+  "rawEventCount": 0,
+  "remainingCases": {
+    "count": 41,
+    "status": "pending"
+  },
+  "retainedPricingSourceComplete": true,
+  "retainedProjectionCount": 4,
+  "runtimeEvidence": "pass",
+  "sourceProvenance": {
+    "caseID": "RET-07",
+    "SourceRelease": "v1.14.4",
+    "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "SourceProducerKind": "published-artifact",
+    "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "GeneratorCodeCommit": "753641237fe7711cf327da6ba142822f56c5ec93",
+    "PlanCommit": "21035045c425e453bd8f3007619fc0734861012e",
+    "ControlledInputSHA256": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
+    "GenerationProfile": "ret-07-retained-pricing-source-complete-v1",
+    "GeneratedBundleSHA256": "be77ef500972ff6aed6ef1f9c2362e0a1d63f316fa76cf62a25faf12fb3e55e2",
+    "GenerationEvidenceFiles": {
+      "archive-flow.json": "0424edcaf6da2f7aafaf412c5e80e95d6e486c89b76e7cb7ad0d5e16a31cc233",
+      "archive-inventory.json": "5179b38d5a7164a2ae23ee07fde98c8876189887b140fe6a6380228b3e4a1091",
+      "archive-readiness.json": "a7c7bdb5e6d1fa0c3ff16197c105fadb28426d5e808bb108894ce6d48f5ffbb8",
+      "config-write.json": "a0396c54efd075b44b8f9930268bc96a35320482da740fd9b1f0cc2181db0f86",
+      "controlled-input.json": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
+      "historical-reconciliation.json": "eeaf21f5e92d969f1b386e9ff4e21b630260a36e43d083a65f2bffccd2ccc88d",
+      "post-delete-snapshot.json": "a9cd545b0bc2444489a49d4a2490c8a5e40e303bec84e270bad17233c9785244",
+      "pre-archive-snapshot.json": "5abf25d74f99cb45ba44edad3ea3d096dae1f85adadc360e998f624c731a9dc6",
+      "pre-delete-snapshot.json": "5abf25d74f99cb45ba44edad3ea3d096dae1f85adadc360e998f624c731a9dc6",
+      "price-authority-snapshot.json": "ed4e91005984618a8b8ab14be9ad511eda8d6a995177ca173598fea54817d90d",
+      "price-write.json": "039475854309abc1486d05cc86d742cd877617f31b1aa1daec653406ff64e6d2",
+      "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+      "producer.log": "a771a83aa8b8e9937009143f102acc09e53fa95bfb56ba3a0d21ae5868a45ea5",
+      "quota-write.json": "2a5a02ed4f959de26ab70471e9946c9650d4fece15a203d76f21609625f205a9",
+      "raw-event-inventory.json": "901a299f875f04eb2fd9ae0597770ea64099981d208777466a72e98009f688db",
+      "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "retained-pricing-source.json": "35679a1280e3bdddf3ae9dddaa198904025a540af5e27fd4278c0fdcfa87e204",
+      "source-snapshot.json": "36f45dc127912017ea234da68d6e090c18da0ac9832d55466420fefc055c6a7b",
+      "structural-price-change.json": "3f2dd9791fda6e42d1be381e41dbcb35f73508449f97607eaf729b8c4bc6546d",
+      "v1-analytics.json": "c8d42117468c1304c4b9bfd7090e9e20a586c0b2c2ff06a4a3b7da879ce4f429",
+      "v1-archived-analytics.json": "e9eea7b1768fb6a04db51e7eef6a0c5ac8d17cd1911e66c398897549a58b0881",
+      "v1-export.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "bundleInventory": {
+      "version": 2,
+      "fence": "cooperating-manager-lock",
+      "sourceRevision": "be77ef500972ff6aed6ef1f9c2362e0a1d63f316fa76cf62a25faf12fb3e55e2",
+      "entries": {
+        "config": {
+          "present": true,
+          "size": 243,
+          "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+        },
+        "data-key": {
+          "present": true,
+          "size": 44,
+          "sha256": "7cc12a6db023555aba71b521351fbf0f31b13ee37920abe449d4d89b37373a79"
+        },
+        "database": {
+          "present": true,
+          "size": 659456,
+          "sha256": "741f0842b12bfa807e21099c5d84048fb3a1e5f6bd4896eba037bda6eb72509d"
+        },
+        "database-journal": {
+          "present": false
+        },
+        "database-shm": {
+          "present": false
+        },
+        "database-wal": {
+          "present": false
+        },
+        "usage-archives": {
+          "present": true,
+          "directory": true
+        },
+        "usage-archives/36d622fadc3cc2f84b6f17f632c40859": {
+          "present": true,
+          "directory": true
+        },
+        "usage-archives/36d622fadc3cc2f84b6f17f632c40859/manifest.json": {
+          "present": true,
+          "size": 1099,
+          "sha256": "e3920ca7bb0ff14f6199b57fe54f185e9ae42b2011ac65dd9204f8db5ba0b6f0"
+        },
+        "usage-archives/36d622fadc3cc2f84b6f17f632c40859/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+          "present": true,
+          "size": 2059,
+          "sha256": "27ce941d8bf529b1de372745ca6581a2a3199d0caa17c060a364ee83502631b2"
+        }
+      }
+    },
+    "process": {
+      "pid": 16,
+      "exitCode": 0,
+      "reaped": true,
+      "startedAt": "2026-10-15T07:40:37.735894062Z",
+      "finishedAt": "2026-10-15T07:41:07.999197095Z",
+      "deliveredPayloads": 5
+    },
+    "generationSuccess": true,
+    "casePass": false,
+    "UpgradeAuthorized": false,
+    "TrustedHopReceipt": false
+  }
+}

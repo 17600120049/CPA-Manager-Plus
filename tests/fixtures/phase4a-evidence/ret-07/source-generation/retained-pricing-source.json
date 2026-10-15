@@ -1,0 +1,175 @@
+{
+  "coveredPricingEvents": [
+    {
+      "eventHash": "6caa3b6be7d27c5c32e513de42757365eb41885b2e1b5f4555da23afc5221efa",
+      "eventID": 1,
+      "model": "fixture-manual-ret07",
+      "priceIdentity": {
+        "configured": true,
+        "explicitZero": false,
+        "model": "fixture-manual-ret07",
+        "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+        "provider": "codex",
+        "rates": {
+          "cacheCreationPer1M": 3.75,
+          "cachePer1M": 0.3,
+          "cacheReadPer1M": 0.3,
+          "completionPer1M": 15,
+          "promptPer1M": 3
+        },
+        "source": "manual",
+        "sourceModelID": "",
+        "unknownUnpriced": false
+      },
+      "pricingAuthority": "manual",
+      "pricingStatus": "priced",
+      "provider": "codex",
+      "retainedProjectionEventID": 1,
+      "source": "",
+      "sourceHash": ""
+    },
+    {
+      "eventHash": "b7b5fb010be583c7a7c8e7115d0346f389f63503851342c1bc0d6153e761db89",
+      "eventID": 2,
+      "model": "fixture-paid-ret07",
+      "priceIdentity": {
+        "configured": false,
+        "explicitZero": false,
+        "model": "fixture-paid-ret07",
+        "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+        "provider": "codex",
+        "rates": {
+          "cacheCreationPer1M": 0,
+          "cachePer1M": 0.2,
+          "cacheReadPer1M": 0,
+          "completionPer1M": 8,
+          "promptPer1M": 2
+        },
+        "source": "manual",
+        "sourceModelID": "",
+        "unknownUnpriced": false
+      },
+      "pricingAuthority": "manual",
+      "pricingStatus": "priced",
+      "provider": "codex",
+      "retainedProjectionEventID": 2,
+      "source": "",
+      "sourceHash": ""
+    },
+    {
+      "eventHash": "301deb70c053bf4e76da3ae9bab07a57fe9e05ef591bc575ec2ab77ba5999b51",
+      "eventID": 3,
+      "model": "fixture-free-ret07",
+      "priceIdentity": {
+        "configured": true,
+        "explicitZero": true,
+        "model": "fixture-free-ret07",
+        "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+        "provider": "codex",
+        "rates": {
+          "cacheCreationPer1M": 0,
+          "cachePer1M": 0,
+          "cacheReadPer1M": 0,
+          "completionPer1M": 0,
+          "promptPer1M": 0
+        },
+        "source": "manual",
+        "sourceModelID": "",
+        "unknownUnpriced": false
+      },
+      "pricingAuthority": "manual",
+      "pricingStatus": "explicit-zero",
+      "provider": "codex",
+      "retainedProjectionEventID": 3,
+      "source": "",
+      "sourceHash": ""
+    },
+    {
+      "eventHash": "91e65e0d396878e23eafeaf27db16ebb2c5a58a0f3a74f085ceaaffe853c23b3",
+      "eventID": 4,
+      "model": "fixture-unknown-ret07",
+      "priceIdentity": {
+        "configured": false,
+        "explicitZero": false,
+        "model": "fixture-unknown-ret07",
+        "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+        "provider": "codex",
+        "rates": {},
+        "source": "",
+        "sourceModelID": "",
+        "unknownUnpriced": true
+      },
+      "pricingAuthority": "unknown",
+      "pricingStatus": "unknown-unpriced",
+      "provider": "codex",
+      "retainedProjectionEventID": 4,
+      "source": "",
+      "sourceHash": ""
+    }
+  ],
+  "duplicateEventIDs": [],
+  "expectedHistoricalEvents": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "explicitZeroEvents": [
+    3
+  ],
+  "manualPriceAuthorityEvents": [
+    1,
+    2,
+    3
+  ],
+  "missingPricingEvents": [],
+  "priceRows": [
+    {
+      "cache_creation_configured": 1,
+      "cache_creation_per_1m": 0,
+      "cache_per_1m": 0,
+      "cache_read_configured": 1,
+      "cache_read_per_1m": 0,
+      "completion_configured": 1,
+      "completion_per_1m": 0,
+      "model": "fixture-free-ret07",
+      "prompt_configured": 1,
+      "prompt_per_1m": 0,
+      "source": "manual",
+      "source_model_id": null
+    },
+    {
+      "cache_creation_configured": 1,
+      "cache_creation_per_1m": 3.75,
+      "cache_per_1m": 0.3,
+      "cache_read_configured": 1,
+      "cache_read_per_1m": 0.3,
+      "completion_configured": 1,
+      "completion_per_1m": 15,
+      "model": "fixture-manual-ret07",
+      "prompt_configured": 1,
+      "prompt_per_1m": 3,
+      "source": "manual",
+      "source_model_id": null
+    },
+    {
+      "cache_creation_configured": 0,
+      "cache_creation_per_1m": 0,
+      "cache_per_1m": 0.2,
+      "cache_read_configured": 0,
+      "cache_read_per_1m": 0,
+      "completion_configured": 1,
+      "completion_per_1m": 8,
+      "model": "fixture-paid-ret07",
+      "prompt_configured": 1,
+      "prompt_per_1m": 2,
+      "source": "manual",
+      "source_model_id": null
+    }
+  ],
+  "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+  "retainedPricingSourceComplete": true,
+  "unknownUnpricedEvents": [
+    4
+  ]
+}
