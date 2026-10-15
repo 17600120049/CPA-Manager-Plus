@@ -15,6 +15,7 @@ on:
       - 'tests/fixtures/phase4a-evidence/ret-03/**'
       - 'tests/fixtures/phase4a-evidence/mig-01/**'
       - 'tests/fixtures/phase4a-evidence/mig-02/**'
+      - 'tests/fixtures/phase4a-evidence/mig-03/**'
 
 permissions:
   contents: read
@@ -421,5 +422,73 @@ jobs:
             ${{ runner.temp }}/mig02-replay/runner-evidence.json
             ${{ runner.temp }}/mig02-replay/*.log
             ${{ runner.temp }}/mig02-replay/runtime/
+          if-no-files-found: warn
+          retention-days: 90
+
+  mig03:
+    name: MIG-03 clearing Recovery/block (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      CPAMP_MIG03_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Download accepted exact v1.14.4 producer archive
+        shell: bash
+        run: |
+          gh release download qualification-mig01-d337ad0eeef2-20261014 \
+            --repo seakee/CPA-Manager-Plus \
+            --pattern mig-01-d337ad0eeef2-sealed-evidence.zip \
+            --dir "$RUNNER_TEMP/mig01-download"
+          gh api repos/seakee/CPA-Manager-Plus/releases/412855420 > "$RUNNER_TEMP/mig01-release.json"
+          gh api repos/seakee/CPA-Manager-Plus/git/ref/tags/qualification-mig01-d337ad0eeef2-20261014 > "$RUNNER_TEMP/mig01-tag.json"
+          python bin/qualification/materialize-src11.py --case mig-01 \
+            --release-metadata "$RUNNER_TEMP/mig01-release.json" \
+            --tag-metadata "$RUNNER_TEMP/mig01-tag.json" \
+            --archive "$RUNNER_TEMP/mig01-download/mig-01-d337ad0eeef2-sealed-evidence.zip" \
+            --output "$RUNNER_TEMP/mig01-original"
+      - name: Verify committed MIG-03 evidence contract
+        shell: bash
+        run: python -m unittest discover -s bin/qualification -p test_mig03.py -v
+      - name: Execute MIG-03 clearing qualification
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+            extra=(--linux)
+          fi
+          python bin/qualification/run-src11.py mig03 \
+            --archive "$RUNNER_TEMP/mig01-original/producer.tar.gz" \
+            --evidence "$GITHUB_WORKSPACE/tests/fixtures/phase4a-evidence/mig-03" \
+            --output "$RUNNER_TEMP/mig03-replay" "${extra[@]}"
+      - name: Compile Windows qualification harness
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: apps/manager-server
+        run: go test -mod=readonly -c -o "$RUNNER_TEMP/mig03-qualification.exe" ./tests/qualification/src11
+      - name: Upload MIG-03 runtime observations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mig03-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mig03-replay/runner-evidence.json
+            ${{ runner.temp }}/mig03-replay/*.log
+            ${{ runner.temp }}/mig03-replay/runtime/
           if-no-files-found: warn
           retention-days: 90

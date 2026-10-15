@@ -42,7 +42,7 @@ def run(args, log, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["generate", "generate-ret01", "generate-ret02", "generate-ret03", "generate-mig01", "generate-mig02", "generate-bak01", "replay", "ret01", "ret02", "ret03", "mig01", "mig02", "bak01"])
+    parser.add_argument("action", choices=["generate", "generate-ret01", "generate-ret02", "generate-ret03", "generate-mig01", "generate-mig02", "generate-mig03", "generate-bak01", "replay", "ret01", "ret02", "ret03", "mig01", "mig02", "mig03", "bak01"])
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--release-info", type=Path)
     parser.add_argument("--evidence", type=Path)
@@ -59,15 +59,16 @@ def main():
     ret03 = args.action in ("generate-ret03", "ret03")
     mig01 = args.action in ("generate-mig01", "mig01")
     mig02 = args.action in ("generate-mig02", "mig02")
+    mig03 = args.action in ("generate-mig03", "mig03")
     bak01 = args.action in ("generate-bak01", "bak01")
     retention = "ret-03" if ret03 else "ret-02" if ret02 else "ret-01" if ret01 else None
-    case_profile = "bak-01" if bak01 else "mig-02" if mig02 else "mig-01" if mig01 else retention
+    case_profile = "bak-01" if bak01 else "mig-03" if mig03 else "mig-02" if mig02 else "mig-01" if mig01 else retention
     profile = ROOT / f"tests/fixtures/phase4a-evidence/{case_profile}/profile.json" if case_profile else PROFILE
     if args.action == "replay" and bool(args.evidence) == bool(args.evidence_archive):
         parser.error("replay requires exactly one of --evidence or --evidence-archive")
     if args.action in ("ret01", "ret02", "ret03") and (not args.evidence or args.evidence_archive):
         parser.error("retention replay requires --evidence pointing to its own complete generated fixture")
-    if args.action in ("mig01", "mig02") and (not args.evidence or args.evidence_archive or args.release_info):
+    if args.action in ("mig01", "mig02", "mig03") and (not args.evidence or args.evidence_archive or args.release_info):
         parser.error("migration replay requires --evidence pointing to its own complete generated fixture")
     if args.action == "bak01" and (bool(args.evidence) == bool(args.evidence_archive) or args.release_info):
         parser.error("bak01 requires exactly one of --evidence or --evidence-archive")
@@ -88,6 +89,7 @@ def main():
                      "tests/fixtures/phase4a-evidence/ret-03/profile.json",
                      "tests/fixtures/phase4a-evidence/mig-01/profile.json",
                      "tests/fixtures/phase4a-evidence/mig-02/profile.json",
+                     "tests/fixtures/phase4a-evidence/mig-03/profile.json",
                      "tests/fixtures/phase4a-evidence/bak-01/profile.json"]
     dirty = capture(["git", "status", "--porcelain", "--untracked-files=all", "--", *tracked_scope], cwd=ROOT)
     if dirty:
@@ -143,6 +145,7 @@ def main():
                   "--env", f"CPAMP_RET03_GENERATE={int(ret03)}",
                   "--env", f"CPAMP_MIG01_GENERATE={int(mig01)}",
                   "--env", f"CPAMP_MIG02_GENERATE={int(mig02)}",
+                  "--env", f"CPAMP_MIG03_GENERATE={int(mig03)}",
                   "--env", f"CPAMP_BAK01_GENERATE={int(bak01)}",
                   "--env", "CPAMP_SRC11_ARCHIVE=/archive", "--env", "CPAMP_SRC11_RELEASE_INFO=/release-info",
                   "--env", "CPAMP_SRC11_PROFILE=/profile", IMAGE,
@@ -168,6 +171,9 @@ def main():
         if mig02:
             env.update(CPAMP_MIG02_SOURCE=str(evidence), CPAMP_MIG02_OUTPUT=str(output / "runtime"))
             test_name = "^TestQualifyMIG02$"
+        if mig03:
+            env.update(CPAMP_MIG03_SOURCE=str(evidence), CPAMP_MIG03_OUTPUT=str(output / "runtime"))
+            test_name = "^TestQualifyMIG03$"
         if bak01:
             env.update(CPAMP_BAK01_SOURCE=str(evidence), CPAMP_BAK01_ARCHIVE=str(archive),
                        CPAMP_BAK01_REPLAY_OUTPUT=str(output / "runtime"))
@@ -194,6 +200,9 @@ def main():
             if mig02:
                 command.extend(["--env", "CPAMP_MIG02_SOURCE=/evidence",
                                 "--env", "CPAMP_MIG02_OUTPUT=/output/runtime"])
+            if mig03:
+                command.extend(["--env", "CPAMP_MIG03_SOURCE=/evidence",
+                                "--env", "CPAMP_MIG03_OUTPUT=/output/runtime"])
             if bak01:
                 command.extend(["--env", "CPAMP_BAK01_SOURCE=/evidence",
                                 "--env", "CPAMP_BAK01_ARCHIVE=/archive",
