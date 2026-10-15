@@ -1,5 +1,5 @@
 {
-  "codeCommit": "ccf724c978a63ff03a1d5bfb4be2d600fa10fc91",
+  "codeCommit": "a1697f2da8b09a102581808e543c9db1211f349b",
   "sourceFiles": {
     "apps/manager-server/cmd/cpa-manager-plus/codex_legacy_identity_test.go": "8fce592911212f45feb3ffc5eb7ae8615e9f9f308ab166bcf6ffc8fe9d967d78",
     "apps/manager-server/cmd/cpa-manager-plus/identity_forward_completions_test.go": "8c550282d3b80c2b17defcec37af578826f20583ff2653109b9bca9e7e7e3202",
@@ -478,7 +478,7 @@
     "apps/manager-server/internal/worker/usage_pricing_rollup.go": "34ade700089c5810e1f27a3ee8c3ecd9ca4076a2b3193008d927bfeb578b7eb1",
     "apps/manager-server/internal/worker/usage_pricing_rollup_test.go": "bb77027515fd8b32fdcee1eaaece55105316718d8ca869f6a7d634a6c36aa1f0",
     "apps/manager-server/tests/qualification/src11/bak01_generation_test.go": "b608db08bbe34fe6aa0b54ca2c9268e8160a5fcfb70125d079cddac576eca2db",
-    "apps/manager-server/tests/qualification/src11/bak01_test.go": "bdb506aa3868074bc0e72b6ce9b02f9c8ad309626ae8d0894bfab28bb348ee44",
+    "apps/manager-server/tests/qualification/src11/bak01_test.go": "ecaeb4ac0915db4a1be6e90ade5ec7fdf24dfd315e9302074d00a45d2ac79dff",
     "apps/manager-server/tests/qualification/src11/generation_test.go": "a99775700c53f94711ae6a542a39992c4f36883cbe63a2a32da10ee30b25fc4a",
     "apps/manager-server/tests/qualification/src11/mig01_migration_guard_test.go": "075d2b7e42bffe2b8d7be97fe671fa4e310fc39f7607a68cbd81fc49e39a543c",
     "apps/manager-server/tests/qualification/src11/mig01_migration_state_test.go": "4abccf2639506041bf3815e7bbe4186c9d8134d6a5f5a0a975e607a9f3712810",
@@ -491,8 +491,8 @@
     "apps/manager-server/tests/qualification/src11/support_test.go": "1f9f495b5b8c49915b31a2ec955e4141caea634691bb973f194f99791d88b827",
     "bin/qualification/materialize-src11.py": "df25cb133de9661ab9ecfe8d763a63b7682f3b147cd71ee4c30267b56f6b369a",
     "bin/qualification/run-aut03.py": "4bf834c501eea0b038c7d88741dbf6dffbce99bf42148c42409c21fab53e8c34",
-    "bin/qualification/run-src11.py": "eddefb4c7c625ec5c10848984818b86d6c5401cf1a49318810497410e7adc305",
-    "bin/qualification/test_bak01.py": "e7abea5b6333feb51780ae2b935fcf7b8af46795124c5b521a0b7507f56d6a77",
+    "bin/qualification/run-src11.py": "81383350272f44c356ca2c1cccf4d0599690cc817dcddd0def5050f7f4624ece",
+    "bin/qualification/test_bak01.py": "68f06b9900ab9ecbf9ff599df1c35268cc5caf3f959158aa3237af43bb9b6f60",
     "bin/qualification/test_materialize_ret02.py": "5dfff62be245b6f5f8e728a358c9b6f3efca128724ada65c5dc7498d5d3354dc",
     "bin/qualification/test_materialize_src11.py": "245ad4b9658c96f9ab550dd02b85a31a9be22490df4583f91e28faf38910f2fe",
     "bin/qualification/test_mig01.py": "81598c12cf1fadfd7a23bc901a426c9fd253d87958af31caa752da6cfbe5e31f",
@@ -512,14 +512,14 @@
     "-c",
     "-trimpath",
     "-ldflags",
-    "-X github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11.generatorCommit=ccf724c978a63ff03a1d5bfb4be2d600fa10fc91",
+    "-X github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11.generatorCommit=a1697f2da8b09a102581808e543c9db1211f349b",
     "-o",
-    "/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-08/replay-linux-02/qualification",
+    "/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-reproof-linux/qualification",
     "./tests/qualification/src11"
   ],
   "goVersion": "go version go1.26.1 darwin/amd64",
   "moduleGraph": "github.com/seakee/cpa-manager-plus/apps/manager-server\ngithub.com/dustin/go-humanize v1.0.1\ngithub.com/google/go-cmp v0.6.0\ngithub.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e\ngithub.com/google/uuid v1.6.0\ngithub.com/hashicorp/golang-lru/v2 v2.0.7\ngithub.com/mattn/go-isatty v0.0.20\ngithub.com/ncruces/go-strftime v1.0.0\ngithub.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec\ngolang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546\ngolang.org/x/mod v0.29.0\ngolang.org/x/sync v0.17.0\ngolang.org/x/sys v0.37.0\ngolang.org/x/tools v0.38.0\ngolang.org/x/tools/go/expect v0.1.1-deprecated\ngolang.org/x/tools/go/packages/packagestest v0.1.1-deprecated\nmodernc.org/cc/v4 v4.27.1\nmodernc.org/ccgo/v4 v4.30.1\nmodernc.org/fileutil v1.3.40\nmodernc.org/gc/v2 v2.6.5\nmodernc.org/gc/v3 v3.1.1\nmodernc.org/goabi0 v0.2.0\nmodernc.org/libc v1.67.6\nmodernc.org/mathutil v1.7.1\nmodernc.org/memory v1.11.0\nmodernc.org/opt v0.1.4\nmodernc.org/sortutil v1.2.1\nmodernc.org/sqlite v1.46.1\nmodernc.org/strutil v1.2.1\nmodernc.org/token v1.1.0",
-  "executableSHA256": "bc567e30d3159ea494b215c874105373d5173eb8b18ad4f01790abae4c9cfb26",
+  "executableSHA256": "6726dc292a128948c9dc0f56eae11ada920e743483afef4d51f0333f3e878551",
   "profileSHA256": "f9d1ddb0a6d6d442faecdeaa6e140c303635cc9ef223be565bba75d0fa28a0b1",
   "archiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
   "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
@@ -534,7 +534,7 @@
     "user": "501:20"
   },
   "sealedEvidenceArchiveSHA256": "46beeeaa2ec893cb140e22bc799b135795310f55d03f44e46b5fa308044199b8",
-  "sealedArtifactPinSHA256": "146542430c45b60a2ee4453c7689aaa24c5b4ed512dc58b0d7742b062affd552",
+  "sealedArtifactPinSHA256": "83437e7af87e1d9e168d917e0360ff09c4cba52366bb06236df9445df20950ed",
   "executionCommand": [
     "docker",
     "run",
@@ -553,15 +553,15 @@
     "--tmpfs",
     "/tmp:rw,exec,mode=1777",
     "--mount",
-    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-08/replay-linux-02/qualification,dst=/qualification,readonly",
+    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-reproof-linux/qualification,dst=/qualification,readonly",
     "--mount",
-    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-08/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz,dst=/archive,readonly",
+    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/seal-stage/producer.tar.gz,dst=/archive,readonly",
     "--mount",
-    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-08/replay-linux-02/materialized/bak-01,dst=/evidence,readonly",
+    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-reproof-linux/materialized/bak-01,dst=/evidence,readonly",
     "--mount",
-    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-08/repo/tests/fixtures/phase4a-evidence/bak-01/profile.json,dst=/profile,readonly",
+    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-reproof/tests/fixtures/phase4a-evidence/bak-01/profile.json,dst=/profile,readonly",
     "--mount",
-    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-08/replay-linux-02,dst=/output",
+    "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-bak01-committed-wal/bin/tmp/phase4a-bak01-20261015/clean-checkout-reproof-linux,dst=/output",
     "--env",
     "CPAMP_SRC11_EVIDENCE=/evidence",
     "--env",
@@ -584,7 +584,7 @@
     "-test.timeout",
     "4m"
   ],
-  "resultSHA256": "c396041138725191ed531a72fec2d29d91d3411800eb76bb1d4a2761b84eb3fd",
+  "resultSHA256": "35bafb235b8b003b617739501136f8d1254ee53ee56382a9ab41256ce80e1209",
   "executionExitCode": 0,
   "UpgradeAuthorized": false,
   "TrustedHopReceipt": false,
@@ -601,7 +601,7 @@
     "SEM-01"
   ],
   "logs": {
-    "replay-execution.log": "1f23f44dd261ed262409c63c06e6024fc339dfda66f45d2c4f26b59424f779e0",
+    "replay-execution.log": "23341e0e4039ca0828806fbc8fe8fd4f43f3f45c516ae5a6e2e286af6f9f936c",
     "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   }
 }

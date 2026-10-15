@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "caseID": "BAK-01",
-  "scope": "clean committed checkout; immutable-byte materialization; full macOS and pinned Linux AMD64 SQLite replay",
+  "scope": "clean committed checkout; SHA256-pinned original byte materialization; full macOS and pinned Linux AMD64 SQLite replay",
   "checkout": {
-    "method": "git clone --no-local --no-hardlinks followed by detached checkout",
-    "commit": "ccf724c978a63ff03a1d5bfb4be2d600fa10fc91",
-    "status": "clean detached checkout",
+    "method": "git clone --no-hardlinks --single-branch from the committed task branch",
+    "commit": "a1697f2da8b09a102581808e543c9db1211f349b",
+    "status": "clean branch checkout",
     "trackedSourceMatchesBranch": true
   },
   "sealedEvidenceArchive": {
@@ -22,10 +22,10 @@
   "replays": {
     "macos": {
       "result": "clean-checkout/macos/result.json",
-      "resultSHA256": "c396041138725191ed531a72fec2d29d91d3411800eb76bb1d4a2761b84eb3fd",
+      "resultSHA256": "35bafb235b8b003b617739501136f8d1254ee53ee56382a9ab41256ce80e1209",
       "runnerEvidence": "clean-checkout/macos/runner-evidence.json",
-      "runnerEvidenceSHA256": "a5413053044f0128f217bfb539386bb50e194dcdf0dafe0e596c656d6715ea3e",
-      "executionCommit": "ccf724c978a63ff03a1d5bfb4be2d600fa10fc91",
+      "runnerEvidenceSHA256": "96995185564e6c338508be254ae98a54a2c95a5143f7f7797e10f91a3e15492c",
+      "executionCommit": "a1697f2da8b09a102581808e543c9db1211f349b",
       "runtimeEvidence": "pass",
       "runtimeAssertions": "pass",
       "backupRestore": "pass",
@@ -35,14 +35,16 @@
       "authoritativeAfterDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
       "runnerExecutionExitCode": 0,
       "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
-      "containerized": false
+      "containerized": false,
+      "backupRestoreEvidence": "clean-checkout/macos/backup-restore.json",
+      "backupRestoreEvidenceSHA256": "9af69978dfb6bef416fb81ada16aa686ddd6849886e216b60b52fc7beb286a09"
     },
     "linux": {
       "result": "clean-checkout/linux/result.json",
-      "resultSHA256": "c396041138725191ed531a72fec2d29d91d3411800eb76bb1d4a2761b84eb3fd",
+      "resultSHA256": "35bafb235b8b003b617739501136f8d1254ee53ee56382a9ab41256ce80e1209",
       "runnerEvidence": "clean-checkout/linux/runner-evidence.json",
-      "runnerEvidenceSHA256": "124589c819324c42bd6313d66192c753b9dc26bce8c1cde769133ba359084bc5",
-      "executionCommit": "ccf724c978a63ff03a1d5bfb4be2d600fa10fc91",
+      "runnerEvidenceSHA256": "04b31b719d6847d01d70ca53223706c21afa1452f59e9ccac410d0bcb1cb3e7f",
+      "executionCommit": "a1697f2da8b09a102581808e543c9db1211f349b",
       "runtimeEvidence": "pass",
       "runtimeAssertions": "pass",
       "backupRestore": "pass",
@@ -52,7 +54,9 @@
       "authoritativeAfterDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
       "runnerExecutionExitCode": 0,
       "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
-      "containerized": true
+      "containerized": true,
+      "backupRestoreEvidence": "clean-checkout/linux/backup-restore.json",
+      "backupRestoreEvidenceSHA256": "9af69978dfb6bef416fb81ada16aa686ddd6849886e216b60b52fc7beb286a09"
     }
   },
   "generatorCodeCommit": "4582ae7be34608083b7105ecec6289362f4fe4d3"

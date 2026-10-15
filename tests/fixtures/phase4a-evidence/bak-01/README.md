@@ -18,9 +18,14 @@ Linux AMD64 replay. Both restore to distinct new roots, reopen with their own
 WAL/SHM, repeat backup/restore, and preserve the authoritative digest. Windows
 is compile/materialization scope only; no Windows SQLite replay PASS is claimed.
 
-`clean-checkout/` records a detached clean checkout replay on both the macOS
+`clean-checkout/` records a clean branch checkout replay on both the macOS
 host and the pinned Linux AMD64 container. The archive and exact v1.14.4
 producer digests are rechecked before materialization.
+Each replay reopens an immutable main-file-only copy and confirms that the
+committed event is absent there before reading it through the restored WAL.
+Its runner pin identifies BAK-01's `source-provenance.json`; the original
+generation and first replay runner records retain the earlier runner's
+SRC-11 pin field unchanged, alongside their BAK-01 archive digest.
 
 The qualification Release attempt was deleted after GitHub rejected creation
 of the evidence tag (`GH013`); `source-provenance.json` records that pending

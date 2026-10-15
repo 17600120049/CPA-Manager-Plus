@@ -49,24 +49,32 @@
   },
   "inventory": {
     "clean-checkout/checkout-record.json": {
-      "size": 2743,
-      "sha256": "cb51beebfce4bf2bb9a006e224a0314d62552dd495b9a2876a7b2c0bfbed0665"
+      "size": 3120,
+      "sha256": "b836dfca1960c08c0fc4fc99f4c1da6a41388d93c3c15462f3a382a50e7b3f91"
+    },
+    "clean-checkout/linux/backup-restore.json": {
+      "size": 3572,
+      "sha256": "9af69978dfb6bef416fb81ada16aa686ddd6849886e216b60b52fc7beb286a09"
     },
     "clean-checkout/linux/result.json": {
       "size": 5223,
-      "sha256": "c396041138725191ed531a72fec2d29d91d3411800eb76bb1d4a2761b84eb3fd"
+      "sha256": "35bafb235b8b003b617739501136f8d1254ee53ee56382a9ab41256ce80e1209"
     },
     "clean-checkout/linux/runner-evidence.json": {
-      "size": 75984,
-      "sha256": "124589c819324c42bd6313d66192c753b9dc26bce8c1cde769133ba359084bc5"
+      "size": 75929,
+      "sha256": "04b31b719d6847d01d70ca53223706c21afa1452f59e9ccac410d0bcb1cb3e7f"
+    },
+    "clean-checkout/macos/backup-restore.json": {
+      "size": 3572,
+      "sha256": "9af69978dfb6bef416fb81ada16aa686ddd6849886e216b60b52fc7beb286a09"
     },
     "clean-checkout/macos/result.json": {
       "size": 5223,
-      "sha256": "c396041138725191ed531a72fec2d29d91d3411800eb76bb1d4a2761b84eb3fd"
+      "sha256": "35bafb235b8b003b617739501136f8d1254ee53ee56382a9ab41256ce80e1209"
     },
     "clean-checkout/macos/runner-evidence.json": {
-      "size": 73822,
-      "sha256": "a5413053044f0128f217bfb539386bb50e194dcdf0dafe0e596c656d6715ea3e"
+      "size": 73818,
+      "sha256": "96995185564e6c338508be254ae98a54a2c95a5143f7f7797e10f91a3e15492c"
     },
     "generation-build.log.txt": {
       "size": 0,

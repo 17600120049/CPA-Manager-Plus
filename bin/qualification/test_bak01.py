@@ -167,7 +167,7 @@ class Bak01EvidenceTests(unittest.TestCase):
         record = read("clean-checkout/checkout-record.json")
         self.assertEqual(record["caseID"], "BAK-01")
         self.assertEqual(record["generatorCodeCommit"], self.generation["GeneratorCodeCommit"])
-        self.assertEqual(record["checkout"]["status"], "clean detached checkout")
+        self.assertEqual(record["checkout"]["status"], "clean branch checkout")
         self.assertTrue(record["checkout"]["trackedSourceMatchesBranch"])
         self.assertEqual(record["sealedEvidenceArchive"]["sha256"], self.provenance["sourceArtifact"]["archiveSHA256"])
         self.assertEqual(record["exactProducer"]["sha256"], self.provenance["sourceProducerArchiveSHA256"])
@@ -177,6 +177,13 @@ class Bak01EvidenceTests(unittest.TestCase):
             runner_path = EVIDENCE / replay["runnerEvidence"]
             result = json.loads(result_path.read_text())
             runner = json.loads(runner_path.read_text())
+            backup_path = EVIDENCE / replay["backupRestoreEvidence"]
+            backup = json.loads(backup_path.read_text())
+            self.assertEqual(replay["backupRestoreEvidenceSHA256"], digest(backup_path))
+            self.assertEqual(result["evidence"]["backupRestore"], digest(backup_path))
+            self.assertTrue(backup["mainFileOnlyCommittedRowAbsent"])
+            self.assertGreater(backup["committedWALFrames"]["commitFrameCount"], 0)
+            self.assertEqual(runner["sealedArtifactPinSHA256"], digest(EVIDENCE / "source-provenance.json"))
             self.assertEqual(replay["resultSHA256"], digest(result_path))
             self.assertEqual(replay["runnerEvidenceSHA256"], digest(runner_path))
             self.assertEqual(result["executionCommit"], record["checkout"]["commit"])
