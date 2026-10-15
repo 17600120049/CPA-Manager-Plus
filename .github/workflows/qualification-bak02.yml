@@ -54,6 +54,12 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as stream:
               stream.write(f"BAK02_ARCHIVE={archive.resolve()}\n")
           PY
+      - name: Verify original generator commit and all runtime source hashes
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin refs/heads/qualification/bak02-generator-af53fed
+          python bin/qualification/verify-bak02-generator.py --ref FETCH_HEAD \
+            --output "$RUNNER_TEMP/bak02-generator-provenance.json"
       - name: Download and authenticate exact v1.14.4 producer
         shell: bash
         run: |
@@ -101,6 +107,7 @@ jobs:
         with:
           name: bak02-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            ${{ runner.temp }}/bak02-generator-provenance.json
             ${{ runner.temp }}/bak02-replay/runner-evidence.json
             ${{ runner.temp }}/bak02-replay/*.log
             ${{ runner.temp }}/bak02-replay/runtime/

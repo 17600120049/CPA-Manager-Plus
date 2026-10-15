@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from zipfile import ZipFile
 import unittest
+import importlib.util
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +58,58 @@ class Bak02EvidenceTests(unittest.TestCase):
         self.assertFalse(self.result["Phase4A07Complete"])
         self.assertFalse(self.result["Phase4AComplete"])
         self.assertEqual(self.result["applicableSEM"], ["SEM-01", "SEM-06"])
+        self.assertEqual(self.manifest["remainingCases"], {"count": 41, "status": "pending"})
+        for prefix in ("runtime", "platform-replay/linux", "clean-checkout/macos", "clean-checkout/linux"):
+            result = read(f"{prefix}/result.json")
+            self.assertEqual(result["remainingCases"], {"count": 41, "status": "pending"})
+
+    def test_original_generator_provenance(self):
+        proof = read("generator-provenance.json")
+        runner = read("generation-runner.json")
+        self.assertEqual(proof["generatorCodeCommit"], self.generation["GeneratorCodeCommit"])
+        self.assertEqual(proof["generatorCodeCommit"], self.provenance["generatorCodeCommit"])
+        self.assertEqual(proof["generatorCodeCommit"], runner["codeCommit"])
+        self.assertEqual(proof["provenanceRef"], "refs/heads/qualification/bak02-generator-af53fed")
+        self.assertTrue(proof["sourceFileHashesVerified"])
+        self.assertEqual(proof["sourceFilesCount"], 516)
+        self.assertEqual(proof["sourceFilesCount"], len(runner["sourceFiles"]))
+        self.assertEqual(proof["sourceFilesInventorySHA256"], hashlib.sha256(
+            json.dumps(runner["sourceFiles"], sort_keys=True, separators=(",", ":")).encode()).hexdigest())
+        self.assertEqual(proof["generationRunnerSHA256"], digest(EVIDENCE / "generation-runner.json"))
+        self.assertEqual(proof["generatorExecutableSHA256"], runner["executableSHA256"])
+        self.assertEqual(proof["generationRecordSHA256"], digest(EVIDENCE / "source-generation/record.json"))
+        self.assertEqual(proof["sourceBundleDigest"], self.generation["GeneratedBundleSHA256"])
+        self.assertEqual(self.manifest["generatorProvenance"], "generator-provenance.json")
+
+    def test_generator_verifier_rejects_other_commit_or_changed_source(self):
+        spec = importlib.util.spec_from_file_location("verify_bak02_generator", ROOT / "bin/qualification/verify-bak02-generator.py")
+        verifier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(verifier)
+        commit = self.provenance["generatorCodeCommit"]
+        with patch.object(verifier, "git", return_value=b"0" * 40):
+            with self.assertRaisesRegex(ValueError, "commit mismatch"):
+                verifier.verify("wrong-ref")
+        raw = b"tree 0000000000000000000000000000000000000000\n\nfixture commit\n"
+        fake_commit = hashlib.sha1(b"commit " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+        # Supply a valid commit object and the complete declared source inventory,
+        # but return a changed source blob. A syntactically valid SHA is insufficient.
+        def fake_git(*args, **kwargs):
+            if args[0] == "rev-parse":
+                return fake_commit.encode()
+            if args[1] == "commit":
+                return raw
+            return b"0000000000000000000000000000000000000000 blob 7\nchanged\n"
+        actual_loads = json.loads
+        def fake_loads(data, *args, **kwargs):
+            value = actual_loads(data, *args, **kwargs)
+            for field in ("codeCommit", "GeneratorCodeCommit", "generatorCodeCommit"):
+                if field in value:
+                    self.assertEqual(value[field], commit)
+                    value[field] = fake_commit
+            return value
+        with patch.object(verifier, "git", side_effect=fake_git), patch.object(verifier.json, "loads", side_effect=fake_loads):
+            with self.assertRaisesRegex(ValueError, "source hash mismatch"):
+                verifier.verify("changed-source")
 
     def test_exact_source_and_same_snapshot_chain(self):
         self.assertEqual(self.generation["caseID"], "BAK-02")
