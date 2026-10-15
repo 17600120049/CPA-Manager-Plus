@@ -70,6 +70,12 @@ func generateRET07Archive(t *testing.T, base, live, generation string, p profile
 	if deleted.Run.Status != "completed" || deleted.Run.DeletedEventCount != 4 {
 		t.Fatalf("RET-07 raw deletion did not complete: %#v", deleted.Run)
 	}
+	save(t, generation, "archive-flow.json", map[string]any{
+		"producer": "published exact v1.14.4", "automaticRetentionEnabled": false,
+		"actions": []string{"create", "resume?wait=true&expected_stage=archiving", "verify?wait=true", "delete?wait=true"},
+		"create":  created, "resume": archived, "verify": verified, "delete": deleted,
+		"deleteCalled": true, "deletionMethod": "production DeleteArchive/DeleteBatch",
+	})
 
 	db = openDB(t, filepath.Join(live, "usage.sqlite"), true)
 	archiveState := checkRET07Archive(t, db, filepath.Join(live, "usage-archives"))
