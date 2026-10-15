@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "caseID": "BAK-01",
+  "scope": "clean committed checkout; immutable-byte materialization; full macOS and pinned Linux AMD64 SQLite replay",
+  "checkout": {
+    "method": "git clone --no-local --no-hardlinks followed by detached checkout",
+    "commit": "ccf724c978a63ff03a1d5bfb4be2d600fa10fc91",
+    "status": "clean detached checkout",
+    "trackedSourceMatchesBranch": true
+  },
+  "sealedEvidenceArchive": {
+    "name": "bak-01-dadc7a9d8821-sealed-evidence.zip",
+    "sha256": "46beeeaa2ec893cb140e22bc799b135795310f55d03f44e46b5fa308044199b8",
+    "size": 335210,
+    "materializer": "bin/qualification/materialize-src11.py --case bak-01"
+  },
+  "exactProducer": {
+    "release": "v1.14.4",
+    "archiveName": "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+    "sha256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033"
+  },
+  "replays": {
+    "macos": {
+      "result": "clean-checkout/macos/result.json",
+      "resultSHA256": "c396041138725191ed531a72fec2d29d91d3411800eb76bb1d4a2761b84eb3fd",
+      "runnerEvidence": "clean-checkout/macos/runner-evidence.json",
+      "runnerEvidenceSHA256": "a5413053044f0128f217bfb539386bb50e194dcdf0dafe0e596c656d6715ea3e",
+      "executionCommit": "ccf724c978a63ff03a1d5bfb4be2d600fa10fc91",
+      "runtimeEvidence": "pass",
+      "runtimeAssertions": "pass",
+      "backupRestore": "pass",
+      "casePass": false,
+      "independentAcceptance": "pending",
+      "authoritativeBeforeDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+      "authoritativeAfterDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+      "runnerExecutionExitCode": 0,
+      "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
+      "containerized": false
+    },
+    "linux": {
+      "result": "clean-checkout/linux/result.json",
+      "resultSHA256": "c396041138725191ed531a72fec2d29d91d3411800eb76bb1d4a2761b84eb3fd",
+      "runnerEvidence": "clean-checkout/linux/runner-evidence.json",
+      "runnerEvidenceSHA256": "124589c819324c42bd6313d66192c753b9dc26bce8c1cde769133ba359084bc5",
+      "executionCommit": "ccf724c978a63ff03a1d5bfb4be2d600fa10fc91",
+      "runtimeEvidence": "pass",
+      "runtimeAssertions": "pass",
+      "backupRestore": "pass",
+      "casePass": false,
+      "independentAcceptance": "pending",
+      "authoritativeBeforeDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+      "authoritativeAfterDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+      "runnerExecutionExitCode": 0,
+      "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
+      "containerized": true
+    }
+  },
+  "generatorCodeCommit": "4582ae7be34608083b7105ecec6289362f4fe4d3"
+}

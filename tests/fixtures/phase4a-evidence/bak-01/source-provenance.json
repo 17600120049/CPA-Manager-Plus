@@ -16,15 +16,17 @@
   },
   "sourceArtifact": {
     "repository": "seakee/CPA-Manager-Plus",
-    "tag": "qualification-bak01-dadc7a9d8821-20261015",
+    "tag": "",
     "tagCommit": "",
     "releaseID": 0,
     "assetID": 0,
-    "immutable": true,
+    "immutable": false,
+    "publicationStatus": "not-published; local sealed bytes are committed under sealed/",
     "archiveName": "bak-01-dadc7a9d8821-sealed-evidence.zip",
     "archiveSize": 335210,
     "archiveSHA256": "46beeeaa2ec893cb140e22bc799b135795310f55d03f44e46b5fa308044199b8",
-    "downloadURL": "https://github.com/seakee/CPA-Manager-Plus/releases/download/qualification-bak01-dadc7a9d8821-20261015/bak-01-dadc7a9d8821-sealed-evidence.zip",
+    "downloadURL": "",
+    "committedArchivePath": "sealed/bak-01-dadc7a9d8821-sealed-evidence.zip",
     "sourceBundleDigest": "bdbbdb90d1ffe302a95d0cb33c202051de0260cc4f908d01639ec5031c35723d",
     "generationRecordSHA256": "435cf80fe684f9c6edcc58b3f0a2626cb7617a3ea75121b2ab916d74556f20e3",
     "bundleManifestSHA256": "039ab6243cfe7e7a0588604d3c9fccc86f9986c6716c1e7741907671cae99f5b",
@@ -307,6 +309,17 @@
         "sha256": "2b9a40e03e96d1a74e4d65a3f9a3fd0655783f62654ad0ada2a3b8c84fc0b52d"
       }
     }
+  },
+  "artifactHosting": {
+    "status": "immutable-release-pending",
+    "attemptedTag": "qualification-bak01-dadc7a9d8821-20261015",
+    "draftReleaseID": 413353681,
+    "draftAssetID": 642378508,
+    "draftAssetSHA256": "46beeeaa2ec893cb140e22bc799b135795310f55d03f44e46b5fa308044199b8",
+    "draftDeleted": true,
+    "creationBlocker": "GH013: Cannot create ref due to repository creations being restricted",
+    "rulesetRestored": true,
+    "trackedArchive": "sealed/bak-01-dadc7a9d8821-sealed-evidence.zip"
   },
   "independentAcceptance": "pending",
   "UpgradeAuthorized": false,

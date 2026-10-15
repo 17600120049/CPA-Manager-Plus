@@ -18,5 +18,14 @@ Linux AMD64 replay. Both restore to distinct new roots, reopen with their own
 WAL/SHM, repeat backup/restore, and preserve the authoritative digest. Windows
 is compile/materialization scope only; no Windows SQLite replay PASS is claimed.
 
+`clean-checkout/` records a detached clean checkout replay on both the macOS
+host and the pinned Linux AMD64 container. The archive and exact v1.14.4
+producer digests are rechecked before materialization.
+
+The qualification Release attempt was deleted after GitHub rejected creation
+of the evidence tag (`GH013`); `source-provenance.json` records that pending
+hosting state. The byte-identical sealed archive is committed under `sealed/`
+for deterministic replay and is not presented as an immutable Release.
+
 `casePass` remains `false` while `independentAcceptance` is `pending`. This
 case does not authorize upgrades or trusted hops and does not complete Phase4A.

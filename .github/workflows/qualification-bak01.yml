@@ -38,28 +38,23 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.13'
-      - name: Read immutable BAK-01 artifact pin
+      - name: Authenticate committed sealed BAK-01 archive
         shell: bash
         run: |
           python - <<'PY'
           import json
-          from pathlib import Path
-          pin = json.loads(Path('tests/fixtures/phase4a-evidence/bak-01/source-provenance.json').read_text())['sourceArtifact']
+          import hashlib
           import os
+          from pathlib import Path
+          provenance = json.loads(Path('tests/fixtures/phase4a-evidence/bak-01/source-provenance.json').read_text())
+          pin = provenance['sourceArtifact']
+          archive = Path('tests/fixtures/phase4a-evidence/bak-01') / pin['committedArchivePath']
+          data = archive.read_bytes()
+          if len(data) != pin['archiveSize'] or hashlib.sha256(data).hexdigest() != pin['archiveSHA256']:
+              raise SystemExit('committed BAK-01 sealed archive size/SHA256 mismatch')
           with open(os.environ['GITHUB_ENV'], 'a') as stream:
-              for key, field in [('BAK01_TAG', 'tag'), ('BAK01_ASSET', 'archiveName'), ('BAK01_RELEASE_ID', 'releaseID')]:
-                  stream.write(f'{key}={pin[field]}\n')
+              stream.write(f"BAK01_ARCHIVE={archive.resolve()}\n")
           PY
-      - name: Download and authenticate original BAK-01 bytes
-        shell: bash
-        run: |
-          gh release download "$BAK01_TAG" --repo seakee/CPA-Manager-Plus \
-            --pattern "$BAK01_ASSET" --dir "$RUNNER_TEMP/bak01-download"
-          gh api "repos/seakee/CPA-Manager-Plus/releases/$BAK01_RELEASE_ID" > "$RUNNER_TEMP/bak01-release.json"
-          python bin/qualification/materialize-src11.py --case bak-01 \
-            --release-metadata "$RUNNER_TEMP/bak01-release.json" \
-            --archive "$RUNNER_TEMP/bak01-download/$BAK01_ASSET" \
-            --output "$RUNNER_TEMP/bak01-original"
       - name: Download and authenticate exact v1.14.4 producer
         shell: bash
         run: |
@@ -84,7 +79,7 @@ jobs:
           docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
           python bin/qualification/run-src11.py bak01 \
             --archive "$RUNNER_TEMP/producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
-            --evidence-archive "$RUNNER_TEMP/bak01-download/$BAK01_ASSET" \
+            --evidence-archive "$BAK01_ARCHIVE" \
             --linux --output "$RUNNER_TEMP/bak01-replay"
       - name: Replay BAK-01 on macOS
         if: runner.os == 'macOS'
@@ -92,7 +87,7 @@ jobs:
         run: |
           python bin/qualification/run-src11.py bak01 \
             --archive "$RUNNER_TEMP/producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
-            --evidence-archive "$RUNNER_TEMP/bak01-download/$BAK01_ASSET" \
+            --evidence-archive "$BAK01_ARCHIVE" \
             --output "$RUNNER_TEMP/bak01-replay"
       - name: Compile Windows harness (SQLite replay not qualified)
         if: runner.os == 'Windows'
@@ -110,7 +105,6 @@ jobs:
             ${{ runner.temp }}/bak01-replay/runner-evidence.json
             ${{ runner.temp }}/bak01-replay/*.log
             ${{ runner.temp }}/bak01-replay/runtime/
-            ${{ runner.temp }}/bak01-release.json
             ${{ runner.temp }}/bak01-qualification.exe
           if-no-files-found: warn
           retention-days: 90

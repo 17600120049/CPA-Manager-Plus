@@ -115,7 +115,11 @@ class Bak01EvidenceTests(unittest.TestCase):
         self.assertEqual(self.provenance["sourceRecord"], "bak-01/source-generation")
         self.assertEqual(self.provenance["sourceBundleDigest"], self.generation["GeneratedBundleSHA256"])
         self.assertEqual(self.provenance["sourceGenerationRecordSHA256"], digest(EVIDENCE / "source-generation/record.json"))
-        self.assertTrue(pin["immutable"])
+        self.assertFalse(pin["immutable"])
+        self.assertEqual(pin["publicationStatus"], "not-published; local sealed bytes are committed under sealed/")
+        self.assertEqual(self.provenance["artifactHosting"]["status"], "immutable-release-pending")
+        self.assertTrue(self.provenance["artifactHosting"]["draftDeleted"])
+        self.assertTrue(self.provenance["artifactHosting"]["rulesetRestored"])
         self.assertEqual(pin["sourceBundleDigest"], self.generation["GeneratedBundleSHA256"])
         self.assertEqual(pin["generationRecordSHA256"], digest(EVIDENCE / "source-generation/record.json"))
         # The producer is independently pinned to the immutable v1.14.4
@@ -125,6 +129,9 @@ class Bak01EvidenceTests(unittest.TestCase):
         self.assertEqual(self.provenance["sourceProducerArchiveSHA256"], self.generation["SourceProducerArchiveSHA256"])
         self.assertRegex(pin["archiveSHA256"], r"^[0-9a-f]{64}$")
         self.assertGreater(pin["archiveSize"], 0)
+        sealed = EVIDENCE / pin["committedArchivePath"]
+        self.assertEqual(sealed.stat().st_size, pin["archiveSize"])
+        self.assertEqual(digest(sealed), pin["archiveSHA256"])
         for prefix in ("runtime", "platform-replay/linux"):
             result = read(f"{prefix}/result.json")
             runner = read(f"{prefix}/runner-evidence.json")
@@ -155,6 +162,34 @@ class Bak01EvidenceTests(unittest.TestCase):
             self.assertFalse(assertions["sourceMutation"]["authoritativeMutation"])
         linux = read("platform-replay/linux/result.json")
         self.assertEqual(linux["authoritativeAfterDigest"], self.result["authoritativeAfterDigest"])
+
+    def test_clean_checkout_replay(self):
+        record = read("clean-checkout/checkout-record.json")
+        self.assertEqual(record["caseID"], "BAK-01")
+        self.assertEqual(record["generatorCodeCommit"], self.generation["GeneratorCodeCommit"])
+        self.assertEqual(record["checkout"]["status"], "clean detached checkout")
+        self.assertTrue(record["checkout"]["trackedSourceMatchesBranch"])
+        self.assertEqual(record["sealedEvidenceArchive"]["sha256"], self.provenance["sourceArtifact"]["archiveSHA256"])
+        self.assertEqual(record["exactProducer"]["sha256"], self.provenance["sourceProducerArchiveSHA256"])
+        for platform in ("macos", "linux"):
+            replay = record["replays"][platform]
+            result_path = EVIDENCE / replay["result"]
+            runner_path = EVIDENCE / replay["runnerEvidence"]
+            result = json.loads(result_path.read_text())
+            runner = json.loads(runner_path.read_text())
+            self.assertEqual(replay["resultSHA256"], digest(result_path))
+            self.assertEqual(replay["runnerEvidenceSHA256"], digest(runner_path))
+            self.assertEqual(result["executionCommit"], record["checkout"]["commit"])
+            self.assertEqual(result["runtimeEvidence"], "pass")
+            self.assertEqual(result["runtimeAssertions"], "pass")
+            self.assertEqual(result["backupRestore"], "pass")
+            self.assertFalse(result["casePass"])
+            self.assertEqual(result["independentAcceptance"], "pending")
+            self.assertEqual(result["authoritativeBeforeDigest"], result["authoritativeAfterDigest"])
+            self.assertEqual(runner["codeCommit"], record["checkout"]["commit"])
+            self.assertEqual(runner["resultSHA256"], digest(result_path))
+            self.assertEqual(runner["executionExitCode"], 0)
+        self.assertTrue(record["replays"]["linux"]["containerized"])
 
 
 if __name__ == "__main__":

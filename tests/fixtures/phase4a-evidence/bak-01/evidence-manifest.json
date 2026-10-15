@@ -48,6 +48,26 @@
     }
   },
   "inventory": {
+    "clean-checkout/checkout-record.json": {
+      "size": 2743,
+      "sha256": "cb51beebfce4bf2bb9a006e224a0314d62552dd495b9a2876a7b2c0bfbed0665"
+    },
+    "clean-checkout/linux/result.json": {
+      "size": 5223,
+      "sha256": "c396041138725191ed531a72fec2d29d91d3411800eb76bb1d4a2761b84eb3fd"
+    },
+    "clean-checkout/linux/runner-evidence.json": {
+      "size": 75984,
+      "sha256": "124589c819324c42bd6313d66192c753b9dc26bce8c1cde769133ba359084bc5"
+    },
+    "clean-checkout/macos/result.json": {
+      "size": 5223,
+      "sha256": "c396041138725191ed531a72fec2d29d91d3411800eb76bb1d4a2761b84eb3fd"
+    },
+    "clean-checkout/macos/runner-evidence.json": {
+      "size": 73822,
+      "sha256": "a5413053044f0128f217bfb539386bb50e194dcdf0dafe0e596c656d6715ea3e"
+    },
     "generation-build.log.txt": {
       "size": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -132,6 +152,10 @@
       "size": 884,
       "sha256": "2b9a40e03e96d1a74e4d65a3f9a3fd0655783f62654ad0ada2a3b8c84fc0b52d"
     },
+    "sealed/bak-01-dadc7a9d8821-sealed-evidence.zip": {
+      "size": 335210,
+      "sha256": "46beeeaa2ec893cb140e22bc799b135795310f55d03f44e46b5fa308044199b8"
+    },
     "source-generation/authoritative-digest.json": {
       "size": 449,
       "sha256": "fbaee411108ecfd3d8c5cd1ef496ca78f5cccf534e778932c3e1f386eeda4252"
@@ -201,11 +225,11 @@
       "sha256": "2dd6f5c8a9953c4e44fd22b774cbed41eae34fae5710a74bca1b1c3e0decfcca"
     },
     "source-provenance.json": {
-      "size": 14861,
-      "sha256": "325e226127a5f34260b4df6e69673e89b87ebdfa8ca024a5051462d0d26d3207"
+      "size": 15361,
+      "sha256": "83437e7af87e1d9e168d917e0360ff09c4cba52366bb06236df9445df20950ed"
     }
   },
-  "sealedArchivePolicy": "Original bytes are pinned by source-provenance.json and an immutable qualification Release; repository metadata does not repack the source or runtime bundle.",
+  "sealedArchivePolicy": "Original bytes are pinned by source-provenance.json and the committed sealed archive; immutable qualification Release publication remains pending after GH013 ref-creation rejection, and repository metadata does not repack the source or runtime bundle.",
   "gaps": [
     {
       "scope": "Windows",
@@ -215,5 +239,6 @@
       "scope": "independentAcceptance",
       "status": "pending"
     }
-  ]
+  ],
+  "cleanCheckoutReplay": "clean-checkout/checkout-record.json"
 }
