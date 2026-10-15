@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"debug/buildinfo"
 	"encoding/json"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -253,16 +254,7 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		preTransactionMainSize = fileSize(t, transactionMain)
 	}
 	deliver.Store(true)
-	wait(t, func() bool {
-		r, e := http.Get(base + "/usage-service/info")
-		if e != nil {
-			return false
-		}
-		r.Body.Close()
-		db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
-		defer db.Close()
-		return scalar(t, db, "select count(*) from usage_events") == 4 && scalar(t, db, "select count(*) from usage_data_migrations where status != 'completed'") == 0
-	})
+	waitForGeneratedSource(t, base, filepath.Join(live, "usage.sqlite"), &queueCalls, &delivered)
 	quotaResponse := httpCall(t, "POST", base, "/v0/management/quota-snapshots", p.Quota)
 	wait(t, func() bool {
 		db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
@@ -399,6 +391,42 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	generationDigest := save(t, generation, "record.json", record)
 	save(t, root, "generation-index.json", map[string]any{"location": "source-generation/record.json", "SHA256": generationDigest, "bundleDigest": sealed.SourceRevision, "generationSuccess": true, "casePass": false})
 	t.Log("source generation succeeded; case acceptance remains pending")
+}
+
+func waitForGeneratedSource(t *testing.T, base, dbPath string, queueCalls *atomic.Int64, delivered *atomic.Bool) {
+	t.Helper()
+	deadline := time.Now().Add(45 * time.Second)
+	for time.Now().Before(deadline) {
+		if r, err := http.Get(base + "/usage-service/info"); err == nil {
+			_ = r.Body.Close()
+		}
+		db, err := sql.Open("sqlite", dbURI(dbPath, true))
+		if err == nil {
+			db.SetMaxOpenConns(1)
+			var events, migrations int64
+			eventsErr := db.QueryRow("select count(*) from usage_events").Scan(&events)
+			migrationsErr := db.QueryRow("select count(*) from usage_data_migrations where status != 'completed'").Scan(&migrations)
+			_ = db.Close()
+			if eventsErr == nil && migrationsErr == nil && events == 4 && migrations == 0 {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	var info string
+	if r, err := http.Get(base + "/usage-service/info"); err == nil {
+		body, readErr := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		_ = r.Body.Close()
+		if readErr == nil {
+			info = string(body)
+		}
+	}
+	deadLetters := int64(-1)
+	if db, err := sql.Open("sqlite", dbURI(dbPath, true)); err == nil {
+		_ = db.QueryRow("select count(*) from dead_letter_events").Scan(&deadLetters)
+		_ = db.Close()
+	}
+	t.Fatalf("qualification observation timed out: queueCalls=%d delivered=%v deadLetters=%d info=%s", queueCalls.Load(), delivered.Load(), deadLetters, info)
 }
 
 func safeEnvironment(env []string) []string {
