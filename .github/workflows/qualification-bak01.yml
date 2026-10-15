@@ -8,6 +8,8 @@ on:
       - '.gitattributes'
       - 'bin/qualification/**'
       - 'apps/manager-server/tests/qualification/src11/**'
+      - 'apps/manager-server/internal/service/maintenancebundle/**'
+      - 'apps/manager-server/internal/processlock/**'
       - 'tests/fixtures/phase4a-evidence/bak-01/**'
 
 permissions:
@@ -55,6 +57,12 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as stream:
               stream.write(f"BAK01_ARCHIVE={archive.resolve()}\n")
           PY
+      - name: Verify exact generator commit and runtime source inventory
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin refs/heads/qualification/bak01-generator-4582ae7b
+          python bin/qualification/verify-bak01-generator.py --ref FETCH_HEAD \
+            --output "$RUNNER_TEMP/bak01-generator-provenance.json"
       - name: Materialize authenticated BAK-01 archive
         shell: bash
         run: |
@@ -107,6 +115,7 @@ jobs:
         with:
           name: bak01-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            ${{ runner.temp }}/bak01-generator-provenance.json
             ${{ runner.temp }}/bak01-replay/runner-evidence.json
             ${{ runner.temp }}/bak01-replay/*.log
             ${{ runner.temp }}/bak01-replay/runtime/

@@ -96,6 +96,19 @@ class Bak01EvidenceTests(unittest.TestCase):
         self.assertGreaterEqual(self.checkpoint["result"]["log"], self.checkpoint["result"]["checkpointed"])
         self.assertFalse(self.checkpoint["sourceMutated"])
 
+    def test_original_generator_provenance_binding(self):
+        proof = read("generator-provenance.json")
+        runner = read("generation-runner.json")
+        self.assertEqual(proof["generatorCodeCommit"], self.generation["GeneratorCodeCommit"])
+        self.assertEqual(proof["generatorCodeCommit"], self.provenance["generatorCodeCommit"])
+        self.assertEqual(proof["generatorCodeCommit"], runner["codeCommit"])
+        self.assertEqual(proof["sourceFilesCount"], len(runner["sourceFiles"]))
+        self.assertEqual(proof["sourceFilesCount"], 504)
+        inventory = json.dumps(runner["sourceFiles"], sort_keys=True, separators=(",", ":")).encode()
+        self.assertEqual(proof["sourceFilesInventorySHA256"], hashlib.sha256(inventory).hexdigest())
+        self.assertTrue(proof["sourceFileHashesVerified"])
+        self.assertEqual(proof["provenanceRef"], "refs/heads/qualification/bak01-generator-4582ae7b")
+
     def test_semantic_and_restore_bindings(self):
         assertions = read("runtime/semantic-assertions.json")
         backup = read("runtime/backup-restore.json")

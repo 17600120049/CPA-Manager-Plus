@@ -235,6 +235,10 @@
     "source-provenance.json": {
       "size": 15361,
       "sha256": "83437e7af87e1d9e168d917e0360ff09c4cba52366bb06236df9445df20950ed"
+    },
+    "generator-provenance.json": {
+      "size": 606,
+      "sha256": "b330f2713e8bc946c24ba6999ea21ae44c968a4ac2d3d77ada4acbda3ca0e796"
     }
   },
   "sealedArchivePolicy": "Original bytes are pinned by source-provenance.json and the committed sealed archive; immutable qualification Release publication remains pending after GH013 ref-creation rejection, and repository metadata does not repack the source or runtime bundle.",
@@ -248,5 +252,6 @@
       "status": "pending"
     }
   ],
-  "cleanCheckoutReplay": "clean-checkout/checkout-record.json"
+  "cleanCheckoutReplay": "clean-checkout/checkout-record.json",
+  "generatorProvenance": "generator-provenance.json"
 }

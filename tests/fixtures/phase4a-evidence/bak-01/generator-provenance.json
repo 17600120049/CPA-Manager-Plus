@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "caseID": "BAK-01",
+  "generatorCodeCommit": "4582ae7be34608083b7105ecec6289362f4fe4d3",
+  "provenanceRef": "refs/heads/qualification/bak01-generator-4582ae7b",
+  "commitURL": "https://github.com/seakee/CPA-Manager-Plus/commit/4582ae7be34608083b7105ecec6289362f4fe4d3",
+  "tree": "3f0753517c22ebd71e113197f75398bda6221509",
+  "commitObjectSHA256": "35f9f6c1227ab268e1c6f5860135e9048641151f68e62a6143a951eeecb7bd62",
+  "sourceFilesCount": 504,
+  "sourceFilesInventorySHA256": "3cbcefac077743e457db5995bd35ad3161e7baad0a5ada31295802e4801c8ff3",
+  "sourceFileHashesVerified": true
+}
