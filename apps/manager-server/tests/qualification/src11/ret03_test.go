@@ -108,6 +108,7 @@ func generateRET03Archive(t *testing.T, base, live, generation string, p profile
 	db = openDB(t, filepath.Join(live, "usage.sqlite"), true)
 	postDelete := snapshot(t, db)
 	state := checkRET03Archive(t, db, filepath.Join(live, "usage-archives"))
+	assertRET03Preserved(t, preDelete, postDelete, state)
 	save(t, generation, "post-delete-snapshot.json", postDelete)
 	save(t, generation, "archive-inventory.json", state)
 	save(t, generation, "retained-projection-snapshot.json", state["retainedProjection"])
@@ -182,6 +183,7 @@ func checkRET03Archive(t *testing.T, db *sql.DB, archives string) map[string]any
 	}
 	overall := sha256.New()
 	represented := make([]map[string]any, 0, 4)
+	seen := map[int64]bool{}
 	files := map[string]any{"manifest": map[string]any{"path": run["manifest_file"], "sha256": fileDigest(t, manifestPath)}}
 	for i, segment := range segments {
 		ms := manifest.Segments[i]
@@ -208,11 +210,12 @@ func checkRET03Archive(t *testing.T, db *sql.DB, archives string) map[string]any
 			must(t, json.Unmarshal(line, &record))
 			id := int64(record["_cpamp_archive_event_id"].(float64))
 			hash, ok := record["event_hash"].(string)
-			if !ok || hash == "" || refByID[id] == nil || refByID[id]["event_hash"] != hash || projectionByID[id] == nil {
+			if !ok || hash == "" || seen[id] || refByID[id] == nil || refByID[id]["event_hash"] != hash || projectionByID[id] == nil {
 				t.Fatalf("RET-03 archive identity is not backed by deleted ref/projection: id=%d", id)
 			}
+			seen[id] = true
 			projection := projectionByID[id]
-			for _, field := range []string{"timestamp_ms", "model", "requested_model", "resolved_model", "provider", "auth_index", "input_tokens", "output_tokens", "total_tokens"} {
+			for _, field := range []string{"timestamp_ms", "model", "requested_model", "resolved_model", "provider", "executor_type", "auth_index", "account_snapshot", "api_key_hash", "source", "source_hash", "auth_file_snapshot", "auth_label_snapshot", "auth_provider_snapshot", "auth_account_id_snapshot", "auth_project_id_snapshot", "input_tokens", "output_tokens", "reasoning_tokens", "cached_tokens", "cache_tokens", "cache_read_tokens", "cache_creation_tokens", "normalized_total_input_tokens", "total_tokens", "latency_ms", "failed", "reasoning_effort", "service_tier", "header_error_code", "header_error_kind", "header_quota_plan_type", "header_trace_id"} {
 				if !sameArchiveValue(record[field], projection[field]) {
 					t.Fatalf("RET-03 retained projection field %s differs for event %d: archive=%v projection=%v", field, id, record[field], projection[field])
 				}
@@ -251,9 +254,9 @@ func sameArchiveValue(archive, projection any) bool {
 	if af, ok := archive.(float64); ok {
 		switch pv := projection.(type) {
 		case int64:
-			return int64(af) == pv
+			return af == float64(pv)
 		case int:
-			return int(af) == pv
+			return af == float64(pv)
 		case float64:
 			return af == pv
 		}
@@ -262,6 +265,46 @@ func sameArchiveValue(archive, projection any) bool {
 		return true
 	}
 	return reflect.DeepEqual(archive, projection)
+}
+
+// Bind archived authority to the sealed pre-delete raw observation. Reuse
+// RET-02's complete metadata comparison, including nullable stream/generate,
+// response metadata, request/session linkage and access-token hashes.
+func assertRET03Preserved(t *testing.T, pre, post map[string][]map[string]any, state map[string]any) {
+	t.Helper()
+	rows := pre["usage_events"]
+	records := state["archiveRecords"].([]map[string]any)
+	if len(rows) != 4 || len(records) != len(rows) {
+		t.Fatal("RET-03 pre-delete authority does not cover every archived event")
+	}
+	byID := map[string]map[string]any{}
+	for _, row := range rows {
+		// JSON snapshots decode SQL integers as float64; RET-02's comparator
+		// expects SQL int64 for the two nullable boolean columns only.
+		copy := map[string]any{}
+		for field, value := range row {
+			copy[field] = value
+		}
+		for _, field := range []string{"generate", "stream"} {
+			if value, ok := copy[field].(float64); ok {
+				copy[field] = int64(value)
+			}
+		}
+		byID[string(mustJSON(row["id"]))] = copy
+	}
+	for _, record := range records {
+		row := byID[string(mustJSON(record["_cpamp_archive_event_id"]))]
+		if row == nil {
+			t.Fatal("RET-03 archive event is absent from pre-delete authority")
+		}
+		assertRET02Record(t, row, record)
+	}
+	// Deletion must preserve pricing authority and its context/service tiers.
+	for _, table := range []string{"model_prices", "model_price_context_tiers", "model_price_service_tiers"} {
+		if !bytes.Equal(mustJSON(pre[table]), mustJSON(post[table])) {
+			t.Fatalf("RET-03 historical pricing authority changed: %s", table)
+		}
+	}
 }
 
 func ret03Queries(t *testing.T, ctx context.Context, st *store.Store, dbPath string, p profile, v1 map[string]monitoring.Response) map[string]any {
@@ -357,6 +400,8 @@ func TestReplayRET03(t *testing.T) {
 		t.Fatal("RET-03 restored source regenerated raw rows")
 	}
 	archiveState := checkRET03Archive(t, db, restored.ArchivesPath)
+	preDelete := loadSnapshotFile(t, filepath.Join(root, "source-generation", "pre-delete-snapshot.json"))
+	assertRET03Preserved(t, preDelete, before, archiveState)
 	if ret01SnapshotDigest(before) != ret01SnapshotDigest(loadSnapshotFile(t, filepath.Join(root, "source-generation", "post-delete-snapshot.json"))) {
 		t.Fatal("RET-03 restored post-delete authoritative snapshot differs from generation")
 	}
@@ -399,6 +444,7 @@ func TestReplayRET03(t *testing.T) {
 	}
 	after := snapshot(t, db)
 	archiveAfter := checkRET03Archive(t, db, restored.ArchivesPath)
+	assertRET03Preserved(t, preDelete, after, archiveAfter)
 	must(t, db.Close())
 	if ret01Digest(t, archiveState) != ret01Digest(t, archiveAfter) {
 		t.Fatal("RET-03 archive evidence changed during replay")
@@ -420,6 +466,7 @@ func TestReplayRET03(t *testing.T) {
 	sameInventory(t, backup, recoveredManifest)
 	db = openDB(t, recovered.DatabasePath, false)
 	recoveryState := checkRET03Archive(t, db, recovered.ArchivesPath)
+	assertRET03Preserved(t, preDelete, snapshot(t, db), recoveryState)
 	if scalar(t, db, "select count(*) from usage_events") != 0 {
 		t.Fatal("RET-03 new-root restore regenerated raw rows")
 	}
