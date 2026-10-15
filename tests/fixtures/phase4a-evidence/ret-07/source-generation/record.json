@@ -1,0 +1,238 @@
+{
+  "ControlledInputSHA256": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
+  "GeneratedBundleSHA256": "3b3985dc7c26bc4662fa46e517a301bd43a68624e4e50ee7bb4207f072d81c76",
+  "GenerationEvidenceFiles": {
+    "archive-flow.json": "0d5d88d7d2120db2a12970710e6c41bcb33f303ccf2f9981b265a7600dc475d5",
+    "archive-inventory.json": "9be53dc1a0f71dbcb3841749aee172ae8594f7f958d1fb6e55a896c2909778db",
+    "archive-readiness.json": "a02355831b8231c966001134756b06eb7f713d0f9bfea1e922cc557545d507a7",
+    "config-write.json": "ef5d865b1257760fef9187a9bd1af373dc3a1fa3d32302ae918352b676e8f960",
+    "controlled-input.json": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
+    "historical-reconciliation.json": "dd9f4d7eae41362364db14ca14e665bfd9dbf37b09ca1111e932a1de7541d708",
+    "post-delete-snapshot.json": "1ae65fbdfffb13d6c5e2699345ab49c9bf2e972c809f38951a599567638c29d9",
+    "pre-archive-snapshot.json": "a7174a50df38a97e8d2d14e6adc10d05229ad31a63b2d376bc4989ee35b8bd21",
+    "pre-delete-snapshot.json": "a7174a50df38a97e8d2d14e6adc10d05229ad31a63b2d376bc4989ee35b8bd21",
+    "price-authority-snapshot.json": "1ef7c259fdefc8f9d6de7b1c31945981866b518dc72611dc18ce25b7104e4cd0",
+    "price-write.json": "9a023ac034535943463bbb4a6aac54e5ca0d78e30db705da3a4acdbe1e7f5df1",
+    "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+    "producer.log": "dffca9cf7f14b8bbf2e490262dabc5058d1c2340ea2b2b9f68cd7496398037ec",
+    "quota-write.json": "ce54434d418d4fdefdc17953bdfb19ed151017be7a30fef005e45d92b8e8b0a5",
+    "raw-event-inventory.json": "901a299f875f04eb2fd9ae0597770ea64099981d208777466a72e98009f688db",
+    "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+    "retained-pricing-source.json": "0c0247ead217502c749a067848d50b99080c48bf076e6e6fa09b9dcead455f2f",
+    "source-snapshot.json": "e13b0c3dc978b6d1db2c939fda9d6edd6d1954b7c0de875e9d75f41a259f760f",
+    "structural-price-change.json": "a9937199f70131e8ecd13c94e867c825905dbc0e2b4817bc37232c33594ef981",
+    "v1-analytics.json": "6e9d860b9cc1856b0e3fe0fc67a353c9e89580bc60db2147256c9388ae3f39f6",
+    "v1-archived-analytics.json": "748acee0353efa1c1245441dbc89b48c6bc790da4bfa1b2fde62dc733f57968e",
+    "v1-export.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "GenerationProcedure": "published exact v1.14.4 executable; isolated collector duplicate + price/quota API; archive HTTP create/resume/verify/delete; structural model-price change through production API; checkpoint; maintenancebundle.Create; digest revalidation",
+  "GenerationProfile": "ret-07-retained-pricing-source-complete-v1",
+  "GeneratorCodeCommit": "db48c8d88849c8125fcad95986e34aa9a007cc35",
+  "PlanCommit": "21035045c425e453bd8f3007619fc0734861012e",
+  "SQLite": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "SourceProducerArtifact": {
+    "asset": "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+    "assetID": 616064478,
+    "immutableReleaseID": 404941931,
+    "releaseInfoSHA256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5"
+  },
+  "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "SourceProducerKind": "published-artifact",
+  "SourceRelease": "v1.14.4",
+  "StoppedBeforeCheckpointInventory": {
+    "version": 2,
+    "fence": "",
+    "sourceRevision": "3b3985dc7c26bc4662fa46e517a301bd43a68624e4e50ee7bb4207f072d81c76",
+    "entries": {
+      "config": {
+        "present": true,
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "data-key": {
+        "present": true,
+        "size": 44,
+        "sha256": "bb60ffd632f946a0cdc3ed20db15b61e1ec4bc16fae6552968a47b1a9420bd85"
+      },
+      "database": {
+        "present": true,
+        "size": 659456,
+        "sha256": "b0f7d821bcdd4fab269187839f602ad723a70da24db89a146c2498aa410f35a5"
+      },
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": false
+      },
+      "database-wal": {
+        "present": false
+      },
+      "usage-archives": {
+        "present": true,
+        "directory": true
+      },
+      "usage-archives/730088e0a87337a890d0bc0ed03afcb1": {
+        "present": true,
+        "directory": true
+      },
+      "usage-archives/730088e0a87337a890d0bc0ed03afcb1/manifest.json": {
+        "present": true,
+        "size": 1099,
+        "sha256": "39a2ad5d3411b70198482524839f49336cb20a50130ac08150f5979aa78b4999"
+      },
+      "usage-archives/730088e0a87337a890d0bc0ed03afcb1/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "present": true,
+        "size": 2064,
+        "sha256": "d380992d4de9c405a0bb63e109b3bfe05a54497a0c37704eef3f4e96e41a5752"
+      }
+    }
+  },
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "bundleInventory": {
+    "version": 2,
+    "fence": "cooperating-manager-lock",
+    "sourceRevision": "3b3985dc7c26bc4662fa46e517a301bd43a68624e4e50ee7bb4207f072d81c76",
+    "entries": {
+      "config": {
+        "present": true,
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "data-key": {
+        "present": true,
+        "size": 44,
+        "sha256": "bb60ffd632f946a0cdc3ed20db15b61e1ec4bc16fae6552968a47b1a9420bd85"
+      },
+      "database": {
+        "present": true,
+        "size": 659456,
+        "sha256": "b0f7d821bcdd4fab269187839f602ad723a70da24db89a146c2498aa410f35a5"
+      },
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": false
+      },
+      "database-wal": {
+        "present": false
+      },
+      "usage-archives": {
+        "present": true,
+        "directory": true
+      },
+      "usage-archives/730088e0a87337a890d0bc0ed03afcb1": {
+        "present": true,
+        "directory": true
+      },
+      "usage-archives/730088e0a87337a890d0bc0ed03afcb1/manifest.json": {
+        "present": true,
+        "size": 1099,
+        "sha256": "39a2ad5d3411b70198482524839f49336cb20a50130ac08150f5979aa78b4999"
+      },
+      "usage-archives/730088e0a87337a890d0bc0ed03afcb1/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "present": true,
+        "size": 2064,
+        "sha256": "d380992d4de9c405a0bb63e109b3bfe05a54497a0c37704eef3f4e96e41a5752"
+      }
+    }
+  },
+  "caseID": "RET-07",
+  "casePass": false,
+  "generationSuccess": true,
+  "harnessToolchain": {
+    "goArch": "amd64",
+    "goOS": "linux",
+    "goVersion": "go1.26.1",
+    "qualificationOnly": true
+  },
+  "migrationState": [
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": 1792052167171,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "quota_snapshot_lifecycle_v1",
+      "processed_rows": 0,
+      "started_at_ms": 1792052167171,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 1792052167171
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v1",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v2",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    }
+  ],
+  "process": {
+    "arguments": [],
+    "deliveredPayloads": 5,
+    "environment": [
+      "CPA_MANAGER_CONFIG=\u003ctask-scratch\u003e/source/config.json",
+      "HTTP_ADDR=\u003cprivate-listener\u003e",
+      "CPA_UPSTREAM_URL=\u003cprivate-http-queue\u003e",
+      "CPA_MANAGEMENT_KEY=\u003cqualification-only-secret\u003e",
+      "CPA_MANAGER_ADMIN_KEY=\u003cqualification-only-secret\u003e",
+      "USAGE_COLLECTOR_MODE=http",
+      "USAGE_POLL_INTERVAL_MS=100",
+      "USAGE_QUOTA_COOLDOWN_ENABLED=true",
+      "TZ=UTC"
+    ],
+    "exitCode": 0,
+    "expectedUniqueEvents": 4,
+    "finishedAt": "2026-10-15T08:16:37.456785178Z",
+    "pid": 15,
+    "queueCalls": 305,
+    "reaped": true,
+    "startedAt": "2026-10-15T08:16:07.10100181Z"
+  },
+  "producerBuildIdentity": "producer-build.json",
+  "sourceVariant": "archived + raw physically deleted; retained pricing source complete; structural price change"
+}

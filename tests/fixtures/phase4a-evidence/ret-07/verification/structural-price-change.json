@@ -1,0 +1,71 @@
+{
+  "afterRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
+  "baseFallbackUSD": 0.00056,
+  "beforeRevision": "model-1:identity-3:codex-2:context-v1:887de26ffa04ba790858d8c40395ca5039ad7ea11d32f9453640571653074272",
+  "historicalEventsCrossingNewTier": 1,
+  "historicalTierUSD": 0.00028,
+  "kind": "context-tier-structure",
+  "matchedHistoricalEventIDs": [
+    2
+  ],
+  "model": "fixture-paid-ret07",
+  "newContextTiers": [
+    {
+      "thresholdTokens": 50,
+      "prompt": 2,
+      "completion": 8,
+      "cache": 0,
+      "promptConfigured": true,
+      "completionConfigured": true
+    }
+  ],
+  "oldContextTiers": null,
+  "response": {
+    "prices": {
+      "fixture-free-ret07": {
+        "prompt": 0,
+        "completion": 0,
+        "cache": 0,
+        "promptConfigured": true,
+        "completionConfigured": true,
+        "cacheReadConfigured": true,
+        "cacheCreationConfigured": true,
+        "source": "manual",
+        "updatedAtMs": 1792052197314
+      },
+      "fixture-manual-ret07": {
+        "prompt": 3,
+        "completion": 15,
+        "cache": 0.3,
+        "cacheRead": 0.3,
+        "cacheCreation": 3.75,
+        "promptConfigured": true,
+        "completionConfigured": true,
+        "cacheReadConfigured": true,
+        "cacheCreationConfigured": true,
+        "source": "manual",
+        "updatedAtMs": 1792052197314
+      },
+      "fixture-paid-ret07": {
+        "prompt": 4,
+        "completion": 16,
+        "cache": 0.2,
+        "promptConfigured": true,
+        "completionConfigured": true,
+        "source": "manual",
+        "contextTiers": [
+          {
+            "thresholdTokens": 50,
+            "prompt": 2,
+            "completion": 8,
+            "cache": 0,
+            "promptConfigured": true,
+            "completionConfigured": true
+          }
+        ],
+        "updatedAtMs": 1792052197314
+      }
+    }
+  },
+  "writer": "PUT /v0/management/model-prices"
+}

@@ -1,0 +1,214 @@
+{
+  "afterStructuralChange": {
+    "aggregate": {
+      "actualHistorical": 0.0023499999999999997,
+      "baseFallbackCounterfactual": 0.0026299999999999995,
+      "currentProjection": 0.0023499999999999997,
+      "expectedHistorical": 0.0023499999999999997,
+      "reconciled": true
+    },
+    "fixture-free-ret07": {
+      "afterStructuralChangeHistorical": 0,
+      "beforeStructuralChange": 0,
+      "calls": 1,
+      "currentProjection": 0
+    },
+    "fixture-manual-ret07": {
+      "afterStructuralChangeHistorical": 0.00207,
+      "beforeStructuralChange": 0.00207,
+      "calls": 1,
+      "currentProjection": 0.00207
+    },
+    "fixture-paid-ret07": {
+      "afterStructuralChangeHistorical": 0.00028000000000000003,
+      "beforeStructuralChange": 0.00028000000000000003,
+      "calls": 1,
+      "currentProjection": 0.00028000000000000003
+    },
+    "fixture-unknown-ret07": {
+      "afterStructuralChangeHistorical": 0,
+      "beforeStructuralChange": 0,
+      "calls": 1,
+      "currentProjection": 0
+    },
+    "tierSelection": {
+      "baseFallbackUSD": 0.00056,
+      "basePrices": [
+        {
+          "completion_per_1m": 16,
+          "prompt_per_1m": 4
+        }
+      ],
+      "contextTiers": [
+        {
+          "cache_configured": 0,
+          "cache_creation_configured": 0,
+          "cache_creation_per_1m": 0,
+          "cache_per_1m": 0,
+          "cache_read_configured": 0,
+          "cache_read_per_1m": 0,
+          "completion_configured": 1,
+          "completion_per_1m": 8,
+          "model": "fixture-paid-ret07",
+          "prompt_configured": 1,
+          "prompt_per_1m": 2,
+          "threshold_tokens": 50
+        }
+      ],
+      "eventID": 2,
+      "historicalTierUSD": 0.00028,
+      "normalizedInputTokens": 100,
+      "outputTokens": 10,
+      "persistedBands": [
+        {
+          "calls": 1,
+          "context_threshold_tokens": 50,
+          "input_tokens": 100,
+          "output_tokens": 10
+        }
+      ],
+      "predicate": "normalized_input_tokens \u003e threshold_tokens",
+      "retainedProjection": [
+        {
+          "event_id": 2,
+          "input_tokens": 100,
+          "normalized_total_input_tokens": 100,
+          "output_tokens": 10
+        }
+      ],
+      "selectedContextThreshold": 50,
+      "thresholdTokens": 50,
+      "tierWasExercised": true
+    }
+  },
+  "beforeStructuralChange": {
+    "fixture-free-ret07": {
+      "generated_at_ms": 1792052167424,
+      "granularity": "hour",
+      "summary": {
+        "total_calls": 1,
+        "success_calls": 1,
+        "failure_calls": 0,
+        "success_rate": 1,
+        "input_tokens": 500,
+        "output_tokens": 100,
+        "cached_tokens": 400,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cache_hit_rate": 0.8,
+        "reasoning_tokens": 0,
+        "total_tokens": 600,
+        "total_cost": 0,
+        "average_cost_per_call": 0,
+        "average_latency_ms": null,
+        "p95_latency_ms": null,
+        "p95_ttft_ms": null,
+        "zero_token_calls": 0,
+        "rpm_30m": 0,
+        "tpm_30m": 0,
+        "avg_daily_requests": 1,
+        "avg_daily_tokens": 600,
+        "approx_tasks": 1,
+        "approx_task_failures": 0,
+        "approx_task_success_rate": 1,
+        "zero_token_models": []
+      }
+    },
+    "fixture-manual-ret07": {
+      "generated_at_ms": 1792052167430,
+      "granularity": "hour",
+      "summary": {
+        "total_calls": 1,
+        "success_calls": 1,
+        "failure_calls": 0,
+        "success_rate": 1,
+        "input_tokens": 1000,
+        "output_tokens": 100,
+        "cached_tokens": 0,
+        "cache_read_tokens": 900,
+        "cache_creation_tokens": 0,
+        "cache_hit_rate": 0.9,
+        "reasoning_tokens": 0,
+        "total_tokens": 1100,
+        "total_cost": 0.00207,
+        "average_cost_per_call": 0.00207,
+        "average_latency_ms": 125,
+        "p95_latency_ms": 125,
+        "p95_ttft_ms": 25,
+        "zero_token_calls": 0,
+        "rpm_30m": 0,
+        "tpm_30m": 0,
+        "avg_daily_requests": 1,
+        "avg_daily_tokens": 1100,
+        "approx_tasks": 1,
+        "approx_task_failures": 0,
+        "approx_task_success_rate": 1,
+        "zero_token_models": []
+      }
+    },
+    "fixture-paid-ret07": {
+      "generated_at_ms": 1792052167435,
+      "granularity": "hour",
+      "summary": {
+        "total_calls": 1,
+        "success_calls": 1,
+        "failure_calls": 0,
+        "success_rate": 1,
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "cached_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cache_hit_rate": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 110,
+        "total_cost": 0.00028000000000000003,
+        "average_cost_per_call": 0.00028000000000000003,
+        "average_latency_ms": 10,
+        "p95_latency_ms": 10,
+        "p95_ttft_ms": null,
+        "zero_token_calls": 0,
+        "rpm_30m": 0,
+        "tpm_30m": 0,
+        "avg_daily_requests": 1,
+        "avg_daily_tokens": 110,
+        "approx_tasks": 1,
+        "approx_task_failures": 0,
+        "approx_task_success_rate": 1,
+        "zero_token_models": []
+      }
+    },
+    "fixture-unknown-ret07": {
+      "generated_at_ms": 1792052167440,
+      "granularity": "hour",
+      "summary": {
+        "total_calls": 1,
+        "success_calls": 1,
+        "failure_calls": 0,
+        "success_rate": 1,
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "cached_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cache_hit_rate": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 110,
+        "total_cost": 0,
+        "average_cost_per_call": 0,
+        "average_latency_ms": null,
+        "p95_latency_ms": null,
+        "p95_ttft_ms": null,
+        "zero_token_calls": 0,
+        "rpm_30m": 0,
+        "tpm_30m": 0,
+        "avg_daily_requests": 1,
+        "avg_daily_tokens": 110,
+        "approx_tasks": 1,
+        "approx_task_failures": 0,
+        "approx_task_success_rate": 1,
+        "zero_token_models": []
+      }
+    }
+  }
+}

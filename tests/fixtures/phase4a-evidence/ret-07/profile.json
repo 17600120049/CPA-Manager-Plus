@@ -1,0 +1,191 @@
+{
+  "profile": "ret-07-retained-pricing-source-complete-v1",
+  "events": [
+    {
+      "request_id": "ret07-manual-cached",
+      "timestamp": "2026-10-02T00:00:00Z",
+      "provider": "codex",
+      "executor_type": "CodexExecutor",
+      "model": "fixture-manual-ret07",
+      "session_id": "ret07-session",
+      "parent_session_id": "ret07-parent",
+      "auth_index": "fixture-codex-ret07",
+      "auth_file_snapshot": "fixture-codex-ret07.json",
+      "auth_provider_snapshot": "codex",
+      "account_snapshot": "fixture-ret07-codex@example.invalid",
+      "tokens": {
+        "input_tokens": 1000,
+        "output_tokens": 100,
+        "cached_tokens": 900,
+        "cache_read_tokens": 900,
+        "cache_creation_tokens": 0,
+        "total_tokens": 1100
+      },
+      "response_headers": {
+        "X-Request-Id": ["trace-ret07-cached"],
+        "Content-Type": ["text/event-stream"]
+      },
+      "response_model": "fixture-manual-ret07",
+      "requested_model": "fixture-manual-ret07",
+      "resolved_model": "fixture-manual-ret07",
+      "endpoint": "responses",
+      "method": "POST",
+      "path": "/v1/responses",
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "stream": true,
+      "generate": true,
+      "latency_ms": 125,
+      "ttft_ms": 25,
+      "cache_input_mode": "included_in_input"
+    },
+    {
+      "request_id": "ret07-structural-paid",
+      "timestamp": "2026-10-02T01:00:00Z",
+      "provider": "codex",
+      "executor_type": "CodexExecutor",
+      "model": "fixture-paid-ret07",
+      "session_id": "ret07-session",
+      "auth_index": "fixture-codex-ret07",
+      "auth_file_snapshot": "fixture-codex-ret07.json",
+      "auth_provider_snapshot": "codex",
+      "account_snapshot": "fixture-ret07-codex@example.invalid",
+      "tokens": {
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "total_tokens": 110
+      },
+      "response_model": "fixture-paid-ret07",
+      "requested_model": "fixture-paid-ret07",
+      "resolved_model": "fixture-paid-ret07",
+      "endpoint": "responses",
+      "method": "POST",
+      "path": "/v1/responses",
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "stream": false,
+      "generate": false,
+      "latency_ms": 10,
+      "ttft_ms": 0
+    },
+    {
+      "request_id": "ret07-explicit-zero",
+      "timestamp": "2026-10-02T02:00:00Z",
+      "provider": "codex",
+      "executor_type": "CodexExecutor",
+      "model": "fixture-free-ret07",
+      "auth_index": "fixture-codex-ret07",
+      "auth_file_snapshot": "fixture-codex-ret07.json",
+      "auth_provider_snapshot": "codex",
+      "tokens": {
+        "input_tokens": 500,
+        "output_tokens": 100,
+        "cached_tokens": 400,
+        "total_tokens": 600
+      },
+      "response_model": "fixture-free-ret07",
+      "requested_model": "fixture-free-ret07",
+      "resolved_model": "fixture-free-ret07",
+      "endpoint": "responses",
+      "method": "POST",
+      "path": "/v1/responses",
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "request_id": "ret07-unknown-unpriced",
+      "timestamp": "2026-10-02T03:00:00Z",
+      "provider": "codex",
+      "executor_type": "CodexExecutor",
+      "model": "fixture-unknown-ret07",
+      "auth_index": "fixture-codex-ret07",
+      "auth_file_snapshot": "fixture-codex-ret07.json",
+      "auth_provider_snapshot": "codex",
+      "account_snapshot": "fixture-ret07-codex@example.invalid",
+      "tokens": {
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "total_tokens": 110
+      },
+      "response_model": "fixture-unknown-ret07",
+      "requested_model": "fixture-unknown-ret07",
+      "resolved_model": "fixture-unknown-ret07",
+      "endpoint": "responses",
+      "method": "POST",
+      "path": "/v1/responses",
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "prices": {
+    "fixture-manual-ret07": {
+      "prompt": 3,
+      "completion": 15,
+      "cache": 0.3,
+      "cacheRead": 0.3,
+      "cacheCreation": 3.75,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "cacheReadConfigured": true,
+      "cacheCreationConfigured": true,
+      "source": "manual"
+    },
+    "fixture-paid-ret07": {
+      "prompt": 2,
+      "completion": 8,
+      "cache": 0.2,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "source": "manual"
+    },
+    "fixture-free-ret07": {
+      "prompt": 0,
+      "completion": 0,
+      "cache": 0,
+      "cacheRead": 0,
+      "cacheCreation": 0,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "cacheReadConfigured": true,
+      "cacheCreationConfigured": true,
+      "source": "manual"
+    }
+  },
+  "quota": {
+    "entries": [
+      {
+        "provider": "meta",
+        "account": {
+          "auth_index": "fixture-meta-ret07",
+          "auth_file_snapshot": "fixture-meta-ret07.json",
+          "auth_provider_snapshot": "meta"
+        },
+        "windows": [
+          {
+            "provider_window_id": "fixture-week-ret07",
+            "window_kind": "week",
+            "window_mode": "fixed",
+            "model_scope_kind": "all",
+            "source": "api_query",
+            "source_observation_id": "ret07-controlled-quota",
+            "observed_at_ms": 1790899200000,
+            "boundary_accuracy": "exact",
+            "cycle_start_ms": 1790899200000,
+            "cycle_end_ms": 1791504000000,
+            "duration_seconds": 604800,
+            "used_percent": 25,
+            "remaining_percent": 75,
+            "reset_credits_available": 2,
+            "reset_credits": [
+              {"id": "fixture-banked-reset-ret07", "expires_at_ms": 1791504000000}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "fromMS": 1790899200000,
+  "toMS": 1790985600000,
+  "expectedUSD": {
+    "fixture-manual-ret07": 0.00207,
+    "fixture-paid-ret07": 0.00028,
+    "fixture-free-ret07": 0,
+    "fixture-unknown-ret07": 0
+  }
+}

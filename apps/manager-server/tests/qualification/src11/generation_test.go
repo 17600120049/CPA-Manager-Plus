@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"debug/buildinfo"
 	"encoding/json"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -48,6 +50,13 @@ func TestGenerateRET03(t *testing.T) {
 		t.Skip("opt-in RET-03 controlled generation")
 	}
 	generateExactSource(t, ret03CaseID, ret03PlanCommit, ret03Profile)
+}
+
+func TestGenerateRET07(t *testing.T) {
+	if os.Getenv("CPAMP_RET07_GENERATE") != "1" {
+		t.Skip("opt-in RET-07 controlled generation")
+	}
+	generateExactSource(t, ret07CaseID, ret07PlanCommit, ret07Profile)
 }
 
 func TestGenerateMIG01(t *testing.T) {
@@ -151,6 +160,7 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	var preTransactionMainDigest string
 	var preTransactionMainSize int64
 	queue := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("qualification upstream request method=%s path=%s authorization=%q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
 		if r.Header.Get("Authorization") != "Bearer qualification-only-management-key" {
 			http.Error(w, "unauthorized", 401)
 			return
@@ -158,16 +168,26 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v0/management/usage-queue":
-			queueCalls.Add(1)
+			calls := queueCalls.Add(1)
 			if deliver.Load() && delivered.CompareAndSwap(false, true) {
+				log.Printf("qualification upstream delivery call=%d events=%d duplicate=true", calls, len(p.Events))
 				events := append([]json.RawMessage{}, p.Events...)
 				events = append(events, p.Events[0])
 				json.NewEncoder(w).Encode(events)
 			} else {
+				log.Printf("qualification upstream empty queue call=%d deliver=%v", calls, deliver.Load())
 				w.Write([]byte("[]"))
 			}
 		case "/v0/management/auth-files":
-			json.NewEncoder(w).Encode(map[string]any{"files": []any{map[string]any{"id": "runtime-fixture-codex", "name": "fixture-codex.json", "auth_index": "fixture-codex", "provider": "codex", "disabled": disabled.Load()}}})
+			files := []any{map[string]any{"id": "runtime-fixture-codex", "name": "fixture-codex.json", "auth_index": "fixture-codex", "provider": "codex", "disabled": disabled.Load()}}
+			if caseID == ret07CaseID {
+				// RET-07 deliberately uses an independent retained-pricing
+				// identity. The published collector resolves queue events against
+				// this auth-file inventory before persisting them, so the isolated
+				// upstream must expose the profile's actual identity.
+				files = []any{map[string]any{"id": "runtime-fixture-codex-ret07", "name": "fixture-codex-ret07.json", "auth_index": "fixture-codex-ret07", "provider": "codex", "disabled": disabled.Load()}}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"files": files})
 		case "/v0/management/config":
 			w.Write([]byte(`{"usage-statistics-enabled":true,"redis-usage-queue-retention-seconds":60}`))
 		case "/v0/management/usage-statistics-enabled":
@@ -241,22 +261,24 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		preTransactionMainSize = fileSize(t, transactionMain)
 	}
 	deliver.Store(true)
-	wait(t, func() bool {
-		r, e := http.Get(base + "/usage-service/info")
-		if e != nil {
-			return false
-		}
-		r.Body.Close()
-		db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
-		defer db.Close()
-		return scalar(t, db, "select count(*) from usage_events") == 4 && scalar(t, db, "select count(*) from usage_data_migrations where status != 'completed'") == 0
-	})
+	waitForGeneratedSource(t, base, filepath.Join(live, "usage.sqlite"), &queueCalls, &delivered)
 	quotaResponse := httpCall(t, "POST", base, "/v0/management/quota-snapshots", p.Quota)
-	wait(t, func() bool {
-		db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
-		defer db.Close()
-		return scalar(t, db, "select count(*) from quota_cooldowns") > 0
-	})
+	if caseID == ret07CaseID {
+		// RET-07 deliberately uses an ordinary unknown/unpriced usage event
+		// instead of a quota failure. Its quota API evidence is therefore the
+		// persisted snapshot itself, not a derived cooldown row.
+		wait(t, func() bool {
+			db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
+			defer db.Close()
+			return scalar(t, db, "select count(*) from account_quota_snapshots") > 0
+		})
+	} else {
+		wait(t, func() bool {
+			db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
+			defer db.Close()
+			return scalar(t, db, "select count(*) from quota_cooldowns") > 0
+		})
+	}
 	must(t, os.WriteFile(filepath.Join(generation, "quota-write.json"), quotaResponse, 0600))
 	costs := map[string]monitoring.Response{}
 	for _, name := range sortedModels(p) {
@@ -275,6 +297,9 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	}
 	if caseID == ret03CaseID {
 		generateRET03Archive(t, base, live, generation, p, costs)
+	}
+	if caseID == ret07CaseID {
+		generateRET07Archive(t, base, live, generation, p, costs)
 	}
 	export := httpCall(t, "GET", base, "/v0/management/usage/export", nil)
 	must(t, os.WriteFile(filepath.Join(generation, "v1-export.jsonl"), export, 0600))
@@ -325,10 +350,18 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		checkRET02Archive(t, db, layout.ArchivesPath)
 	} else if caseID == ret03CaseID {
 		checkRET03Archive(t, db, layout.ArchivesPath)
+	} else if caseID == ret07CaseID {
+		checkRET07Archive(t, db, layout.ArchivesPath)
 	} else {
 		checkFullRaw(t, db)
 	}
-	if scalar(t, db, "select count(*) from account_quota_snapshots") < 2 {
+	minimumQuotaSnapshots := int64(2)
+	if caseID == ret07CaseID {
+		// RET-07 has no quota-failure usage event; its controlled quota API
+		// write is the single required snapshot.
+		minimumQuotaSnapshots = 1
+	}
+	if scalar(t, db, "select count(*) from account_quota_snapshots") < minimumQuotaSnapshots {
 		t.Fatal("required quota/reset evidence missing")
 	}
 	revision := query(t, db, "select value from settings where key='usage_cache_accounting_semantics_revision'")
@@ -368,6 +401,13 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 			hashes[name] = fileDigest(t, filepath.Join(generation, name))
 		}
 	}
+	if caseID == ret07CaseID {
+		record["sourceVariant"] = "archived + raw physically deleted; retained pricing source complete; structural price change"
+		record["GenerationProcedure"] = "published exact v1.14.4 executable; isolated collector duplicate + price/quota API; archive HTTP create/resume/verify/delete; structural model-price change through production API; checkpoint; maintenancebundle.Create; digest revalidation"
+		for _, name := range ret07GenerationFiles {
+			hashes[name] = fileDigest(t, filepath.Join(generation, name))
+		}
+	}
 	for _, name := range []string{"controlled-input.json", "release-info.json", "producer-build.json", "producer.log", "config-write.json", "price-write.json", "quota-write.json", "v1-analytics.json", "v1-export.jsonl", "source-snapshot.json"} {
 		hashes[name] = fileDigest(t, filepath.Join(generation, name))
 	}
@@ -375,6 +415,42 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	generationDigest := save(t, generation, "record.json", record)
 	save(t, root, "generation-index.json", map[string]any{"location": "source-generation/record.json", "SHA256": generationDigest, "bundleDigest": sealed.SourceRevision, "generationSuccess": true, "casePass": false})
 	t.Log("source generation succeeded; case acceptance remains pending")
+}
+
+func waitForGeneratedSource(t *testing.T, base, dbPath string, queueCalls *atomic.Int64, delivered *atomic.Bool) {
+	t.Helper()
+	deadline := time.Now().Add(45 * time.Second)
+	for time.Now().Before(deadline) {
+		if r, err := http.Get(base + "/usage-service/info"); err == nil {
+			_ = r.Body.Close()
+		}
+		db, err := sql.Open("sqlite", dbURI(dbPath, true))
+		if err == nil {
+			db.SetMaxOpenConns(1)
+			var events, migrations int64
+			eventsErr := db.QueryRow("select count(*) from usage_events").Scan(&events)
+			migrationsErr := db.QueryRow("select count(*) from usage_data_migrations where status != 'completed'").Scan(&migrations)
+			_ = db.Close()
+			if eventsErr == nil && migrationsErr == nil && events == 4 && migrations == 0 {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	var info string
+	if r, err := http.Get(base + "/usage-service/info"); err == nil {
+		body, readErr := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		_ = r.Body.Close()
+		if readErr == nil {
+			info = string(body)
+		}
+	}
+	deadLetters := int64(-1)
+	if db, err := sql.Open("sqlite", dbURI(dbPath, true)); err == nil {
+		_ = db.QueryRow("select count(*) from dead_letter_events").Scan(&deadLetters)
+		_ = db.Close()
+	}
+	t.Fatalf("qualification observation timed out: queueCalls=%d delivered=%v deadLetters=%d info=%s", queueCalls.Load(), delivered.Load(), deadLetters, info)
 }
 
 func safeEnvironment(env []string) []string {

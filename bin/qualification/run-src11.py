@@ -42,7 +42,7 @@ def run(args, log, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["generate", "generate-ret01", "generate-ret02", "generate-ret03", "generate-mig01", "generate-mig02", "generate-mig03", "generate-bak01", "replay", "ret01", "ret02", "ret03", "mig01", "mig02", "mig03", "bak01"])
+    parser.add_argument("action", choices=["generate", "generate-ret01", "generate-ret02", "generate-ret03", "generate-ret07", "generate-mig01", "generate-mig02", "generate-mig03", "generate-bak01", "replay", "ret01", "ret02", "ret03", "ret07", "mig01", "mig02", "mig03", "bak01"])
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--release-info", type=Path)
     parser.add_argument("--evidence", type=Path)
@@ -57,17 +57,20 @@ def main():
     ret01 = args.action in ("generate-ret01", "ret01")
     ret02 = args.action in ("generate-ret02", "ret02")
     ret03 = args.action in ("generate-ret03", "ret03")
+    ret07 = args.action in ("generate-ret07", "ret07")
     mig01 = args.action in ("generate-mig01", "mig01")
     mig02 = args.action in ("generate-mig02", "mig02")
     mig03 = args.action in ("generate-mig03", "mig03")
     bak01 = args.action in ("generate-bak01", "bak01")
-    retention = "ret-03" if ret03 else "ret-02" if ret02 else "ret-01" if ret01 else None
+    retention = "ret-07" if ret07 else "ret-03" if ret03 else "ret-02" if ret02 else "ret-01" if ret01 else None
     case_profile = "bak-01" if bak01 else "mig-03" if mig03 else "mig-02" if mig02 else "mig-01" if mig01 else retention
     profile = ROOT / f"tests/fixtures/phase4a-evidence/{case_profile}/profile.json" if case_profile else PROFILE
     if args.action == "replay" and bool(args.evidence) == bool(args.evidence_archive):
         parser.error("replay requires exactly one of --evidence or --evidence-archive")
     if args.action in ("ret01", "ret02", "ret03") and (not args.evidence or args.evidence_archive):
         parser.error("retention replay requires --evidence pointing to its own complete generated fixture")
+    if args.action == "ret07" and bool(args.evidence) == bool(args.evidence_archive):
+        parser.error("ret07 requires exactly one of --evidence or --evidence-archive")
     if args.action in ("mig01", "mig02", "mig03") and (not args.evidence or args.evidence_archive or args.release_info):
         parser.error("migration replay requires --evidence pointing to its own complete generated fixture")
     if args.action == "bak01" and (bool(args.evidence) == bool(args.evidence_archive) or args.release_info):
@@ -76,7 +79,7 @@ def main():
         parser.error("--evidence-archive and --linux are replay options")
     if generating and args.evidence:
         parser.error("--evidence is a replay option")
-    if args.action in ("ret01", "ret02", "ret03") and args.release_info:
+    if args.action in ("ret01", "ret02", "ret03", "ret07") and args.release_info:
         parser.error("--release-info is only valid for source generation")
     output = args.output.resolve()
     if output.exists():
@@ -87,6 +90,7 @@ def main():
                      "tests/fixtures/phase4a-evidence/ret-01/profile.json",
                      "tests/fixtures/phase4a-evidence/ret-02/profile.json",
                      "tests/fixtures/phase4a-evidence/ret-03/profile.json",
+                     "tests/fixtures/phase4a-evidence/ret-07/profile.json",
                      "tests/fixtures/phase4a-evidence/mig-01/profile.json",
                      "tests/fixtures/phase4a-evidence/mig-02/profile.json",
                      "tests/fixtures/phase4a-evidence/mig-03/profile.json",
@@ -104,7 +108,9 @@ def main():
         spec = importlib.util.spec_from_file_location("materialize_src11", ROOT / "bin/qualification/materialize-src11.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        if bak01:
+        if ret07:
+            evidence = module.materialize_case(args.evidence_archive, output / "materialized", "ret-07")
+        elif bak01:
             evidence = module.materialize_case(args.evidence_archive, output / "materialized", "bak-01")
         else:
             evidence = module.materialize(args.evidence_archive, output / "materialized")
@@ -143,6 +149,7 @@ def main():
                   "--env", f"CPAMP_RET01_GENERATE={int(ret01)}",
                   "--env", f"CPAMP_RET02_GENERATE={int(ret02)}",
                   "--env", f"CPAMP_RET03_GENERATE={int(ret03)}",
+                  "--env", f"CPAMP_RET07_GENERATE={int(ret07)}",
                   "--env", f"CPAMP_MIG01_GENERATE={int(mig01)}",
                   "--env", f"CPAMP_MIG02_GENERATE={int(mig02)}",
                   "--env", f"CPAMP_MIG03_GENERATE={int(mig03)}",
@@ -214,7 +221,8 @@ def main():
                                   "user": f"{os.getuid()}:{os.getgid()}"}
         if args.evidence_archive:
             build["sealedEvidenceArchiveSHA256"] = digest(args.evidence_archive)
-            pin_path = ROOT / "tests/fixtures/phase4a-evidence/bak-01/source-provenance.json" if bak01 else module.PIN
+            pin_case = "ret-07" if ret07 else "bak-01" if bak01 else None
+            pin_path = ROOT / f"tests/fixtures/phase4a-evidence/{pin_case}/source-provenance.json" if pin_case else module.PIN
             build["sealedArtifactPinSHA256"] = digest(pin_path)
         run(command, output / "replay-execution.log", env=env)
         build["executionCommand"] = command
