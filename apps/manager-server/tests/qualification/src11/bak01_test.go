@@ -43,6 +43,23 @@ func TestReplayBAK01(t *testing.T) {
 	rowEvidence := map[string]any{}
 	must(t, json.Unmarshal(read(t, filepath.Join(root, "source-generation/committed-row.json")), &rowEvidence))
 	requestID := rowEvidence["requestID"].(string)
+	// Re-prove the committed-WAL premise on every platform replay before
+	// opening the restored database with its sidecars. The private immutable
+	// copy cannot checkpoint or depend on any source WAL.
+	mainOnly := filepath.Join(output, "restored-main-only.sqlite")
+	copyBytes(t, first.DatabasePath, mainOnly)
+	mainOnlyDB, err := sql.Open("sqlite", dbURI(mainOnly, true)+"&immutable=1")
+	must(t, err)
+	var mainOnlyCount int64
+	must(t, mainOnlyDB.QueryRowContext(ctx, "SELECT count(*) FROM usage_events WHERE request_id=?", requestID).Scan(&mainOnlyCount))
+	must(t, mainOnlyDB.Close())
+	if mainOnlyCount != 0 {
+		t.Fatal("BAK-01 replay row is already checkpointed into the restored main DB")
+	}
+	frames := inspectWALFrames(t, first.DatabasePath+"-wal")
+	if frames.FrameCount == 0 || frames.CommitFrameCount == 0 {
+		t.Fatal("BAK-01 replay requires committed WAL frames")
+	}
 	readDB, err := sql.Open("sqlite", dbURI(first.DatabasePath, true))
 	must(t, err)
 	readDB.SetMaxOpenConns(1)
@@ -59,6 +76,10 @@ func TestReplayBAK01(t *testing.T) {
 	}
 	firstSnapshot := snapshotTx(t, readTx)
 	checks := sqliteChecksTx(t, readTx)
+	journalMode := queryTx(t, readTx, "PRAGMA journal_mode")
+	if len(journalMode) != 1 || journalMode[0]["journal_mode"] != "wal" {
+		t.Fatal("BAK-01 replay requires SQLite WAL mode")
+	}
 	var sourceSnapshot map[string][]map[string]any
 	must(t, json.Unmarshal(read(t, filepath.Join(root, "source-generation/source-snapshot.json")), &sourceSnapshot))
 	if ret01SnapshotDigest(firstSnapshot) != ret01SnapshotDigest(sourceSnapshot) {
@@ -117,6 +138,7 @@ func TestReplayBAK01(t *testing.T) {
 		"firstRestoredManifestDigest":  firstInventory.SourceRevision,
 		"secondRestoredManifestDigest": secondInventory.SourceRevision,
 		"inventoryMatched":             true, "committedRow": row[0], "secondCommittedRow": secondRow[0],
+		"mainFileOnlyCommittedRowAbsent": true, "committedWALFrames": frames,
 		"sourceWALNotUsedByRestoredRoot": true, "sourceBundlePath": "not opened during restore verification",
 		"authoritativeBeforeDigest": authoritativeBefore, "authoritativeAfterDigest": authoritativeAfter,
 		"sqlite": checks,
