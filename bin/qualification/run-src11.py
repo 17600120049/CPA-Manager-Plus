@@ -42,7 +42,7 @@ def run(args, log, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["generate", "generate-ret01", "generate-ret02", "generate-mig01", "replay", "ret01", "ret02", "mig01"])
+    parser.add_argument("action", choices=["generate", "generate-ret01", "generate-ret02", "generate-ret03", "generate-mig01", "replay", "ret01", "ret02", "ret03", "mig01"])
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--release-info", type=Path)
     parser.add_argument("--evidence", type=Path)
@@ -56,13 +56,14 @@ def main():
     generating = args.action.startswith("generate")
     ret01 = args.action in ("generate-ret01", "ret01")
     ret02 = args.action in ("generate-ret02", "ret02")
+    ret03 = args.action in ("generate-ret03", "ret03")
     mig01 = args.action in ("generate-mig01", "mig01")
-    retention = "ret-02" if ret02 else "ret-01" if ret01 else None
+    retention = "ret-03" if ret03 else "ret-02" if ret02 else "ret-01" if ret01 else None
     case_profile = "mig-01" if mig01 else retention
     profile = ROOT / f"tests/fixtures/phase4a-evidence/{case_profile}/profile.json" if case_profile else PROFILE
     if args.action == "replay" and bool(args.evidence) == bool(args.evidence_archive):
         parser.error("replay requires exactly one of --evidence or --evidence-archive")
-    if args.action in ("ret01", "ret02") and (not args.evidence or args.evidence_archive):
+    if args.action in ("ret01", "ret02", "ret03") and (not args.evidence or args.evidence_archive):
         parser.error("retention replay requires --evidence pointing to its own complete generated fixture")
     if args.action == "mig01" and (not args.evidence or args.evidence_archive or args.release_info):
         parser.error("mig01 requires --evidence pointing to its own complete generated fixture")
@@ -70,7 +71,7 @@ def main():
         parser.error("--evidence-archive and --linux are replay options")
     if generating and args.evidence:
         parser.error("--evidence is a replay option")
-    if args.action in ("ret01", "ret02") and args.release_info:
+    if args.action in ("ret01", "ret02", "ret03") and args.release_info:
         parser.error("--release-info is only valid for source generation")
     output = args.output.resolve()
     if output.exists():
@@ -80,6 +81,7 @@ def main():
                      "tests/fixtures/phase4a-evidence/src-11/sealed-artifact.json",
                      "tests/fixtures/phase4a-evidence/ret-01/profile.json",
                      "tests/fixtures/phase4a-evidence/ret-02/profile.json",
+                     "tests/fixtures/phase4a-evidence/ret-03/profile.json",
                      "tests/fixtures/phase4a-evidence/mig-01/profile.json"]
     dirty = capture(["git", "status", "--porcelain", "--untracked-files=all", "--", *tracked_scope], cwd=ROOT)
     if dirty:
@@ -129,6 +131,7 @@ def main():
                   "--env", "CPAMP_SRC11_GENERATE=1", "--env", f"CPAMP_SRC11_OUTPUT=/output/{case_dir}",
                   "--env", f"CPAMP_RET01_GENERATE={int(ret01)}",
                   "--env", f"CPAMP_RET02_GENERATE={int(ret02)}",
+                  "--env", f"CPAMP_RET03_GENERATE={int(ret03)}",
                   "--env", f"CPAMP_MIG01_GENERATE={int(mig01)}",
                   "--env", "CPAMP_SRC11_ARCHIVE=/archive", "--env", "CPAMP_SRC11_RELEASE_INFO=/release-info",
                   "--env", "CPAMP_SRC11_PROFILE=/profile", IMAGE,

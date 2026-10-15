@@ -42,6 +42,13 @@ func TestGenerateRET02(t *testing.T) {
 	generateExactSource(t, ret02CaseID, ret02PlanCommit, ret02Profile)
 }
 
+func TestGenerateRET03(t *testing.T) {
+	if os.Getenv("CPAMP_RET03_GENERATE") != "1" {
+		t.Skip("opt-in RET-03 controlled generation")
+	}
+	generateExactSource(t, ret03CaseID, ret03PlanCommit, ret03Profile)
+}
+
 func TestGenerateMIG01(t *testing.T) {
 	if os.Getenv("CPAMP_MIG01_GENERATE") != "1" {
 		t.Skip("opt-in MIG-01 controlled generation")
@@ -235,6 +242,9 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	if caseID == ret02CaseID {
 		generateRET02Archive(t, base, live, generation, p, costs)
 	}
+	if caseID == ret03CaseID {
+		generateRET03Archive(t, base, live, generation, p, costs)
+	}
 	export := httpCall(t, "GET", base, "/v0/management/usage/export", nil)
 	must(t, os.WriteFile(filepath.Join(generation, "v1-export.jsonl"), export, 0600))
 	must(t, cmd.Process.Signal(os.Interrupt))
@@ -256,6 +266,8 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	before := snapshot(t, db)
 	if caseID == ret02CaseID {
 		checkRET02Archive(t, db, layout.ArchivesPath)
+	} else if caseID == ret03CaseID {
+		checkRET03Archive(t, db, layout.ArchivesPath)
 	} else {
 		checkFullRaw(t, db)
 	}
@@ -289,6 +301,13 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		record["sourceVariant"] = "archived + no raw deletion; cache/quota completed"
 		record["GenerationProcedure"] = "published exact v1.14.4 executable; isolated collector duplicate + price/quota API; archive HTTP create/resume/verify; no delete; SIGINT/reap; checkpoint; maintenancebundle.Create; digest revalidation"
 		for _, name := range ret02GenerationFiles {
+			hashes[name] = fileDigest(t, filepath.Join(generation, name))
+		}
+	}
+	if caseID == ret03CaseID {
+		record["sourceVariant"] = "archived + raw physically deleted; cache/quota completed"
+		record["GenerationProcedure"] = "published exact v1.14.4 executable; isolated collector duplicate + price/quota API; archive HTTP create/resume/verify/delete; checkpoint; maintenancebundle.Create; digest revalidation"
+		for _, name := range ret03GenerationFiles {
 			hashes[name] = fileDigest(t, filepath.Join(generation, name))
 		}
 	}
