@@ -256,11 +256,22 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	deliver.Store(true)
 	waitForGeneratedSource(t, base, filepath.Join(live, "usage.sqlite"), &queueCalls, &delivered)
 	quotaResponse := httpCall(t, "POST", base, "/v0/management/quota-snapshots", p.Quota)
-	wait(t, func() bool {
-		db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
-		defer db.Close()
-		return scalar(t, db, "select count(*) from quota_cooldowns") > 0
-	})
+	if caseID == ret07CaseID {
+		// RET-07 deliberately uses an ordinary unknown/unpriced usage event
+		// instead of a quota failure. Its quota API evidence is therefore the
+		// persisted snapshot itself, not a derived cooldown row.
+		wait(t, func() bool {
+			db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
+			defer db.Close()
+			return scalar(t, db, "select count(*) from account_quota_snapshots") > 0
+		})
+	} else {
+		wait(t, func() bool {
+			db := openDB(t, filepath.Join(live, "usage.sqlite"), true)
+			defer db.Close()
+			return scalar(t, db, "select count(*) from quota_cooldowns") > 0
+		})
+	}
 	must(t, os.WriteFile(filepath.Join(generation, "quota-write.json"), quotaResponse, 0600))
 	costs := map[string]monitoring.Response{}
 	for _, name := range sortedModels(p) {
