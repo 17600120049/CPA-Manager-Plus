@@ -1,0 +1,9 @@
+# MIG-03: clearing Recovery/block
+
+This fixture qualifies only CPAMP v2 Phase4A-07 / MIG-03 against Plan commit `21035045c425e453bd8f3007619fc0734861012e`. The source is independently generated from the exact published `v1.14.4@166262365d506157b99968105c890f480cc7c07c` producer. Its source-generation record and bundle are pinned by `source-provenance.json`; the producer archive is reused read-only from the accepted MIG-01 artifact.
+
+The runtime uses production `DiscoverUsageCacheAccounting`, `RunUsageCacheAccountingBatch`, and the production rollup repositories. It seeds real derived rows, reaches the native `usage_cache_accounting_v2` clearing phase, commits one bounded clear step, then cancels the next production batch boundary. The sealed bundle preserves `clearing` with remaining cleanup rows, and the read-only classifier returns blocker `cache-accounting-clearing` with `Recovery / block`. Normal startup admission is rejected. No resume, reset, marker deletion, automatic completion, or destructive cleanup runs.
+
+The source begins at Cache semantics revision 2 / Quota completed; production discovery records executor revision 3 for the clearing checkpoint. SEM-07 compares observations, windows, cycles, snapshots, reset credits, banked resets, cooldown state, quota migration rows, and settings before and after the blocked inspection. Snapshot and usage-event digests also prove that blocked readiness inspection is mutation-free.
+
+`runtime/` is the task worktree replay and `clean-checkout/` is an actual replay from a clean detached checkout at the recorded commit. `casePass=true` records the runtime delivery criteria; independent acceptance remains pending. `UpgradeAuthorized=false`, `TrustedHopReceipt=false`, `Phase4A07Complete=false`, and `Phase4AComplete=false`. MIG-04+ and all other lanes remain pending.

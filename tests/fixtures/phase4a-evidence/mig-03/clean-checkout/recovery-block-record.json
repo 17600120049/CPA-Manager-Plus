@@ -1,0 +1,10 @@
+{
+  "blocker": "cache-accounting-clearing",
+  "classification": "Recovery / block",
+  "cleanupResumeAuthorized": false,
+  "entry": "explicit recovery inspection required before any supported cleanup decision",
+  "markerDeleted": false,
+  "operationID": "7f62774c13797ecb0cc1d4b7a17a11ccdd23c97d742b6cda867046b3f364014a",
+  "resumeExecuted": false,
+  "stateReset": false
+}

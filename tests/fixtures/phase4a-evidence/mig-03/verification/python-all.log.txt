@@ -1,0 +1,80 @@
+test_authority_and_case_boundary (test_bak01.Bak01EvidenceTests.test_authority_and_case_boundary) ... ok
+test_clean_checkout_replay (test_bak01.Bak01EvidenceTests.test_clean_checkout_replay) ... ok
+test_committed_wal_proof_is_nonvacuous (test_bak01.Bak01EvidenceTests.test_committed_wal_proof_is_nonvacuous) ... ok
+test_exact_source_and_generation_chain (test_bak01.Bak01EvidenceTests.test_exact_source_and_generation_chain) ... ok
+test_manifest_inventory_and_digests (test_bak01.Bak01EvidenceTests.test_manifest_inventory_and_digests) ... ok
+test_original_generator_provenance_binding (test_bak01.Bak01EvidenceTests.test_original_generator_provenance_binding) ... ok
+test_provenance_and_platform_replays (test_bak01.Bak01EvidenceTests.test_provenance_and_platform_replays) ... ok
+test_semantic_and_restore_bindings (test_bak01.Bak01EvidenceTests.test_semantic_and_restore_bindings) ... ok
+test_original_bytes (test_materialize_ret02.Ret02MaterializeTests.test_original_bytes) ... skipped 'opt-in actual RET-02 immutable bytes'
+test_ret01_bundle_cannot_be_relabelled_ret02 (test_materialize_ret02.Ret02MaterializeTests.test_ret01_bundle_cannot_be_relabelled_ret02) ... ok
+test_ret02_binding_and_inventory (test_materialize_ret02.Ret02MaterializeTests.test_ret02_binding_and_inventory) ... ok
+test_duplicate_rejected (test_materialize_src11.MaterializeTests.test_duplicate_rejected) ... ok
+test_existing_output_preserved (test_materialize_src11.MaterializeTests.test_existing_output_preserved) ... ok
+test_original_sealed_bytes_and_inventory (test_materialize_src11.MaterializeTests.test_original_sealed_bytes_and_inventory) ... skipped 'opt-in actual sealed archive'
+test_outer_mismatch_does_not_create_output (test_materialize_src11.MaterializeTests.test_outer_mismatch_does_not_create_output) ... ok
+test_paths_and_links_rejected_even_with_matching_outer_digest (test_materialize_src11.MaterializeTests.test_paths_and_links_rejected_even_with_matching_outer_digest) ... ok
+test_advertised_zip_cases_have_sealed_artifact_pins (test_materialize_src11.MaterializerCaseContractTests.test_advertised_zip_cases_have_sealed_artifact_pins) ... ok
+test_cli_rejects_mig02_before_accessing_archive_or_metadata (test_materialize_src11.MaterializerCaseContractTests.test_cli_rejects_mig02_before_accessing_archive_or_metadata) ... ok
+test_committed_mig02_fixture_is_not_a_sealed_zip_case (test_materialize_src11.MaterializerCaseContractTests.test_committed_mig02_fixture_is_not_a_sealed_zip_case) ... ok
+test_existing_output_preserved (test_materialize_src11.Ret01MaterializeTests.test_existing_output_preserved) ... ok
+test_extraction_budget_before_output (test_materialize_src11.Ret01MaterializeTests.test_extraction_budget_before_output) ... ok
+test_inventory_content_and_critical_bindings_before_output (test_materialize_src11.Ret01MaterializeTests.test_inventory_content_and_critical_bindings_before_output) ... ok
+test_original_ret01_zip (test_materialize_src11.Ret01MaterializeTests.test_original_ret01_zip) ... skipped 'opt-in original immutable RET-01 ZIP'
+test_outer_mismatch_before_output (test_materialize_src11.Ret01MaterializeTests.test_outer_mismatch_before_output) ... ok
+test_paths_links_and_duplicates_before_output (test_materialize_src11.Ret01MaterializeTests.test_paths_links_and_duplicates_before_output) ... ok
+test_release_metadata_fail_closed (test_materialize_src11.Ret01MaterializeTests.test_release_metadata_fail_closed) ... ok
+test_release_target_requires_separate_actual_tag_identity (test_materialize_src11.Ret01MaterializeTests.test_release_target_requires_separate_actual_tag_identity) ... ok
+test_windows_zipinfo_normalization_rejected_before_inventory (test_materialize_src11.Ret01MaterializeTests.test_windows_zipinfo_normalization_rejected_before_inventory) ... ok
+test_actual_readiness_semantics_and_source_immutability (test_mig01.Mig01EvidenceTests.test_actual_readiness_semantics_and_source_immutability) ... ok
+test_complete_literal_inventory (test_mig01.Mig01EvidenceTests.test_complete_literal_inventory) ... ok
+test_durable_asset_and_delivery_boundary (test_mig01.Mig01EvidenceTests.test_durable_asset_and_delivery_boundary) ... ok
+test_frozen_product_scope (test_mig01.Mig01EvidenceTests.test_frozen_product_scope) ... ok
+test_independent_exact_generation (test_mig01.Mig01EvidenceTests.test_independent_exact_generation) ... ok
+test_persisted_source_bytes (test_mig01.Mig01EvidenceTests.test_persisted_source_bytes) ... skipped 'opt-in actual immutable source bytes'
+test_delivery_result_and_authority_boundary (test_mig02.Mig02EvidenceTests.test_delivery_result_and_authority_boundary) ... ok
+test_exact_source_and_independent_generation (test_mig02.Mig02EvidenceTests.test_exact_source_and_independent_generation) ... ok
+test_manifest_inventory_and_digests (test_mig02.Mig02EvidenceTests.test_manifest_inventory_and_digests) ... ok
+test_runtime_and_clean_checkout_replay (test_mig02.Mig02EvidenceTests.test_runtime_and_clean_checkout_replay) ... ok
+test_source_bundle_and_product_scope (test_mig02.Mig02EvidenceTests.test_source_bundle_and_product_scope) ... ok
+test_delivery_boundary_and_completion_criteria (test_mig03.Mig03EvidenceTests.test_delivery_boundary_and_completion_criteria) ... ok
+test_exact_source_generation_is_independent (test_mig03.Mig03EvidenceTests.test_exact_source_generation_is_independent) ... ok
+test_manifest_inventory_and_digests (test_mig03.Mig03EvidenceTests.test_manifest_inventory_and_digests) ... ok
+test_provenance_and_scope (test_mig03.Mig03EvidenceTests.test_provenance_and_scope) ... ok
+test_runtime_and_clean_checkout (test_mig03.Mig03EvidenceTests.test_runtime_and_clean_checkout) ... ok
+test_case_and_authority_boundaries (test_ret01.Ret01EvidenceTests.test_case_and_authority_boundaries) ... ok
+test_digests_and_non_applicable_retention_boundary (test_ret01.Ret01EvidenceTests.test_digests_and_non_applicable_retention_boundary) ... ok
+test_durable_seal_pins_original_identity_without_acceptance (test_ret01.Ret01EvidenceTests.test_durable_seal_pins_original_identity_without_acceptance) ... ok
+test_generation_execution_and_runtime_bindings (test_ret01.Ret01EvidenceTests.test_generation_execution_and_runtime_bindings) ... ok
+test_manifest_inventory_and_digests (test_ret01.Ret01EvidenceTests.test_manifest_inventory_and_digests) ... ok
+test_original_fixture_bytes (test_ret01.Ret01EvidenceTests.test_original_fixture_bytes) ... skipped 'opt-in sealed original fixture verification; no SQLite/platform PASS implied'
+test_semantic_assertions_are_runtime_passes (test_ret01.Ret01EvidenceTests.test_semantic_assertions_are_runtime_passes) ... ok
+test_source_anchor_and_independent_input_identity (test_ret01.Ret01EvidenceTests.test_source_anchor_and_independent_input_identity) ... ok
+test_acceptance_and_upgrade_authority_remain_closed (test_ret02.Ret02EvidenceTests.test_acceptance_and_upgrade_authority_remain_closed) ... ok
+test_clean_checkout_replay_binds_recorded_execution (test_ret02.Ret02EvidenceTests.test_clean_checkout_replay_binds_recorded_execution) ... ok
+test_immutable_asset_pins_bind_original_bytes (test_ret02.Ret02EvidenceTests.test_immutable_asset_pins_bind_original_bytes) ... ok
+test_independent_exact_source_generation (test_ret02.Ret02EvidenceTests.test_independent_exact_source_generation) ... ok
+test_inventory_is_complete_and_byte_bound (test_ret02.Ret02EvidenceTests.test_inventory_is_complete_and_byte_bound) ... ok
+test_original_fixture_and_backup_bytes (test_ret02.Ret02EvidenceTests.test_original_fixture_and_backup_bytes) ... skipped 'opt-in original immutable bytes'
+test_platform_runtime_sem_and_recovery (test_ret02.Ret02EvidenceTests.test_platform_runtime_sem_and_recovery) ... ok
+test_real_archive_and_raw_coexistence (test_ret02.Ret02EvidenceTests.test_real_archive_and_raw_coexistence) ... ok
+test_acceptance_and_authority_remain_closed (test_ret03.Ret03EvidenceTests.test_acceptance_and_authority_remain_closed) ... ok
+test_clean_checkout_replay (test_ret03.Ret03EvidenceTests.test_clean_checkout_replay) ... ok
+test_exact_source_generation_and_real_delete (test_ret03.Ret03EvidenceTests.test_exact_source_generation_and_real_delete) ... ok
+test_inventory_is_complete_and_byte_bound (test_ret03.Ret03EvidenceTests.test_inventory_is_complete_and_byte_bound) ... ok
+test_original_fixture_inventory (test_ret03.Ret03EvidenceTests.test_original_fixture_inventory) ... skipped 'opt-in original immutable bytes'
+test_physical_raw_absence_archive_and_projection_coverage (test_ret03.Ret03EvidenceTests.test_physical_raw_absence_archive_and_projection_coverage) ... ok
+test_runtime_semantics_and_restore (test_ret03.Ret03EvidenceTests.test_runtime_semantics_and_restore) ... ok
+test_dirty_source_cannot_build_or_mint_evidence (test_run_aut03.RunnerGuards.test_dirty_source_cannot_build_or_mint_evidence) ... usage: run-aut03.py [-h] --sealed-archive SEALED_ARCHIVE --output OUTPUT
+                    [--linux]
+run-aut03.py: error: commit all harness, runner, workflow, pins and Manager code before qualification
+ok
+test_existing_output_is_never_overwritten (test_run_aut03.RunnerGuards.test_existing_output_is_never_overwritten) ... usage: run-aut03.py [-h] --sealed-archive SEALED_ARCHIVE --output OUTPUT
+                    [--linux]
+run-aut03.py: error: output must be absent; never overwrite evidence
+ok
+
+----------------------------------------------------------------------
+Ran 69 tests in 0.266s
+
+OK (skipped=7)

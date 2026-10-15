@@ -1,0 +1,102 @@
+{
+  "affectedResources": [
+    "usage_account_model_rollups",
+    "usage_dashboard_hourly_rollups",
+    "usage_hourly_aggregate_v1"
+  ],
+  "checkpoint": {
+    "name": "usage_cache_accounting_v2",
+    "startedAtMs": 1792048708606,
+    "status": "clearing",
+    "targetEventId": 3
+  },
+  "clearBatch": {
+    "State": {
+      "name": "usage_cache_accounting_v2",
+      "status": "clearing",
+      "lastEventId": 3,
+      "targetEventId": 3,
+      "processedRows": 3,
+      "changedRows": 2,
+      "appliedRows": 2,
+      "startedAtMs": 1792048708606,
+      "updatedAtMs": 1792048708607
+    },
+    "Processed": 1,
+    "Completed": false
+  },
+  "interruption": {
+    "cancellationError": "context canceled",
+    "cancelledBeforeCall": true,
+    "completedClearSteps": 1,
+    "mechanism": "context cancellation at the next production clear-batch boundary",
+    "noMutationAfterCancel": true,
+    "operationID": "7f62774c13797ecb0cc1d4b7a17a11ccdd23c97d742b6cda867046b3f364014a",
+    "persistedState": {
+      "name": "usage_cache_accounting_v2",
+      "status": "clearing",
+      "lastEventId": 3,
+      "targetEventId": 3,
+      "processedRows": 3,
+      "changedRows": 2,
+      "appliedRows": 2,
+      "startedAtMs": 1792048708606,
+      "updatedAtMs": 1792048708607
+    },
+    "postClearCounts": {
+      "clearedRows": 1,
+      "remainingRows": 11,
+      "totalRows": 11,
+      "usage_account_model_rollups": 3,
+      "usage_dashboard_hourly_rollups": 4,
+      "usage_hourly_aggregate_v1": 4
+    },
+    "preClearingCounts": {
+      "totalRows": 12,
+      "usage_account_model_rollups": 4,
+      "usage_dashboard_hourly_rollups": 4,
+      "usage_hourly_aggregate_v1": 4
+    },
+    "remainingCleanupRows": 11
+  },
+  "migrationRevision": 3,
+  "operationID": "7f62774c13797ecb0cc1d4b7a17a11ccdd23c97d742b6cda867046b3f364014a",
+  "postClearCounts": {
+    "clearedRows": 1,
+    "remainingRows": 11,
+    "totalRows": 11,
+    "usage_account_model_rollups": 3,
+    "usage_dashboard_hourly_rollups": 4,
+    "usage_hourly_aggregate_v1": 4
+  },
+  "preClearingCounts": {
+    "totalRows": 12,
+    "usage_account_model_rollups": 4,
+    "usage_dashboard_hourly_rollups": 4,
+    "usage_hourly_aggregate_v1": 4
+  },
+  "preClearingState": {
+    "name": "usage_cache_accounting_v2",
+    "status": "clearing",
+    "lastEventId": 3,
+    "targetEventId": 3,
+    "processedRows": 3,
+    "changedRows": 2,
+    "appliedRows": 2,
+    "startedAtMs": 1792048708606,
+    "updatedAtMs": 1792048708607
+  },
+  "remainingCleanupState": {
+    "clearedRows": 1,
+    "remainingRows": 11,
+    "totalRows": 11,
+    "usage_account_model_rollups": 3,
+    "usage_dashboard_hourly_rollups": 4,
+    "usage_hourly_aggregate_v1": 4
+  },
+  "start": {
+    "name": "usage_cache_accounting_v2",
+    "startedAtMs": 1792048708606,
+    "targetEventId": 3
+  }
+}

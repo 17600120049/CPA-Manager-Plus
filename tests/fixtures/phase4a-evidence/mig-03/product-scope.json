@@ -1,0 +1,42 @@
+{
+  "baselineCommit": "2c7746a1e01305c591aaf1d99cd6f29579a99e05",
+  "baselineTrees": {
+    "apps/manager-server/cmd": "5f03e520669878aa7e685bbc00ca7b6f76a53360",
+    "apps/manager-server/internal": "a6b7e8db1061c639d8cb88c209fa5445994337b2",
+    "apps/web": "1599fd61ee83ff77be5bef035121883c6b7c7c15"
+  },
+  "caseID": "MIG-03",
+  "changedPaths": [
+    ".gitattributes",
+    ".github/workflows/qualification-src11.yml",
+    "apps/manager-server/tests/qualification/src11/generation_test.go",
+    "apps/manager-server/tests/qualification/src11/mig03_contract.go",
+    "apps/manager-server/tests/qualification/src11/mig03_readiness_test.go",
+    "apps/manager-server/tests/qualification/src11/mig03_test.go",
+    "apps/manager-server/tests/qualification/src11/support_test.go",
+    "bin/qualification/run-src11.py",
+    "bin/qualification/test_mig03.py",
+    "tests/fixtures/phase4a-evidence/mig-03/",
+    "tests/fixtures/phase4a-evidence/mig-03/profile.json"
+  ],
+  "generationMechanism": [
+    "published exact v1.14.4 executable",
+    "production cache-accounting repository",
+    "bounded context cancellation"
+  ],
+  "harnessOnly": true,
+  "implementedCases": [
+    "MIG-03"
+  ],
+  "productCodeChanged": false,
+  "productionCodeChanged": false,
+  "productionPathsChanged": [],
+  "qualifiedCases": [
+    "MIG-03"
+  ],
+  "readinessScope": "controlledDirectCandidateReadiness != productionBridgeReadiness",
+  "remainingCases": 41,
+  "trustedHopReceipt": false,
+  "upgradeAuthorized": false,
+  "verificationCommit": "316f02a605dee686790d73aeb693153ab675ce9b"
+}

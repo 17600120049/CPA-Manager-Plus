@@ -1,0 +1,32 @@
+{
+  "Cache": "clearing",
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "PlanCommit": "21035045c425e453bd8f3007619fc0734861012e",
+  "Quota": "completed",
+  "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "SourceGeneratorCodeCommit": "b1d740e5eb1ca9a3ae90b6c63f7f1dc36a3a6c23",
+  "SourceRelease": "v1.14.4",
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "applicableSEM": [
+    "SEM-07"
+  ],
+  "caseID": "MIG-03",
+  "casePass": false,
+  "clearingBundleDigest": "c88241753d604fee82ba13c9d94991e7c119fe999fc0833f89665aff1e8aeabc",
+  "controlledDirectCandidateReadiness": "blocked",
+  "executionCommit": "316f02a605dee686790d73aeb693153ab675ce9b",
+  "independentAcceptance": "pending",
+  "inputBundleDigest": "fe55ea3bdc3ddb313b1f8a5532ea28c69da94c26151993a1f1241a049300caed",
+  "migrationExecutorRevision": 3,
+  "normalReadinessBlocked": true,
+  "observedBridgeClassification": "blocked",
+  "productionBridgeReadiness": "unknown",
+  "recovery": "block",
+  "recoveryClassification": "Recovery / block",
+  "recoveryResumeActuallyExecuted": false,
+  "runtimeEvidence": "pass",
+  "sourceCacheRevision": 2,
+  "sourceGenerationRecordSHA256": "75aafdf0e706bf0ae31720519af4e0f9d33ab6f413337fdd0bc774bfaea31843"
+}

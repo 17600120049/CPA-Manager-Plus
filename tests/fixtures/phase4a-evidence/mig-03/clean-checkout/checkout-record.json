@@ -1,0 +1,25 @@
+{
+  "checkout": {
+    "method": "detached git worktree",
+    "path": "<task-owned-clean-checkout>",
+    "trackedSourceMatchesBranch": true
+  },
+  "cleanCheckout": true,
+  "executionCommit": "316f02a605dee686790d73aeb693153ab675ce9b",
+  "normalReadinessBlocked": true,
+  "recoveryInspectionActuallyExecuted": true,
+  "recoveryResumeActuallyExecuted": false,
+  "replayCommand": [
+    "python3 bin/qualification/run-src11.py mig03",
+    "--archive <pinned-v1.14.4-producer>",
+    "--evidence <committed-mig-03-source>",
+    "--output <task-owned-clean-runtime>"
+  ],
+  "runtimeEvidence": "pass",
+  "schemaVersion": 1,
+  "sourceBundleDigest": "fe55ea3bdc3ddb313b1f8a5532ea28c69da94c26151993a1f1241a049300caed",
+  "sourceGenerationRecordSHA256": "75aafdf0e706bf0ae31720519af4e0f9d33ab6f413337fdd0bc774bfaea31843",
+  "statusAfter": "",
+  "statusBefore": "",
+  "testedCommit": "316f02a605dee686790d73aeb693153ab675ce9b"
+}

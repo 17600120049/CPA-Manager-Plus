@@ -1,0 +1,50 @@
+{
+  "caseID": "MIG-03",
+  "cleanCheckoutExecutionCommit": "316f02a605dee686790d73aeb693153ab675ce9b",
+  "commands": [
+    {
+      "command": "go test -mod=readonly ./tests/qualification/src11 -run TestQualifyMIG03|TestCompletedV1144RequiresPersistedEvidence|TestUsageCacheAccounting -count=1",
+      "exitCode": 0,
+      "log": "verification/go-focused.log.txt",
+      "name": "go-focused"
+    },
+    {
+      "command": "go test -mod=readonly -race ./tests/qualification/src11 -run TestQualifyMIG03|TestCompletedV1144RequiresPersistedEvidence -count=1",
+      "exitCode": 0,
+      "log": "verification/go-race.log.txt",
+      "name": "go-race"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s bin/qualification -p test_mig03.py -v",
+      "exitCode": 0,
+      "log": "verification/python-mig03.log.txt",
+      "name": "python-mig03"
+    },
+    {
+      "command": "python3 bin/qualification/run-src11.py mig03 --linux --archive <pinned-v1.14.4-producer> --evidence tests/fixtures/phase4a-evidence/mig-03 --output <task-owned-linux-runtime>",
+      "exitCode": 0,
+      "log": "verification/linux-replay-execution.log.txt",
+      "name": "linux-container-mig03",
+      "runnerEvidence": "verification/linux-runner-evidence.json"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s bin/qualification -p test_*.py -v",
+      "exitCode": 0,
+      "log": "verification/python-all.log.txt",
+      "name": "python-qualification-workflow"
+    }
+  ],
+  "independentAcceptance": "pending",
+  "noSyntheticSQL": true,
+  "planCommit": "21035045c425e453bd8f3007619fc0734861012e",
+  "productionAuthority": "closed",
+  "runtimeExecutionCommit": "316f02a605dee686790d73aeb693153ab675ce9b",
+  "schemaVersion": 1,
+  "sourceBundleDigest": "fe55ea3bdc3ddb313b1f8a5532ea28c69da94c26151993a1f1241a049300caed",
+  "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "sourceGenerationRecordSHA256": "75aafdf0e706bf0ae31720519af4e0f9d33ab6f413337fdd0bc774bfaea31843",
+  "sourceRelease": "v1.14.4",
+  "status": "runtime-pass-independent-acceptance-pending",
+  "trustedHopReceipt": false,
+  "upgradeAuthorized": false
+}

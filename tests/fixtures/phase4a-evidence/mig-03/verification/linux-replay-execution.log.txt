@@ -1,0 +1,3 @@
+=== RUN   TestQualifyMIG03
+--- PASS: TestQualifyMIG03 (0.78s)
+PASS

@@ -1,0 +1,32 @@
+{
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "acceptance": "pending",
+  "caseID": "MIG-03",
+  "generatorCodeCommit": "b1d740e5eb1ca9a3ae90b6c63f7f1dc36a3a6c23",
+  "planCommit": "21035045c425e453bd8f3007619fc0734861012e",
+  "schemaVersion": 1,
+  "sourceArtifact": {
+    "archiveName": "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+    "archiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "assetID": 616064478,
+    "executableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "generationRecordSHA256": "75aafdf0e706bf0ae31720519af4e0f9d33ab6f413337fdd0bc774bfaea31843",
+    "immutable": false,
+    "kind": "committed-mig03-source-fixture",
+    "producerArchiveImmutable": true,
+    "producerAssetID": 616064478,
+    "producerEvidenceRole": "exact v1.14.4 producer archive reused read-only; MIG-03 source-generation and bundle were independently generated",
+    "producerReleaseID": 404941931,
+    "releaseID": 404941931,
+    "sourceBundleDigest": "fe55ea3bdc3ddb313b1f8a5532ea28c69da94c26151993a1f1241a049300caed"
+  },
+  "sourceBundleDigest": "fe55ea3bdc3ddb313b1f8a5532ea28c69da94c26151993a1f1241a049300caed",
+  "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "sourceGenerationRecordSHA256": "75aafdf0e706bf0ae31720519af4e0f9d33ab6f413337fdd0bc774bfaea31843",
+  "sourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "sourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "sourceProducerKind": "published-artifact",
+  "sourceRecord": "mig-03/source-generation",
+  "sourceRelease": "v1.14.4"
+}
