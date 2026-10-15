@@ -351,20 +351,29 @@ func ValidateUpgradeOrdering(stages []MigrationStage) error {
 // WritablePreconditions describes what a future Manager-owned production
 // authority must prove. Phase4A-08 does not implement that authority.
 type WritablePreconditions struct {
-	Mode                      Mode
-	Admission                 UpgradeAdmission
-	BackupVerified            bool
-	SourceRevalidated         bool
-	ManagerAuthorityQualified bool
-	Ordering                  []MigrationStage
+	Mode                       Mode
+	Admission                  UpgradeAdmission
+	BackupVerified             bool
+	SourceRevalidated          bool
+	RequiredCheckpoints        RequiredMigrationCheckpoints
+	ManagerAuthorityQualified  bool
+	TrustedForwardHopQualified bool
+	Ordering                   []MigrationStage
 }
 
 // CanIssueWritableGrant is a pure contract predicate, not a grant issuer.
 func CanIssueWritableGrant(p WritablePreconditions) bool {
-	if p.Mode != Upgrade || !p.BackupVerified || !p.SourceRevalidated || !p.ManagerAuthorityQualified {
+	if p.Mode != Upgrade ||
+		!p.BackupVerified ||
+		!p.SourceRevalidated ||
+		!p.RequiredCheckpoints.Complete() ||
+		!p.ManagerAuthorityQualified {
 		return false
 	}
 	if p.Admission.Validate() != nil || !p.Admission.trustedSource() || p.Admission.Readiness != BridgeReady {
+		return false
+	}
+	if p.Admission.EvidenceStatus == ForwardHopVerified && !p.TrustedForwardHopQualified {
 		return false
 	}
 	return ValidateUpgradeOrdering(p.Ordering) == nil
