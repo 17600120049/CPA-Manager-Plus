@@ -24,25 +24,50 @@ func validOperationClass(value OperationClass) bool {
 	}
 }
 
+type ConflictScope string
+
+const (
+	ConflictManagerStore       ConflictScope = "manager_store"
+	ConflictRuntimeTarget      ConflictScope = "runtime_target"
+	ConflictRoutingDeployment  ConflictScope = "routing_deployment"
+	ConflictIndependentResource ConflictScope = "independent_resource"
+)
+
+func validConflictScope(scope ConflictScope) bool {
+	switch scope {
+	case ConflictManagerStore, ConflictRuntimeTarget, ConflictRoutingDeployment, ConflictIndependentResource:
+		return true
+	default:
+		return false
+	}
+}
+
 type OperationConflictDecision string
 
 const (
 	ConflictBlocked         OperationConflictDecision = "blocked"
 	ConflictInspectExisting OperationConflictDecision = "inspect_existing"
+	ConflictNoContractBlock OperationConflictDecision = "no_contract_block"
 )
 
-// EvaluateOperationConflict freezes the conservative ownership rule for
-// state-mutating Bootstrap operations. A same-ID replay may only inspect the
-// exact same operation class; every different operation remains blocked.
-func EvaluateOperationConflict(active, requested OperationClass, sameOperationID bool) (OperationConflictDecision, error) {
+// EvaluateOperationConflict freezes only the known shared-resource boundary.
+// It intentionally does not define Phase4-04 lock ordering or create a global
+// mutex across unrelated mutation domains.
+func EvaluateOperationConflict(active, requested OperationClass, scope ConflictScope, sameOperationID bool) (OperationConflictDecision, error) {
 	if !validOperationClass(active) || !validOperationClass(requested) {
 		return "", fmt.Errorf("unknown operation class %q/%q", active, requested)
+	}
+	if !validConflictScope(scope) {
+		return "", fmt.Errorf("unknown conflict scope %q", scope)
 	}
 	if sameOperationID {
 		if active != requested {
 			return "", fmt.Errorf("same operation id cannot change class from %q to %q", active, requested)
 		}
 		return ConflictInspectExisting, nil
+	}
+	if scope == ConflictIndependentResource {
+		return ConflictNoContractBlock, nil
 	}
 	return ConflictBlocked, nil
 }

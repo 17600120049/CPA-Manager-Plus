@@ -255,6 +255,9 @@ func Classify(e ClassificationEvidence) (Mode, error) {
 		return Recovery, nil
 	}
 	if e.BootstrapComplete {
+		if e.AdminCredential != AdminCredentialInitialized {
+			return Recovery, nil
+		}
 		return Completed, nil
 	}
 	if !e.HasV1ProductState {

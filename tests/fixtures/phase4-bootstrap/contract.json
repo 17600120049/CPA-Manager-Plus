@@ -663,6 +663,21 @@
         "retainedEvidenceComplete": false
       },
       "expectedMode": "recovery"
+    },
+    {
+      "id": "completed_with_uninitialized_admin_is_recovery",
+      "hasV1ProductState": false,
+      "admission": null,
+      "recoveryReason": "",
+      "bootstrapComplete": true,
+      "adminCredential": "uninitialized",
+      "session": "missing",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null,
+      "expectedMode": "recovery"
     }
   ],
   "globalAssertions": [
@@ -704,9 +719,14 @@
     "adopt_network_source_requires_v8_profile",
     "adopt_legacy_managed_requires_staging_v8",
     "journal_retry_requires_accepted_replay",
-    "journal_generation_change_reobserve",
+    "cpa_journal_generation_change_reobserve",
     "operation_conflicts_are_explicit",
-    "collector_pause_queue_gap_explicit"
+    "collector_pause_queue_gap_explicit",
+    "completed_requires_initialized_admin",
+    "journal_domain_specific_authority_fence",
+    "fresh_claim_revision_cas_single_winner",
+    "operation_conflict_scoped_not_global",
+    "fixture_required_case_ids_locked"
   ],
   "operationConflictAssertions": [
     {
@@ -714,35 +734,48 @@
       "active": "install",
       "requested": "restore",
       "sameOperationID": false,
-      "expectedDecision": "blocked"
+      "expectedDecision": "blocked",
+      "scope": "routing_deployment"
     },
     {
       "id": "migration_vs_maintenance",
       "active": "migration",
       "requested": "maintenance",
       "sameOperationID": false,
-      "expectedDecision": "blocked"
+      "expectedDecision": "blocked",
+      "scope": "manager_store"
     },
     {
       "id": "cpa_update_vs_cutover",
       "active": "cpa_update",
       "requested": "cutover",
       "sameOperationID": false,
-      "expectedDecision": "blocked"
+      "expectedDecision": "blocked",
+      "scope": "runtime_target"
     },
     {
       "id": "cutover_vs_prefix_apply",
       "active": "cutover",
       "requested": "prefix_apply",
       "sameOperationID": false,
-      "expectedDecision": "blocked"
+      "expectedDecision": "blocked",
+      "scope": "routing_deployment"
     },
     {
       "id": "same_migration_operation_reobserve",
       "active": "migration",
       "requested": "migration",
       "sameOperationID": true,
-      "expectedDecision": "inspect_existing"
+      "expectedDecision": "inspect_existing",
+      "scope": "manager_store"
+    },
+    {
+      "id": "migration_vs_cpa_update_independent",
+      "active": "migration",
+      "requested": "cpa_update",
+      "scope": "independent_resource",
+      "sameOperationID": false,
+      "expectedDecision": "no_contract_block"
     }
   ],
   "collectorAssertions": [

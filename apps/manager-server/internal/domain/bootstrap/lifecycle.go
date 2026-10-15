@@ -10,6 +10,8 @@ type FreshClaim struct {
 	GenerationID             string
 	CurrentInstallationID    string
 	CurrentGenerationID      string
+	ExpectedRevision         uint64
+	CurrentRevision          uint64
 	ExpiresAtUnixMilli       int64
 	NowUnixMilli             int64
 	Revoked                  bool
@@ -24,6 +26,7 @@ func CanConsumeFreshClaim(mode Mode, admin AdminCredentialState, claim FreshClai
 		claim.InstallationID != "" && claim.GenerationID != "" &&
 		claim.InstallationID == claim.CurrentInstallationID &&
 		claim.GenerationID == claim.CurrentGenerationID &&
+		claim.ExpectedRevision > 0 && claim.ExpectedRevision == claim.CurrentRevision &&
 		claim.ExpiresAtUnixMilli > claim.NowUnixMilli && !claim.Revoked && !claim.Consumed &&
 		claim.PersistedAcrossRestart && claim.CSRFVerified && claim.HostAuthenticityVerified
 }
@@ -34,9 +37,9 @@ type FreshInitializationState struct {
 	ProductInitialized bool
 }
 
-// ValidateFreshInitializationCommit freezes the atomic consume-once boundary:
+// ValidateFreshInitializationCommit freezes the single-winner CAS boundary:
 // claim consumption, administrator initialization and initialized state move
-// together. Persistence/locking belongs to Phase4 implementation.
+// together while the durable claim revision advances exactly once.
 func ValidateFreshInitializationCommit(before, after FreshInitializationState) error {
 	if !CanConsumeFreshClaim(Fresh, before.AdminCredential, before.Claim) || before.ProductInitialized {
 		return errors.New("fresh initialization pre-state is not eligible")
@@ -45,8 +48,12 @@ func ValidateFreshInitializationCommit(before, after FreshInitializationState) e
 		before.Claim.GenerationID != after.Claim.GenerationID ||
 		before.Claim.CurrentInstallationID != after.Claim.CurrentInstallationID ||
 		before.Claim.CurrentGenerationID != after.Claim.CurrentGenerationID ||
+		before.Claim.ExpectedRevision != after.Claim.ExpectedRevision ||
 		before.Claim.ExpiresAtUnixMilli != after.Claim.ExpiresAtUnixMilli {
-		return errors.New("claim identity changed during initialization")
+		return errors.New("claim identity or expected revision changed during initialization")
+	}
+	if after.Claim.CurrentRevision != before.Claim.CurrentRevision+1 {
+		return errors.New("claim consumption must advance durable revision exactly once")
 	}
 	if !after.Claim.Consumed || after.AdminCredential != AdminCredentialInitialized || !after.ProductInitialized {
 		return errors.New("claim consumption, administrator initialization and product initialization must commit together")
@@ -97,8 +104,16 @@ type JournalRecord struct {
 	OperationID             OperationID
 	Result                  JournalResult
 	CommitRef               string
+	ObservedProductRevision uint64
 	ObservedGenerationID    string
+	ObservedRoutingRevision uint64
 	AcceptedReplayQualified bool
+}
+
+type JournalObservation struct {
+	CurrentProductRevision uint64
+	CurrentGenerationID    string
+	CurrentRoutingRevision uint64
 }
 
 func validJournalDomain(domain JournalDomain) bool {
@@ -110,23 +125,49 @@ func validJournalDomain(domain JournalDomain) bool {
 	}
 }
 
+// journalFenceMatches keeps each failure domain tied to its own authority:
+// Manager product/checkpoint revision, Supervisor RuntimeGeneration, or Manager
+// routing revision. RuntimeGeneration is never reused as product/routing revision.
+func journalFenceMatches(record JournalRecord, observed JournalObservation) (bool, error) {
+	switch record.Domain {
+	case ProductJournal:
+		if record.ObservedProductRevision == 0 || observed.CurrentProductRevision == 0 {
+			return false, errors.New("product journal requires product revision observation")
+		}
+		return record.ObservedProductRevision == observed.CurrentProductRevision, nil
+	case CPAJournal:
+		if record.ObservedGenerationID == "" || observed.CurrentGenerationID == "" {
+			return false, errors.New("CPA journal requires RuntimeGeneration observation")
+		}
+		return record.ObservedGenerationID == observed.CurrentGenerationID, nil
+	case RoutingJournal:
+		if record.ObservedRoutingRevision == 0 || observed.CurrentRoutingRevision == 0 {
+			return false, errors.New("routing journal requires routing revision observation")
+		}
+		return record.ObservedRoutingRevision == observed.CurrentRoutingRevision, nil
+	default:
+		return false, fmt.Errorf("unknown journal domain %q", record.Domain)
+	}
+}
+
 // JournalReplayAction never invents a generic rerun. A retryable failure may
-// resume only when the same operation has an explicitly accepted replay path
-// and the currently observed Supervisor generation is unchanged.
-func JournalReplayAction(record JournalRecord, requested OperationID, currentGenerationID string) (JournalAction, error) {
+// resume only for the same operation, with an accepted replay path, while that
+// journal domain's own authority fence is unchanged.
+func JournalReplayAction(record JournalRecord, requested OperationID, observed JournalObservation) (JournalAction, error) {
 	if !validJournalDomain(record.Domain) {
 		return "", fmt.Errorf("unknown journal domain %q", record.Domain)
 	}
 	if !validOperationID(record.OperationID) || !validOperationID(requested) {
 		return "", errors.New("invalid journal operation id")
 	}
-	if record.ObservedGenerationID == "" || currentGenerationID == "" {
-		return "", errors.New("journal replay requires observed and current generation identity")
-	}
 	if requested != record.OperationID {
 		return JournalRejectNewOperation, nil
 	}
-	if record.ObservedGenerationID != currentGenerationID {
+	fenceMatches, err := journalFenceMatches(record, observed)
+	if err != nil {
+		return "", err
+	}
+	if !fenceMatches {
 		return JournalInspectFirst, nil
 	}
 	if record.Result == JournalCommitted {

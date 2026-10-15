@@ -135,15 +135,15 @@
     },
     "classificationAssertions": {
       "type": "array",
-      "minItems": 12,
+      "minItems": 13,
       "items": {
         "$ref": "#/$defs/classificationAssertion"
       }
     },
     "globalAssertions": {
       "type": "array",
-      "minItems": 41,
-      "maxItems": 41,
+      "minItems": 46,
+      "maxItems": 46,
       "uniqueItems": true,
       "items": {
         "enum": [
@@ -185,25 +185,34 @@
           "adopt_network_source_requires_v8_profile",
           "adopt_legacy_managed_requires_staging_v8",
           "journal_retry_requires_accepted_replay",
-          "journal_generation_change_reobserve",
+          "cpa_journal_generation_change_reobserve",
           "operation_conflicts_are_explicit",
-          "collector_pause_queue_gap_explicit"
+          "collector_pause_queue_gap_explicit",
+          "completed_requires_initialized_admin",
+          "journal_domain_specific_authority_fence",
+          "fresh_claim_revision_cas_single_winner",
+          "operation_conflict_scoped_not_global",
+          "fixture_required_case_ids_locked"
         ]
       }
     },
     "operationConflictAssertions": {
       "type": "array",
-      "minItems": 5,
+      "minItems": 6,
       "items": {
         "$ref": "#/$defs/operationConflictAssertion"
-      }
+      },
+      "maxItems": 6,
+      "uniqueItems": true
     },
     "collectorAssertions": {
       "type": "array",
       "minItems": 3,
       "items": {
         "$ref": "#/$defs/collectorAssertion"
-      }
+      },
+      "maxItems": 3,
+      "uniqueItems": true
     }
   },
   "$defs": {
@@ -711,6 +720,7 @@
         "id",
         "active",
         "requested",
+        "scope",
         "sameOperationID",
         "expectedDecision"
       ],
@@ -747,7 +757,16 @@
         "expectedDecision": {
           "enum": [
             "blocked",
-            "inspect_existing"
+            "inspect_existing",
+            "no_contract_block"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "manager_store",
+            "runtime_target",
+            "routing_deployment",
+            "independent_resource"
           ]
         }
       }

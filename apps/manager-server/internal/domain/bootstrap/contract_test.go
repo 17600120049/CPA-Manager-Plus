@@ -189,6 +189,7 @@ type operationConflictJSON struct {
 	ID               string
 	Active           bootstrap.OperationClass
 	Requested        bootstrap.OperationClass
+	Scope            bootstrap.ConflictScope
 	SameOperationID  bool
 	ExpectedDecision bootstrap.OperationConflictDecision
 }
@@ -555,13 +556,42 @@ func TestCheckedInContract(t *testing.T) {
 	if len(f.OperationConflictAssertions) == 0 || len(f.CollectorAssertions) == 0 {
 		t.Fatal("operation conflict and Collector assertions must be explicit")
 	}
+	wantConflictIDs := map[string]bool{
+		"install_vs_restore": true,
+		"migration_vs_maintenance": true,
+		"cpa_update_vs_cutover": true,
+		"cutover_vs_prefix_apply": true,
+		"same_migration_operation_reobserve": true,
+		"migration_vs_cpa_update_independent": true,
+	}
+	if len(f.OperationConflictAssertions) != len(wantConflictIDs) {
+		t.Fatalf("got %d operation conflict cases, want %d", len(f.OperationConflictAssertions), len(wantConflictIDs))
+	}
+	seenConflictIDs := map[string]bool{}
 	for _, assertion := range f.OperationConflictAssertions {
-		got, err := bootstrap.EvaluateOperationConflict(assertion.Active, assertion.Requested, assertion.SameOperationID)
+		if !wantConflictIDs[assertion.ID] || seenConflictIDs[assertion.ID] {
+			t.Fatalf("unexpected or duplicate operation conflict case %q", assertion.ID)
+		}
+		seenConflictIDs[assertion.ID] = true
+		got, err := bootstrap.EvaluateOperationConflict(assertion.Active, assertion.Requested, assertion.Scope, assertion.SameOperationID)
 		if err != nil || got != assertion.ExpectedDecision {
 			t.Fatalf("%s: conflict got=%q err=%v want=%q", assertion.ID, got, err, assertion.ExpectedDecision)
 		}
 	}
+	wantCollectorIDs := map[string]bool{
+		"backup_quiescence_pauses_collector": true,
+		"verified_retention_is_queue_window": true,
+		"unproven_or_outside_window_is_gap_unknown": true,
+	}
+	if len(f.CollectorAssertions) != len(wantCollectorIDs) {
+		t.Fatalf("got %d Collector cases, want %d", len(f.CollectorAssertions), len(wantCollectorIDs))
+	}
+	seenCollectorIDs := map[string]bool{}
 	for _, assertion := range f.CollectorAssertions {
+		if !wantCollectorIDs[assertion.ID] || seenCollectorIDs[assertion.ID] {
+			t.Fatalf("unexpected or duplicate Collector case %q", assertion.ID)
+		}
+		seenCollectorIDs[assertion.ID] = true
 		got, err := bootstrap.CollectorOutcomeFor(assertion.Condition)
 		if err != nil || got != assertion.ExpectedOutcome {
 			t.Fatalf("%s: Collector got=%q err=%v want=%q", assertion.ID, got, err, assertion.ExpectedOutcome)
@@ -606,9 +636,14 @@ func TestCheckedInContract(t *testing.T) {
 		"adopt_network_source_requires_v8_profile",
 		"adopt_legacy_managed_requires_staging_v8",
 		"journal_retry_requires_accepted_replay",
-		"journal_generation_change_reobserve",
+		"cpa_journal_generation_change_reobserve",
 		"operation_conflicts_are_explicit",
 		"collector_pause_queue_gap_explicit",
+		"completed_requires_initialized_admin",
+		"journal_domain_specific_authority_fence",
+		"fresh_claim_revision_cas_single_winner",
+		"operation_conflict_scoped_not_global",
+		"fixture_required_case_ids_locked",
 	}
 	if !setEqual(f.GlobalAssertions, wantGlobal) {
 		t.Fatal("global contract assertions drifted")
@@ -892,6 +927,22 @@ func TestUnverifiableAdministratorRoutesRecovery(t *testing.T) {
 	}
 }
 
+func TestCompletedRequiresInitializedAdministrator(t *testing.T) {
+	for _, admin := range []bootstrap.AdminCredentialState{
+		bootstrap.AdminCredentialUninitialized,
+		bootstrap.AdminCredentialUnverifiable,
+	} {
+		got, err := bootstrap.Classify(bootstrap.ClassificationEvidence{
+			BootstrapComplete: true,
+			AdminCredential:   admin,
+			Session:           bootstrap.SessionMissing,
+		})
+		if err != nil || got != bootstrap.Recovery {
+			t.Fatalf("admin=%s got=%s err=%v, want recovery", admin, got, err)
+		}
+	}
+}
+
 func TestUpgradeOrderingRejectsEarlyWrite(t *testing.T) {
 	if err := bootstrap.ValidateUpgradeOrdering([]bootstrap.MigrationStage{
 		bootstrap.ReadOnlyClassification,
@@ -1077,6 +1128,7 @@ func TestCPAQualificationFreshClaimAndGatewayAreIndependentGates(t *testing.T) {
 	claim := bootstrap.FreshClaim{
 		InstallationID: "install-a", GenerationID: "gen-a",
 		CurrentInstallationID: "install-a", CurrentGenerationID: "gen-a",
+		ExpectedRevision: 7, CurrentRevision: 7,
 		ExpiresAtUnixMilli: 200, NowUnixMilli: 100,
 		PersistedAcrossRestart: true, CSRFVerified: true, HostAuthenticityVerified: true,
 	}
@@ -1097,6 +1149,7 @@ func TestCPAQualificationFreshClaimAndGatewayAreIndependentGates(t *testing.T) {
 		{"generation missing", func(c *bootstrap.FreshClaim) { c.GenerationID = "" }},
 		{"installation mismatch", func(c *bootstrap.FreshClaim) { c.CurrentInstallationID = "install-b" }},
 		{"generation mismatch", func(c *bootstrap.FreshClaim) { c.CurrentGenerationID = "gen-b" }},
+		{"stale claim revision", func(c *bootstrap.FreshClaim) { c.CurrentRevision++ }},
 	}
 	for _, tc := range negative {
 		t.Run("claim/"+tc.name, func(t *testing.T) {
@@ -1117,6 +1170,7 @@ func TestCPAQualificationFreshClaimAndGatewayAreIndependentGates(t *testing.T) {
 	before := bootstrap.FreshInitializationState{Claim: claim, AdminCredential: bootstrap.AdminCredentialUninitialized}
 	after := before
 	after.Claim.Consumed = true
+	after.Claim.CurrentRevision++
 	after.AdminCredential = bootstrap.AdminCredentialInitialized
 	after.ProductInitialized = true
 	if err := bootstrap.ValidateFreshInitializationCommit(before, after); err != nil {
@@ -1127,8 +1181,14 @@ func TestCPAQualificationFreshClaimAndGatewayAreIndependentGates(t *testing.T) {
 	}
 	partial := before
 	partial.Claim.Consumed = true
+	partial.Claim.CurrentRevision++
 	if err := bootstrap.ValidateFreshInitializationCommit(before, partial); err == nil {
 		t.Fatal("claim consumption without administrator/product commit accepted")
+	}
+	staleConcurrent := claim
+	staleConcurrent.CurrentRevision++
+	if bootstrap.CanConsumeFreshClaim(bootstrap.Fresh, bootstrap.AdminCredentialUninitialized, staleConcurrent) {
+		t.Fatal("stale concurrent claim revision acquired initialization authority")
 	}
 
 	if bootstrap.CanActivatePublicGateway(bootstrap.GatewayActivationPreconditions{
@@ -1175,42 +1235,94 @@ func TestDiscoveryPrefixAndJournalFailClosed(t *testing.T) {
 		t.Fatalf("lost prefix result action=%s err=%v", action, err)
 	}
 
-	for _, domain := range []bootstrap.JournalDomain{bootstrap.ProductJournal, bootstrap.CPAJournal, bootstrap.RoutingJournal} {
-		record := bootstrap.JournalRecord{
-			Domain: domain, OperationID: "operation-1000", Result: bootstrap.JournalUnknown,
-			ObservedGenerationID: "generation-a",
-		}
-		action2, err := bootstrap.JournalReplayAction(record, "operation-1000", "generation-a")
-		if err != nil || action2 != bootstrap.JournalInspectFirst {
-			t.Fatalf("%s unknown result action=%s err=%v", domain, action2, err)
-		}
-		action2, err = bootstrap.JournalReplayAction(record, "operation-2000", "generation-a")
-		if err != nil || action2 != bootstrap.JournalRejectNewOperation {
-			t.Fatalf("%s different operation action=%s err=%v", domain, action2, err)
-		}
-		record.Result = bootstrap.JournalRetryableFailure
-		action2, err = bootstrap.JournalReplayAction(record, "operation-1000", "generation-a")
-		if err != nil || action2 != bootstrap.JournalInspectFirst {
-			t.Fatalf("%s unqualified retry action=%s err=%v", domain, action2, err)
-		}
-		record.AcceptedReplayQualified = true
-		action2, err = bootstrap.JournalReplayAction(record, "operation-1000", "generation-a")
-		if err != nil || action2 != bootstrap.JournalResumeSameOperation {
-			t.Fatalf("%s qualified retry action=%s err=%v", domain, action2, err)
-		}
-		action2, err = bootstrap.JournalReplayAction(record, "operation-1000", "generation-b")
-		if err != nil || action2 != bootstrap.JournalInspectFirst {
-			t.Fatalf("%s changed generation action=%s err=%v", domain, action2, err)
-		}
-		record.Result = bootstrap.JournalCommitted
-		record.CommitRef = "commit:1"
-		action2, err = bootstrap.JournalReplayAction(record, "operation-1000", "generation-b")
-		if err != nil || action2 != bootstrap.JournalInspectFirst {
-			t.Fatalf("%s committed old-generation action=%s err=%v", domain, action2, err)
-		}
+	type journalCase struct {
+		name       string
+		record     bootstrap.JournalRecord
+		observation bootstrap.JournalObservation
+		mismatch   func(*bootstrap.JournalObservation)
+		foreign    func(*bootstrap.JournalObservation)
 	}
+	cases := []journalCase{
+		{
+			name: "product",
+			record: bootstrap.JournalRecord{
+				Domain: bootstrap.ProductJournal, OperationID: "operation-1000",
+				ObservedProductRevision: 7,
+			},
+			observation: bootstrap.JournalObservation{CurrentProductRevision: 7, CurrentGenerationID: "generation-a", CurrentRoutingRevision: 11},
+			mismatch: func(o *bootstrap.JournalObservation) { o.CurrentProductRevision = 8 },
+			foreign: func(o *bootstrap.JournalObservation) { o.CurrentGenerationID = "generation-b"; o.CurrentRoutingRevision = 12 },
+		},
+		{
+			name: "cpa",
+			record: bootstrap.JournalRecord{
+				Domain: bootstrap.CPAJournal, OperationID: "operation-1000",
+				ObservedGenerationID: "generation-a",
+			},
+			observation: bootstrap.JournalObservation{CurrentProductRevision: 7, CurrentGenerationID: "generation-a", CurrentRoutingRevision: 11},
+			mismatch: func(o *bootstrap.JournalObservation) { o.CurrentGenerationID = "generation-b" },
+			foreign: func(o *bootstrap.JournalObservation) { o.CurrentProductRevision = 8; o.CurrentRoutingRevision = 12 },
+		},
+		{
+			name: "routing",
+			record: bootstrap.JournalRecord{
+				Domain: bootstrap.RoutingJournal, OperationID: "operation-1000",
+				ObservedRoutingRevision: 11,
+			},
+			observation: bootstrap.JournalObservation{CurrentProductRevision: 7, CurrentGenerationID: "generation-a", CurrentRoutingRevision: 11},
+			mismatch: func(o *bootstrap.JournalObservation) { o.CurrentRoutingRevision = 12 },
+			foreign: func(o *bootstrap.JournalObservation) { o.CurrentProductRevision = 8; o.CurrentGenerationID = "generation-b" },
+		},
+	}
+	for _, tc := range cases {
+		t.Run("journal/"+tc.name, func(t *testing.T) {
+			record := tc.record
+			record.Result = bootstrap.JournalUnknown
+			got, err := bootstrap.JournalReplayAction(record, "operation-1000", tc.observation)
+			if err != nil || got != bootstrap.JournalInspectFirst {
+				t.Fatalf("unknown result action=%s err=%v", got, err)
+			}
+			got, err = bootstrap.JournalReplayAction(record, "operation-2000", tc.observation)
+			if err != nil || got != bootstrap.JournalRejectNewOperation {
+				t.Fatalf("different operation action=%s err=%v", got, err)
+			}
+
+			record.Result = bootstrap.JournalRetryableFailure
+			got, err = bootstrap.JournalReplayAction(record, "operation-1000", tc.observation)
+			if err != nil || got != bootstrap.JournalInspectFirst {
+				t.Fatalf("unqualified retry action=%s err=%v", got, err)
+			}
+			record.AcceptedReplayQualified = true
+			got, err = bootstrap.JournalReplayAction(record, "operation-1000", tc.observation)
+			if err != nil || got != bootstrap.JournalResumeSameOperation {
+				t.Fatalf("qualified retry action=%s err=%v", got, err)
+			}
+
+			mismatch := tc.observation
+			tc.mismatch(&mismatch)
+			got, err = bootstrap.JournalReplayAction(record, "operation-1000", mismatch)
+			if err != nil || got != bootstrap.JournalInspectFirst {
+				t.Fatalf("own fence mismatch action=%s err=%v", got, err)
+			}
+
+			foreign := tc.observation
+			tc.foreign(&foreign)
+			got, err = bootstrap.JournalReplayAction(record, "operation-1000", foreign)
+			if err != nil || got != bootstrap.JournalResumeSameOperation {
+				t.Fatalf("foreign fence change affected domain action=%s err=%v", got, err)
+			}
+
+			record.Result = bootstrap.JournalCommitted
+			record.CommitRef = "commit:1"
+			got, err = bootstrap.JournalReplayAction(record, "operation-1000", foreign)
+			if err != nil || got != bootstrap.JournalReturnCommitted {
+				t.Fatalf("committed journal lost authority on foreign fence action=%s err=%v", got, err)
+			}
+		})
+	}
+
 	if _, err := bootstrap.EvaluateOperationConflict(
-		bootstrap.OperationMigration, bootstrap.OperationMaintenance, true,
+		bootstrap.OperationMigration, bootstrap.OperationMaintenance, bootstrap.ConflictManagerStore, true,
 	); err == nil {
 		t.Fatal("same operation id was allowed to change operation class")
 	}
