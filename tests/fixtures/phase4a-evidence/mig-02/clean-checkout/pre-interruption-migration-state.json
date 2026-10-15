@@ -1,0 +1,59 @@
+{
+  "discovered": {
+    "name": "usage_cache_accounting_v2",
+    "status": "pending",
+    "lastEventId": 0,
+    "targetEventId": 3,
+    "processedRows": 0,
+    "changedRows": 0,
+    "appliedRows": 0,
+    "startedAtMs": 1792029793568,
+    "updatedAtMs": 1792029793568
+  },
+  "executorCommit": "7ae55d9b2e807b9b762e0513355d38897ccdba6b",
+  "executorRevision": 3,
+  "operationID": "f987eeff4e3df81b5782f826317819dc274f0f41cc26585d9b2d9d814a4a2cf2",
+  "operationIdentityKind": "qualification correlation over native row identity; no trusted journal receipt",
+  "source": [
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": 1792029725116,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "quota_snapshot_lifecycle_v1",
+      "processed_rows": 0,
+      "started_at_ms": 1792029725116,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 1792029725116
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v1",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v2",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    }
+  ],
+  "sourceRevision": 2
+}
