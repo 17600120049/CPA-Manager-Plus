@@ -86,6 +86,9 @@ func revalidateCase(t *testing.T, root, archive, caseID, plan, expectedProfile s
 	if caseID == bak01CaseID {
 		expected = bak01GenerationFiles
 	}
+	if caseID == bak02CaseID {
+		expected = bak02GenerationFiles
+	}
 	if len(r.GenerationEvidenceFiles) != len(expected) {
 		t.Fatal("generation evidence inventory incomplete")
 	}

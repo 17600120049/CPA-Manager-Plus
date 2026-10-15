@@ -16,3 +16,4 @@ tests/fixtures/phase4a-evidence/ret-03/** text eol=lf
 tests/fixtures/phase4a-evidence/mig-01/** -text
 tests/fixtures/phase4a-evidence/mig-02/** -text
 tests/fixtures/phase4a-evidence/bak-01/** -text
+tests/fixtures/phase4a-evidence/bak-02/** -text
