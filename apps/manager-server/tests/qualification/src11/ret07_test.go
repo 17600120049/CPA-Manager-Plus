@@ -168,7 +168,7 @@ func scalarString(t *testing.T, db *sql.DB, q string) string {
 func checkRET07Archive(t *testing.T, db *sql.DB, archives string) map[string]any {
 	t.Helper()
 	state := checkRET03Archive(t, db, archives)
-	if state["rawEventCount"] != int64(0) || state["archiveEventCount"] != int64(4) || state["retainedProjectionCount"] != int64(4) {
+	if state["rawEventCount"] != int64(0) || state["archiveEventCount"] != 4 || state["retainedProjectionCount"] != 4 {
 		t.Fatalf("RET-07 archive state is incomplete: %#v", state)
 	}
 	state["variant"] = "archived + raw physically deleted + retained pricing source complete"
