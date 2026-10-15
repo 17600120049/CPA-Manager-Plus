@@ -1,0 +1,25 @@
+{
+  "checkoutPath": "/private/tmp/cpamp-bak02-p1p2-clean",
+  "checkoutCommit": "9ae1137a2777928d63431967ff6dd6ffe76b1ff8",
+  "checkoutStatusBeforeFixture": "clean",
+  "fixtureMaterializedAfterCheckout": true,
+  "caseID": "BAK-02",
+  "sourceGenerationRecordSHA256": "b094b8b8af03ac8f1681e7a52b57ba0af4400f7d1e5beaf1f94eb3d5af81aac1",
+  "sourceBundleDigest": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
+  "producerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "replays": {
+    "macos": {
+      "runner": "clean-checkout/macos/runner-evidence.json",
+      "result": "clean-checkout/macos/result.json",
+      "executionExitCode": 0,
+      "resultSHA256": "2e94eb23d1011bca4baf0e283ca2376536872bd1adf590b6a324a70027ad50c0"
+    },
+    "linux-amd64": {
+      "runner": "clean-checkout/linux/runner-evidence.json",
+      "result": "clean-checkout/linux/result.json",
+      "executionExitCode": 0,
+      "resultSHA256": "40e90b231ceb81ce7f5dc45c000a5f31fe874c8612682c16cbd46c0a825acef8"
+    }
+  },
+  "noProductionAdmission": true
+}

@@ -42,7 +42,7 @@ def run(args, log, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["generate", "generate-ret01", "generate-ret02", "generate-ret03", "generate-ret07", "generate-mig01", "generate-mig02", "generate-mig03", "generate-bak01", "replay", "ret01", "ret02", "ret03", "ret07", "mig01", "mig02", "mig03", "bak01"])
+    parser.add_argument("action", choices=["generate", "generate-ret01", "generate-ret02", "generate-ret03", "generate-ret07", "generate-mig01", "generate-mig02", "generate-mig03", "generate-bak01", "generate-bak02", "replay", "ret01", "ret02", "ret03", "ret07", "mig01", "mig02", "mig03", "bak01", "bak02"])
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--release-info", type=Path)
     parser.add_argument("--evidence", type=Path)
@@ -62,8 +62,9 @@ def main():
     mig02 = args.action in ("generate-mig02", "mig02")
     mig03 = args.action in ("generate-mig03", "mig03")
     bak01 = args.action in ("generate-bak01", "bak01")
+    bak02 = args.action in ("generate-bak02", "bak02")
     retention = "ret-07" if ret07 else "ret-03" if ret03 else "ret-02" if ret02 else "ret-01" if ret01 else None
-    case_profile = "bak-01" if bak01 else "mig-03" if mig03 else "mig-02" if mig02 else "mig-01" if mig01 else retention
+    case_profile = "bak-02" if bak02 else "bak-01" if bak01 else "mig-03" if mig03 else "mig-02" if mig02 else "mig-01" if mig01 else retention
     profile = ROOT / f"tests/fixtures/phase4a-evidence/{case_profile}/profile.json" if case_profile else PROFILE
     if args.action == "replay" and bool(args.evidence) == bool(args.evidence_archive):
         parser.error("replay requires exactly one of --evidence or --evidence-archive")
@@ -73,8 +74,8 @@ def main():
         parser.error("ret07 requires exactly one of --evidence or --evidence-archive")
     if args.action in ("mig01", "mig02", "mig03") and (not args.evidence or args.evidence_archive or args.release_info):
         parser.error("migration replay requires --evidence pointing to its own complete generated fixture")
-    if args.action == "bak01" and (bool(args.evidence) == bool(args.evidence_archive) or args.release_info):
-        parser.error("bak01 requires exactly one of --evidence or --evidence-archive")
+    if args.action in ("bak01", "bak02") and (bool(args.evidence) == bool(args.evidence_archive) or args.release_info):
+        parser.error("backup replay requires exactly one of --evidence or --evidence-archive")
     if generating and (args.evidence_archive or args.linux):
         parser.error("--evidence-archive and --linux are replay options")
     if generating and args.evidence:
@@ -94,7 +95,8 @@ def main():
                      "tests/fixtures/phase4a-evidence/mig-01/profile.json",
                      "tests/fixtures/phase4a-evidence/mig-02/profile.json",
                      "tests/fixtures/phase4a-evidence/mig-03/profile.json",
-                     "tests/fixtures/phase4a-evidence/bak-01/profile.json"]
+                     "tests/fixtures/phase4a-evidence/bak-01/profile.json",
+                     "tests/fixtures/phase4a-evidence/bak-02/profile.json"]
     dirty = capture(["git", "status", "--porcelain", "--untracked-files=all", "--", *tracked_scope], cwd=ROOT)
     if dirty:
         parser.error("commit all harness, profile and Manager source first; uncommitted code cannot claim GeneratorCodeCommit")
@@ -108,10 +110,10 @@ def main():
         spec = importlib.util.spec_from_file_location("materialize_src11", ROOT / "bin/qualification/materialize-src11.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        if ret07:
+        if bak01 or bak02:
+            evidence = module.materialize_case(args.evidence_archive, output / "materialized", case_profile)
+        elif ret07:
             evidence = module.materialize_case(args.evidence_archive, output / "materialized", "ret-07")
-        elif bak01:
-            evidence = module.materialize_case(args.evidence_archive, output / "materialized", "bak-01")
         else:
             evidence = module.materialize(args.evidence_archive, output / "materialized")
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CPA_", "CPAMP_", "USAGE_"))}
@@ -154,6 +156,7 @@ def main():
                   "--env", f"CPAMP_MIG02_GENERATE={int(mig02)}",
                   "--env", f"CPAMP_MIG03_GENERATE={int(mig03)}",
                   "--env", f"CPAMP_BAK01_GENERATE={int(bak01)}",
+                  "--env", f"CPAMP_BAK02_GENERATE={int(bak02)}",
                   "--env", "CPAMP_SRC11_ARCHIVE=/archive", "--env", "CPAMP_SRC11_RELEASE_INFO=/release-info",
                   "--env", "CPAMP_SRC11_PROFILE=/profile", IMAGE,
                   "/qualification", "-test.v", "-test.run", test_name, "-test.timeout", "4m"]
@@ -185,6 +188,10 @@ def main():
             env.update(CPAMP_BAK01_SOURCE=str(evidence), CPAMP_BAK01_ARCHIVE=str(archive),
                        CPAMP_BAK01_REPLAY_OUTPUT=str(output / "runtime"))
             test_name = "^TestReplayBAK01$"
+        if bak02:
+            env.update(CPAMP_BAK02_SOURCE_EVIDENCE=str(evidence), CPAMP_BAK02_ARCHIVE=str(archive),
+                       CPAMP_BAK02_REPLAY_OUTPUT=str(output / "runtime"))
+            test_name = "^TestReplayBAK02$"
         command = [str(binary), "-test.v", "-test.run", test_name, "-test.timeout", "4m"]
         if args.linux:
             command = ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--read-only",
@@ -214,6 +221,10 @@ def main():
                 command.extend(["--env", "CPAMP_BAK01_SOURCE=/evidence",
                                 "--env", "CPAMP_BAK01_ARCHIVE=/archive",
                                 "--env", "CPAMP_BAK01_REPLAY_OUTPUT=/output/runtime"])
+            if bak02:
+                command.extend(["--env", "CPAMP_BAK02_SOURCE_EVIDENCE=/evidence",
+                                "--env", "CPAMP_BAK02_ARCHIVE=/archive",
+                                "--env", "CPAMP_BAK02_REPLAY_OUTPUT=/output/runtime"])
             command.extend([IMAGE, "/qualification", "-test.v", "-test.run", test_name, "-test.timeout", "4m"])
             build["isolation"] = {"image": IMAGE, "parentIndex": IMAGE_INDEX, "network": "none", "readOnlyRoot": True,
                                   "imageID": capture(["docker", "image", "inspect", IMAGE, "--format", "{{.Id}}"]),
@@ -221,7 +232,7 @@ def main():
                                   "user": f"{os.getuid()}:{os.getgid()}"}
         if args.evidence_archive:
             build["sealedEvidenceArchiveSHA256"] = digest(args.evidence_archive)
-            pin_case = "ret-07" if ret07 else "bak-01" if bak01 else None
+            pin_case = case_profile if (ret07 or bak01 or bak02) else None
             pin_path = ROOT / f"tests/fixtures/phase4a-evidence/{pin_case}/source-provenance.json" if pin_case else module.PIN
             build["sealedArtifactPinSHA256"] = digest(pin_path)
         run(command, output / "replay-execution.log", env=env)
@@ -246,6 +257,20 @@ def main():
         result = json.loads((output / "runtime/result.json").read_text(encoding="utf-8"))
         build.update({
             "caseID": "BAK-01",
+            "runtimeEvidence": result.get("runtimeEvidence"),
+            "casePass": result.get("casePass"),
+            "independentAcceptance": result.get("independentAcceptance"),
+            "inputBundleDigest": result.get("inputBundleDigest"),
+            "beforeDigest": result.get("beforeDigest"),
+            "afterDigest": result.get("afterDigest"),
+            "authoritativeBeforeDigest": result.get("authoritativeBeforeDigest"),
+            "authoritativeAfterDigest": result.get("authoritativeAfterDigest"),
+            "applicableSEM": result.get("applicableSEM"),
+        })
+    if bak02 and not generating:
+        result = json.loads((output / "runtime/result.json").read_text(encoding="utf-8"))
+        build.update({
+            "caseID": "BAK-02",
             "runtimeEvidence": result.get("runtimeEvidence"),
             "casePass": result.get("casePass"),
             "independentAcceptance": result.get("independentAcceptance"),

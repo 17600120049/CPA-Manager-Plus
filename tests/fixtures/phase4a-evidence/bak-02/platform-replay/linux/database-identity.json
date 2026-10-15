@@ -1,0 +1,18 @@
+{
+  "digestMatch": true,
+  "input": {
+    "present": true,
+    "size": 659456,
+    "sha256": "82493921e6c377065e1f9651839a8c254a30416609c11974e37589451d3de904"
+  },
+  "restored": {
+    "present": true,
+    "size": 659456,
+    "sha256": "82493921e6c377065e1f9651839a8c254a30416609c11974e37589451d3de904"
+  },
+  "secondRestored": {
+    "present": true,
+    "size": 819200,
+    "sha256": "ceb655917881f3882f4c360bd4031eeca08cbb829c562f486000df9fdcdc7b02"
+  }
+}

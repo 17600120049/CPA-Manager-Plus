@@ -1,0 +1,116 @@
+name: BAK-02 matching bundle
+
+on:
+  pull_request:
+    branches: [v2]
+    paths:
+      - '.github/workflows/qualification-bak02.yml'
+      - '.gitattributes'
+      - 'bin/qualification/**'
+      - 'apps/manager-server/tests/qualification/src11/**'
+      - 'apps/manager-server/internal/service/maintenancebundle/**'
+      - 'apps/manager-server/internal/processlock/**'
+      - 'tests/fixtures/phase4a-evidence/bak-02/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bak02-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  replay:
+    name: BAK-02 replay (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Authenticate committed BAK-02 sealed archive
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/bak-02/source-provenance.json').read_text())['sourceArtifact']
+          archive = Path('tests/fixtures/phase4a-evidence/bak-02') / pin['committedArchivePath']
+          data = archive.read_bytes()
+          if len(data) != pin['archiveSize'] or hashlib.sha256(data).hexdigest() != pin['archiveSHA256']:
+              raise SystemExit('committed BAK-02 sealed archive size/SHA256 mismatch')
+          with open(os.environ['GITHUB_ENV'], 'a') as stream:
+              stream.write(f"BAK02_ARCHIVE={archive.resolve()}\n")
+          PY
+      - name: Verify original generator commit and all runtime source hashes
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin refs/heads/qualification/bak02-generator-af53fed
+          python bin/qualification/verify-bak02-generator.py --ref FETCH_HEAD \
+            --output "$RUNNER_TEMP/bak02-generator-provenance.json"
+      - name: Download and authenticate exact v1.14.4 producer
+        shell: bash
+        run: |
+          gh release download v1.14.4 --repo seakee/CPA-Manager-Plus \
+            --pattern cpa-manager-plus_v1.14.4_linux_amd64.tar.gz \
+            --dir "$RUNNER_TEMP/producer-download"
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/bak-02/source-provenance.json').read_text())
+          archive = Path(os.environ['RUNNER_TEMP']) / 'producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz'
+          if hashlib.sha256(archive.read_bytes()).hexdigest() != pin['sourceProducerArchiveSHA256']:
+              raise SystemExit('v1.14.4 producer archive pin mismatch')
+          PY
+      - name: Verify BAK-02 evidence contract
+        shell: bash
+        run: python -m unittest bin.qualification.test_bak02 -v
+      - name: Replay BAK-02 in pinned Linux AMD64 runtime
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+          python bin/qualification/run-src11.py bak02 \
+            --archive "$RUNNER_TEMP/producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
+            --evidence-archive "$BAK02_ARCHIVE" \
+            --linux --output "$RUNNER_TEMP/bak02-replay"
+      - name: Replay BAK-02 on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          python bin/qualification/run-src11.py bak02 \
+            --archive "$RUNNER_TEMP/producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
+            --evidence-archive "$BAK02_ARCHIVE" \
+            --output "$RUNNER_TEMP/bak02-replay"
+      - name: Compile Windows harness (SQLite replay not qualified)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: apps/manager-server
+        run: |
+          go test -mod=readonly -c -o "$RUNNER_TEMP/bak02-qualification.exe" ./tests/qualification/src11
+          echo 'Windows BAK-02 scope: sealed archive authentication and harness compilation completed; full SQLite replay is pending and no Windows case PASS is claimed.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload BAK-02 runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bak02-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/bak02-generator-provenance.json
+            ${{ runner.temp }}/bak02-replay/runner-evidence.json
+            ${{ runner.temp }}/bak02-replay/*.log
+            ${{ runner.temp }}/bak02-replay/runtime/
+            ${{ runner.temp }}/bak02-qualification.exe
+          if-no-files-found: warn
+          retention-days: 90

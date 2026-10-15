@@ -87,6 +87,13 @@ func TestGenerateBAK01(t *testing.T) {
 	generateExactSource(t, bak01CaseID, bak01PlanCommit, bak01Profile)
 }
 
+func TestGenerateBAK02(t *testing.T) {
+	if os.Getenv("CPAMP_BAK02_GENERATE") != "1" {
+		t.Skip("opt-in BAK-02 matching-bundle generation")
+	}
+	generateExactSource(t, bak02CaseID, bak02PlanCommit, bak02Profile)
+}
+
 func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	if os.Getenv("CPAMP_SRC11_GENERATE") != "1" {
 		t.Skip("opt-in exact historical executable execution")
@@ -292,7 +299,7 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		costs[name] = response
 	}
 	save(t, generation, "v1-analytics.json", costs)
-	if caseID == ret02CaseID {
+	if caseID == ret02CaseID || caseID == bak02CaseID {
 		generateRET02Archive(t, base, live, generation, p, costs)
 	}
 	if caseID == ret03CaseID {
@@ -330,7 +337,7 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	must(t, logFile.Close())
 	// Capture stopped files BEFORE SQLite checkpoint; checkpoint changes are
 	// explicitly recorded and checked for logical history preservation.
-	layout := maintenancebundle.Layout{DatabasePath: filepath.Join(live, "usage.sqlite"), DataKeyPath: filepath.Join(live, "data.key"), ConfigPath: filepath.Join(live, "config.json"), ArchivesPath: filepath.Join(live, "usage-archives"), RequireConfig: true}
+	layout := maintenancebundle.Layout{DatabasePath: filepath.Join(live, "usage.sqlite"), DataKeyPath: filepath.Join(live, "data.key"), ConfigPath: filepath.Join(live, "config.json"), ArchivesPath: filepath.Join(live, "usage-archives"), RequireConfig: true, RequireArchives: caseID == ret02CaseID || caseID == ret03CaseID || caseID == bak02CaseID}
 	preCheckpoint, e := maintenancebundle.Inspect(ctx, layout)
 	must(t, e)
 	if caseID == bak01CaseID {
@@ -346,7 +353,7 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	}
 	db := openDB(t, layout.DatabasePath, false)
 	before := snapshot(t, db)
-	if caseID == ret02CaseID {
+	if caseID == ret02CaseID || caseID == bak02CaseID {
 		checkRET02Archive(t, db, layout.ArchivesPath)
 	} else if caseID == ret03CaseID {
 		checkRET03Archive(t, db, layout.ArchivesPath)
@@ -387,10 +394,45 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	save(t, generation, "source-snapshot.json", before)
 	record := map[string]any{"caseID": caseID, "SourceRelease": "v1.14.4", "SourceCommit": sourceCommit, "SourceProducerKind": "published-artifact", "SourceProducerArtifact": map[string]any{"immutableReleaseID": 404941931, "assetID": 616064478, "asset": asset, "releaseInfoSHA256": releaseInfoDigest}, "SourceProducerArchiveSHA256": report.ArchiveSHA256, "SourceProducerExecutableSHA256": exeBefore, "SourceProducerBuildCodeCommit": vcsRevision, "GeneratorCodeCommit": code, "PlanCommit": plan, "GenerationProfile": p.Profile, "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation", "ControlledInputSHA256": digestBytes(input), "process": map[string]any{"pid": cmd.Process.Pid, "arguments": []string{}, "environment": safeEnvironment(cmd.Env), "startedAt": started.UTC(), "finishedAt": finished.UTC(), "exitCode": cmd.ProcessState.ExitCode(), "reaped": reaped, "queueCalls": queueCalls.Load(), "deliveredPayloads": 5, "expectedUniqueEvents": 4}, "producerBuildIdentity": "producer-build.json", "harnessToolchain": platformIdentity(), "StoppedBeforeCheckpointInventory": preCheckpoint, "SQLite": checks, "GeneratedBundleSHA256": sealed.SourceRevision, "bundleInventory": sealed, "migrationState": migrationState, "sourceVariant": "full raw; no archives and no deletion; cache/quota completed", "generationSuccess": true, "casePass": false, "UpgradeAuthorized": false, "TrustedHopReceipt": false}
 	hashes := map[string]string{}
-	if caseID == ret02CaseID {
+	if caseID == ret02CaseID || caseID == bak02CaseID {
 		record["sourceVariant"] = "archived + no raw deletion; cache/quota completed"
 		record["GenerationProcedure"] = "published exact v1.14.4 executable; isolated collector duplicate + price/quota API; archive HTTP create/resume/verify; no delete; SIGINT/reap; checkpoint; maintenancebundle.Create; digest revalidation"
-		for _, name := range ret02GenerationFiles {
+		files := ret02GenerationFiles
+		if caseID == bak02CaseID {
+			files = bak02GenerationFiles
+			save(t, generation, "database-identity.json", map[string]any{
+				"path": "database", "entry": sealed.Entries["database"],
+				"wal": sealed.Entries["database-wal"], "shm": sealed.Entries["database-shm"],
+			})
+			save(t, generation, "key-identity.json", map[string]any{
+				"path": "data-key", "entry": sealed.Entries["data-key"],
+				"sourceRevision": sealed.SourceRevision, "replacementKeyCreated": false,
+			})
+			save(t, generation, "config-identity.json", map[string]any{
+				"path": "config", "entry": sealed.Entries["config"],
+				"config":         map[string]any{"dataDir": ".", "dbPath": "usage.sqlite", "dataKeyPath": "data.key", "collectorMode": "http", "pollIntervalMs": 100, "usageArchiveRetentionEnabled": false},
+				"sourceRevision": sealed.SourceRevision,
+			})
+			save(t, generation, "matching-snapshot.json", map[string]any{
+				"caseID": bak02CaseID, "snapshotIdentity": "stopped-source@" + sealed.SourceRevision,
+				"operationID": "maintenance-bundle-create@" + sealed.SourceRevision,
+				"observedAt":  finished.UTC(), "sourceRevision": sealed.SourceRevision,
+				"expectedMembers": bak02ManifestNames(sealed), "actualMembers": bak02ManifestNames(sealed),
+				"missingMembers": []string{}, "unexpectedCriticalMembers": []string{}, "digestMismatches": []string{},
+				"database": sealed.Entries["database"], "dataKey": sealed.Entries["data-key"], "config": sealed.Entries["config"],
+				"archives": sealed.Entries["usage-archives"], "archiveInventory": readJSONValue(t, filepath.Join(generation, "archive-inventory.json")),
+			})
+			save(t, generation, "authoritative-digest.json", map[string]any{
+				"beforeBackup": ret01SnapshotDigest(before), "afterBackup": ret01SnapshotDigest(before),
+				"sourceRevision": sealed.SourceRevision, "eventIdentityPreserved": true,
+			})
+			save(t, generation, "backup-execution.json", map[string]any{
+				"operation": "maintenancebundle.Create", "verified": true, "sourceRevalidated": true,
+				"matchingEvidenceValidated": true, "manifestWritten": true, "published": true,
+				"sourceRevision": sealed.SourceRevision, "sourceRoot": "task-owned-source-root",
+			})
+		}
+		for _, name := range files {
 			hashes[name] = fileDigest(t, filepath.Join(generation, name))
 		}
 	}

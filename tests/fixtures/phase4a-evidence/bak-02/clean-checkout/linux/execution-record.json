@@ -1,0 +1,56 @@
+{
+  "caseID": "BAK-02",
+  "executionCommit": "9ae1137a2777928d63431967ff6dd6ffe76b1ff8",
+  "initialSQLite": {
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "noSilentRegeneration": true,
+  "secondSQLite": {
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "sourceInputRemovedBeforeQueries": true,
+  "sqlite": {
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "steps": [
+    "verify-exact-v1.14.4-provenance",
+    "verify-matching-inventory",
+    "restore-new-root",
+    "remove-source-input",
+    "decrypt-settings-with-restored-key",
+    "read-archive-manifests-and-segments",
+    "run-historical-query",
+    "backup-verify",
+    "second-restore-new-root"
+  ]
+}

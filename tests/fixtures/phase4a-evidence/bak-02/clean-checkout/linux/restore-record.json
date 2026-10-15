@@ -1,0 +1,9 @@
+{
+  "firstRestoreNew": true,
+  "firstRoot": "task-owned/restore-new-root",
+  "inputBundleVerified": true,
+  "secondRestoreNew": true,
+  "secondRoot": "task-owned/second-restore-new-root",
+  "sourceInputRemovedBeforeQueries": true,
+  "sourceRootDependency": false
+}
