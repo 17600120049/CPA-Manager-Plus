@@ -122,7 +122,7 @@ def materialize_retention(archive, output, case, pin=None):
 
 def materialize_case(archive, output, case, pin=None):
     """Authenticate one case's original ZIP against its independent pins."""
-    if case not in ("ret-01", "ret-02", "mig-01"):
+    if case not in ("ret-01", "ret-02", "mig-01", "mig-02"):
         raise ValueError("unknown qualification case")
     if pin is None:
         provenance = ROOT / f"tests/fixtures/phase4a-evidence/{case}/source-provenance.json"
@@ -176,13 +176,13 @@ def materialize_case(archive, output, case, pin=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=["src-11", "ret-01", "ret-02", "mig-01"], default="src-11")
+    parser.add_argument("--case", choices=["src-11", "ret-01", "ret-02", "mig-01", "mig-02"], default="src-11")
     parser.add_argument("--release-metadata", type=Path, help="optional local qualification Release API response")
     parser.add_argument("--tag-metadata", type=Path, help="local Git ref API response when release target differs from the pinned tag commit")
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    if args.case in ("ret-01", "ret-02", "mig-01"):
+    if args.case in ("ret-01", "ret-02", "mig-01", "mig-02"):
         if args.release_metadata:
             pin = json.loads((ROOT / f"tests/fixtures/phase4a-evidence/{args.case}/source-provenance.json").read_text())["sourceArtifact"]
             validate_retention_release(json.loads(args.release_metadata.read_text()), pin, args.case,
