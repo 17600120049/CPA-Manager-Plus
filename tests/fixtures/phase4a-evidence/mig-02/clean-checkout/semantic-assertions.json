@@ -1,0 +1,16 @@
+{
+  "SEM-07": {
+    "bankedResetEvidencePreserved": true,
+    "cooldownEvidencePreserved": true,
+    "quotaMigrationEqual": true,
+    "quotaRowsEqual": true,
+    "quotaSettingsEqual": true,
+    "status": "runtime-pass"
+  },
+  "allowedChanges": "production cache revision2-to-3 derived fields, native migration state/staging, and derived invalidation only",
+  "historyPreserved": true,
+  "noDuplicateProcessing": true,
+  "noLostEvents": true,
+  "sourceBytesUnchanged": true,
+  "unrelatedProviderStateUnchanged": true
+}

@@ -1,0 +1,127 @@
+{
+  "completedSteps": [
+    {
+      "State": {
+        "name": "usage_cache_accounting_v2",
+        "status": "running",
+        "lastEventId": 1,
+        "targetEventId": 3,
+        "processedRows": 1,
+        "changedRows": 1,
+        "appliedRows": 0,
+        "startedAtMs": 1792029807049,
+        "updatedAtMs": 1792029807050
+      },
+      "Processed": 1,
+      "Completed": false
+    },
+    {
+      "State": {
+        "name": "usage_cache_accounting_v2",
+        "status": "running",
+        "lastEventId": 2,
+        "targetEventId": 3,
+        "processedRows": 2,
+        "changedRows": 2,
+        "appliedRows": 0,
+        "startedAtMs": 1792029807049,
+        "updatedAtMs": 1792029807051
+      },
+      "Processed": 1,
+      "Completed": false
+    },
+    {
+      "State": {
+        "name": "usage_cache_accounting_v2",
+        "status": "applying",
+        "lastEventId": 3,
+        "targetEventId": 3,
+        "processedRows": 3,
+        "changedRows": 2,
+        "appliedRows": 0,
+        "startedAtMs": 1792029807049,
+        "updatedAtMs": 1792029807051
+      },
+      "Processed": 1,
+      "Completed": false
+    },
+    {
+      "State": {
+        "name": "usage_cache_accounting_v2",
+        "status": "applying",
+        "lastEventId": 3,
+        "targetEventId": 3,
+        "processedRows": 3,
+        "changedRows": 2,
+        "appliedRows": 1,
+        "startedAtMs": 1792029807049,
+        "updatedAtMs": 1792029807052
+      },
+      "Processed": 1,
+      "Completed": false
+    }
+  ],
+  "journal": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "nativeIdentity": {
+    "name": "usage_cache_accounting_v2",
+    "revision": 3,
+    "startedAtMs": 1792029807049,
+    "targetEventId": 3
+  },
+  "operationID": "178e20a46ef42e5a4094e4f59a8b6dfe84eaa7000f03f4bf14ad9d1969aa6ba0",
+  "ownership": "processlock held for migration and sealing; released before inspection",
+  "persistedApplying": true,
+  "quotaCompleted": true,
+  "recoveryEligibility": "supported-resume",
+  "remainingStaging": [
+    {
+      "cache_input_mode": "read_included_creation_separate",
+      "event_id": 2,
+      "normalized_cache_creation_tokens": 5,
+      "normalized_cache_read_tokens": 20,
+      "normalized_total_input_tokens": 125,
+      "normalized_uncached_input_tokens": 100,
+      "total_tokens": 135
+    }
+  ],
+  "source": "qualification scheduler: context cancellation after committed partial production batch; close all DB handles",
+  "stagingBeforeApply": [
+    {
+      "cache_input_mode": "read_included_creation_separate",
+      "event_id": 1,
+      "normalized_cache_creation_tokens": 5,
+      "normalized_cache_read_tokens": 20,
+      "normalized_total_input_tokens": 125,
+      "normalized_uncached_input_tokens": 100,
+      "total_tokens": 135
+    },
+    {
+      "cache_input_mode": "read_included_creation_separate",
+      "event_id": 2,
+      "normalized_cache_creation_tokens": 5,
+      "normalized_cache_read_tokens": 20,
+      "normalized_total_input_tokens": 125,
+      "normalized_uncached_input_tokens": 100,
+      "total_tokens": 135
+    }
+  ]
+}

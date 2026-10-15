@@ -12,7 +12,9 @@ on:
       - 'tests/fixtures/phase4a-evidence/src-11/**'
       - 'tests/fixtures/phase4a-evidence/ret-01/**'
       - 'tests/fixtures/phase4a-evidence/ret-02/**'
+      - 'tests/fixtures/phase4a-evidence/ret-03/**'
       - 'tests/fixtures/phase4a-evidence/mig-01/**'
+      - 'tests/fixtures/phase4a-evidence/mig-02/**'
 
 permissions:
   contents: read
@@ -211,6 +213,78 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+  ret03:
+    name: RET-03 exact-source replay (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      CPAMP_RET03_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Read RET-03 immutable evidence pins
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/ret-03/source-provenance.json').read_text())['sourceArtifact']
+          with open(os.environ['GITHUB_ENV'], 'a') as stream:
+              for key, field in [('RET03_TAG', 'tag'), ('RET03_ASSET', 'archiveName'), ('RET03_RELEASE_ID', 'releaseID')]:
+                  stream.write(f'{key}={pin[field]}\n')
+          PY
+      - name: Download and materialize RET-03 original immutable bytes
+        shell: bash
+        run: |
+          gh release download "$RET03_TAG" --repo seakee/CPA-Manager-Plus \
+            --pattern "$RET03_ASSET" --dir "$RUNNER_TEMP/ret03-download"
+          gh api "repos/seakee/CPA-Manager-Plus/releases/$RET03_RELEASE_ID" > "$RUNNER_TEMP/ret03-release.json"
+          gh api "repos/seakee/CPA-Manager-Plus/git/ref/tags/$RET03_TAG" > "$RUNNER_TEMP/ret03-tag.json"
+          python bin/qualification/materialize-src11.py --case ret-03 \
+            --release-metadata "$RUNNER_TEMP/ret03-release.json" \
+            --tag-metadata "$RUNNER_TEMP/ret03-tag.json" \
+            --archive "$RUNNER_TEMP/ret03-download/$RET03_ASSET" \
+            --output "$RUNNER_TEMP/ret03-original"
+      - name: Verify RET-03 committed evidence contract
+        env:
+          CPAMP_RET03_FULL_EVIDENCE: ${{ runner.temp }}/ret03-original
+        run: python -m unittest discover -s bin/qualification -p 'test_ret03.py' -v
+      - name: Replay RET-03 against v2 primitives
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+            extra=(--linux)
+          fi
+          python bin/qualification/run-src11.py ret03 \
+            --archive "$RUNNER_TEMP/ret03-original/producer.tar.gz" \
+            --evidence "$RUNNER_TEMP/ret03-original/ret-03" \
+            --output "$RUNNER_TEMP/ret03-replay" "${extra[@]}"
+      - name: Upload RET-03 runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ret-03-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ret03-replay/runner-evidence.json
+            ${{ runner.temp }}/ret03-replay/*.log
+            ${{ runner.temp }}/ret03-replay/runtime/
+          if-no-files-found: warn
+          retention-days: 90
+
   mig01:
     name: MIG-01 completed migrations (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -279,5 +353,73 @@ jobs:
             ${{ runner.temp }}/mig01-replay/*.log
             ${{ runner.temp }}/mig01-replay/runtime/
             ${{ runner.temp }}/mig01-release.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  mig02:
+    name: MIG-02 applying recovery (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      CPAMP_MIG02_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Download accepted exact v1.14.4 producer archive
+        shell: bash
+        run: |
+          gh release download qualification-mig01-d337ad0eeef2-20261014 \
+            --repo seakee/CPA-Manager-Plus \
+            --pattern mig-01-d337ad0eeef2-sealed-evidence.zip \
+            --dir "$RUNNER_TEMP/mig01-download"
+          gh api repos/seakee/CPA-Manager-Plus/releases/412855420 > "$RUNNER_TEMP/mig01-release.json"
+          gh api repos/seakee/CPA-Manager-Plus/git/ref/tags/qualification-mig01-d337ad0eeef2-20261014 > "$RUNNER_TEMP/mig01-tag.json"
+          python bin/qualification/materialize-src11.py --case mig-01 \
+            --release-metadata "$RUNNER_TEMP/mig01-release.json" \
+            --tag-metadata "$RUNNER_TEMP/mig01-tag.json" \
+            --archive "$RUNNER_TEMP/mig01-download/mig-01-d337ad0eeef2-sealed-evidence.zip" \
+            --output "$RUNNER_TEMP/mig01-original"
+      - name: Verify committed MIG-02 evidence contract
+        shell: bash
+        run: python -m unittest discover -s bin/qualification -p test_mig02.py -v
+      - name: Execute MIG-02 applying recovery qualification
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+            extra=(--linux)
+          fi
+          python bin/qualification/run-src11.py mig02 \
+            --archive "$RUNNER_TEMP/mig01-original/producer.tar.gz" \
+            --evidence "$GITHUB_WORKSPACE/tests/fixtures/phase4a-evidence/mig-02" \
+            --output "$RUNNER_TEMP/mig02-replay" "${extra[@]}"
+      - name: Compile Windows qualification harness
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: apps/manager-server
+        run: go test -mod=readonly -c -o "$RUNNER_TEMP/mig02-qualification.exe" ./tests/qualification/src11
+      - name: Upload MIG-02 runtime observations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mig02-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mig02-replay/runner-evidence.json
+            ${{ runner.temp }}/mig02-replay/*.log
+            ${{ runner.temp }}/mig02-replay/runtime/
           if-no-files-found: warn
           retention-days: 90

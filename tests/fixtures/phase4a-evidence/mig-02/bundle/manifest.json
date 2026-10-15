@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "fence": "cooperating-manager-lock",
+  "sourceRevision": "ffb320e9bc45e398ccab7351d7f79da4d785f7e236ad7a845ef3f8dc4bcae903",
+  "entries": {
+    "config": {
+      "present": true,
+      "size": 243,
+      "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+    },
+    "data-key": {
+      "present": true,
+      "size": 44,
+      "sha256": "744dad4dabdcf49397740bd9cb0ab7f4bddf50c3202adb395b2a9c6940b55ccb"
+    },
+    "database": {
+      "present": true,
+      "size": 659456,
+      "sha256": "8ec62c95a41027258015e1ca41fd0ab5ade8cab7615cbf034e7b45f296c4baff"
+    },
+    "database-journal": {
+      "present": false
+    },
+    "database-shm": {
+      "present": false
+    },
+    "database-wal": {
+      "present": false
+    },
+    "usage-archives": {
+      "present": false
+    }
+  }
+}

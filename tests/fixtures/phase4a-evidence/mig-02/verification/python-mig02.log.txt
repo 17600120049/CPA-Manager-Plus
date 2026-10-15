@@ -1,0 +1,10 @@
+test_delivery_result_and_authority_boundary (test_mig02.Mig02EvidenceTests.test_delivery_result_and_authority_boundary) ... ok
+test_exact_source_and_independent_generation (test_mig02.Mig02EvidenceTests.test_exact_source_and_independent_generation) ... ok
+test_manifest_inventory_and_digests (test_mig02.Mig02EvidenceTests.test_manifest_inventory_and_digests) ... ok
+test_runtime_and_clean_checkout_replay (test_mig02.Mig02EvidenceTests.test_runtime_and_clean_checkout_replay) ... ok
+test_source_bundle_and_product_scope (test_mig02.Mig02EvidenceTests.test_source_bundle_and_product_scope) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.075s
+
+OK
