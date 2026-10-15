@@ -1,0 +1,151 @@
+{
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "SQLite": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "afterDigest": "8ae563e4ea038797ed7cf27427f9edcf2c149e75ebc3119715d13f044d3605f4",
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-02",
+    "SEM-03",
+    "SEM-06"
+  ],
+  "archiveRawParity": true,
+  "authoritativeAfterDigest": "280696c6b169a4ef4f9362737c05d9d0472f5fafaf0504462c9e09a1279cd903",
+  "authoritativeBeforeDigest": "280696c6b169a4ef4f9362737c05d9d0472f5fafaf0504462c9e09a1279cd903",
+  "backupRestore": "pass",
+  "beforeDigest": "3c63a99f32c5965b2b46a42e88a381d9dba6bfafe2eee954943b3d481f7560b3",
+  "caseID": "RET-02",
+  "casePass": false,
+  "evidence": {
+    "archiveInventory": "b51216c73acba1f4d148c1adbc6decffa26436e35a4e2824a82d22b62e8b9f72",
+    "backupRestore": "df83c892beb5a4e9979aed257201c62140a6bd4c82fa1a2de2969375f195b79a",
+    "executionRecord": "3d1ad410bcd43b4a89ebc11056114d2efa0a212d44afd1d063df1be9b2971959",
+    "inputBundle": "de6564bb2ddc628b14d976750b0d89dab4a66ab99005af6756fb45d2674bc5b0",
+    "rawEventInventory": "2fc7bb55738afdae4357a94fecb52c11af9b6c0a1a3c4c32d6943325e74f3f2f",
+    "semanticAssertions": "a3c9aafdea69ef522994885a39b056b0d988fdd461797d169cb57cd0eadb6579"
+  },
+  "executionCommit": "cf31d104b2485665408e90a75eca977fa390c4df",
+  "independentAcceptance": "pending",
+  "inputBundleDigest": "3c63a99f32c5965b2b46a42e88a381d9dba6bfafe2eee954943b3d481f7560b3",
+  "inputBundleIdentity": "RET-02/input-bundle@3c63a99f32c5965b2b46a42e88a381d9dba6bfafe2eee954943b3d481f7560b3",
+  "rawDeletedEventCount": 0,
+  "remainingCases": {
+    "count": 46,
+    "status": "pending"
+  },
+  "runtimeEvidence": "pass",
+  "sourceProvenance": {
+    "caseID": "RET-02",
+    "SourceRelease": "v1.14.4",
+    "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "SourceProducerKind": "published-artifact",
+    "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "GeneratorCodeCommit": "cdf88c52b017179ff9594ab13201f19b4ca7bd28",
+    "PlanCommit": "7eefdbf50d3596890a75e97a400dc1f5286e6498",
+    "ControlledInputSHA256": "915f1aac1b35a7af66f75c48f89b5249cd85e5852db7217ffb626404fc88ab64",
+    "GenerationProfile": "ret-02-archived-raw-retained-v1",
+    "GeneratedBundleSHA256": "3c63a99f32c5965b2b46a42e88a381d9dba6bfafe2eee954943b3d481f7560b3",
+    "GenerationEvidenceFiles": {
+      "archive-flow.json": "d1d3f821b3083434dc5daafcb2fcca2f385f0c4f418e81389e8d24043953e3c6",
+      "archive-inventory.json": "b51216c73acba1f4d148c1adbc6decffa26436e35a4e2824a82d22b62e8b9f72",
+      "archive-readiness.json": "b93f0e4f86b925dc4bac6dcd7ff232abbd12d0421b0afe4c4c34cd4ed5e40215",
+      "config-write.json": "2801501160e507e791ad03a871d33f92f35faf496737c15e9ecec56b1de889fa",
+      "controlled-input.json": "915f1aac1b35a7af66f75c48f89b5249cd85e5852db7217ffb626404fc88ab64",
+      "pre-archive-snapshot.json": "abee62c9f54fc43ee75269f9df4faa7069f5b7666d0f304023356f2d89b4014f",
+      "price-write.json": "d81f3915a1682637ae362b83764957b50e0ba99632a6f93531cf727c707b468e",
+      "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+      "producer.log": "0e0d9d88eac0a66235f1e95a4e77e4562a1a78657bfc2a941c0b22bcf2c226a6",
+      "quota-write.json": "4beeca9e510411942aea2ca9ad3ffed266be53b8499fa953df0fefdd8faaaee7",
+      "raw-event-inventory.json": "d40fd4f0d32b2ed509946e11f8c5ef312a8cb01a7a73e0d8fe22c16d2e7eac39",
+      "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "source-snapshot.json": "abee62c9f54fc43ee75269f9df4faa7069f5b7666d0f304023356f2d89b4014f",
+      "v1-analytics.json": "ce12247e71da218174fd784fcbf7cfba36b17682c6681acbbc8558a5f7b8a97f",
+      "v1-archived-analytics.json": "7c4fc52f5358df4ab9f661fe232e4cf579fa87961480eb0efb746947eeacad35",
+      "v1-export.jsonl": "ef85794493259b1be2a831e053f0ac8594f6b2b83783db7d033b3eaec721f210"
+    },
+    "bundleInventory": {
+      "version": 2,
+      "fence": "cooperating-manager-lock",
+      "sourceRevision": "3c63a99f32c5965b2b46a42e88a381d9dba6bfafe2eee954943b3d481f7560b3",
+      "entries": {
+        "config": {
+          "present": true,
+          "size": 243,
+          "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+        },
+        "data-key": {
+          "present": true,
+          "size": 44,
+          "sha256": "6385d2fbfb928697e3e920ae1bea69cc9c124bf967418f8d649440bbf78a5ea3"
+        },
+        "database": {
+          "present": true,
+          "size": 659456,
+          "sha256": "25a6366b5adf2ed120f2b550e927d9517ed9234783057bf57329f0130b581001"
+        },
+        "database-journal": {
+          "present": false
+        },
+        "database-shm": {
+          "present": false
+        },
+        "database-wal": {
+          "present": false
+        },
+        "usage-archives": {
+          "present": true,
+          "directory": true
+        },
+        "usage-archives/bdf8114f3f1417101d6ef86ade058d05": {
+          "present": true,
+          "directory": true
+        },
+        "usage-archives/bdf8114f3f1417101d6ef86ade058d05/manifest.json": {
+          "present": true,
+          "size": 1099,
+          "sha256": "a047cd46a4c315d1761f269fde741b4c02e98cefb1781a6371126e92c14643f1"
+        },
+        "usage-archives/bdf8114f3f1417101d6ef86ade058d05/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+          "present": true,
+          "size": 2873,
+          "sha256": "31fe44788386a0b32dee24ae745e0041dc4b8ddb39a8c2a9f6a836d20d1a9f93"
+        }
+      }
+    },
+    "process": {
+      "pid": 17,
+      "exitCode": 0,
+      "reaped": true,
+      "startedAt": "2026-10-14T15:05:45.151530587Z",
+      "finishedAt": "2026-10-14T15:06:15.345132819Z",
+      "deliveredPayloads": 5
+    },
+    "generationSuccess": true,
+    "casePass": false,
+    "UpgradeAuthorized": false,
+    "TrustedHopReceipt": false
+  }
+}

@@ -35,6 +35,13 @@ func TestGenerateRET01(t *testing.T) {
 	generateExactSource(t, ret01CaseID, ret01PlanCommit, "ret-01-full-raw-revision2-v1")
 }
 
+func TestGenerateRET02(t *testing.T) {
+	if os.Getenv("CPAMP_RET02_GENERATE") != "1" {
+		t.Skip("opt-in RET-02 controlled generation")
+	}
+	generateExactSource(t, ret02CaseID, ret02PlanCommit, ret02Profile)
+}
+
 func TestGenerateMIG01(t *testing.T) {
 	if os.Getenv("CPAMP_MIG01_GENERATE") != "1" {
 		t.Skip("opt-in MIG-01 controlled generation")
@@ -225,6 +232,9 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		costs[name] = response
 	}
 	save(t, generation, "v1-analytics.json", costs)
+	if caseID == ret02CaseID {
+		generateRET02Archive(t, base, live, generation, p, costs)
+	}
 	export := httpCall(t, "GET", base, "/v0/management/usage/export", nil)
 	must(t, os.WriteFile(filepath.Join(generation, "v1-export.jsonl"), export, 0600))
 	must(t, cmd.Process.Signal(os.Interrupt))
@@ -244,7 +254,11 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	must(t, e)
 	db := openDB(t, layout.DatabasePath, false)
 	before := snapshot(t, db)
-	checkFullRaw(t, db)
+	if caseID == ret02CaseID {
+		checkRET02Archive(t, db, layout.ArchivesPath)
+	} else {
+		checkFullRaw(t, db)
+	}
 	if scalar(t, db, "select count(*) from account_quota_snapshots") < 2 {
 		t.Fatal("required quota/reset evidence missing")
 	}
@@ -271,6 +285,13 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	save(t, generation, "source-snapshot.json", before)
 	record := map[string]any{"caseID": caseID, "SourceRelease": "v1.14.4", "SourceCommit": sourceCommit, "SourceProducerKind": "published-artifact", "SourceProducerArtifact": map[string]any{"immutableReleaseID": 404941931, "assetID": 616064478, "asset": asset, "releaseInfoSHA256": releaseInfoDigest}, "SourceProducerArchiveSHA256": report.ArchiveSHA256, "SourceProducerExecutableSHA256": exeBefore, "SourceProducerBuildCodeCommit": vcsRevision, "GeneratorCodeCommit": code, "PlanCommit": plan, "GenerationProfile": p.Profile, "GenerationProcedure": "README.md: isolated Linux namespace; published executable; HTTP collector duplicate + price/quota API; SIGINT/reap; explicit checkpoint; maintenancebundle.Create; digest revalidation", "ControlledInputSHA256": digestBytes(input), "process": map[string]any{"pid": cmd.Process.Pid, "arguments": []string{}, "environment": safeEnvironment(cmd.Env), "startedAt": started.UTC(), "finishedAt": finished.UTC(), "exitCode": cmd.ProcessState.ExitCode(), "reaped": reaped, "queueCalls": queueCalls.Load(), "deliveredPayloads": 5, "expectedUniqueEvents": 4}, "producerBuildIdentity": "producer-build.json", "harnessToolchain": platformIdentity(), "StoppedBeforeCheckpointInventory": preCheckpoint, "SQLite": checks, "GeneratedBundleSHA256": sealed.SourceRevision, "bundleInventory": sealed, "migrationState": migrationState, "sourceVariant": "full raw; no archives and no deletion; cache/quota completed", "generationSuccess": true, "casePass": false, "UpgradeAuthorized": false, "TrustedHopReceipt": false}
 	hashes := map[string]string{}
+	if caseID == ret02CaseID {
+		record["sourceVariant"] = "archived + no raw deletion; cache/quota completed"
+		record["GenerationProcedure"] = "published exact v1.14.4 executable; isolated collector duplicate + price/quota API; archive HTTP create/resume/verify; no delete; SIGINT/reap; checkpoint; maintenancebundle.Create; digest revalidation"
+		for _, name := range ret02GenerationFiles {
+			hashes[name] = fileDigest(t, filepath.Join(generation, name))
+		}
+	}
 	for _, name := range []string{"controlled-input.json", "release-info.json", "producer-build.json", "producer.log", "config-write.json", "price-write.json", "quota-write.json", "v1-analytics.json", "v1-export.jsonl", "source-snapshot.json"} {
 		hashes[name] = fileDigest(t, filepath.Join(generation, name))
 	}

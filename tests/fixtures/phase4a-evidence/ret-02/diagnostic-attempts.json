@@ -1,0 +1,66 @@
+{
+  "role": "failed pre-qualification diagnostics; excluded from PASS",
+  "generation-01": "Archive validator rejects mixed Devin cache mode; replaced input with supported Codex archive semantics.",
+  "generation-02": "Archive verify requires real aggregate readiness; generator now polls actual worker status.",
+  "generation-03": "Frozen archive optional absence sentinels need semantic comparison; raw SQL NULLs stay unchanged.",
+  "replay-01": "Fresh-root lock file missing; use existing RET-01 Acquire recovery pattern.",
+  "replay-02": "Backup parent missing; create task-owned parent.",
+  "sealedLogs": {
+    "diagnostics/generation-01/build.log": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "diagnostics/generation-01/generation-execution.log": {
+      "size": 278,
+      "sha256": "a088d5d5422b1cf06cfba485297102e71ac7887b0c2588c354d9455f05e98187"
+    },
+    "diagnostics/generation-02/build.log": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "diagnostics/generation-02/generation-execution.log": {
+      "size": 279,
+      "sha256": "fa32ee4c0ef5ea2f2ac247ccdc4a3d0a03aa33070eaa9b88f5b3864f1b94cb0c"
+    },
+    "diagnostics/generation-03/build.log": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "diagnostics/generation-03/generation-execution.log": {
+      "size": 138,
+      "sha256": "be9b08f617176a1993bc44bf3ace99ab3c9d4e596863be9585544e5ae0f79a1a"
+    },
+    "diagnostics/replay-linux-01/build.log": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "diagnostics/replay-linux-01/replay-execution.log": {
+      "size": 1009,
+      "sha256": "db1e763aeabce423ca53709c994a067c6df90cccf582779710256754d41da7b7"
+    },
+    "diagnostics/replay-linux-02/build.log": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "diagnostics/replay-linux-02/replay-execution.log": {
+      "size": 1027,
+      "sha256": "a84bb9df3a6d7a28c22a47e1878f7e57179760652e42823e76fcf5aded4c6c2c"
+    },
+    "diagnostics/replay-macos-01/build.log": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "diagnostics/replay-macos-01/replay-execution.log": {
+      "size": 1009,
+      "sha256": "905978730253690640efc1b1c353334aa1321958a49654b63b589685c0c3fae9"
+    },
+    "diagnostics/replay-macos-02/build.log": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "diagnostics/replay-macos-02/replay-execution.log": {
+      "size": 1069,
+      "sha256": "27603d55012d84390f477ea30143e702d9f4afa127fba361d727bde059bcbbd8"
+    }
+  }
+}

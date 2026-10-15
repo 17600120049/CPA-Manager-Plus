@@ -77,6 +77,9 @@ func revalidateCase(t *testing.T, root, archive, caseID, plan, expectedProfile s
 		t.Fatal("generation process/exit evidence incomplete")
 	}
 	expected := []string{"controlled-input.json", "release-info.json", "producer-build.json", "producer.log", "config-write.json", "price-write.json", "quota-write.json", "v1-analytics.json", "v1-export.jsonl", "source-snapshot.json"}
+	if caseID == ret02CaseID {
+		expected = append(expected, ret02GenerationFiles...)
+	}
 	if len(r.GenerationEvidenceFiles) != len(expected) {
 		t.Fatal("generation evidence inventory incomplete")
 	}

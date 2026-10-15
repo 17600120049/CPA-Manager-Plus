@@ -84,20 +84,24 @@ def write_members(output, members):
 
 
 def validate_ret01_release(metadata, pin, tag_metadata=None):
+    return validate_retention_release(metadata, pin, "ret-01", tag_metadata)
+
+
+def validate_retention_release(metadata, pin, case, tag_metadata=None):
     """Check durable hosting identity, not production admission or acceptance."""
     if (metadata.get("id") != pin["releaseID"] or metadata.get("tag_name") != pin["tag"]
             or metadata.get("target_commitish") != pin.get("releaseTargetCommitish", pin["tagCommit"])
             or metadata.get("draft") is not False or metadata.get("prerelease") is not True
             or metadata.get("immutable") is not True):
-        raise ValueError("RET-01 immutable qualification release mismatch")
+        raise ValueError(f"{case.upper()} immutable qualification release mismatch")
     assets = metadata.get("assets", [])
     if len(assets) != 1:
-        raise ValueError("RET-01 release asset inventory mismatch")
+        raise ValueError(f"{case.upper()} release asset inventory mismatch")
     asset = assets[0]
     if (asset.get("id") != pin["assetID"] or asset.get("name") != pin["archiveName"]
             or asset.get("size") != pin["archiveSize"] or asset.get("state") != "uploaded"
             or asset.get("digest") != "sha256:" + pin["archiveSHA256"]):
-        raise ValueError("RET-01 release asset identity mismatch")
+        raise ValueError(f"{case.upper()} release asset identity mismatch")
     if "releaseTargetCommitish" in pin:
         if (not tag_metadata or tag_metadata.get("ref") != "refs/tags/" + pin["tag"]
                 or tag_metadata.get("object", {}).get("type") != "commit"
@@ -106,16 +110,22 @@ def validate_ret01_release(metadata, pin, tag_metadata=None):
 
 
 def materialize_ret01(archive, output, pin=None):
-    """Authenticate the original ZIP, then reuse the existing safe writer."""
     return materialize_case(archive, output, "ret-01", pin)
 
 
-def materialize_case(archive, output, case_name, pin=None):
+def materialize_retention(archive, output, case, pin=None):
+    """Authenticate the original ZIP, then reuse the existing safe writer."""
+    if case not in ("ret-01", "ret-02"):
+        raise ValueError("unknown retention case")
+    return materialize_case(archive, output, case, pin)
+
+
+def materialize_case(archive, output, case, pin=None):
     """Authenticate one case's original ZIP against its independent pins."""
-    if case_name not in ("ret-01", "mig-01"):
+    if case not in ("ret-01", "ret-02", "mig-01"):
         raise ValueError("unknown qualification case")
     if pin is None:
-        provenance = ROOT / f"tests/fixtures/phase4a-evidence/{case_name}/source-provenance.json"
+        provenance = ROOT / f"tests/fixtures/phase4a-evidence/{case}/source-provenance.json"
         pin = json.loads(provenance.read_text())["sourceArtifact"]
     output = Path(output)
     if os.path.lexists(output):
@@ -147,40 +157,40 @@ def materialize_case(archive, output, case_name, pin=None):
                 raise ValueError("truncated archive member")
     inventory = pin["inventory"]
     if set(members) != set(inventory):
-        raise ValueError("RET-01 source inventory mismatch")
+        raise ValueError(f"{case.upper()} source inventory mismatch")
     for name, entry in inventory.items():
         if len(members[name]) != entry["size"] or sha256(members[name]) != entry["sha256"]:
-            raise ValueError(f"RET-01 source member mismatch: {name}")
-    for name, field in ((f"{case_name}/source-generation/record.json", "generationRecordSHA256"),
-                        (f"{case_name}/bundle/manifest.json", "bundleManifestSHA256")):
+            raise ValueError(f"{case.upper()} source member mismatch: {name}")
+    for name, field in ((f"{case}/source-generation/record.json", "generationRecordSHA256"),
+                        (f"{case}/bundle/manifest.json", "bundleManifestSHA256")):
         if sha256(members[name]) != pin[field]:
-            raise ValueError(f"RET-01 pinned evidence mismatch: {name}")
-    record = json.loads(members[f"{case_name}/source-generation/record.json"])
-    bundle = json.loads(members[f"{case_name}/bundle/manifest.json"])
-    if (record["caseID"] != case_name.upper() or record["GeneratedBundleSHA256"] != pin["sourceBundleDigest"]
+            raise ValueError(f"{case.upper()} pinned evidence mismatch: {name}")
+    record = json.loads(members[f"{case}/source-generation/record.json"])
+    bundle = json.loads(members[f"{case}/bundle/manifest.json"])
+    if (record["caseID"] != case.upper() or record["GeneratedBundleSHA256"] != pin["sourceBundleDigest"]
             or bundle["sourceRevision"] != pin["sourceBundleDigest"]):
-        raise ValueError("RET-01 source bundle binding mismatch")
+        raise ValueError(f"{case.upper()} source bundle binding mismatch")
     write_members(output, members)
-    return output / case_name
+    return output / case
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=["src-11", "ret-01", "mig-01"], default="src-11")
-    parser.add_argument("--release-metadata", type=Path, help="optional local RET-01 Release API response")
+    parser.add_argument("--case", choices=["src-11", "ret-01", "ret-02", "mig-01"], default="src-11")
+    parser.add_argument("--release-metadata", type=Path, help="optional local qualification Release API response")
     parser.add_argument("--tag-metadata", type=Path, help="local Git ref API response when release target differs from the pinned tag commit")
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    if args.case in ("ret-01", "mig-01"):
+    if args.case in ("ret-01", "ret-02", "mig-01"):
         if args.release_metadata:
             pin = json.loads((ROOT / f"tests/fixtures/phase4a-evidence/{args.case}/source-provenance.json").read_text())["sourceArtifact"]
-            validate_ret01_release(json.loads(args.release_metadata.read_text()), pin,
-                                   json.loads(args.tag_metadata.read_text()) if args.tag_metadata else None)
+            validate_retention_release(json.loads(args.release_metadata.read_text()), pin, args.case,
+                                       json.loads(args.tag_metadata.read_text()) if args.tag_metadata else None)
         print(materialize_case(args.archive, args.output, args.case))
     else:
         if args.release_metadata:
-            parser.error("--release-metadata is only applicable to RET-01")
+            parser.error("--release-metadata is only applicable to qualification ZIP cases")
         print(materialize(args.archive, args.output))
 
 

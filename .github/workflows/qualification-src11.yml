@@ -11,6 +11,7 @@ on:
       - 'tests/fixtures/phase4a-src11/**'
       - 'tests/fixtures/phase4a-evidence/src-11/**'
       - 'tests/fixtures/phase4a-evidence/ret-01/**'
+      - 'tests/fixtures/phase4a-evidence/ret-02/**'
       - 'tests/fixtures/phase4a-evidence/mig-01/**'
 
 permissions:
@@ -58,12 +59,35 @@ jobs:
             --release-metadata "$RUNNER_TEMP/ret01-release.json" \
             --archive "$RUNNER_TEMP/ret01-download/ret-01-82e2287ed64e-sealed-evidence.zip" \
             --output "$RUNNER_TEMP/ret01-original"
+      - name: Download and materialize immutable RET-02 bytes
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/ret-02/source-provenance.json').read_text())['sourceArtifact']
+          with open(os.environ['GITHUB_ENV'], 'a') as stream:
+              for key, field in [('RET02_TAG', 'tag'), ('RET02_ASSET', 'archiveName'), ('RET02_RELEASE_ID', 'releaseID')]:
+                  stream.write(f'{key}={pin[field]}\n')
+          PY
+          # Values are consumed in the next step after GITHUB_ENV is loaded.
+      - name: Verify RET-02 hosting identity and bytes
+        shell: bash
+        run: |
+          gh release download "$RET02_TAG" --repo seakee/CPA-Manager-Plus \
+            --pattern "$RET02_ASSET" --dir "$RUNNER_TEMP/ret02-download"
+          gh api "repos/seakee/CPA-Manager-Plus/releases/$RET02_RELEASE_ID" > "$RUNNER_TEMP/ret02-release.json"
+          python bin/qualification/materialize-src11.py --case ret-02 \
+            --release-metadata "$RUNNER_TEMP/ret02-release.json" \
+            --archive "$RUNNER_TEMP/ret02-download/$RET02_ASSET" --output "$RUNNER_TEMP/ret02-original"
       - name: Verify materialization and reject adversarial archives
         shell: bash
         run: |
           export CPAMP_RET01_FULL_EVIDENCE="$RUNNER_TEMP/ret01-original"
           export CPAMP_RET01_SEALED_ARCHIVE="$RUNNER_TEMP/ret01-download/ret-01-82e2287ed64e-sealed-evidence.zip"
           export CPAMP_SRC11_SEALED_ARCHIVE="$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz"
+          export CPAMP_RET02_SEALED_ARCHIVE="$RUNNER_TEMP/ret02-download/$RET02_ASSET"
+          export CPAMP_RET02_FULL_EVIDENCE="$RUNNER_TEMP/ret02-original"
           python -m unittest discover -s bin/qualification -p 'test_*.py' -v
           python bin/qualification/materialize-src11.py --archive "$CPAMP_SRC11_SEALED_ARCHIVE" --output "$RUNNER_TEMP/src11-original"
           python - <<'PY'
@@ -113,13 +137,14 @@ jobs:
           retention-days: 14
 
   ret01:
-    name: RET-01 exact-source replay (${{ matrix.os }})
+    name: ${{ matrix.case }} exact-source replay (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        case: [ret-01, ret-02]
     env:
       GH_TOKEN: ${{ github.token }}
       PYTHONDONTWRITEBYTECODE: '1'
@@ -132,22 +157,37 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.13'
-      - name: Download and authenticate the original immutable RET-01 fixture
+      - name: Read the case's immutable evidence pins
+        shell: bash
+        env:
+          RETENTION_CASE: ${{ matrix.case }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          case = os.environ['RETENTION_CASE']
+          pin = json.loads(Path(f'tests/fixtures/phase4a-evidence/{case}/source-provenance.json').read_text())['sourceArtifact']
+          with open(os.environ['GITHUB_ENV'], 'a') as stream:
+              for key, field in [('RETENTION_TAG', 'tag'), ('RETENTION_ASSET', 'archiveName'), ('RETENTION_RELEASE_ID', 'releaseID')]:
+                  stream.write(f'{key}={pin[field]}\n')
+          PY
+      - name: Download and authenticate original immutable retention fixture
         shell: bash
         run: |
-          gh release download qualification-ret01-82e2287ed64e-20261014 \
+          gh release download "$RETENTION_TAG" \
             --repo seakee/CPA-Manager-Plus \
-            --pattern ret-01-82e2287ed64e-sealed-evidence.zip --dir "$RUNNER_TEMP/ret01-download"
-          gh api repos/seakee/CPA-Manager-Plus/releases/412621764 > "$RUNNER_TEMP/ret01-release.json"
-          python bin/qualification/materialize-src11.py --case ret-01 \
+            --pattern "$RETENTION_ASSET" --dir "$RUNNER_TEMP/ret01-download"
+          gh api "repos/seakee/CPA-Manager-Plus/releases/$RETENTION_RELEASE_ID" > "$RUNNER_TEMP/ret01-release.json"
+          python bin/qualification/materialize-src11.py --case "${{ matrix.case }}" \
             --release-metadata "$RUNNER_TEMP/ret01-release.json" \
-            --archive "$RUNNER_TEMP/ret01-download/ret-01-82e2287ed64e-sealed-evidence.zip" \
+            --archive "$RUNNER_TEMP/ret01-download/$RETENTION_ASSET" \
             --output "$RUNNER_TEMP/ret01-source"
-      - name: Verify committed RET-01 evidence contract
+      - name: Verify committed retention evidence contract
         env:
           CPAMP_RET01_FULL_EVIDENCE: ${{ runner.temp }}/ret01-source
-        run: python -m unittest discover -s bin/qualification -p 'test_ret01.py' -v
-      - name: Replay RET-01 against the v2 primitives
+          CPAMP_RET02_FULL_EVIDENCE: ${{ runner.temp }}/ret01-source
+        run: python -m unittest discover -s bin/qualification -p 'test_${{ matrix.case == 'ret-01' && 'ret01' || 'ret02' }}.py' -v
+      - name: Replay retention against v2 primitives
         shell: bash
         run: |
           extra=()
@@ -155,15 +195,15 @@ jobs:
             docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
             extra=(--linux)
           fi
-          python bin/qualification/run-src11.py ret01 \
+          python bin/qualification/run-src11.py "${{ matrix.case == 'ret-01' && 'ret01' || 'ret02' }}" \
             --archive "$RUNNER_TEMP/ret01-source/producer.tar.gz" \
-            --evidence "$RUNNER_TEMP/ret01-source/ret-01" \
+            --evidence "$RUNNER_TEMP/ret01-source/${{ matrix.case }}" \
             --output "$RUNNER_TEMP/ret01-replay" "${extra[@]}"
-      - name: Upload RET-01 runtime evidence
+      - name: Upload case-specific retention runtime evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ret01-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ matrix.case }}-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/ret01-replay/runner-evidence.json
             ${{ runner.temp }}/ret01-replay/*.log

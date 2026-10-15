@@ -1,0 +1,31 @@
+{
+  "authoritativeDigest": "280696c6b169a4ef4f9362737c05d9d0472f5fafaf0504462c9e09a1279cd903",
+  "count": 4,
+  "deleted": 0,
+  "events": [
+    {
+      "event_hash": "fca838c1e3633905232972575f10a2d138e977d54f8498b8f0a72fe33d504c0c",
+      "id": 1,
+      "request_id": "ret02-codex-cached",
+      "timestamp_ms": 1790812800000
+    },
+    {
+      "event_hash": "b1ab71cb67855777574de9065b64ec7cd896a8d687319a922bab538a433ddcb6",
+      "id": 2,
+      "request_id": "ret02-claude-tier",
+      "timestamp_ms": 1790816400000
+    },
+    {
+      "event_hash": "006332643a4a77a728ea56d644b36fd226ca4aee84bf7fcfbf5603273ec13baf",
+      "id": 3,
+      "request_id": "ret02-explicit-zero",
+      "timestamp_ms": 1790820000000
+    },
+    {
+      "event_hash": "f09d72c530cfbbf3fc243f757c9a1bfc5cd226df86498aec4d2f3dbdadceb0f3",
+      "id": 4,
+      "request_id": "ret02-quota-failure",
+      "timestamp_ms": 1790823600000
+    }
+  ]
+}
