@@ -195,6 +195,9 @@ func (a UpgradeAdmission) Validate() error {
 		// upgrade an unverified source.
 		return nil
 	case ExactCandidateVerified:
+		if a.Shape != LegacySchemaC {
+			return errors.New("verified exact v1.14.4 candidate must match LegacySchemaC")
+		}
 		if a.ArtifactEvidenceRef == "" || a.SourceProvenanceRef == "" {
 			return errors.New("exact candidate requires artifact and source provenance evidence")
 		}
@@ -202,6 +205,9 @@ func (a UpgradeAdmission) Validate() error {
 			return errors.New("direct exact candidate cannot claim forward-hop evidence")
 		}
 	case ForwardHopVerified:
+		if a.Shape != LegacySchemaC {
+			return errors.New("verified forward-hop output candidate must match LegacySchemaC")
+		}
 		if a.ArtifactEvidenceRef == "" || a.SourceProvenanceRef == "" || a.ForwardHopEvidenceRef == "" {
 			return errors.New("forward-hop candidate requires artifact, source provenance and hop evidence")
 		}
