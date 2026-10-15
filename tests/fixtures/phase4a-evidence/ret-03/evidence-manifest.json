@@ -112,8 +112,8 @@
       "size": 64795
     },
     "seal-verification.json": {
-      "sha256": "4cdeb5043b95f661f2029a56a8c32b8cfc89d212948923c9068d8115fbd7173c",
-      "size": 700
+      "sha256": "f15b0c094af547aadbdc04af039276ff602601783b8cd3403f3b29f0f541891a",
+      "size": 831
     },
     "source-generation/archive-flow.json": {
       "sha256": "a7ec07af927fa66592b92669a153d8a7409f921ff56e97b321d5a138ff248629",
@@ -192,8 +192,8 @@
       "size": 0
     },
     "source-provenance.json": {
-      "sha256": "40faaab76e328262e1e66b9ce5db39923d6855debf4628aa520b419a4452d180",
-      "size": 17209
+      "sha256": "f37ad3137ca87a3a988b0a0fe7619f7a9ca0d9939f12ef0a998ae17d844a2962",
+      "size": 17555
     }
   },
   "remainingCases": {

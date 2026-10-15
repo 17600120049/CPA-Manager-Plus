@@ -21,9 +21,9 @@
     "archiveName": "ret-03-f5f22e9f0e9-sealed-evidence.zip",
     "archiveSHA256": "6de91fb033927db62f1fb6f06aa1e3e7e598a62a9d57c97cc6434a7004e36db1",
     "archiveSize": 8820605,
-    "assetID": 0,
+    "assetID": 642254684,
     "bundleManifestSHA256": "13a44eb356d8719aec535e1794aeddc5e43805cc09d24ea0443ff796aece492d",
-    "downloadURL": "PENDING-QUALIFICATION-RELEASE-URL",
+    "downloadURL": "https://github.com/seakee/CPA-Manager-Plus/releases/download/qualification-ret03-f5f22e9f0e9-20261015/ret-03-f5f22e9f0e9-sealed-evidence.zip",
     "generationRecordSHA256": "2677e356ac2077ca617e5ef2ecc0168b2a5adcc8b266b3a2ed627e72f0a64036",
     "immutableRelease": true,
     "inventory": {
@@ -344,12 +344,13 @@
         "size": 0
       }
     },
-    "releaseID": 0,
+    "releaseID": 413324151,
+    "releaseTargetCommitish": "main",
     "repository": "seakee/CPA-Manager-Plus",
     "scope": "Original RET-03 controlled generation, published producer archive, Linux/macOS runtime replay, real backup/new-root restores and sealed bytes; one-time packaging.",
     "sourceBundleDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
     "tag": "qualification-ret03-f5f22e9f0e9-20261015",
-    "tagCommit": "PENDING-QUALIFICATION-TAG-COMMIT"
+    "tagCommit": "2d8833b7bed754478afaaad8f37c598d0ba07289"
   },
   "sourceBundleDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
   "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
