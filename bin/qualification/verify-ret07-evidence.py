@@ -478,7 +478,9 @@ def verify_sealed_clean_checkout(root: Path, pin: dict[str, Any]) -> None:
             clean.get("workingTreeStatus") == "clean", "sealed clean checkout input mismatch")
     for platform in ("linux", "macos"):
         run = clean.get("platforms", {}).get(platform, {})
-        result, runner = run.get("runtimeResult", {}), run.get("runner", {})
+        prefix = f"sealed-clean-checkout/{platform}"
+        verify_runtime(root, prefix, pin["sourceBundleDigest"])
+        result, runner = read(root, prefix + "/result.json"), read(root, prefix + "/runner-evidence.json")
         require(run.get("executionExitCode") == 0 and run.get("newRootRecovery") is True and
                 result.get("inputBundleDigest") == pin.get("sourceBundleDigest") and
                 result.get("runtimeEvidence") == "pass" and result.get("casePass") is False and
@@ -486,6 +488,7 @@ def verify_sealed_clean_checkout(root: Path, pin: dict[str, Any]) -> None:
                 f"{platform} sealed clean checkout runtime failed")
         require(runner.get("codeCommit") == clean.get("testedCommit") and
                 runner.get("sealedEvidenceArchiveSHA256") == pin.get("archiveSHA256") and
+                runner.get("sealedArtifactPinSHA256") == digest(root / "source-provenance.json") and
                 runner.get("executionExitCode") == 0, f"{platform} sealed clean checkout runner mismatch")
 
 

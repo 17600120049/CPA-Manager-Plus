@@ -138,6 +138,90 @@
       "sha256": "0aede4fec9b9fa457d0ecd7db3645a4f6fee3b03d9eb5ea2f9c6c09024a5ad9d",
       "size": 31810
     },
+    "sealed-clean-checkout-replay.json": {
+      "sha256": "ee089df47e30facee1c5a2e4735aa6e262dfcdf2249ff1d4efb86097dd1ec81b",
+      "size": 707
+    },
+    "sealed-clean-checkout/linux/backup-restore.json": {
+      "sha256": "cf597e0b822d7255e73945ebadf25e95b97da063e8448c58fceb1c7edb8ecbfd",
+      "size": 27264
+    },
+    "sealed-clean-checkout/linux/build.log.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "sealed-clean-checkout/linux/execution-record.json": {
+      "sha256": "359e4031c2c60fa8f1b58218f11d173d3c4fbe5614831159d5f4273d204b4165",
+      "size": 1166
+    },
+    "sealed-clean-checkout/linux/input-bundle.json": {
+      "sha256": "1641b7acebeba1efbd3fe0c1bc207c13cc4564cd5e959d5878c0613ef6439768",
+      "size": 1844
+    },
+    "sealed-clean-checkout/linux/raw-event-inventory.json": {
+      "sha256": "65e9d3146aa8741cfd39077082ad7a1664682606770fabe8f0273e7d4a321275",
+      "size": 151
+    },
+    "sealed-clean-checkout/linux/replay-execution.log.txt": {
+      "sha256": "1ccc1164155a059f9b53eda8b62aee381fbd977c2d53d33113b867f3adfad98b",
+      "size": 65
+    },
+    "sealed-clean-checkout/linux/result.json": {
+      "sha256": "e3d401da16e8b2110cb68c06724a13825e5f5d4c73d48a0ae064a3a322df4cbb",
+      "size": 6513
+    },
+    "sealed-clean-checkout/linux/retained-pricing-source.json": {
+      "sha256": "308ac2a95d279673436b35b72172cd82c7f516de23788cb4360318e06f65d26b",
+      "size": 53859
+    },
+    "sealed-clean-checkout/linux/runner-evidence.json": {
+      "sha256": "fb6fafad0b7d1b57401260f7257a0fe4dcdbd4a95f163877aad593018ef62edd",
+      "size": 76708
+    },
+    "sealed-clean-checkout/linux/semantic-assertions.json": {
+      "sha256": "9b14d6d5f1716813ab852623c34539f937f3183bd03949ed8daf8fae373e7e28",
+      "size": 31810
+    },
+    "sealed-clean-checkout/macos/backup-restore.json": {
+      "sha256": "7d46a5ae0a80f5d0648a24cc66acbfd7205ccecdf32d082eb467f21fa8dc438f",
+      "size": 27264
+    },
+    "sealed-clean-checkout/macos/build.log.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    "sealed-clean-checkout/macos/execution-record.json": {
+      "sha256": "359e4031c2c60fa8f1b58218f11d173d3c4fbe5614831159d5f4273d204b4165",
+      "size": 1166
+    },
+    "sealed-clean-checkout/macos/input-bundle.json": {
+      "sha256": "1641b7acebeba1efbd3fe0c1bc207c13cc4564cd5e959d5878c0613ef6439768",
+      "size": 1844
+    },
+    "sealed-clean-checkout/macos/raw-event-inventory.json": {
+      "sha256": "65e9d3146aa8741cfd39077082ad7a1664682606770fabe8f0273e7d4a321275",
+      "size": 151
+    },
+    "sealed-clean-checkout/macos/replay-execution.log.txt": {
+      "sha256": "43f1cea20ea8f6e3ccc052a0c942e70853d8972857ec2242798b93c909311233",
+      "size": 65
+    },
+    "sealed-clean-checkout/macos/result.json": {
+      "sha256": "88fc4a8747648d25dbb0f40e41126ce8039d40758b26fe0ff66fd9d61c5ceec3",
+      "size": 6513
+    },
+    "sealed-clean-checkout/macos/retained-pricing-source.json": {
+      "sha256": "5f1d10c618e7bc675e20f4b794c9e3a2b143bc5f78fbf98ac47bab5dc3259a66",
+      "size": 53859
+    },
+    "sealed-clean-checkout/macos/runner-evidence.json": {
+      "sha256": "2cee399275213b251ebf94f048fc619c712e5663460cd9b29852d66bd9a23adb",
+      "size": 74886
+    },
+    "sealed-clean-checkout/macos/semantic-assertions.json": {
+      "sha256": "5a1d85d4aaf8248d4dc926192509a36d44d53eac361384d5066101814ffe95cf",
+      "size": 31810
+    },
     "source-generation/archive-flow.json": {
       "sha256": "0d5d88d7d2120db2a12970710e6c41bcb33f303ccf2f9981b265a7600dc475d5",
       "size": 4527

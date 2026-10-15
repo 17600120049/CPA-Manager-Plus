@@ -1,0 +1,21 @@
+{
+  "caseID": "RET-07",
+  "checkoutMode": "detached-clean",
+  "materializedArchiveSHA256": "881a1fe3e2ea84e7b61816b2e9dae3829ce93559e64e23bb78a4966a2ee78eb3",
+  "platforms": {
+    "linux": {
+      "executionExitCode": 0,
+      "newRootRecovery": true,
+      "runner": "sealed-clean-checkout/linux/runner-evidence.json",
+      "runtimeResult": "sealed-clean-checkout/linux/result.json"
+    },
+    "macos": {
+      "executionExitCode": 0,
+      "newRootRecovery": true,
+      "runner": "sealed-clean-checkout/macos/runner-evidence.json",
+      "runtimeResult": "sealed-clean-checkout/macos/result.json"
+    }
+  },
+  "testedCommit": "91fd7b6b1ff55016854a0d4d3e07e76d8954ed1e",
+  "workingTreeStatus": "clean"
+}

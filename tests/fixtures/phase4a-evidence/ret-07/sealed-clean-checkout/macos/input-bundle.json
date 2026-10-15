@@ -1,0 +1,55 @@
+{
+  "caseID": "RET-07",
+  "inputBundleIdentity": "RET-07/input-bundle@3b3985dc7c26bc4662fa46e517a301bd43a68624e4e50ee7bb4207f072d81c76",
+  "inventory": {
+    "version": 2,
+    "fence": "",
+    "sourceRevision": "3b3985dc7c26bc4662fa46e517a301bd43a68624e4e50ee7bb4207f072d81c76",
+    "entries": {
+      "config": {
+        "present": true,
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "data-key": {
+        "present": true,
+        "size": 44,
+        "sha256": "bb60ffd632f946a0cdc3ed20db15b61e1ec4bc16fae6552968a47b1a9420bd85"
+      },
+      "database": {
+        "present": true,
+        "size": 659456,
+        "sha256": "b0f7d821bcdd4fab269187839f602ad723a70da24db89a146c2498aa410f35a5"
+      },
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": false
+      },
+      "database-wal": {
+        "present": false
+      },
+      "usage-archives": {
+        "present": true,
+        "directory": true
+      },
+      "usage-archives/730088e0a87337a890d0bc0ed03afcb1": {
+        "present": true,
+        "directory": true
+      },
+      "usage-archives/730088e0a87337a890d0bc0ed03afcb1/manifest.json": {
+        "present": true,
+        "size": 1099,
+        "sha256": "39a2ad5d3411b70198482524839f49336cb20a50130ac08150f5979aa78b4999"
+      },
+      "usage-archives/730088e0a87337a890d0bc0ed03afcb1/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "present": true,
+        "size": 2064,
+        "sha256": "d380992d4de9c405a0bb63e109b3bfe05a54497a0c37704eef3f4e96e41a5752"
+      }
+    }
+  },
+  "sourceBundleDigest": "3b3985dc7c26bc4662fa46e517a301bd43a68624e4e50ee7bb4207f072d81c76",
+  "sourceGenerationRecordSHA256": "7bfb99ac5ad1621e99e570ebd50b96e0d0847a9954e7525d932a6a3284e2ee4e"
+}

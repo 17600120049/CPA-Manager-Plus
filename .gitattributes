@@ -13,6 +13,7 @@ tests/fixtures/phase4a-evidence/src-11/packaging-replay/ci/windows-latest/*.json
 tests/fixtures/phase4a-evidence/ret-01/** text eol=lf
 tests/fixtures/phase4a-evidence/ret-02/** text eol=lf
 tests/fixtures/phase4a-evidence/ret-03/** text eol=lf
+tests/fixtures/phase4a-evidence/ret-07/** -text
 tests/fixtures/phase4a-evidence/mig-01/** -text
 tests/fixtures/phase4a-evidence/mig-02/** -text
 tests/fixtures/phase4a-evidence/bak-01/** -text
