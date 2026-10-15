@@ -1,0 +1,156 @@
+{
+  "profile": "mig-03-clearing-recovery-block-v1",
+  "events": [
+    {
+      "request_id": "mig03-clearing-alpha",
+      "timestamp": "2026-10-03T00:00:00Z",
+      "provider": "workbuddy",
+      "executor_type": "executorAdapter",
+      "model": "mig03-cache-alpha",
+      "auth_index": "mig03-cache-alpha",
+      "auth_provider_snapshot": "workbuddy",
+      "session_id": "mig03-session",
+      "parent_session_id": "mig03-parent",
+      "tokens": {
+        "input_tokens": 120,
+        "output_tokens": 10,
+        "cached_tokens": 25,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 5,
+        "total_tokens": 135
+      },
+      "accounting_version": 2,
+      "token_breakdown": {
+        "schema_version": 2,
+        "quality": "complete",
+        "total_tokens": 135,
+        "input": {
+          "total_tokens": 125,
+          "uncached_tokens": 100,
+          "cache_read_tokens": 20,
+          "cache_write_tokens": 5
+        },
+        "output": {
+          "total_tokens": 10,
+          "non_reasoning_tokens": 10,
+          "reasoning_tokens": 0
+        },
+        "unclassified_tokens": 0
+      }
+    },
+    {
+      "request_id": "mig03-clearing-beta",
+      "timestamp": "2026-10-03T01:00:00Z",
+      "provider": "workbuddy",
+      "executor_type": "executorAdapter",
+      "model": "mig03-cache-beta",
+      "auth_index": "mig03-cache-beta",
+      "auth_provider_snapshot": "workbuddy",
+      "session_id": "mig03-session",
+      "parent_session_id": "mig03-parent",
+      "tokens": {
+        "input_tokens": 120,
+        "output_tokens": 10,
+        "cached_tokens": 25,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 5,
+        "total_tokens": 135
+      },
+      "accounting_version": 2,
+      "token_breakdown": {
+        "schema_version": 2,
+        "quality": "complete",
+        "total_tokens": 135,
+        "input": {
+          "total_tokens": 125,
+          "uncached_tokens": 100,
+          "cache_read_tokens": 20,
+          "cache_write_tokens": 5
+        },
+        "output": {
+          "total_tokens": 10,
+          "non_reasoning_tokens": 10,
+          "reasoning_tokens": 0
+        },
+        "unclassified_tokens": 0
+      }
+    },
+    {
+      "request_id": "mig03-quota-zero",
+      "timestamp": "2026-10-03T02:00:00Z",
+      "provider": "codex",
+      "model": "mig03-free",
+      "auth_index": "fixture-codex",
+      "auth_provider_snapshot": "codex",
+      "auth_file_snapshot": "fixture-codex.json",
+      "tokens": {
+        "input_tokens": 500,
+        "output_tokens": 100,
+        "cached_tokens": 400,
+        "total_tokens": 600
+      }
+    },
+    {
+      "request_id": "mig03-quota-failure",
+      "timestamp": "2026-10-03T03:00:00Z",
+      "provider": "codex",
+      "model": "mig03-paid",
+      "auth_index": "fixture-codex",
+      "auth_provider_snapshot": "codex",
+      "auth_file_snapshot": "fixture-codex.json",
+      "failed": true,
+      "fail_status_code": 429,
+      "fail_body": "HTTP 429 cpaManagementKey=qualification-redaction-sentinel quota exhausted",
+      "session_id": "mig03-session",
+      "response_model": "mig03-paid",
+      "tokens": {
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "total_tokens": 110
+      },
+      "response_headers": {
+        "X-Codex-Primary-Used-Percent": ["100"],
+        "X-Codex-Primary-Reset-At": ["4102444800000"],
+        "X-Codex-Primary-Window-Minutes": ["300"],
+        "X-Codex-Plan-Type": ["plus"],
+        "X-Request-Id": ["trace-mig03-quota"]
+      }
+    }
+  ],
+  "prices": {
+    "mig03-free": {"prompt": 0, "completion": 0, "cache": 0, "cacheRead": 0, "cacheCreation": 0, "promptConfigured": true, "completionConfigured": true, "cacheReadConfigured": true, "cacheCreationConfigured": true, "source": "manual"},
+    "mig03-paid": {"prompt": 2, "completion": 8, "cache": 0.2, "promptConfigured": true, "completionConfigured": true, "source": "manual"},
+    "mig03-cache-alpha": {"prompt": 1, "completion": 1, "cache": 1, "cacheRead": 1, "cacheCreation": 1, "promptConfigured": true, "completionConfigured": true, "cacheReadConfigured": true, "cacheCreationConfigured": true, "source": "manual"},
+    "mig03-cache-beta": {"prompt": 1, "completion": 1, "cache": 1, "cacheRead": 1, "cacheCreation": 1, "promptConfigured": true, "completionConfigured": true, "cacheReadConfigured": true, "cacheCreationConfigured": true, "source": "manual"}
+  },
+  "quota": {
+    "entries": [
+      {
+        "provider": "meta",
+        "account": {"auth_index": "mig03-meta", "auth_file_snapshot": "mig03-meta.json", "auth_provider_snapshot": "meta"},
+        "windows": [
+          {
+            "provider_window_id": "mig03-week",
+            "window_kind": "week",
+            "window_mode": "fixed",
+            "model_scope_kind": "all",
+            "source": "api_query",
+            "source_observation_id": "mig03-controlled-quota",
+            "observed_at_ms": 1790985600000,
+            "boundary_accuracy": "exact",
+            "cycle_start_ms": 1790985600000,
+            "cycle_end_ms": 1791590400000,
+            "duration_seconds": 604800,
+            "used_percent": 25,
+            "remaining_percent": 75,
+            "reset_credits_available": 2,
+            "reset_credits": [{"id": "mig03-banked-reset", "expires_at_ms": 1791590400000}]
+          }
+        ]
+      }
+    ]
+  },
+  "fromMS": 1790985600000,
+  "toMS": 1791072000000,
+  "expectedUSD": {"mig03-free": 0, "mig03-paid": 0.00028, "mig03-cache-alpha": 0.000155, "mig03-cache-beta": 0.000155}
+}

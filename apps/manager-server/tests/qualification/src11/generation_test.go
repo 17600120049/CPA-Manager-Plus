@@ -73,6 +73,13 @@ func TestGenerateMIG02(t *testing.T) {
 	generateExactSource(t, mig02CaseID, mig02PlanCommit, mig02Profile)
 }
 
+func TestGenerateMIG03(t *testing.T) {
+	if os.Getenv("CPAMP_MIG03_GENERATE") != "1" {
+		t.Skip("opt-in MIG-03 independent exact-source generation")
+	}
+	generateExactSource(t, mig03CaseID, mig03PlanCommit, mig03Profile)
+}
+
 func TestGenerateBAK01(t *testing.T) {
 	if os.Getenv("CPAMP_BAK01_GENERATE") != "1" {
 		t.Skip("opt-in BAK-01 controlled generation")

@@ -1,0 +1,23 @@
+{
+  "SEM-07": {
+    "bankedResetEvidencePreserved": true,
+    "cacheClearingDoesNotAlterQuota": true,
+    "cooldownEvidencePreserved": true,
+    "quotaMigrationEqual": true,
+    "quotaRowsEqual": true,
+    "quotaSettingsEqual": true,
+    "status": "runtime-pass"
+  },
+  "clearing": {
+    "completedSteps": 1,
+    "noImplicitCompletion": true,
+    "remainingRows": 11,
+    "status": "persisted"
+  },
+  "historyPreserved": true,
+  "noAutomaticDestructiveCleanup": true,
+  "noAutomaticReset": true,
+  "normalReadinessBlocked": true,
+  "sourceBytesUnchanged": true,
+  "unrelatedSettingsUnchanged": true
+}

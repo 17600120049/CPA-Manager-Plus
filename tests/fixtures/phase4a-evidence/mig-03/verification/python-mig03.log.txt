@@ -1,0 +1,10 @@
+test_delivery_boundary_and_completion_criteria (test_mig03.Mig03EvidenceTests.test_delivery_boundary_and_completion_criteria) ... ok
+test_exact_source_generation_is_independent (test_mig03.Mig03EvidenceTests.test_exact_source_generation_is_independent) ... ok
+test_manifest_inventory_and_digests (test_mig03.Mig03EvidenceTests.test_manifest_inventory_and_digests) ... ok
+test_provenance_and_scope (test_mig03.Mig03EvidenceTests.test_provenance_and_scope) ... ok
+test_runtime_and_clean_checkout (test_mig03.Mig03EvidenceTests.test_runtime_and_clean_checkout) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.039s
+
+OK

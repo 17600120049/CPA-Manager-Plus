@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "release": {
+    "version": "v1.14.4",
+    "stage": "stable",
+    "source_commit": "166262365d506157b99968105c890f480cc7c07c"
+  },
+  "content": {
+    "summary": {
+      "zh": "修复 xAI/Grok 健康巡检的客户端版本兼容、Claude 自定义 Base URL 的探测鉴权，以及历史用量清理后的趋势对比 500 错误。",
+      "en": "Fixes xAI/Grok health-check client-version compatibility, Claude probe authentication for custom Base URLs, and analytics comparison 500 errors after historical usage cleanup."
+    },
+    "notes": {
+      "zh": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.4/docs/release-notes/v1.14.4-zh.md",
+      "en": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.4/docs/release-notes/v1.14.4-en.md"
+    }
+  },
+  "update": {
+    "breaking": false,
+    "migration_required": false,
+    "minimum_direct_upgrade_version": null,
+    "upgrade_guide_url": "https://github.com/seakee/CPA-Manager-Plus/releases/tag/v1.14.4"
+  },
+  "distribution": {
+    "docker": {
+      "image": "seakee/cpa-manager-plus",
+      "version_tag": "v1.14.4"
+    },
+    "native": {
+      "assets": [
+        "cpa-manager-plus_v1.14.4_darwin_amd64.tar.gz",
+        "cpa-manager-plus_v1.14.4_darwin_arm64.tar.gz",
+        "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+        "cpa-manager-plus_v1.14.4_linux_arm64.tar.gz",
+        "cpa-manager-plus_v1.14.4_windows_amd64.zip",
+        "cpa-manager-plus_v1.14.4_windows_arm64.zip"
+      ]
+    }
+  },
+  "compatibility": {
+    "minimum_cpa_version": "v7.3.4"
+  }
+}
