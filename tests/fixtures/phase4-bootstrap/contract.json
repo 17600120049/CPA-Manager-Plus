@@ -231,7 +231,7 @@
       "id": "verified_hop_ready_is_upgrade",
       "hasV1ProductState": true,
       "admission": {
-        "shape": "legacy_schema_b",
+        "shape": "legacy_schema_c",
         "plannedCandidate": {"release": "v1.14.4", "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"},
         "artifactEvidenceRef": "evidence:artifact",
         "sourceProvenanceRef": "evidence:older-source",
@@ -330,6 +330,7 @@
     "complete_verified_backup_before_write",
     "source_revalidation_before_write",
     "bootstrap_mode_admin_session_orthogonal",
+    "fresh_mode_not_admin_initialization_authority",
     "upgrade_preserves_existing_admin_credential",
     "authoritative_history_includes_archive_retained_evidence",
     "cpa_core_v8_only_no_v0_fallback",
