@@ -61,10 +61,10 @@ jobs:
             --pattern cpa-manager-plus_v1.14.4_linux_amd64.tar.gz \
             --dir "$RUNNER_TEMP/producer-download"
           python - <<'PY'
-          import hashlib, json
+          import hashlib, json, os
           from pathlib import Path
           pin = json.loads(Path('tests/fixtures/phase4a-evidence/bak-02/source-provenance.json').read_text())
-          archive = Path('${{ runner.temp }}') / 'producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz'
+          archive = Path(os.environ['RUNNER_TEMP']) / 'producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz'
           if hashlib.sha256(archive.read_bytes()).hexdigest() != pin['sourceProducerArchiveSHA256']:
               raise SystemExit('v1.14.4 producer archive pin mismatch')
           PY
