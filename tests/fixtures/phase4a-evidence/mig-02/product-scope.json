@@ -1,0 +1,25 @@
+{
+  "baselineCommit": "72653d68327146ed46c423e3b5849e769c5f6999",
+  "verificationCommit": "2822140c1381117ccbdfe519ec0f5a7825788211",
+  "baselineTrees": {
+    "apps/manager-server/internal": "a6b7e8db1061c639d8cb88c209fa5445994337b2",
+    "apps/manager-server/cmd": "5f03e520669878aa7e685bbc00ca7b6f76a53360",
+    "apps/web": "1599fd61ee83ff77be5bef035121883c6b7c7c15"
+  },
+  "productCodeChanged": false,
+  "harnessOnly": true,
+  "changedPaths": [
+    ".gitattributes",
+    ".github/workflows/qualification-src11.yml",
+    "apps/manager-server/tests/qualification/src11/generation_test.go",
+    "apps/manager-server/tests/qualification/src11/mig02_readiness_test.go",
+    "apps/manager-server/tests/qualification/src11/mig02_test.go",
+    "apps/manager-server/tests/qualification/src11/support_test.go",
+    "bin/qualification/materialize-src11.py",
+    "bin/qualification/run-src11.py",
+    "bin/qualification/test_mig02.py",
+    "tests/fixtures/phase4a-evidence/mig-02/"
+  ],
+  "productionPathsChanged": [],
+  "readinessScope": "controlledDirectCandidateReadiness != productionBridgeReadiness"
+}

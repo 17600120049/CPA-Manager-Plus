@@ -21,6 +21,32 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+class MaterializerCaseContractTests(unittest.TestCase):
+    def test_advertised_zip_cases_have_sealed_artifact_pins(self):
+        required = {"archiveSize", "archiveSHA256", "inventory",
+                    "generationRecordSHA256", "bundleManifestSHA256", "sourceBundleDigest"}
+        for case in module.SEALED_ZIP_CASES:
+            with self.subTest(case=case):
+                provenance = module.ROOT / f"tests/fixtures/phase4a-evidence/{case}/source-provenance.json"
+                pin = json.loads(provenance.read_text())["sourceArtifact"]
+                self.assertFalse(required - pin.keys())
+
+    def test_committed_mig02_fixture_is_not_a_sealed_zip_case(self):
+        with self.assertRaisesRegex(ValueError, "unknown qualification case"):
+            module.materialize_case("absent-archive", "absent-output", "mig-02")
+
+    def test_cli_rejects_mig02_before_accessing_archive_or_metadata(self):
+        for metadata in ([], ["--release-metadata", "absent-metadata"]):
+            argv = ["materialize-src11.py", "--case", "mig-02",
+                    "--archive", "absent-archive", "--output", "absent-output", *metadata]
+            with self.subTest(metadata=metadata), mock.patch.object(sys, "argv", argv):
+                with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                    with self.assertRaises(SystemExit) as raised:
+                        module.main()
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn("invalid choice: 'mig-02'", stderr.getvalue())
+
+
 class MaterializeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

@@ -49,6 +49,13 @@ func TestGenerateMIG01(t *testing.T) {
 	generateExactSource(t, mig01CaseID, mig01PlanCommit, mig01Profile)
 }
 
+func TestGenerateMIG02(t *testing.T) {
+	if os.Getenv("CPAMP_MIG02_GENERATE") != "1" {
+		t.Skip("opt-in MIG-02 independent exact-source generation")
+	}
+	generateExactSource(t, mig02CaseID, mig02PlanCommit, mig02Profile)
+}
+
 func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	if os.Getenv("CPAMP_SRC11_GENERATE") != "1" {
 		t.Skip("opt-in exact historical executable execution")

@@ -1,0 +1,17 @@
+{
+  "applicableSEM": [
+    "SEM-07"
+  ],
+  "applyingBundleDigest": "30f856106f424487bc82c2fc61c9d6a3f6cb41430aeb57116825c0f98836b72a",
+  "completedBundleDigest": "ca7e87a986a43fdd09a97d9bbccfbd885e9f4e6757f4082d692b8d9fe6afc489",
+  "controlledDirectCandidateReadinessAfter": "ready",
+  "controlledDirectCandidateReadinessBefore": "blocked",
+  "executionCommit": "7ae55d9b2e807b9b762e0513355d38897ccdba6b",
+  "interruptionActuallyExecuted": true,
+  "normalStartupBlocked": true,
+  "operationID": "f987eeff4e3df81b5782f826317819dc274f0f41cc26585d9b2d9d814a4a2cf2",
+  "productionBridgeReadiness": "unknown",
+  "recoveryActuallyExecuted": true,
+  "sourceBundleDigest": "ffb320e9bc45e398ccab7351d7f79da4d785f7e236ad7a845ef3f8dc4bcae903",
+  "sourceProducerCommit": "166262365d506157b99968105c890f480cc7c07c"
+}

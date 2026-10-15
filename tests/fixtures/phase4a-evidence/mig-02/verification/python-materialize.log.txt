@@ -1,0 +1,19 @@
+test_duplicate_rejected (test_materialize_src11.MaterializeTests.test_duplicate_rejected) ... ok
+test_existing_output_preserved (test_materialize_src11.MaterializeTests.test_existing_output_preserved) ... ok
+test_original_sealed_bytes_and_inventory (test_materialize_src11.MaterializeTests.test_original_sealed_bytes_and_inventory) ... skipped 'opt-in actual sealed archive'
+test_outer_mismatch_does_not_create_output (test_materialize_src11.MaterializeTests.test_outer_mismatch_does_not_create_output) ... ok
+test_paths_and_links_rejected_even_with_matching_outer_digest (test_materialize_src11.MaterializeTests.test_paths_and_links_rejected_even_with_matching_outer_digest) ... ok
+test_existing_output_preserved (test_materialize_src11.Ret01MaterializeTests.test_existing_output_preserved) ... ok
+test_extraction_budget_before_output (test_materialize_src11.Ret01MaterializeTests.test_extraction_budget_before_output) ... ok
+test_inventory_content_and_critical_bindings_before_output (test_materialize_src11.Ret01MaterializeTests.test_inventory_content_and_critical_bindings_before_output) ... ok
+test_original_ret01_zip (test_materialize_src11.Ret01MaterializeTests.test_original_ret01_zip) ... skipped 'opt-in original immutable RET-01 ZIP'
+test_outer_mismatch_before_output (test_materialize_src11.Ret01MaterializeTests.test_outer_mismatch_before_output) ... ok
+test_paths_links_and_duplicates_before_output (test_materialize_src11.Ret01MaterializeTests.test_paths_links_and_duplicates_before_output) ... ok
+test_release_metadata_fail_closed (test_materialize_src11.Ret01MaterializeTests.test_release_metadata_fail_closed) ... ok
+test_release_target_requires_separate_actual_tag_identity (test_materialize_src11.Ret01MaterializeTests.test_release_target_requires_separate_actual_tag_identity) ... ok
+test_windows_zipinfo_normalization_rejected_before_inventory (test_materialize_src11.Ret01MaterializeTests.test_windows_zipinfo_normalization_rejected_before_inventory) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.058s
+
+OK (skipped=2)
