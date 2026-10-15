@@ -250,8 +250,10 @@ jobs:
           gh release download "$RET03_TAG" --repo seakee/CPA-Manager-Plus \
             --pattern "$RET03_ASSET" --dir "$RUNNER_TEMP/ret03-download"
           gh api "repos/seakee/CPA-Manager-Plus/releases/$RET03_RELEASE_ID" > "$RUNNER_TEMP/ret03-release.json"
+          gh api "repos/seakee/CPA-Manager-Plus/git/ref/tags/$RET03_TAG" > "$RUNNER_TEMP/ret03-tag.json"
           python bin/qualification/materialize-src11.py --case ret-03 \
             --release-metadata "$RUNNER_TEMP/ret03-release.json" \
+            --tag-metadata "$RUNNER_TEMP/ret03-tag.json" \
             --archive "$RUNNER_TEMP/ret03-download/$RET03_ASSET" \
             --output "$RUNNER_TEMP/ret03-original"
       - name: Verify RET-03 committed evidence contract
