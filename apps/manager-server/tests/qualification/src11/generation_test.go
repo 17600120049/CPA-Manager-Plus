@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"debug/buildinfo"
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -151,6 +152,7 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	var preTransactionMainDigest string
 	var preTransactionMainSize int64
 	queue := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("qualification upstream request method=%s path=%s authorization=%q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
 		if r.Header.Get("Authorization") != "Bearer qualification-only-management-key" {
 			http.Error(w, "unauthorized", 401)
 			return
@@ -158,12 +160,14 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v0/management/usage-queue":
-			queueCalls.Add(1)
+			calls := queueCalls.Add(1)
 			if deliver.Load() && delivered.CompareAndSwap(false, true) {
+				log.Printf("qualification upstream delivery call=%d events=%d duplicate=true", calls, len(p.Events))
 				events := append([]json.RawMessage{}, p.Events...)
 				events = append(events, p.Events[0])
 				json.NewEncoder(w).Encode(events)
 			} else {
+				log.Printf("qualification upstream empty queue call=%d deliver=%v", calls, deliver.Load())
 				w.Write([]byte("[]"))
 			}
 		case "/v0/management/auth-files":
