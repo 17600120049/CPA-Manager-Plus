@@ -1,0 +1,22 @@
+# BAK-01 committed-WAL evidence
+
+This fixture records only Phase4A-07 / BAK-01 against the frozen plan contract:
+exact v1.14.4, committed WAL variant, maintenance bundle, consistent pass,
+applicable SEM-01.
+
+The source generation uses the published v1.14.4 Linux AMD64 producer. A held
+read snapshot sees the committed event while an immutable copy of the main DB
+file does not. The source WAL is inventoried at the SQLite header/frame level;
+the complete maintenance bundle captures `database`, `database-wal`, and
+`database-shm` without checkpointing the source. The exact producer bytes are
+independently pinned to the immutable v1.14.4 product release by SHA256; the
+sealed qualification archive preserves the generated source and runtime bytes
+without duplicating that producer asset.
+
+`runtime/` is the macOS-host replay and `platform-replay/linux/` is the pinned
+Linux AMD64 replay. Both restore to distinct new roots, reopen with their own
+WAL/SHM, repeat backup/restore, and preserve the authoritative digest. Windows
+is compile/materialization scope only; no Windows SQLite replay PASS is claimed.
+
+`casePass` remains `false` while `independentAcceptance` is `pending`. This
+case does not authorize upgrades or trusted hops and does not complete Phase4A.

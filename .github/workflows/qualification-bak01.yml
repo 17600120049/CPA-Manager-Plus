@@ -60,6 +60,20 @@ jobs:
             --release-metadata "$RUNNER_TEMP/bak01-release.json" \
             --archive "$RUNNER_TEMP/bak01-download/$BAK01_ASSET" \
             --output "$RUNNER_TEMP/bak01-original"
+      - name: Download and authenticate exact v1.14.4 producer
+        shell: bash
+        run: |
+          gh release download v1.14.4 --repo seakee/CPA-Manager-Plus \
+            --pattern cpa-manager-plus_v1.14.4_linux_amd64.tar.gz \
+            --dir "$RUNNER_TEMP/producer-download"
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/bak-01/source-provenance.json').read_text())
+          archive = Path(os.environ['RUNNER_TEMP']) / 'producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz'
+          if hashlib.sha256(archive.read_bytes()).hexdigest() != pin['sourceProducerArchiveSHA256']:
+              raise SystemExit('v1.14.4 producer archive pin mismatch')
+          PY
       - name: Verify committed BAK-01 evidence contract
         shell: bash
         run: python -m unittest bin.qualification.test_bak01 -v
@@ -69,7 +83,7 @@ jobs:
         run: |
           docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
           python bin/qualification/run-src11.py bak01 \
-            --archive "$RUNNER_TEMP/bak01-original/producer.tar.gz" \
+            --archive "$RUNNER_TEMP/producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
             --evidence-archive "$RUNNER_TEMP/bak01-download/$BAK01_ASSET" \
             --linux --output "$RUNNER_TEMP/bak01-replay"
       - name: Replay BAK-01 on macOS
@@ -77,7 +91,7 @@ jobs:
         shell: bash
         run: |
           python bin/qualification/run-src11.py bak01 \
-            --archive "$RUNNER_TEMP/bak01-original/producer.tar.gz" \
+            --archive "$RUNNER_TEMP/producer-download/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
             --evidence-archive "$RUNNER_TEMP/bak01-download/$BAK01_ASSET" \
             --output "$RUNNER_TEMP/bak01-replay"
       - name: Compile Windows harness (SQLite replay not qualified)

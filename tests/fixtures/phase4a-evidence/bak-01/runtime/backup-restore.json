@@ -1,0 +1,46 @@
+{
+  "authoritativeAfterDigest": "ca868584b4fb8d9041e5676e784d9f6f093b473792758123722cb603c5048c06",
+  "authoritativeBeforeDigest": "ca868584b4fb8d9041e5676e784d9f6f093b473792758123722cb603c5048c06",
+  "backupManifestDigest": "2901ef20ac3dfa3cd3b085f99c8fb0089be973ab79b42141ceb55b76f85ce689",
+  "committedRow": {
+    "event_hash": "140ce0e6c69dd2cc2d9497b0d462eaa39563b7c8d3b292307a39d8d3bb717799",
+    "id": 1,
+    "input_tokens": 1000,
+    "model": "devin/swe-2",
+    "output_tokens": 100,
+    "request_id": "bak01-committed-wal-event",
+    "timestamp_ms": 1790812800000,
+    "total_tokens": 1150
+  },
+  "firstRestoreRootDistinct": true,
+  "firstRestoredManifestDigest": "872caa90b4530b7d2b646094b29c409d19e7614d36909a73276245396bf9404a",
+  "inputBundleDigest": "872caa90b4530b7d2b646094b29c409d19e7614d36909a73276245396bf9404a",
+  "inventoryMatched": true,
+  "secondCommittedRow": {
+    "event_hash": "140ce0e6c69dd2cc2d9497b0d462eaa39563b7c8d3b292307a39d8d3bb717799",
+    "id": 1,
+    "input_tokens": 1000,
+    "model": "devin/swe-2",
+    "output_tokens": 100,
+    "request_id": "bak01-committed-wal-event",
+    "timestamp_ms": 1790812800000,
+    "total_tokens": 1150
+  },
+  "secondRestoreRootDistinct": true,
+  "secondRestoredManifestDigest": "2901ef20ac3dfa3cd3b085f99c8fb0089be973ab79b42141ceb55b76f85ce689",
+  "sourceBundlePath": "not opened during restore verification",
+  "sourceWALNotUsedByRestoredRoot": true,
+  "sqlite": {
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  }
+}
