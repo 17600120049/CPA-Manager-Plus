@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "caseID": "MIG-02",
+  "acceptance": "pending",
+  "sourceRelease": "v1.14.4",
+  "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "planCommit": "06a47aaefff1629b3d556f8a49e0544648bfd4bc",
+  "sourceProducerKind": "published-artifact",
+  "sourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "sourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "generatorCodeCommit": "2822140c1381117ccbdfe519ec0f5a7825788211",
+  "sourceBundleDigest": "ffb320e9bc45e398ccab7351d7f79da4d785f7e236ad7a845ef3f8dc4bcae903",
+  "sourceGenerationRecordSHA256": "96289c66523879585015f8b4d785bbf63911ba775ba42a3918d4e0d83c2b674b",
+  "sourceArtifact": {
+    "kind": "committed-mig02-source-fixture",
+    "immutable": false,
+    "producerArchiveImmutable": true,
+    "producerReleaseID": 404941931,
+    "producerAssetID": 616064478,
+    "archiveName": "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+    "archiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "executableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "sourceBundleDigest": "ffb320e9bc45e398ccab7351d7f79da4d785f7e236ad7a845ef3f8dc4bcae903",
+    "generationRecordSHA256": "96289c66523879585015f8b4d785bbf63911ba775ba42a3918d4e0d83c2b674b",
+    "producerEvidenceRole": "accepted exact v1.14.4 producer archive reused read-only; MIG-02 source-generation and bundle are independent"
+  },
+  "UpgradeAuthorized": false,
+  "TrustedHopReceipt": false
+}

@@ -1,0 +1,4 @@
+=== RUN   TestGenerateMIG02
+    generation_test.go:308: source generation succeeded; case acceptance remains pending
+--- PASS: TestGenerateMIG02 (1.26s)
+PASS
