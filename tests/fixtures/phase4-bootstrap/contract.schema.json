@@ -72,8 +72,8 @@
     },
     "globalAssertions": {
       "type": "array",
-      "minItems": 15,
-      "maxItems": 15,
+      "minItems": 16,
+      "maxItems": 16,
       "uniqueItems": true,
       "items": {
         "enum": [
@@ -86,6 +86,7 @@
           "complete_verified_backup_before_write",
           "source_revalidation_before_write",
           "bootstrap_mode_admin_session_orthogonal",
+          "fresh_mode_not_admin_initialization_authority",
           "upgrade_preserves_existing_admin_credential",
           "authoritative_history_includes_archive_retained_evidence",
           "cpa_core_v8_only_no_v0_fallback",
