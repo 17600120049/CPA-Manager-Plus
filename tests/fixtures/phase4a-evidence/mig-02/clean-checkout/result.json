@@ -1,0 +1,33 @@
+{
+  "CacheAfterRecovery": "completed",
+  "CacheBeforeRecovery": "applying",
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "PlanCommit": "06a47aaefff1629b3d556f8a49e0544648bfd4bc",
+  "Quota": "completed",
+  "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "SourceGeneratorCodeCommit": "2822140c1381117ccbdfe519ec0f5a7825788211",
+  "SourceRelease": "v1.14.4",
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "applicableSEM": [
+    "SEM-07"
+  ],
+  "applyingBundleDigest": "30f856106f424487bc82c2fc61c9d6a3f6cb41430aeb57116825c0f98836b72a",
+  "caseID": "MIG-02",
+  "casePass": false,
+  "completedBundleDigest": "ca7e87a986a43fdd09a97d9bbccfbd885e9f4e6757f4082d692b8d9fe6afc489",
+  "controlledDirectCandidateReadinessAfter": "ready",
+  "controlledDirectCandidateReadinessBefore": "blocked",
+  "executionCommit": "7ae55d9b2e807b9b762e0513355d38897ccdba6b",
+  "independentAcceptance": "pending",
+  "inputBundleDigest": "ffb320e9bc45e398ccab7351d7f79da4d785f7e236ad7a845ef3f8dc4bcae903",
+  "migrationExecutorRevision": 3,
+  "normalReadinessBlocked": true,
+  "productionBridgeReadiness": "unknown",
+  "recovery": "supported-resume",
+  "recoveryActuallyExecuted": true,
+  "runtimeEvidence": "pass",
+  "sourceCacheRevision": 2,
+  "sourceGenerationRecordSHA256": "96289c66523879585015f8b4d785bbf63911ba775ba42a3918d4e0d83c2b674b"
+}

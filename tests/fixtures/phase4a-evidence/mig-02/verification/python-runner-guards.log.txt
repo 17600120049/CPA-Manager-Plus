@@ -1,0 +1,13 @@
+test_dirty_source_cannot_build_or_mint_evidence (test_run_aut03.RunnerGuards.test_dirty_source_cannot_build_or_mint_evidence) ... usage: run-aut03.py [-h] --sealed-archive SEALED_ARCHIVE --output OUTPUT
+                    [--linux]
+run-aut03.py: error: commit all harness, runner, workflow, pins and Manager code before qualification
+ok
+test_existing_output_is_never_overwritten (test_run_aut03.RunnerGuards.test_existing_output_is_never_overwritten) ... usage: run-aut03.py [-h] --sealed-archive SEALED_ARCHIVE --output OUTPUT
+                    [--linux]
+run-aut03.py: error: output must be absent; never overwrite evidence
+ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.003s
+
+OK

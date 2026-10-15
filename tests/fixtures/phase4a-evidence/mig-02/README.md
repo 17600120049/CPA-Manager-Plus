@@ -1,0 +1,11 @@
+# MIG-02: interrupted Cache accounting recovery
+
+This fixture qualifies only CPAMP v2 Phase4A-07 / MIG-02 against Plan commit `06a47aaefff1629b3d556f8a49e0544648bfd4bc`. The source is independently generated from exact `v1.14.4@166262365d506157b99968105c890f480cc7c07c`; its producer archive and build identity are pinned in `source-provenance.json`. The committed `bundle/` is the generated completed source (Cache revision 2, Quota completed).
+
+The runtime qualification uses the production `DiscoverUsageCacheAccounting` and `RunUsageCacheAccountingBatch` repository calls. It stages two real changes, commits one apply batch, persists `applying` with one staging row, then cancels a subsequent call and seals that actual checkpoint. Normal startup/readiness rejects the sealed applying bundle with typed blocker `cache-accounting-applying` and recovery classification `supported-resume`. Recovery restores the applying bundle, resumes from the same native migration identity, applies only the remaining event, closes staging, reaches `completed`, and verifies an idempotent completed replay. No SQL writes create or repair the applying state, no marker is deleted, and no quota worker runs during recovery.
+
+`runtime/` is the task worktree replay; `clean-checkout/` is an actual replay from a clean clone at the recorded commit. The applying and completed bundle digests in those runtime records are disposable outputs and are retained as observations; the committed source bundle remains unchanged. SEM-07 proves quota observations, windows, cycles, snapshots, banked resets, cooldown state, quota migration rows and unrelated settings remain equal.
+
+Readiness names remain scoped: `controlledDirectCandidateReadiness` becomes `ready` after recovery while production `bridgeReadiness` remains `unknown`. `UpgradeAuthorized=false`, `TrustedHopReceipt=false`, `Phase4A07Complete=false`, `Phase4AComplete=false`, and `independentAcceptance=pending`. MIG-02 is the only case covered here; MIG-03+ and all other lanes remain pending.
+
+The CI job downloads the already accepted exact v1.14.4 producer archive from the immutable MIG-01 qualification artifact, verifies the committed evidence contract, and runs this lifecycle on Linux and macOS; Windows compiles the same harness without claiming a Windows runtime pass.

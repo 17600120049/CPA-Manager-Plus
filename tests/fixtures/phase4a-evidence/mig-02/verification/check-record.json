@@ -1,0 +1,25 @@
+{
+  "caseID": "MIG-02",
+  "status": "pass",
+  "runtimeEvidence": "pass",
+  "casePass": true,
+  "independentAcceptance": "pending",
+  "commands": {
+    "goFocused": "go test -mod=readonly ./apps/manager-server/tests/qualification/src11",
+    "goRace": "go test -mod=readonly -race ./apps/manager-server/tests/qualification/src11",
+    "pythonMIG02": "python -m unittest discover -s bin/qualification -p test_mig02.py -v",
+    "pythonMIG01Regression": "python -m unittest discover -s bin/qualification -p test_mig01.py -v",
+    "pythonMaterialize": "python -m unittest discover -s bin/qualification -p test_materialize_src11.py -v",
+    "pythonRunnerGuards": "python -m unittest discover -s bin/qualification -p test_run_aut03.py -v"
+  },
+  "mig02TestsExecuted": 5,
+  "mig02TestsFailed": 0,
+  "cleanCheckoutReplay": "pass",
+  "productCodeChanged": false,
+  "authority": {
+    "UpgradeAuthorized": false,
+    "TrustedHopReceipt": false,
+    "Phase4A07Complete": false,
+    "Phase4AComplete": false
+  }
+}

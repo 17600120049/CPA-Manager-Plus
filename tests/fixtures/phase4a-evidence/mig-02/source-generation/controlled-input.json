@@ -1,0 +1,220 @@
+{
+  "profile": "mig-02-applying-supported-resume-v1",
+  "events": [
+    {
+      "request_id": "mig02-cache-a",
+      "timestamp": "2026-10-01T00:00:00Z",
+      "provider": "workbuddy",
+      "executor_type": "executorAdapter",
+      "model": "fixture-cache-a",
+      "auth_index": "fixture-cache-a",
+      "auth_provider_snapshot": "workbuddy",
+      "session_id": "mig02-session",
+      "parent_session_id": "mig02-parent",
+      "tokens": {
+        "input_tokens": 120,
+        "output_tokens": 10,
+        "cached_tokens": 25,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 5,
+        "total_tokens": 135
+      },
+      "accounting_version": 2,
+      "token_breakdown": {
+        "schema_version": 2,
+        "quality": "complete",
+        "total_tokens": 135,
+        "input": {
+          "total_tokens": 125,
+          "uncached_tokens": 100,
+          "cache_read_tokens": 20,
+          "cache_write_tokens": 5
+        },
+        "output": {
+          "total_tokens": 10,
+          "non_reasoning_tokens": 10,
+          "reasoning_tokens": 0
+        },
+        "unclassified_tokens": 0
+      }
+    },
+    {
+      "request_id": "mig02-cache-b",
+      "timestamp": "2026-10-01T01:00:00Z",
+      "provider": "workbuddy",
+      "executor_type": "executorAdapter",
+      "model": "fixture-cache-b",
+      "auth_index": "fixture-cache-b",
+      "auth_provider_snapshot": "workbuddy",
+      "session_id": "mig02-session",
+      "parent_session_id": "mig02-parent",
+      "tokens": {
+        "input_tokens": 120,
+        "output_tokens": 10,
+        "cached_tokens": 25,
+        "cache_read_tokens": 20,
+        "cache_creation_tokens": 5,
+        "total_tokens": 135
+      },
+      "accounting_version": 2,
+      "token_breakdown": {
+        "schema_version": 2,
+        "quality": "complete",
+        "total_tokens": 135,
+        "input": {
+          "total_tokens": 125,
+          "uncached_tokens": 100,
+          "cache_read_tokens": 20,
+          "cache_write_tokens": 5
+        },
+        "output": {
+          "total_tokens": 10,
+          "non_reasoning_tokens": 10,
+          "reasoning_tokens": 0
+        },
+        "unclassified_tokens": 0
+      }
+    },
+    {
+      "request_id": "mig02-explicit-zero",
+      "timestamp": "2026-10-01T02:00:00Z",
+      "provider": "codex",
+      "model": "fixture-free",
+      "auth_index": "fixture-codex",
+      "auth_provider_snapshot": "codex",
+      "auth_file_snapshot": "fixture-codex.json",
+      "tokens": {
+        "input_tokens": 500,
+        "output_tokens": 100,
+        "cached_tokens": 400,
+        "total_tokens": 600
+      }
+    },
+    {
+      "request_id": "mig02-quota-failure",
+      "timestamp": "2026-10-01T03:00:00Z",
+      "provider": "codex",
+      "model": "fixture-paid",
+      "auth_index": "fixture-codex",
+      "auth_provider_snapshot": "codex",
+      "auth_file_snapshot": "fixture-codex.json",
+      "failed": true,
+      "fail_status_code": 429,
+      "fail_body": "HTTP 429 cpaManagementKey=qualification-redaction-sentinel quota exhausted",
+      "session_id": "mig02-session",
+      "response_model": "fixture-paid",
+      "tokens": {
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "total_tokens": 110
+      },
+      "response_headers": {
+        "X-Codex-Primary-Used-Percent": [
+          "100"
+        ],
+        "X-Codex-Primary-Reset-At": [
+          "4102444800000"
+        ],
+        "X-Codex-Primary-Window-Minutes": [
+          "300"
+        ],
+        "X-Codex-Plan-Type": [
+          "plus"
+        ],
+        "X-Request-Id": [
+          "trace-mig02-quota"
+        ]
+      }
+    }
+  ],
+  "prices": {
+    "fixture-free": {
+      "prompt": 0,
+      "completion": 0,
+      "cache": 0,
+      "cacheRead": 0,
+      "cacheCreation": 0,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "cacheReadConfigured": true,
+      "cacheCreationConfigured": true,
+      "source": "manual"
+    },
+    "fixture-paid": {
+      "prompt": 2,
+      "completion": 8,
+      "cache": 0.2,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "source": "manual"
+    },
+    "fixture-cache-a": {
+      "prompt": 1,
+      "completion": 1,
+      "cache": 1,
+      "cacheRead": 1,
+      "cacheCreation": 1,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "cacheReadConfigured": true,
+      "cacheCreationConfigured": true,
+      "source": "manual"
+    },
+    "fixture-cache-b": {
+      "prompt": 1,
+      "completion": 1,
+      "cache": 1,
+      "cacheRead": 1,
+      "cacheCreation": 1,
+      "promptConfigured": true,
+      "completionConfigured": true,
+      "cacheReadConfigured": true,
+      "cacheCreationConfigured": true,
+      "source": "manual"
+    }
+  },
+  "quota": {
+    "entries": [
+      {
+        "provider": "meta",
+        "account": {
+          "auth_index": "fixture-meta",
+          "auth_file_snapshot": "fixture-meta.json",
+          "auth_provider_snapshot": "meta"
+        },
+        "windows": [
+          {
+            "provider_window_id": "fixture-week",
+            "window_kind": "week",
+            "window_mode": "fixed",
+            "model_scope_kind": "all",
+            "source": "api_query",
+            "source_observation_id": "mig02-controlled-quota",
+            "observed_at_ms": 1790812800000,
+            "boundary_accuracy": "exact",
+            "cycle_start_ms": 1790812800000,
+            "cycle_end_ms": 1791417600000,
+            "duration_seconds": 604800,
+            "used_percent": 25,
+            "remaining_percent": 75,
+            "reset_credits_available": 2,
+            "reset_credits": [
+              {
+                "id": "fixture-banked-reset",
+                "expires_at_ms": 1791417600000
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "fromMS": 1790812800000,
+  "toMS": 1790899200000,
+  "expectedUSD": {
+    "fixture-free": 0,
+    "fixture-paid": 0.00028,
+    "fixture-cache-a": 0.000155,
+    "fixture-cache-b": 0.000155
+  }
+}

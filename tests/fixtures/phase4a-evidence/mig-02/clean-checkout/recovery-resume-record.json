@@ -1,0 +1,88 @@
+{
+  "alreadyAppliedEventIDs": [
+    1
+  ],
+  "executorCommit": "7ae55d9b2e807b9b762e0513355d38897ccdba6b",
+  "idempotentCompletedReplay": {
+    "State": {
+      "name": "usage_cache_accounting_v2",
+      "status": "completed",
+      "lastEventId": 3,
+      "targetEventId": 3,
+      "processedRows": 3,
+      "changedRows": 2,
+      "appliedRows": 2,
+      "startedAtMs": 1792029793568,
+      "updatedAtMs": 1792029793793,
+      "finishedAtMs": 1792029793793
+    },
+    "Processed": 0,
+    "Completed": true
+  },
+  "inputBundleDigest": "30f856106f424487bc82c2fc61c9d6a3f6cb41430aeb57116825c0f98836b72a",
+  "noReset": true,
+  "operationID": "f987eeff4e3df81b5782f826317819dc274f0f41cc26585d9b2d9d814a4a2cf2",
+  "outputBundleDigest": "ca7e87a986a43fdd09a97d9bbccfbd885e9f4e6757f4082d692b8d9fe6afc489",
+  "resumeCheckpoint": {
+    "name": "usage_cache_accounting_v2",
+    "status": "applying",
+    "lastEventId": 3,
+    "targetEventId": 3,
+    "processedRows": 3,
+    "changedRows": 2,
+    "appliedRows": 1,
+    "startedAtMs": 1792029793568,
+    "updatedAtMs": 1792029793572
+  },
+  "resumedEventIDs": [
+    2
+  ],
+  "steps": [
+    {
+      "name": "usage_cache_accounting_v2",
+      "status": "applying",
+      "lastEventId": 3,
+      "targetEventId": 3,
+      "processedRows": 3,
+      "changedRows": 2,
+      "appliedRows": 1,
+      "startedAtMs": 1792029793568,
+      "updatedAtMs": 1792029793572
+    },
+    {
+      "State": {
+        "name": "usage_cache_accounting_v2",
+        "status": "clearing",
+        "lastEventId": 3,
+        "targetEventId": 3,
+        "processedRows": 3,
+        "changedRows": 2,
+        "appliedRows": 2,
+        "startedAtMs": 1792029793568,
+        "updatedAtMs": 1792029793792
+      },
+      "Processed": 1,
+      "Completed": false
+    },
+    {
+      "State": {
+        "name": "usage_cache_accounting_v2",
+        "status": "completed",
+        "lastEventId": 3,
+        "targetEventId": 3,
+        "processedRows": 3,
+        "changedRows": 2,
+        "appliedRows": 2,
+        "startedAtMs": 1792029793568,
+        "updatedAtMs": 1792029793793,
+        "finishedAtMs": 1792029793793
+      },
+      "Processed": 0,
+      "Completed": true
+    }
+  ],
+  "supportedProductionCalls": [
+    "DiscoverUsageCacheAccounting",
+    "RunUsageCacheAccountingBatch"
+  ]
+}

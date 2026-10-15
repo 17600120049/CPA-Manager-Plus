@@ -1,0 +1,11 @@
+test_actual_readiness_semantics_and_source_immutability (test_mig01.Mig01EvidenceTests.test_actual_readiness_semantics_and_source_immutability) ... ok
+test_complete_literal_inventory (test_mig01.Mig01EvidenceTests.test_complete_literal_inventory) ... ok
+test_durable_asset_and_delivery_boundary (test_mig01.Mig01EvidenceTests.test_durable_asset_and_delivery_boundary) ... ok
+test_frozen_product_scope (test_mig01.Mig01EvidenceTests.test_frozen_product_scope) ... ok
+test_independent_exact_generation (test_mig01.Mig01EvidenceTests.test_independent_exact_generation) ... ok
+test_persisted_source_bytes (test_mig01.Mig01EvidenceTests.test_persisted_source_bytes) ... skipped 'opt-in actual immutable source bytes'
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.095s
+
+OK (skipped=1)

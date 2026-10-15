@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "cleanCheckout": true,
+  "testedCommit": "7ae55d9b2e807b9b762e0513355d38897ccdba6b",
+  "executionCommit": "7ae55d9b2e807b9b762e0513355d38897ccdba6b",
+  "statusBefore": "",
+  "statusAfter": "",
+  "sourceBundleDigest": "ffb320e9bc45e398ccab7351d7f79da4d785f7e236ad7a845ef3f8dc4bcae903",
+  "sourceGenerationRecordSHA256": "96289c66523879585015f8b4d785bbf63911ba775ba42a3918d4e0d83c2b674b",
+  "runtimeEvidence": "pass",
+  "recoveryActuallyExecuted": true,
+  "normalReadinessBlocked": true,
+  "sourceFiles": {
+    ".gitattributes": "9eb27ea93969320e206dd99321ca8effb3762be1bb7f8a52a12984e8aa4c5cba",
+    ".github/workflows/qualification-src11.yml": "2bebd97ab005ef73b73725565be34db844d559be3a98e666cafa9d7e09f0a976",
+    "apps/manager-server/tests/qualification/src11/generation_test.go": "c62c3137e844395a60f98f58c733a8d7a607b953b7a37f4d96bc1cf7d90864d0",
+    "apps/manager-server/tests/qualification/src11/mig02_readiness_test.go": "6515d2a57dcefe072aa288157a51950cad926b4e84faedd10f791994a81ed945",
+    "apps/manager-server/tests/qualification/src11/mig02_test.go": "40a75324937dbf8cc397ea67da4ec7fc80e5090d9c64c1f7781fc4b20be80949",
+    "apps/manager-server/tests/qualification/src11/support_test.go": "3b77b3a1dd04330cd8164fe7defa9faba2b9cd7697d9912ab438aae42ff02c8c",
+    "bin/qualification/materialize-src11.py": "3b69238e67aa2393b0118918df600ba5ddd097377c3b5b70e039423dbf303d98",
+    "bin/qualification/run-src11.py": "fd669f4c296463845830d21e94497b4c046a04f198a1cd24c97d1230210b8cbd",
+    "bin/qualification/test_mig02.py": "22f29b3509786d2b9d96d7e9a863d40d77876bdd35a8bec975940484f771827e",
+    "tests/fixtures/phase4a-evidence/mig-02/profile.json": "30266eb802af52011eb85bdc83fe3bdb9f103674c6e9663224c157135ba0e4b6",
+    "tests/fixtures/phase4a-evidence/mig-02/source-generation/record.json": "96289c66523879585015f8b4d785bbf63911ba775ba42a3918d4e0d83c2b674b"
+  },
+  "replayCommand": [
+    "/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-mig02-applying-recovery/bin/tmp/mig02-clean-checkout/bin/tmp/mig02-clean-replay/qualification",
+    "-test.v",
+    "-test.run",
+    "^TestQualifyMIG02$",
+    "-test.timeout",
+    "4m"
+  ]
+}

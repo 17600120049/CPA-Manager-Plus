@@ -1,0 +1,97 @@
+{
+  "bundle": {
+    "version": 2,
+    "fence": "cooperating-manager-lock",
+    "sourceRevision": "ca7e87a986a43fdd09a97d9bbccfbd885e9f4e6757f4082d692b8d9fe6afc489",
+    "entries": {
+      "config": {
+        "present": true,
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "data-key": {
+        "present": true,
+        "size": 44,
+        "sha256": "744dad4dabdcf49397740bd9cb0ab7f4bddf50c3202adb395b2a9c6940b55ccb"
+      },
+      "database": {
+        "present": true,
+        "size": 659456,
+        "sha256": "07aa7da8a0ece59cb003e331180e2abb489f394a597fb7b52af364fcf90018fd"
+      },
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": false
+      },
+      "database-wal": {
+        "present": false
+      },
+      "usage-archives": {
+        "present": false
+      }
+    }
+  },
+  "inspection": {
+    "cache": [
+      {
+        "status": "completed",
+        "lastId": 3,
+        "targetId": 3,
+        "processed": 3,
+        "changed": 2,
+        "applied": 2,
+        "finishedAtMs": 1792029793793,
+        "hasError": false
+      }
+    ],
+    "quota": [
+      {
+        "status": "completed",
+        "lastId": 0,
+        "targetId": 0,
+        "processed": 0,
+        "changed": 0,
+        "applied": 0,
+        "finishedAtMs": 1792029725116,
+        "hasError": false
+      }
+    ],
+    "cacheRevision": "3",
+    "cacheStagingRows": 0,
+    "quotaUnattachedRows": 0
+  },
+  "sqlite": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "state": {
+    "name": "usage_cache_accounting_v2",
+    "status": "completed",
+    "lastEventId": 3,
+    "targetEventId": 3,
+    "processedRows": 3,
+    "changedRows": 2,
+    "appliedRows": 2,
+    "startedAtMs": 1792029793568,
+    "updatedAtMs": 1792029793793,
+    "finishedAtMs": 1792029793793
+  }
+}
