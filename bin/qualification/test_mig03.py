@@ -157,6 +157,12 @@ class Mig03EvidenceTests(unittest.TestCase):
         for key in ("historyPreserved", "sourceBytesUnchanged", "unrelatedSettingsUnchanged", "noAutomaticDestructiveCleanup", "noAutomaticReset", "normalReadinessBlocked"):
             self.assertTrue(semantic[key], key)
 
+        integrity = read(root / "authoritative-digest.json")
+        self.assertEqual(integrity["clearingSnapshotDigest"], integrity["blockedReadinessSnapshotDigest"])
+        self.assertEqual(integrity["clearingUsageEventsDigest"], integrity["blockedReadinessUsageEventsDigest"])
+        self.assertTrue(integrity["noMutationDuringBlockedReadiness"])
+        self.assertTrue(integrity["usageEventsStableDuringBlockedReadiness"])
+
         execution = read(root / "execution-record.json")
         self.assertTrue(execution["interruptionActuallyExecuted"])
         self.assertTrue(execution["recoveryInspectionActuallyExecuted"])

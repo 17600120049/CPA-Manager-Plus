@@ -269,14 +269,24 @@ func TestQualifyMIG03(t *testing.T) {
 	})
 	authoritativeBefore := digestBytes(mig02JSON(t, prepared["usage_events"]))
 	authoritativeAfter := digestBytes(mig02JSON(t, blockedSnapshot["usage_events"]))
+	clearingSnapshotDigest := digestBytes(mig02JSON(t, clearingSnapshot))
+	blockedReadinessSnapshotDigest := digestBytes(mig02JSON(t, blockedSnapshot))
+	clearingUsageEventsDigest := digestBytes(mig02JSON(t, clearingSnapshot["usage_events"]))
+	blockedReadinessUsageEventsDigest := digestBytes(mig02JSON(t, blockedSnapshot["usage_events"]))
 	save(t, out, "authoritative-digest.json", map[string]any{
-		"beforeUsageEventsDigest": authoritativeBefore,
-		"afterUsageEventsDigest":  authoritativeAfter,
-		"usageEventRowsBefore":    len(prepared["usage_events"]),
-		"usageEventRowsAfter":     len(blockedSnapshot["usage_events"]),
-		"sourceBundleBefore":      source.SourceRevision,
-		"sourceBundleAfter":       clearingBundle.SourceRevision,
-		"sourceBytesUnchanged":    true,
+		"beforeUsageEventsDigest":                 authoritativeBefore,
+		"afterUsageEventsDigest":                  authoritativeAfter,
+		"usageEventRowsBefore":                    len(prepared["usage_events"]),
+		"usageEventRowsAfter":                     len(blockedSnapshot["usage_events"]),
+		"clearingSnapshotDigest":                  clearingSnapshotDigest,
+		"blockedReadinessSnapshotDigest":          blockedReadinessSnapshotDigest,
+		"clearingUsageEventsDigest":               clearingUsageEventsDigest,
+		"blockedReadinessUsageEventsDigest":       blockedReadinessUsageEventsDigest,
+		"noMutationDuringBlockedReadiness":        clearingSnapshotDigest == blockedReadinessSnapshotDigest,
+		"usageEventsStableDuringBlockedReadiness": clearingUsageEventsDigest == blockedReadinessUsageEventsDigest,
+		"sourceBundleBefore":                      source.SourceRevision,
+		"sourceBundleAfter":                       clearingBundle.SourceRevision,
+		"sourceBytesUnchanged":                    true,
 	})
 	save(t, out, "semantic-assertions.json", map[string]any{
 		"SEM-07": map[string]any{
