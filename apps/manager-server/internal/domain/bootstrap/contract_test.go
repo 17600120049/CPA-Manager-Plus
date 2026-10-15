@@ -201,22 +201,32 @@ type collectorAssertionJSON struct {
 }
 
 type prefixObservationJSON struct {
-	CurrentInstallationID    string
-	CurrentRoutingRevision   uint64
-	CurrentEffectivePath     string
-	PublicIdentityHealthy    bool
-	StaticAssetsHealthy      bool
-	APIAuthenticationHealthy bool
+	CurrentInstallationID          string
+	CurrentRoutingRevision         uint64
+	CurrentEffectivePath           string
+	CurrentOperationOwnerQualified bool
+	CurrentCollisionFree           bool
+	CurrentSourceQualified         bool
+	PreviousSnapshotQualified      bool
+	PreviousSnapshotEffectivePath  string
+	PublicIdentityHealthy          bool
+	StaticAssetsHealthy            bool
+	APIAuthenticationHealthy       bool
 }
 
 func (o prefixObservationJSON) domain() bootstrap.PrefixRecoveryObservation {
 	return bootstrap.PrefixRecoveryObservation{
-		CurrentInstallationID:    o.CurrentInstallationID,
-		CurrentRoutingRevision:   o.CurrentRoutingRevision,
-		CurrentEffectivePath:     o.CurrentEffectivePath,
-		PublicIdentityHealthy:    o.PublicIdentityHealthy,
-		StaticAssetsHealthy:      o.StaticAssetsHealthy,
-		APIAuthenticationHealthy: o.APIAuthenticationHealthy,
+		CurrentInstallationID:          o.CurrentInstallationID,
+		CurrentRoutingRevision:         o.CurrentRoutingRevision,
+		CurrentEffectivePath:           o.CurrentEffectivePath,
+		CurrentOperationOwnerQualified: o.CurrentOperationOwnerQualified,
+		CurrentCollisionFree:           o.CurrentCollisionFree,
+		CurrentSourceQualified:         o.CurrentSourceQualified,
+		PreviousSnapshotQualified:      o.PreviousSnapshotQualified,
+		PreviousSnapshotEffectivePath:  o.PreviousSnapshotEffectivePath,
+		PublicIdentityHealthy:          o.PublicIdentityHealthy,
+		StaticAssetsHealthy:            o.StaticAssetsHealthy,
+		APIAuthenticationHealthy:       o.APIAuthenticationHealthy,
 	}
 }
 
@@ -697,6 +707,8 @@ func TestCheckedInContract(t *testing.T) {
 		"lost_result_healthy_target_can_complete": true,
 		"lost_result_unhealthy_target_can_restore": true,
 		"stale_revision_refuses_prefix_recovery": true,
+		"authority_reobservation_refuses_recovery": true,
+		"restore_snapshot_unqualified_refuses_recovery": true,
 		"committed_applied_prefix_is_complete": true,
 		"effective_mismatch_requires_resolution": true,
 	}
@@ -776,6 +788,8 @@ func TestCheckedInContract(t *testing.T) {
 		"writable_grant_requires_historical_authority",
 		"prefix_conditional_recovery_fail_closed",
 		"classification_fixture_ids_locked",
+		"prefix_recovery_reobserves_current_authority_snapshot",
+		"plan_effect_sets_are_disjoint",
 	}
 	if !setEqual(f.GlobalAssertions, wantGlobal) {
 		t.Fatal("global contract assertions drifted")
@@ -1139,6 +1153,38 @@ func TestUpgradePlanCannotReinitializeAdminOrReplaceHistory(t *testing.T) {
 	}
 }
 
+func TestPlanEffectSetsAreDisjoint(t *testing.T) {
+	f := readFixture(t)
+	find := func(id string) bootstrap.Plan {
+		t.Helper()
+		for _, path := range f.Paths {
+			if path.ID == id {
+				return path.domain()
+			}
+		}
+		t.Fatalf("missing path %s", id)
+		return bootstrap.Plan{}
+	}
+
+	adopt := find("P4-BOOT-02")
+	adopt.Mutations = append(adopt.Mutations, "historical_usage_import")
+	if err := adopt.Validate(); err == nil {
+		t.Fatal("Fresh Adoption accepted historical_usage_import in both mutations and unsupported")
+	}
+
+	external := find("P4-BOOT-03")
+	external.Mutations = append(external.Mutations, "source_cpa_stop")
+	if err := external.Validate(); err == nil {
+		t.Fatal("External plan accepted source_cpa_stop in both mutations and unsupported")
+	}
+
+	fresh := find("P4-BOOT-01")
+	fresh.Preserved = append(fresh.Preserved, fresh.Mutations[0])
+	if err := fresh.Validate(); err == nil {
+		t.Fatal("plan accepted the same effect in mutations and preserved")
+	}
+}
+
 func TestCPACoreContractIsV8OnlyAndKeepsExternalLifecycleUserOwned(t *testing.T) {
 	valid := bootstrap.CPACoreContract{
 		ManagementGeneration:    bootstrap.CPAManagementGenerationV8,
@@ -1483,6 +1529,74 @@ func TestDiscoveryPrefixAndJournalFailClosed(t *testing.T) {
 		bootstrap.OperationMigration, bootstrap.OperationCPAUpdate,
 	); err == nil {
 		t.Fatal("unfrozen operation pair was prematurely classified")
+	}
+}
+
+func TestPrefixRecoveryRequiresCurrentAuthorityAndSnapshot(t *testing.T) {
+	op := bootstrap.PrefixOperation{
+		OperationID: "operation-recovery-1000",
+		InstallationID: "install-a", CurrentInstallationID: "install-a",
+		ExpectedRoutingRevision: 7, CurrentRoutingRevision: 7,
+		PreviousVerifiedEffectivePath: "/old-control",
+		DesiredControlBasePath: "/new-control",
+		Impact: bootstrap.PrefixControlRouteOnly,
+		Stage: bootstrap.PrefixRouteActivated,
+		AuthorityQualified: true,
+		CollisionFree: true,
+		Result: bootstrap.PrefixUnknown,
+	}
+	healthy := bootstrap.PrefixRecoveryObservation{
+		CurrentInstallationID: "install-a",
+		CurrentRoutingRevision: 7,
+		CurrentEffectivePath: "/new-control",
+		CurrentOperationOwnerQualified: true,
+		CurrentCollisionFree: true,
+		CurrentSourceQualified: true,
+		PublicIdentityHealthy: true,
+		StaticAssetsHealthy: true,
+		APIAuthenticationHealthy: true,
+	}
+	if !bootstrap.CanCompletePrefixAfterObservation(op, healthy) {
+		t.Fatal("qualified recovery observation could not complete prefix")
+	}
+	for _, tc := range []struct {
+		name string
+		edit func(*bootstrap.PrefixRecoveryObservation)
+	}{
+		{"owner", func(o *bootstrap.PrefixRecoveryObservation) { o.CurrentOperationOwnerQualified = false }},
+		{"collision", func(o *bootstrap.PrefixRecoveryObservation) { o.CurrentCollisionFree = false }},
+		{"source", func(o *bootstrap.PrefixRecoveryObservation) { o.CurrentSourceQualified = false }},
+		{"revision", func(o *bootstrap.PrefixRecoveryObservation) { o.CurrentRoutingRevision = 8 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			value := healthy
+			tc.edit(&value)
+			if bootstrap.CanCompletePrefixAfterObservation(op, value) {
+				t.Fatal("stale or unqualified recovery observation completed prefix")
+			}
+		})
+	}
+
+	unhealthy := healthy
+	unhealthy.PublicIdentityHealthy = false
+	unhealthy.PreviousSnapshotQualified = true
+	unhealthy.PreviousSnapshotEffectivePath = "/old-control"
+	if !bootstrap.CanConditionallyRestorePrefix(op, unhealthy) {
+		t.Fatal("qualified previous snapshot could not authorize conditional restore")
+	}
+	unhealthy.PreviousSnapshotQualified = false
+	unhealthy.PreviousSnapshotEffectivePath = ""
+	if bootstrap.CanConditionallyRestorePrefix(op, unhealthy) {
+		t.Fatal("conditional restore accepted without verified previous snapshot")
+	}
+
+	stalePersisted := op
+	stalePersisted.CurrentRoutingRevision = 8
+	staleObserved := healthy
+	staleObserved.CurrentRoutingRevision = 8
+	if bootstrap.CanCompletePrefixAfterObservation(stalePersisted, staleObserved) ||
+		bootstrap.CanConditionallyRestorePrefix(stalePersisted, staleObserved) {
+		t.Fatal("stale expected routing revision authorized prefix recovery")
 	}
 }
 

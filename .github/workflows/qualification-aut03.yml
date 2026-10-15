@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           export CPAMP_SRC11_SEALED_ARCHIVE="$RUNNER_TEMP/src11-download/src-11-0e106589baef-sealed-evidence.tar.gz"
-          python -m unittest bin.qualification.test_materialize_src11 bin.qualification.test_run_aut03 -v
+          python -m unittest discover -s bin/qualification -p 'test_*.py' -v
       - name: Run AUT-03 real mutation matrix
         shell: bash
         run: |

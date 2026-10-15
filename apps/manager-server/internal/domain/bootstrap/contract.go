@@ -479,6 +479,9 @@ func (p Plan) Validate() error {
 	if err := validateLists(p.Mutations, p.Preserved, p.Unsupported, p.EstimatedSteps); err != nil {
 		return err
 	}
+	if err := validateEffectListsDisjoint(p.Mutations, p.Preserved, p.Unsupported); err != nil {
+		return err
+	}
 	if p.Mode == Upgrade {
 		for _, required := range []string{"authoritative_usage_history", "archive_retained_evidence_when_required"} {
 			if !has(p.Preserved, required) {
@@ -544,6 +547,28 @@ func validateLists(groups ...[]string) error {
 	}
 	return nil
 }
+
+func validateEffectListsDisjoint(mutations, preserved, unsupported []string) error {
+	groups := []struct {
+		name   string
+		values []string
+	}{
+		{name: "mutations", values: mutations},
+		{name: "preserved", values: preserved},
+		{name: "unsupported", values: unsupported},
+	}
+	owner := map[string]string{}
+	for _, group := range groups {
+		for _, value := range group.values {
+			if previous, ok := owner[value]; ok {
+				return fmt.Errorf("plan effect %q appears in both %s and %s", value, previous, group.name)
+			}
+			owner[value] = group.name
+		}
+	}
+	return nil
+}
+
 func has(values []string, target string) bool {
 	for _, v := range values {
 		if v == target {

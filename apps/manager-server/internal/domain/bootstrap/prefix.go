@@ -163,44 +163,63 @@ func PrefixActionAfterOperation(p PrefixOperation) (PrefixRecoveryAction, error)
 }
 
 type PrefixRecoveryObservation struct {
-	CurrentInstallationID    string
-	CurrentRoutingRevision   uint64
-	CurrentEffectivePath     string
-	PublicIdentityHealthy    bool
-	StaticAssetsHealthy      bool
-	APIAuthenticationHealthy bool
+	CurrentInstallationID            string
+	CurrentRoutingRevision           uint64
+	CurrentEffectivePath             string
+	CurrentOperationOwnerQualified   bool
+	CurrentCollisionFree             bool
+	CurrentSourceQualified           bool
+	PreviousSnapshotQualified        bool
+	PreviousSnapshotEffectivePath    string
+	PublicIdentityHealthy            bool
+	StaticAssetsHealthy              bool
+	APIAuthenticationHealthy         bool
 }
 
 func (o PrefixRecoveryObservation) valid() bool {
-	return o.CurrentInstallationID != "" &&
-		o.CurrentRoutingRevision > 0 &&
-		validControlBasePath(o.CurrentEffectivePath)
+	if o.CurrentInstallationID == "" || o.CurrentRoutingRevision == 0 ||
+		!validControlBasePath(o.CurrentEffectivePath) {
+		return false
+	}
+	if o.PreviousSnapshotQualified {
+		return validControlBasePath(o.PreviousSnapshotEffectivePath)
+	}
+	return o.PreviousSnapshotEffectivePath == ""
+}
+
+func prefixRecoveryFenceQualified(p PrefixOperation, o PrefixRecoveryObservation) bool {
+	if p.Validate() != nil || !o.valid() {
+		return false
+	}
+	return p.AuthorityQualified && p.CollisionFree &&
+		p.ExpectedRoutingRevision == p.CurrentRoutingRevision &&
+		p.CurrentRoutingRevision == o.CurrentRoutingRevision &&
+		o.CurrentInstallationID == p.InstallationID &&
+		o.CurrentOperationOwnerQualified &&
+		o.CurrentCollisionFree &&
+		o.CurrentSourceQualified
 }
 
 func CanCompletePrefixAfterObservation(p PrefixOperation, o PrefixRecoveryObservation) bool {
-	if p.Validate() != nil || !o.valid() {
+	if !prefixRecoveryFenceQualified(p, o) {
 		return false
 	}
 	if p.Stage != PrefixRouteActivated && p.Stage != PrefixHealthVerified {
 		return false
 	}
-	return p.AuthorityQualified && p.CollisionFree &&
-		o.CurrentInstallationID == p.InstallationID &&
-		o.CurrentRoutingRevision == p.CurrentRoutingRevision &&
-		o.CurrentEffectivePath == p.DesiredControlBasePath &&
+	return o.CurrentEffectivePath == p.DesiredControlBasePath &&
 		o.PublicIdentityHealthy && o.StaticAssetsHealthy && o.APIAuthenticationHealthy
 }
 
 func CanConditionallyRestorePrefix(p PrefixOperation, o PrefixRecoveryObservation) bool {
-	if p.Validate() != nil || !o.valid() || p.PreviousVerifiedEffectivePath == "" {
+	if !prefixRecoveryFenceQualified(p, o) || p.PreviousVerifiedEffectivePath == "" {
 		return false
 	}
 	if p.Stage != PrefixRouteActivated && p.Stage != PrefixHealthVerified {
 		return false
 	}
-	return p.AuthorityQualified &&
-		o.CurrentInstallationID == p.InstallationID &&
-		o.CurrentRoutingRevision == p.CurrentRoutingRevision &&
+	return o.PreviousSnapshotQualified &&
+		o.PreviousSnapshotEffectivePath == p.PreviousVerifiedEffectivePath &&
 		o.CurrentEffectivePath == p.DesiredControlBasePath &&
 		(!o.PublicIdentityHealthy || !o.StaticAssetsHealthy || !o.APIAuthenticationHealthy)
 }

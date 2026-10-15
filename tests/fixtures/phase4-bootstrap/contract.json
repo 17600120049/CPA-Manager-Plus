@@ -731,7 +731,9 @@
     "conflict_scope_server_classified",
     "writable_grant_requires_historical_authority",
     "prefix_conditional_recovery_fail_closed",
-    "classification_fixture_ids_locked"
+    "classification_fixture_ids_locked",
+    "prefix_recovery_reobserves_current_authority_snapshot",
+    "plan_effect_sets_are_disjoint"
   ],
   "operationConflictAssertions": [
     {
@@ -818,7 +820,12 @@
         "currentEffectivePath": "/new-control",
         "publicIdentityHealthy": true,
         "staticAssetsHealthy": true,
-        "apiAuthenticationHealthy": true
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": true,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": false,
+        "previousSnapshotEffectivePath": ""
       },
       "expectedCompleteAfterObservation": true,
       "expectedConditionalRestore": false
@@ -848,7 +855,12 @@
         "currentEffectivePath": "/new-control",
         "publicIdentityHealthy": false,
         "staticAssetsHealthy": true,
-        "apiAuthenticationHealthy": true
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": true,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": true,
+        "previousSnapshotEffectivePath": "/old-control"
       },
       "expectedCompleteAfterObservation": false,
       "expectedConditionalRestore": true
@@ -878,7 +890,82 @@
         "currentEffectivePath": "/new-control",
         "publicIdentityHealthy": false,
         "staticAssetsHealthy": true,
-        "apiAuthenticationHealthy": true
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": true,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": true,
+        "previousSnapshotEffectivePath": "/old-control"
+      },
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "authority_reobservation_refuses_recovery",
+      "operationID": "operation-prefix-0006",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 7,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": true,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": false,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": false,
+        "previousSnapshotEffectivePath": ""
+      },
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "restore_snapshot_unqualified_refuses_recovery",
+      "operationID": "operation-prefix-0007",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 7,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": false,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": true,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": false,
+        "previousSnapshotEffectivePath": ""
       },
       "expectedCompleteAfterObservation": false,
       "expectedConditionalRestore": false

@@ -145,8 +145,8 @@
     },
     "globalAssertions": {
       "type": "array",
-      "minItems": 51,
-      "maxItems": 51,
+      "minItems": 53,
+      "maxItems": 53,
       "uniqueItems": true,
       "items": {
         "enum": [
@@ -200,7 +200,9 @@
           "conflict_scope_server_classified",
           "writable_grant_requires_historical_authority",
           "prefix_conditional_recovery_fail_closed",
-          "classification_fixture_ids_locked"
+          "classification_fixture_ids_locked",
+          "prefix_recovery_reobserves_current_authority_snapshot",
+          "plan_effect_sets_are_disjoint"
         ]
       }
     },
@@ -224,8 +226,8 @@
     },
     "prefixAssertions": {
       "type": "array",
-      "minItems": 5,
-      "maxItems": 5,
+      "minItems": 7,
+      "maxItems": 7,
       "uniqueItems": true,
       "items": {
         "$ref": "#/$defs/prefixAssertion"
@@ -835,6 +837,11 @@
         "currentInstallationID",
         "currentRoutingRevision",
         "currentEffectivePath",
+        "currentOperationOwnerQualified",
+        "currentCollisionFree",
+        "currentSourceQualified",
+        "previousSnapshotQualified",
+        "previousSnapshotEffectivePath",
         "publicIdentityHealthy",
         "staticAssetsHealthy",
         "apiAuthenticationHealthy"
@@ -859,6 +866,21 @@
         },
         "apiAuthenticationHealthy": {
           "type": "boolean"
+        },
+        "currentOperationOwnerQualified": {
+          "type": "boolean"
+        },
+        "currentCollisionFree": {
+          "type": "boolean"
+        },
+        "currentSourceQualified": {
+          "type": "boolean"
+        },
+        "previousSnapshotQualified": {
+          "type": "boolean"
+        },
+        "previousSnapshotEffectivePath": {
+          "type": "string"
         }
       }
     },
@@ -895,7 +917,9 @@
             "lost_result_unhealthy_target_can_restore",
             "stale_revision_refuses_prefix_recovery",
             "committed_applied_prefix_is_complete",
-            "effective_mismatch_requires_resolution"
+            "effective_mismatch_requires_resolution",
+            "authority_reobservation_refuses_recovery",
+            "restore_snapshot_unqualified_refuses_recovery"
           ]
         },
         "operationID": {
