@@ -167,7 +167,15 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 				w.Write([]byte("[]"))
 			}
 		case "/v0/management/auth-files":
-			json.NewEncoder(w).Encode(map[string]any{"files": []any{map[string]any{"id": "runtime-fixture-codex", "name": "fixture-codex.json", "auth_index": "fixture-codex", "provider": "codex", "disabled": disabled.Load()}}})
+			files := []any{map[string]any{"id": "runtime-fixture-codex", "name": "fixture-codex.json", "auth_index": "fixture-codex", "provider": "codex", "disabled": disabled.Load()}}
+			if caseID == ret07CaseID {
+				// RET-07 deliberately uses an independent retained-pricing
+				// identity. The published collector resolves queue events against
+				// this auth-file inventory before persisting them, so the isolated
+				// upstream must expose the profile's actual identity.
+				files = []any{map[string]any{"id": "runtime-fixture-codex-ret07", "name": "fixture-codex-ret07.json", "auth_index": "fixture-codex-ret07", "provider": "codex", "disabled": disabled.Load()}}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"files": files})
 		case "/v0/management/config":
 			w.Write([]byte(`{"usage-statistics-enabled":true,"redis-usage-queue-retention-seconds":60}`))
 		case "/v0/management/usage-statistics-enabled":
