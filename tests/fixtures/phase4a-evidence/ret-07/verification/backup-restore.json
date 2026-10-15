@@ -1,13 +1,13 @@
 {
   "archiveEventCount": 4,
-  "backupManifestDigest": "f787f738deaed3f00437cdb668bcee8b1f615b7f39338a69be32a5671d54fd29",
+  "backupManifestDigest": "d148d37b3ffe7907b9ef46e3bc4e4be3dd14697c6cfb0309dafc470b807592a0",
   "inventoryMatched": true,
   "newRoot": true,
   "queries": {
     "analytics": {
       "": [
         {
-          "generated_at_ms": 1792050073626,
+          "generated_at_ms": 1792050328265,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -59,7 +59,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050073629,
+          "generated_at_ms": 1792050328267,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -113,7 +113,7 @@
       ],
       "fixture-free-ret07": [
         {
-          "generated_at_ms": 1792050073600,
+          "generated_at_ms": 1792050328239,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -165,7 +165,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050073603,
+          "generated_at_ms": 1792050328242,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -219,7 +219,7 @@
       ],
       "fixture-manual-ret07": [
         {
-          "generated_at_ms": 1792050073607,
+          "generated_at_ms": 1792050328246,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -271,7 +271,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050073610,
+          "generated_at_ms": 1792050328248,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -325,7 +325,7 @@
       ],
       "fixture-paid-ret07": [
         {
-          "generated_at_ms": 1792050073614,
+          "generated_at_ms": 1792050328252,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -377,7 +377,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050073616,
+          "generated_at_ms": 1792050328255,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -431,7 +431,7 @@
       ],
       "fixture-unknown-ret07": [
         {
-          "generated_at_ms": 1792050073620,
+          "generated_at_ms": 1792050328259,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -483,7 +483,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050073622,
+          "generated_at_ms": 1792050328261,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -536,7 +536,7 @@
         }
       ],
       "rawOnlyQuery": {
-        "generated_at_ms": 1792050073632,
+        "generated_at_ms": 1792050328271,
         "granularity": "hour",
         "coverage": {
           "scope": "time_range",
@@ -569,7 +569,14 @@
           "eventID": 1,
           "model": "fixture-manual-ret07",
           "priceIdentity": {
+            "allFieldsConfigured": true,
             "configured": true,
+            "configuredFields": {
+              "cacheCreation": true,
+              "cacheRead": true,
+              "completion": true,
+              "prompt": true
+            },
             "explicitZero": false,
             "model": "fixture-manual-ret07",
             "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
@@ -597,7 +604,14 @@
           "eventID": 2,
           "model": "fixture-paid-ret07",
           "priceIdentity": {
-            "configured": false,
+            "allFieldsConfigured": false,
+            "configured": true,
+            "configuredFields": {
+              "cacheCreation": false,
+              "cacheRead": false,
+              "completion": true,
+              "prompt": true
+            },
             "explicitZero": false,
             "model": "fixture-paid-ret07",
             "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
@@ -625,7 +639,14 @@
           "eventID": 3,
           "model": "fixture-free-ret07",
           "priceIdentity": {
+            "allFieldsConfigured": true,
             "configured": true,
+            "configuredFields": {
+              "cacheCreation": true,
+              "cacheRead": true,
+              "completion": true,
+              "prompt": true
+            },
             "explicitZero": true,
             "model": "fixture-free-ret07",
             "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
@@ -653,7 +674,9 @@
           "eventID": 4,
           "model": "fixture-unknown-ret07",
           "priceIdentity": {
+            "allFieldsConfigured": false,
             "configured": false,
+            "configuredFields": {},
             "explicitZero": false,
             "model": "fixture-unknown-ret07",
             "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
@@ -740,6 +763,6 @@
   },
   "rawEventCount": 0,
   "rawStillDeleted": true,
-  "restoredManifestDigest": "f787f738deaed3f00437cdb668bcee8b1f615b7f39338a69be32a5671d54fd29",
+  "restoredManifestDigest": "d148d37b3ffe7907b9ef46e3bc4e4be3dd14697c6cfb0309dafc470b807592a0",
   "retainedProjectionCount": 4
 }

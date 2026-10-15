@@ -25,7 +25,7 @@
     ],
     "caseID": "RET-07",
     "deletionVerified": true,
-    "executionCommit": "753641237fe7711cf327da6ba142822f56c5ec93",
+    "executionCommit": "2b362c4876f80db40e527af5a7b0f1f5bfffbb82",
     "migrationStates": [
       {
         "cacheAccounting": {
@@ -52,7 +52,7 @@
   },
   "newRootRecovery": true,
   "platform": "macos",
-  "runnerEvidenceSHA256": "6ed41b09f98a1e17721d44ddf9a353c16427af8d75318a1246081f4d9e20cb33",
+  "runnerEvidenceSHA256": "edf33058a8d8f234cd59741fa173367d63d1074790c998ddbba3479df4ac1598",
   "runtimeResult": {
     "Phase4A07Complete": false,
     "Phase4AComplete": false,
@@ -74,16 +74,16 @@
     "casePass": false,
     "deletedCount": 4,
     "evidence": {
-      "backupRestore": "35ac0edf9faf910c91b8e82d52bc41481b0a6c50268bd48f58790f85f8db5c83",
-      "executionRecord": "06b0140591ba64ebdb1dfbf77eca140a294632aa88697512d0dd4b2c4f0a2441",
-      "inputBundle": "679aa4c33fa3ac85fa16e13ea94dc962bffabfbfea317c3b0e09110bcc668868",
+      "backupRestore": "ca895cdf1fdce5377b4c06ee508c8ac4ca560e1d717357e7c8bb17f822c1bf64",
+      "executionRecord": "47743d27309149c756a9b1e0e5670c666b0dfd726735639e1c5787166ef5f4a9",
+      "inputBundle": "0892a7dc534d51929a1a76602754b21c092f4dda0dac1ec831604dcbe64cdf1a",
       "rawEventInventory": "65e9d3146aa8741cfd39077082ad7a1664682606770fabe8f0273e7d4a321275",
-      "retainedPricingSource": "93cba91a1ffe0e37daf41e9a17f42fa13da264d15f8ad168a4493e6851a587c2",
-      "semanticAssertions": "9fca0d321d66d602f7b2748c758b8f173505d0cc88a1315635b52be6da0e09ae"
+      "retainedPricingSource": "44cf42dbc8628d952e4aff6ee190f6ea33eaa87d047f77427b986393a006ef0e",
+      "semanticAssertions": "77fb3b2c95c7c4d915fef2fb998810eaadf2eb40080b8e10b14216a6d32f4643"
     },
     "independentAcceptance": "pending",
-    "inputBundleDigest": "be77ef500972ff6aed6ef1f9c2362e0a1d63f316fa76cf62a25faf12fb3e55e2",
-    "inputBundleIdentity": "RET-07/input-bundle@be77ef500972ff6aed6ef1f9c2362e0a1d63f316fa76cf62a25faf12fb3e55e2",
+    "inputBundleDigest": "ce2efcbfea5e225240893cdaccba86f8e31c8b71d42e134a3b304f40adc56a43",
+    "inputBundleIdentity": "RET-07/input-bundle@ce2efcbfea5e225240893cdaccba86f8e31c8b71d42e134a3b304f40adc56a43",
     "onlineRawComplete": false,
     "rawEventCount": 0,
     "remainingCases": {
@@ -95,33 +95,33 @@
     "runtimeEvidence": "pass",
     "sourceProvenance": {
       "ControlledInputSHA256": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
-      "GeneratedBundleSHA256": "be77ef500972ff6aed6ef1f9c2362e0a1d63f316fa76cf62a25faf12fb3e55e2",
+      "GeneratedBundleSHA256": "ce2efcbfea5e225240893cdaccba86f8e31c8b71d42e134a3b304f40adc56a43",
       "GenerationEvidenceFiles": {
-        "archive-flow.json": "0424edcaf6da2f7aafaf412c5e80e95d6e486c89b76e7cb7ad0d5e16a31cc233",
-        "archive-inventory.json": "5179b38d5a7164a2ae23ee07fde98c8876189887b140fe6a6380228b3e4a1091",
-        "archive-readiness.json": "a7c7bdb5e6d1fa0c3ff16197c105fadb28426d5e808bb108894ce6d48f5ffbb8",
-        "config-write.json": "a0396c54efd075b44b8f9930268bc96a35320482da740fd9b1f0cc2181db0f86",
+        "archive-flow.json": "06f645732a7691cb676b98d98e0257809a78e716eabd8b89a074707043792f29",
+        "archive-inventory.json": "0a9552a0c72d099e0794b40e8ad8afe9d85826b1cb78d9f41453f739edeb529d",
+        "archive-readiness.json": "e5a9f311d3b3e78345055a4d0228e96a61265c1f0a35e4ee8ada1ce45aac3bfa",
+        "config-write.json": "ba78df6d1a788441bb503a40d68a1ffc2ea94d04a411dea3cfdd18159caae336",
         "controlled-input.json": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
         "historical-reconciliation.json": "eeaf21f5e92d969f1b386e9ff4e21b630260a36e43d083a65f2bffccd2ccc88d",
-        "post-delete-snapshot.json": "a9cd545b0bc2444489a49d4a2490c8a5e40e303bec84e270bad17233c9785244",
-        "pre-archive-snapshot.json": "5abf25d74f99cb45ba44edad3ea3d096dae1f85adadc360e998f624c731a9dc6",
-        "pre-delete-snapshot.json": "5abf25d74f99cb45ba44edad3ea3d096dae1f85adadc360e998f624c731a9dc6",
+        "post-delete-snapshot.json": "b30eeb4608e4a892274919063e3884d6df9263e4c36ca960abaffeaecc08b143",
+        "pre-archive-snapshot.json": "bdb976a4ff3480143fe3f9132398c2162508a01339a6e1b0bdd5993ed8290cbf",
+        "pre-delete-snapshot.json": "bdb976a4ff3480143fe3f9132398c2162508a01339a6e1b0bdd5993ed8290cbf",
         "price-authority-snapshot.json": "ed4e91005984618a8b8ab14be9ad511eda8d6a995177ca173598fea54817d90d",
-        "price-write.json": "039475854309abc1486d05cc86d742cd877617f31b1aa1daec653406ff64e6d2",
+        "price-write.json": "66cec0553ade3f63b4297a5086627089f2f66f8c5fdb4f0cad5c406f1c238ee9",
         "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
-        "producer.log": "a771a83aa8b8e9937009143f102acc09e53fa95bfb56ba3a0d21ae5868a45ea5",
-        "quota-write.json": "2a5a02ed4f959de26ab70471e9946c9650d4fece15a203d76f21609625f205a9",
+        "producer.log": "75880736dfdd080eb87f29837e4531c00048e0cab1b59226249aaacf1b1c0102",
+        "quota-write.json": "26e81023391678fb9c98cf2b691b4e62c80ea8e54c1160b8e53c0b574a8d0717",
         "raw-event-inventory.json": "901a299f875f04eb2fd9ae0597770ea64099981d208777466a72e98009f688db",
         "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
-        "retained-pricing-source.json": "35679a1280e3bdddf3ae9dddaa198904025a540af5e27fd4278c0fdcfa87e204",
-        "source-snapshot.json": "36f45dc127912017ea234da68d6e090c18da0ac9832d55466420fefc055c6a7b",
-        "structural-price-change.json": "3f2dd9791fda6e42d1be381e41dbcb35f73508449f97607eaf729b8c4bc6546d",
-        "v1-analytics.json": "c8d42117468c1304c4b9bfd7090e9e20a586c0b2c2ff06a4a3b7da879ce4f429",
-        "v1-archived-analytics.json": "e9eea7b1768fb6a04db51e7eef6a0c5ac8d17cd1911e66c398897549a58b0881",
+        "retained-pricing-source.json": "927c3b852bd49cb5673414cbcbb70b28a57cf1492f5c36d61388123399b023c0",
+        "source-snapshot.json": "376c7f1731961ec6abfd3a0f0e77ee95131bfa1347e7d6769ba081cd11e1ba2b",
+        "structural-price-change.json": "ad632e9e1fbc13c649a301e7e93c2b5f2e835becedb3841166feaed4e00824a2",
+        "v1-analytics.json": "aec3b4336b452f37d06b5a6d498546399b13111e3d2246bf56aff85310fd38b0",
+        "v1-archived-analytics.json": "7ef35f839e76f0177e0e27c7c51ad0bb2f656777d074ff168a14e4916a15c692",
         "v1-export.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
       "GenerationProfile": "ret-07-retained-pricing-source-complete-v1",
-      "GeneratorCodeCommit": "753641237fe7711cf327da6ba142822f56c5ec93",
+      "GeneratorCodeCommit": "2b362c4876f80db40e527af5a7b0f1f5bfffbb82",
       "PlanCommit": "21035045c425e453bd8f3007619fc0734861012e",
       "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
       "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
@@ -140,12 +140,12 @@
           },
           "data-key": {
             "present": true,
-            "sha256": "7cc12a6db023555aba71b521351fbf0f31b13ee37920abe449d4d89b37373a79",
+            "sha256": "e5d4ccd10d90f9abf12e1acf72943d0eda00c3cdee69c1fa2395dcfb8d3ece54",
             "size": 44
           },
           "database": {
             "present": true,
-            "sha256": "741f0842b12bfa807e21099c5d84048fb3a1e5f6bd4896eba037bda6eb72509d",
+            "sha256": "5d7b35fc1875a17e2b991d2d3c50993c59f9f6c3bd2bd5b33541225423971639",
             "size": 659456
           },
           "database-journal": {
@@ -161,23 +161,23 @@
             "directory": true,
             "present": true
           },
-          "usage-archives/36d622fadc3cc2f84b6f17f632c40859": {
+          "usage-archives/266aac4f9372a77c74a137be82d19050": {
             "directory": true,
             "present": true
           },
-          "usage-archives/36d622fadc3cc2f84b6f17f632c40859/manifest.json": {
+          "usage-archives/266aac4f9372a77c74a137be82d19050/manifest.json": {
             "present": true,
-            "sha256": "e3920ca7bb0ff14f6199b57fe54f185e9ae42b2011ac65dd9204f8db5ba0b6f0",
+            "sha256": "df5909e74bcf72b7c4ff092cd6d5505b2fa5f7f722a61468e30c7b7c9296f135",
             "size": 1099
           },
-          "usage-archives/36d622fadc3cc2f84b6f17f632c40859/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+          "usage-archives/266aac4f9372a77c74a137be82d19050/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
             "present": true,
-            "sha256": "27ce941d8bf529b1de372745ca6581a2a3199d0caa17c060a364ee83502631b2",
-            "size": 2059
+            "sha256": "b34226fd2ce181e34c5d874233fd095365a04119ad48ccfea61ba99fe8e8c89f",
+            "size": 2063
           }
         },
         "fence": "cooperating-manager-lock",
-        "sourceRevision": "be77ef500972ff6aed6ef1f9c2362e0a1d63f316fa76cf62a25faf12fb3e55e2",
+        "sourceRevision": "ce2efcbfea5e225240893cdaccba86f8e31c8b71d42e134a3b304f40adc56a43",
         "version": 2
       },
       "caseID": "RET-07",
@@ -186,16 +186,16 @@
       "process": {
         "deliveredPayloads": 5,
         "exitCode": 0,
-        "finishedAt": "2026-10-15T07:41:07.999197095Z",
+        "finishedAt": "2026-10-15T07:45:21.767638846Z",
         "pid": 16,
         "reaped": true,
-        "startedAt": "2026-10-15T07:40:37.735894062Z"
+        "startedAt": "2026-10-15T07:44:51.483795005Z"
       }
     }
   },
-  "runtimeResultSHA256": "8bb6f8cedf7196734d861985592bd70516dd575dd260c542cfb0813ed2202e4f",
+  "runtimeResultSHA256": "38d6ed2eec973e17119372f960ff150b4ce8a752b1a4b4c0b2abe6ce3cc48bdc",
   "schemaVersion": 1,
-  "sourceBundleDigest": "be77ef500972ff6aed6ef1f9c2362e0a1d63f316fa76cf62a25faf12fb3e55e2",
-  "testedCommit": "753641237fe7711cf327da6ba142822f56c5ec93",
+  "sourceBundleDigest": "ce2efcbfea5e225240893cdaccba86f8e31c8b71d42e134a3b304f40adc56a43",
+  "testedCommit": "2b362c4876f80db40e527af5a7b0f1f5bfffbb82",
   "workingTreeStatus": "clean"
 }

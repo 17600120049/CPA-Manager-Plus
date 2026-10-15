@@ -1,5 +1,5 @@
 {
-  "codeCommit": "753641237fe7711cf327da6ba142822f56c5ec93",
+  "codeCommit": "2b362c4876f80db40e527af5a7b0f1f5bfffbb82",
   "sourceFiles": {
     "apps/manager-server/cmd/cpa-manager-plus/codex_legacy_identity_test.go": "8fce592911212f45feb3ffc5eb7ae8615e9f9f308ab166bcf6ffc8fe9d967d78",
     "apps/manager-server/cmd/cpa-manager-plus/identity_forward_completions_test.go": "8c550282d3b80c2b17defcec37af578826f20583ff2653109b9bca9e7e7e3202",
@@ -490,7 +490,7 @@
     "apps/manager-server/tests/qualification/src11/ret01_test.go": "6f9104bf5e4400a087fdef08e62eee1f9e74b66141e7faec34174d90cce9957a",
     "apps/manager-server/tests/qualification/src11/ret02_test.go": "08c34c07b0b612232cedb004f59570554406a88fbfaa691906a27a9ba048294b",
     "apps/manager-server/tests/qualification/src11/ret03_test.go": "003018450d8f00c1e834f682686f56c375c92a2c4137034b7de39aa5db81d4c9",
-    "apps/manager-server/tests/qualification/src11/ret07_test.go": "a727bc940b48ef58bf9261d42688558b474322c2990a497d60c3269875c924fd",
+    "apps/manager-server/tests/qualification/src11/ret07_test.go": "876676f46d00f9addbc71db46400b72d15bd07f060a7c27a46f0894e28757061",
     "apps/manager-server/tests/qualification/src11/retention_support_test.go": "ed2f79cc0027a2f7224eb8a49cd69b49b2879f63c17035133e7259546d547e50",
     "apps/manager-server/tests/qualification/src11/support_test.go": "6e16602511c1290dd87700fce43ddca5cdd6a25a490d5f3f3c728cc6b17bbd62",
     "bin/qualification/materialize-src11.py": "e54cd7b091576e2d2b7203186e10f3d095ce3935e6edbea9e2ab5eb6eedacb6f",
@@ -506,7 +506,7 @@
     "bin/qualification/test_ret03.py": "ac62f5f4bb17e47a2b877afa2730e9c936c303cb08a3a40dc1e03de1e75af167",
     "bin/qualification/test_run_aut03.py": "b6310f2e99cf2dee439d4e8a102fce8418c6c0f7c2c0eac2126b34cd86cabdfc",
     "bin/qualification/verify-bak01-generator.py": "de10062ab214b0fcd1bd98aa64d30328a003746d174c8745b56397af9f858e40",
-    "bin/qualification/verify-ret07-evidence.py": "1b6eca100babc22cd7587bdaba83bf87dcb6e12ab3ce1e8886913b8f7dcf8220",
+    "bin/qualification/verify-ret07-evidence.py": "e51969d84108717791eebd65bb6620f3e27842d18099857f867f3a3797c0b36f",
     "tests/fixtures/phase4a-evidence/bak-01/profile.json": "f9d1ddb0a6d6d442faecdeaa6e140c303635cc9ef223be565bba75d0fa28a0b1",
     "tests/fixtures/phase4a-evidence/mig-01/profile.json": "e1f3b010db4a510388676d7dda5075a68a2cc09a7b80f3a6745a620afe15a33f",
     "tests/fixtures/phase4a-evidence/mig-02/profile.json": "30266eb802af52011eb85bdc83fe3bdb9f103674c6e9663224c157135ba0e4b6",
@@ -523,14 +523,14 @@
     "-c",
     "-trimpath",
     "-ldflags",
-    "-X github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11.generatorCommit=753641237fe7711cf327da6ba142822f56c5ec93",
+    "-X github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11.generatorCommit=2b362c4876f80db40e527af5a7b0f1f5bfffbb82",
     "-o",
-    "/private/tmp/cpamp-ret07-run16.K61MTm/generation/qualification",
+    "/private/tmp/cpamp-ret07-run17.CvYVz1/generation/qualification",
     "./tests/qualification/src11"
   ],
   "goVersion": "go version go1.26.1 darwin/amd64",
   "moduleGraph": "github.com/seakee/cpa-manager-plus/apps/manager-server\ngithub.com/dustin/go-humanize v1.0.1\ngithub.com/google/go-cmp v0.6.0\ngithub.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e\ngithub.com/google/uuid v1.6.0\ngithub.com/hashicorp/golang-lru/v2 v2.0.7\ngithub.com/mattn/go-isatty v0.0.20\ngithub.com/ncruces/go-strftime v1.0.0\ngithub.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec\ngolang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546\ngolang.org/x/mod v0.29.0\ngolang.org/x/sync v0.17.0\ngolang.org/x/sys v0.37.0\ngolang.org/x/tools v0.38.0\ngolang.org/x/tools/go/expect v0.1.1-deprecated\ngolang.org/x/tools/go/packages/packagestest v0.1.1-deprecated\nmodernc.org/cc/v4 v4.27.1\nmodernc.org/ccgo/v4 v4.30.1\nmodernc.org/fileutil v1.3.40\nmodernc.org/gc/v2 v2.6.5\nmodernc.org/gc/v3 v3.1.1\nmodernc.org/goabi0 v0.2.0\nmodernc.org/libc v1.67.6\nmodernc.org/mathutil v1.7.1\nmodernc.org/memory v1.11.0\nmodernc.org/opt v0.1.4\nmodernc.org/sortutil v1.2.1\nmodernc.org/sqlite v1.46.1\nmodernc.org/strutil v1.2.1\nmodernc.org/token v1.1.0",
-  "executableSHA256": "a41628078ea45b74888f077b713624355444213acb75a9321a95f9204a8c0f55",
+  "executableSHA256": "52a452dee010bf18650f4584e2e54a32ab53a43fb03056c1d4170ad0b25c0c46",
   "profileSHA256": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
   "archiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
   "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
@@ -561,7 +561,7 @@
     "--tmpfs",
     "/tmp:rw,exec,mode=1777",
     "--mount",
-    "type=bind,src=/private/tmp/cpamp-ret07-run16.K61MTm/generation/qualification,dst=/qualification,readonly",
+    "type=bind,src=/private/tmp/cpamp-ret07-run17.CvYVz1/generation/qualification,dst=/qualification,readonly",
     "--mount",
     "type=bind,src=/private/tmp/cpamp-ret07-run.fZlQMu/original/producer.tar.gz,dst=/archive,readonly",
     "--mount",
@@ -569,7 +569,7 @@
     "--mount",
     "type=bind,src=/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/test/v2-phase4a-ret07-retained-pricing/tests/fixtures/phase4a-evidence/ret-07/profile.json,dst=/profile,readonly",
     "--mount",
-    "type=bind,src=/private/tmp/cpamp-ret07-run16.K61MTm/generation,dst=/output",
+    "type=bind,src=/private/tmp/cpamp-ret07-run17.CvYVz1/generation,dst=/output",
     "--env",
     "CPAMP_SRC11_GENERATE=1",
     "--env",
@@ -602,12 +602,12 @@
     "-test.timeout",
     "4m"
   ],
-  "generationRecordSHA256": "548fe07a247bb55ba29838e860fa41faac73ad4d77c311ca1535ae10a543ab42",
+  "generationRecordSHA256": "1f5e0e80cc22ce2e70ad8b94fdeda4efeec2adf6ee5482ac247abeb2c5156a3e",
   "executionExitCode": 0,
   "UpgradeAuthorized": false,
   "TrustedHopReceipt": false,
   "logs": {
-    "generation-execution.log": "738243d4856756d524a183c5fd58b997b9f0f14bab6a6dd8a383038ca5f9aff3",
+    "generation-execution.log": "0269e7ddd6e7c220d4bfaad5f9c0107ef3d68db1694f854f71739230f2419813",
     "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   }
 }

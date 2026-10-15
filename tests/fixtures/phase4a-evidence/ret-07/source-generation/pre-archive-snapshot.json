@@ -5,7 +5,7 @@
       "actual_end_ms": null,
       "actual_start_ms": 1790899200000,
       "boundary_accuracy": "exact",
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "duration_seconds": 604800,
       "end_reason": null,
       "first_observation_id": 1,
@@ -16,13 +16,13 @@
       "scheduled_end_ms": 1791504000000,
       "scheduled_start_ms": 1790899200000,
       "state": "active",
-      "updated_at_ms": 1792050037950
+      "updated_at_ms": 1792050291802
     }
   ],
   "account_quota_observations": [
     {
       "account_key": "usage-account-history:3:file-index:666978747572652D6D6574612D72657430372E6A736F6E:666978747572652D6D6574612D7265743037",
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "id": 1,
       "inventory_mode": "partial",
       "inventory_scope_key": "meta:quota-windows",
@@ -41,7 +41,7 @@
       "activation_id": 1,
       "boundary_accuracy": "exact",
       "content_hash": "613aae2ed310f7549d388cbb3b754a88b3bf43af31b8a5b624ce481a5c9d8cca",
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "cycle_end_ms": 1791504000000,
       "cycle_id": 1,
       "cycle_start_ms": 1790899200000,
@@ -75,14 +75,14 @@
       "activate_observation_id": 1,
       "activated_at_ms": 1790899200000,
       "activation_accuracy": "exact",
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "deactivate_observation_id": null,
       "deactivated_at_ms": null,
       "deactivation_reason": null,
       "generation": 1,
       "id": 1,
       "status": "active",
-      "updated_at_ms": 1792050037950,
+      "updated_at_ms": 1792050291802,
       "window_id": 1
     }
   ],
@@ -92,7 +92,7 @@
       "account_key": "usage-account-history:3:file-index:666978747572652D6D6574612D72657430372E6A736F6E:666978747572652D6D6574612D7265743037",
       "availability": "active",
       "container_provider_window_id": null,
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "deactivated_at_ms": null,
       "first_seen_at_ms": 1790899200000,
       "generation": 1,
@@ -108,7 +108,7 @@
       "provider_window_id": "fixture-week-ret07",
       "relationship_kind": null,
       "scope_fingerprint": "b4ccfb77bdc5f92deb9a1b8f0ba730b8a492d46a2f2c40f18862de7e6f7862f6",
-      "updated_at_ms": 1792050037950,
+      "updated_at_ms": 1792050291802,
       "window_kind": "week",
       "window_mode": "fixed"
     }
@@ -131,7 +131,7 @@
       "source": "manual",
       "source_model_id": null,
       "synced_at_ms": null,
-      "updated_at_ms": 1792050037841
+      "updated_at_ms": 1792050291590
     },
     {
       "cache_creation_configured": 1,
@@ -148,7 +148,7 @@
       "source": "manual",
       "source_model_id": null,
       "synced_at_ms": null,
-      "updated_at_ms": 1792050037841
+      "updated_at_ms": 1792050291590
     },
     {
       "cache_creation_configured": 0,
@@ -165,7 +165,7 @@
       "source": "manual",
       "source_model_id": null,
       "synced_at_ms": null,
-      "updated_at_ms": 1792050037841
+      "updated_at_ms": 1792050291590
     }
   ],
   "quota_cooldowns": [],
@@ -180,7 +180,7 @@
       "auth_label_snapshot": "fixture-codex-ret07.json",
       "auth_project_id_snapshot": null,
       "auth_provider_snapshot": "codex",
-      "auth_snapshot_at_ms": 1792050037944,
+      "auth_snapshot_at_ms": 1792050291694,
       "auth_type": null,
       "cache_creation_tokens": 0,
       "cache_input_mode": "included_in_input",
@@ -188,7 +188,7 @@
       "cache_tokens": 0,
       "cached_tokens": 900,
       "client_ip": null,
-      "created_at_ms": 1792050037942,
+      "created_at_ms": 1792050291691,
       "endpoint": "responses",
       "event_hash": "6caa3b6be7d27c5c32e513de42757365eb41885b2e1b5f4555da23afc5221efa",
       "executor_type": "CodexExecutor",
@@ -248,7 +248,7 @@
       "auth_label_snapshot": "fixture-codex-ret07.json",
       "auth_project_id_snapshot": null,
       "auth_provider_snapshot": "codex",
-      "auth_snapshot_at_ms": 1792050037944,
+      "auth_snapshot_at_ms": 1792050291694,
       "auth_type": null,
       "cache_creation_tokens": 0,
       "cache_input_mode": "included_in_input",
@@ -256,7 +256,7 @@
       "cache_tokens": 0,
       "cached_tokens": 0,
       "client_ip": null,
-      "created_at_ms": 1792050037942,
+      "created_at_ms": 1792050291692,
       "endpoint": "responses",
       "event_hash": "b7b5fb010be583c7a7c8e7115d0346f389f63503851342c1bc0d6153e761db89",
       "executor_type": "CodexExecutor",
@@ -316,7 +316,7 @@
       "auth_label_snapshot": "fixture-codex-ret07.json",
       "auth_project_id_snapshot": null,
       "auth_provider_snapshot": "codex",
-      "auth_snapshot_at_ms": 1792050037944,
+      "auth_snapshot_at_ms": 1792050291694,
       "auth_type": null,
       "cache_creation_tokens": 0,
       "cache_input_mode": "included_in_input",
@@ -324,7 +324,7 @@
       "cache_tokens": 0,
       "cached_tokens": 400,
       "client_ip": null,
-      "created_at_ms": 1792050037943,
+      "created_at_ms": 1792050291693,
       "endpoint": "responses",
       "event_hash": "301deb70c053bf4e76da3ae9bab07a57fe9e05ef591bc575ec2ab77ba5999b51",
       "executor_type": "CodexExecutor",
@@ -384,7 +384,7 @@
       "auth_label_snapshot": "fixture-codex-ret07.json",
       "auth_project_id_snapshot": null,
       "auth_provider_snapshot": "codex",
-      "auth_snapshot_at_ms": 1792050037944,
+      "auth_snapshot_at_ms": 1792050291694,
       "auth_type": null,
       "cache_creation_tokens": 0,
       "cache_input_mode": "included_in_input",
@@ -392,7 +392,7 @@
       "cache_tokens": 0,
       "cached_tokens": 0,
       "client_ip": null,
-      "created_at_ms": 1792050037943,
+      "created_at_ms": 1792050291693,
       "endpoint": "responses",
       "event_hash": "91e65e0d396878e23eafeaf27db16ebb2c5a58a0f3a74f085ceaaffe853c23b3",
       "executor_type": "CodexExecutor",

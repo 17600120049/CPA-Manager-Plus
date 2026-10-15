@@ -5,7 +5,14 @@
       "eventID": 1,
       "model": "fixture-manual-ret07",
       "priceIdentity": {
+        "allFieldsConfigured": true,
         "configured": true,
+        "configuredFields": {
+          "cacheCreation": true,
+          "cacheRead": true,
+          "completion": true,
+          "prompt": true
+        },
         "explicitZero": false,
         "model": "fixture-manual-ret07",
         "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
@@ -33,7 +40,14 @@
       "eventID": 2,
       "model": "fixture-paid-ret07",
       "priceIdentity": {
-        "configured": false,
+        "allFieldsConfigured": false,
+        "configured": true,
+        "configuredFields": {
+          "cacheCreation": false,
+          "cacheRead": false,
+          "completion": true,
+          "prompt": true
+        },
         "explicitZero": false,
         "model": "fixture-paid-ret07",
         "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
@@ -61,7 +75,14 @@
       "eventID": 3,
       "model": "fixture-free-ret07",
       "priceIdentity": {
+        "allFieldsConfigured": true,
         "configured": true,
+        "configuredFields": {
+          "cacheCreation": true,
+          "cacheRead": true,
+          "completion": true,
+          "prompt": true
+        },
         "explicitZero": true,
         "model": "fixture-free-ret07",
         "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
@@ -89,7 +110,9 @@
       "eventID": 4,
       "model": "fixture-unknown-ret07",
       "priceIdentity": {
+        "allFieldsConfigured": false,
         "configured": false,
+        "configuredFields": {},
         "explicitZero": false,
         "model": "fixture-unknown-ret07",
         "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",

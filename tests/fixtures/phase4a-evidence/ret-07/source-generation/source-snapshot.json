@@ -5,7 +5,7 @@
       "actual_end_ms": null,
       "actual_start_ms": 1790899200000,
       "boundary_accuracy": "exact",
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "duration_seconds": 604800,
       "end_reason": null,
       "first_observation_id": 1,
@@ -16,13 +16,13 @@
       "scheduled_end_ms": 1791504000000,
       "scheduled_start_ms": 1790899200000,
       "state": "active",
-      "updated_at_ms": 1792050037950
+      "updated_at_ms": 1792050291802
     }
   ],
   "account_quota_observations": [
     {
       "account_key": "usage-account-history:3:file-index:666978747572652D6D6574612D72657430372E6A736F6E:666978747572652D6D6574612D7265743037",
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "id": 1,
       "inventory_mode": "partial",
       "inventory_scope_key": "meta:quota-windows",
@@ -41,7 +41,7 @@
       "activation_id": 1,
       "boundary_accuracy": "exact",
       "content_hash": "613aae2ed310f7549d388cbb3b754a88b3bf43af31b8a5b624ce481a5c9d8cca",
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "cycle_end_ms": 1791504000000,
       "cycle_id": 1,
       "cycle_start_ms": 1790899200000,
@@ -75,14 +75,14 @@
       "activate_observation_id": 1,
       "activated_at_ms": 1790899200000,
       "activation_accuracy": "exact",
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "deactivate_observation_id": null,
       "deactivated_at_ms": null,
       "deactivation_reason": null,
       "generation": 1,
       "id": 1,
       "status": "active",
-      "updated_at_ms": 1792050037950,
+      "updated_at_ms": 1792050291802,
       "window_id": 1
     }
   ],
@@ -92,7 +92,7 @@
       "account_key": "usage-account-history:3:file-index:666978747572652D6D6574612D72657430372E6A736F6E:666978747572652D6D6574612D7265743037",
       "availability": "active",
       "container_provider_window_id": null,
-      "created_at_ms": 1792050037950,
+      "created_at_ms": 1792050291802,
       "deactivated_at_ms": null,
       "first_seen_at_ms": 1790899200000,
       "generation": 1,
@@ -108,7 +108,7 @@
       "provider_window_id": "fixture-week-ret07",
       "relationship_kind": null,
       "scope_fingerprint": "b4ccfb77bdc5f92deb9a1b8f0ba730b8a492d46a2f2c40f18862de7e6f7862f6",
-      "updated_at_ms": 1792050037950,
+      "updated_at_ms": 1792050291802,
       "window_kind": "week",
       "window_mode": "fixed"
     }
@@ -146,7 +146,7 @@
       "source": "manual",
       "source_model_id": null,
       "synced_at_ms": null,
-      "updated_at_ms": 1792050067861
+      "updated_at_ms": 1792050321630
     },
     {
       "cache_creation_configured": 1,
@@ -163,7 +163,7 @@
       "source": "manual",
       "source_model_id": null,
       "synced_at_ms": null,
-      "updated_at_ms": 1792050067861
+      "updated_at_ms": 1792050321630
     },
     {
       "cache_creation_configured": 0,
@@ -180,7 +180,7 @@
       "source": "manual",
       "source_model_id": null,
       "synced_at_ms": null,
-      "updated_at_ms": 1792050067861
+      "updated_at_ms": 1792050321630
     }
   ],
   "quota_cooldowns": [],
