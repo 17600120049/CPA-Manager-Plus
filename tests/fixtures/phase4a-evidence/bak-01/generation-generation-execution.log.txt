@@ -1,0 +1,3 @@
+=== RUN   TestGenerateBAK01
+--- PASS: TestGenerateBAK01 (1.26s)
+PASS

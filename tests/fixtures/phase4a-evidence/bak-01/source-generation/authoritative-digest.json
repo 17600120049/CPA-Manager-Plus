@@ -1,0 +1,7 @@
+{
+  "afterBackup": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+  "beforeBackup": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+  "sourceMainDatabaseSHA256": "4ab96acdfc6bfa5d60ae8069cce03e6c54426efc1cd8777f09db0a3ff77cd456",
+  "sourceRevision": "bdbbdb90d1ffe302a95d0cb33c202051de0260cc4f908d01639ec5031c35723d",
+  "sourceWALSHA256": "c8cd402795b1fdd0710605fb59d236f37b301a6744097f1397925ced7cdd2077"
+}

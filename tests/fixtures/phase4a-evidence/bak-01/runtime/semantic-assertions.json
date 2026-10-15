@@ -1,0 +1,27 @@
+{
+  "applicableSEM": [
+    "SEM-01"
+  ],
+  "assertions": {
+    "SEM-01": {
+      "afterBackupDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+      "afterFirstRestoreDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+      "afterSecondRestoreDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+      "authoritativeFieldsPreserved": true,
+      "beforeDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+      "committedEventIdentityPreserved": true,
+      "noHistoricalRepricing": true,
+      "nullUnknownSemanticsPreserved": true,
+      "status": "runtime-pass"
+    }
+  },
+  "backupConsistency": {
+    "completeWALCapture": true,
+    "tornSnapshot": false
+  },
+  "caseID": "BAK-01",
+  "sourceMutation": {
+    "authoritativeMutation": false,
+    "physicalCheckpoint": false
+  }
+}
