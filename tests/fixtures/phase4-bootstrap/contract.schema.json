@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CPAMP Phase4-00 bootstrap contract v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "contractId",
+    "executionBaseline",
+    "plannedCandidate",
+    "cpaCore",
+    "upgradeOrdering",
+    "bootstrapModes",
+    "cpaStrategies",
+    "paths",
+    "classificationAssertions",
+    "globalAssertions"
+  ],
+  "properties": {
+    "$schema": { "const": "./contract.schema.json" },
+    "schemaVersion": { "const": 2 },
+    "contractId": { "const": "cpamp-v2-phase4-00-bootstrap-contract-v2" },
+    "executionBaseline": { "const": "4d2e2ec72b6b65d84fd1d24ed0022ea65a8dcea0" },
+    "plannedCandidate": { "$ref": "#/$defs/candidate" },
+    "cpaCore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["managementGeneration", "coreV0FallbackAllowed", "externalManagementOwner", "externalLifecycleOwner"],
+      "properties": {
+        "managementGeneration": { "const": "v8" },
+        "coreV0FallbackAllowed": { "const": false },
+        "externalManagementOwner": { "const": "cpamp_manager" },
+        "externalLifecycleOwner": { "const": "operator" }
+      }
+    },
+    "upgradeOrdering": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "read_only_classification" },
+        { "const": "complete_verified_backup" },
+        { "const": "source_revalidation" },
+        { "const": "writable_migration" }
+      ],
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "bootstrapModes": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/mode" }
+    },
+    "cpaStrategies": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/strategy" }
+    },
+    "paths": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/path" }
+    },
+    "classificationAssertions": {
+      "type": "array",
+      "minItems": 9,
+      "items": { "$ref": "#/$defs/classificationAssertion" }
+    },
+    "globalAssertions": {
+      "type": "array",
+      "minItems": 15,
+      "maxItems": 15,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "shape_not_release_identity",
+          "planned_candidate_not_artifact_authority",
+          "artifact_not_source_or_hop_authority",
+          "source_or_hop_evidence_not_readiness",
+          "readiness_not_writable_grant",
+          "read_only_classification_before_backup",
+          "complete_verified_backup_before_write",
+          "source_revalidation_before_write",
+          "bootstrap_mode_admin_session_orthogonal",
+          "upgrade_preserves_existing_admin_credential",
+          "authoritative_history_includes_archive_retained_evidence",
+          "cpa_core_v8_only_no_v0_fallback",
+          "external_management_not_lifecycle_authority",
+          "contract_fixture_never_grants_production_authority",
+          "deferred_qualification_remains_pending"
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "mode": { "enum": ["fresh", "upgrade", "unsupported_upgrade", "recovery", "completed"] },
+    "strategy": { "enum": ["new_managed", "adopt_existing", "connect_external", "migrate_legacy"] },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release", "sourceCommit"],
+      "properties": {
+        "release": { "const": "v1.14.4" },
+        "sourceCommit": { "const": "166262365d506157b99968105c890f480cc7c07c" }
+      }
+    },
+    "admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shape",
+        "plannedCandidate",
+        "artifactEvidenceRef",
+        "sourceProvenanceRef",
+        "forwardHopEvidenceRef",
+        "evidenceStatus",
+        "readiness"
+      ],
+      "properties": {
+        "shape": { "enum": ["legacy_schema_a", "legacy_schema_b", "legacy_schema_c", "unknown"] },
+        "plannedCandidate": { "$ref": "#/$defs/candidate" },
+        "artifactEvidenceRef": { "type": "string" },
+        "sourceProvenanceRef": { "type": "string" },
+        "forwardHopEvidenceRef": { "type": "string" },
+        "evidenceStatus": { "enum": ["unverified", "exact_candidate_verified", "forward_hop_verified", "unknown_or_newer"] },
+        "readiness": { "enum": ["unknown", "ready", "blocked", "recovery", "offline_required"] }
+      }
+    },
+    "adoptionDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resourceRef",
+        "kind",
+        "scope",
+        "readEvidenceRef",
+        "replayEvidenceRef",
+        "verifyEvidenceRef",
+        "manualAction",
+        "disposition"
+      ],
+      "properties": {
+        "resourceRef": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "kind": { "enum": ["api_keys", "credentials", "cpa_configuration", "provider_runtime_state"] },
+        "scope": { "enum": ["client_api_keys", "cpa_auth_files", "management_api_fields", "provider_runtime_state"] },
+        "readEvidenceRef": { "type": "string" },
+        "replayEvidenceRef": { "type": "string" },
+        "verifyEvidenceRef": { "type": "string" },
+        "manualAction": { "enum": ["", "reauthenticate_after_adoption", "reconfigure_after_adoption"] },
+        "disposition": { "enum": ["migrate", "manual_action", "unsupported"] }
+      }
+    },
+    "path": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "mode",
+        "cpampAction",
+        "cpaStrategy",
+        "sourceAdmission",
+        "sourceCPA",
+        "usageAction",
+        "backupRequired",
+        "runtimeMode",
+        "initializeAdminCredential",
+        "preserveExistingAdminCredential",
+        "authenticationRequired",
+        "mutations",
+        "preserved",
+        "unsupported",
+        "discoveredResourceRefs",
+        "adoptionDecisions",
+        "controlBasePath",
+        "estimatedSteps",
+        "migrationOrdering"
+      ],
+      "properties": {
+        "id": { "enum": ["P4-BOOT-01", "P4-BOOT-02", "P4-BOOT-03", "P4-BOOT-04", "P4-BOOT-05"] },
+        "mode": { "enum": ["fresh", "upgrade"] },
+        "cpampAction": { "enum": ["initialize", "migrate_v1"] },
+        "cpaStrategy": { "$ref": "#/$defs/strategy" },
+        "sourceAdmission": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/admission" }] },
+        "sourceCPA": { "enum": ["", "existing", "legacy", "external"] },
+        "usageAction": { "enum": ["none", "preserve"] },
+        "backupRequired": { "type": "boolean" },
+        "runtimeMode": { "enum": ["embedded", "external"] },
+        "initializeAdminCredential": { "type": "boolean" },
+        "preserveExistingAdminCredential": { "type": "boolean" },
+        "authenticationRequired": { "type": "boolean" },
+        "mutations": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "preserved": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "unsupported": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "discoveredResourceRefs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" } },
+        "adoptionDecisions": { "type": "array", "items": { "$ref": "#/$defs/adoptionDecision" } },
+        "controlBasePath": { "type": "string", "minLength": 1 },
+        "estimatedSteps": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "migrationOrdering": {
+          "type": "array",
+          "items": { "enum": ["read_only_classification", "complete_verified_backup", "source_revalidation", "writable_migration"] }
+        }
+      }
+    },
+    "classificationAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "hasV1ProductState",
+        "admission",
+        "recoveryReason",
+        "bootstrapComplete",
+        "adminCredential",
+        "session",
+        "expectedMode"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "hasV1ProductState": { "type": "boolean" },
+        "admission": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/admission" }] },
+        "recoveryReason": { "enum": ["", "operation_incomplete", "rollback_required", "damaged_state", "migration_incomplete", "backup_invalid", "source_changed", "offline_action_required", "authority_unqualified", "manual_recovery_required"] },
+        "bootstrapComplete": { "type": "boolean" },
+        "adminCredential": { "enum": ["uninitialized", "initialized", "unverifiable"] },
+        "session": { "enum": ["missing", "authenticated", "expired"] },
+        "expectedMode": { "$ref": "#/$defs/mode" }
+      }
+    }
+  }
+}
