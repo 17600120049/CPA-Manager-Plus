@@ -2,6 +2,7 @@ package src11
 
 import (
 	"context"
+	"database/sql"
 	"debug/buildinfo"
 	"encoding/json"
 	"net"
@@ -47,6 +48,13 @@ func TestGenerateMIG01(t *testing.T) {
 		t.Skip("opt-in MIG-01 controlled generation")
 	}
 	generateExactSource(t, mig01CaseID, mig01PlanCommit, mig01Profile)
+}
+
+func TestGenerateBAK01(t *testing.T) {
+	if os.Getenv("CPAMP_BAK01_GENERATE") != "1" {
+		t.Skip("opt-in BAK-01 controlled generation")
+	}
+	generateExactSource(t, bak01CaseID, bak01PlanCommit, bak01Profile)
 }
 
 func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
@@ -119,6 +127,8 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	var deliver, delivered atomic.Bool
 	var disabled atomic.Bool
 	var queueCalls atomic.Int64
+	var preTransactionMainDigest string
+	var preTransactionMainSize int64
 	queue := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer qualification-only-management-key" {
 			http.Error(w, "unauthorized", 401)
@@ -202,6 +212,13 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	must(t, os.WriteFile(filepath.Join(generation, "config-write.json"), configResponse, 0600))
 	priceResponse := httpCall(t, "PUT", base, "/v0/management/model-prices", map[string]any{"prices": p.Prices})
 	must(t, os.WriteFile(filepath.Join(generation, "price-write.json"), priceResponse, 0600))
+	if caseID == bak01CaseID {
+		// Capture the main-file state immediately before the controlled event
+		// delivery. The committed event that follows must be supplied by WAL.
+		transactionMain := filepath.Join(live, "usage.sqlite")
+		preTransactionMainDigest = fileDigest(t, transactionMain)
+		preTransactionMainSize = fileSize(t, transactionMain)
+	}
 	deliver.Store(true)
 	wait(t, func() bool {
 		r, e := http.Get(base + "/usage-service/info")
@@ -237,6 +254,21 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	}
 	export := httpCall(t, "GET", base, "/v0/management/usage/export", nil)
 	must(t, os.WriteFile(filepath.Join(generation, "v1-export.jsonl"), export, 0600))
+	var bakReadDB *sql.DB
+	var bakReadTx *sql.Tx
+	if caseID == bak01CaseID {
+		bakReadDB, e = sql.Open("sqlite", dbURI(filepath.Join(live, "usage.sqlite"), true))
+		must(t, e)
+		bakReadDB.SetMaxOpenConns(1)
+		must(t, bakReadDB.PingContext(ctx))
+		bakReadTx, e = bakReadDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		must(t, e)
+		var count int64
+		must(t, bakReadTx.QueryRowContext(ctx, "select count(*) from usage_events").Scan(&count))
+		if count != 4 {
+			t.Fatalf("BAK-01 read snapshot expected 4 committed events, got %d", count)
+		}
+	}
 	must(t, cmd.Process.Signal(os.Interrupt))
 	select {
 	case err := <-done:
@@ -252,6 +284,17 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	layout := maintenancebundle.Layout{DatabasePath: filepath.Join(live, "usage.sqlite"), DataKeyPath: filepath.Join(live, "data.key"), ConfigPath: filepath.Join(live, "config.json"), ArchivesPath: filepath.Join(live, "usage-archives"), RequireConfig: true}
 	preCheckpoint, e := maintenancebundle.Inspect(ctx, layout)
 	must(t, e)
+	if caseID == bak01CaseID {
+		generateBAK01SourceTail(t, bak01GenerationInput{
+			ctx: ctx, root: root, generation: generation, live: live, layout: layout,
+			preCheckpoint: preCheckpoint, profile: p, input: input, archive: archive,
+			executableSHA256: exeBefore, producerBuildCommit: vcsRevision, generatorCommit: code,
+			started: started, finished: finished, pid: cmd.Process.Pid, exitCode: cmd.ProcessState.ExitCode(),
+			reaped: reaped, queueCalls: queueCalls.Load(), readDB: bakReadDB, readTx: bakReadTx,
+			preTransactionMainDigest: preTransactionMainDigest, preTransactionMainSize: preTransactionMainSize,
+		})
+		return
+	}
 	db := openDB(t, layout.DatabasePath, false)
 	before := snapshot(t, db)
 	if caseID == ret02CaseID {
