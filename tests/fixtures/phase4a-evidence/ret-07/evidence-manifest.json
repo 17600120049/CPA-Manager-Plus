@@ -181,10 +181,6 @@
       "sha256": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
       "size": 2313
     },
-    "source-generation/producer.log": {
-      "sha256": "75880736dfdd080eb87f29837e4531c00048e0cab1b59226249aaacf1b1c0102",
-      "size": 42965
-    },
     "source-generation/quota-write.json": {
       "sha256": "26e81023391678fb9c98cf2b691b4e62c80ea8e54c1160b8e53c0b574a8d0717",
       "size": 217

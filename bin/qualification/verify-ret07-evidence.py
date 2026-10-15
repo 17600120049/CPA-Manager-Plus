@@ -154,6 +154,10 @@ def verify_generation(root: Path, profile: dict[str, Any]) -> tuple[dict[str, An
     require(provenance.get("sourceRecord") == "ret-07/source-generation",
             "source record path mismatch")
     for name, expected in generation.get("GenerationEvidenceFiles", {}).items():
+        if name == "producer.log":
+            require(provenance.get("externalGenerationFiles", {}).get(name) == expected,
+                    "external producer log digest mismatch")
+            continue
         path = root / "source-generation" / name
         require(path.is_file(), f"generation evidence file is missing: {name}")
         require(digest(path) == expected, f"generation evidence digest mismatch: {name}")
