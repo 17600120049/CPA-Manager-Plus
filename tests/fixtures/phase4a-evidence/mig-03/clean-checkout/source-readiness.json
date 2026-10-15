@@ -21,7 +21,7 @@
           "role": "database",
           "state": "present",
           "size": 659456,
-          "mode": "-rw-------"
+          "mode": "-rw-r--r--"
         },
         {
           "role": "wal",
@@ -39,13 +39,13 @@
           "role": "config",
           "state": "present",
           "size": 243,
-          "mode": "-rw-------"
+          "mode": "-rw-r--r--"
         },
         {
           "role": "data-key",
           "state": "present",
           "size": 44,
-          "mode": "-rw-------"
+          "mode": "-rw-r--r--"
         },
         {
           "role": "archives",
@@ -55,7 +55,7 @@
           "role": "source-directory",
           "state": "present",
           "size": 192,
-          "mode": "drwx------"
+          "mode": "drwxr-xr-x"
         },
         {
           "role": "process-lock",

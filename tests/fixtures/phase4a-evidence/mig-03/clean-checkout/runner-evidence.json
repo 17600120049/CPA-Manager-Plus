@@ -1,5 +1,5 @@
 {
-  "codeCommit": "316f02a605dee686790d73aeb693153ab675ce9b",
+  "codeCommit": "92331d29940bd51e74349dbfc86751a55cb25ae4",
   "sourceFiles": {
     "apps/manager-server/cmd/cpa-manager-plus/codex_legacy_identity_test.go": "8fce592911212f45feb3ffc5eb7ae8615e9f9f308ab166bcf6ffc8fe9d967d78",
     "apps/manager-server/cmd/cpa-manager-plus/identity_forward_completions_test.go": "8c550282d3b80c2b17defcec37af578826f20583ff2653109b9bca9e7e7e3202",
@@ -503,7 +503,7 @@
     "bin/qualification/test_materialize_src11.py": "844c3af235fd265aa29f34290bed50624cd87765fd6af01941c8ded360dcedf3",
     "bin/qualification/test_mig01.py": "81598c12cf1fadfd7a23bc901a426c9fd253d87958af31caa752da6cfbe5e31f",
     "bin/qualification/test_mig02.py": "22f29b3509786d2b9d96d7e9a863d40d77876bdd35a8bec975940484f771827e",
-    "bin/qualification/test_mig03.py": "228170be251592a9ecf788e3a83e7bffbc919e2f16b1d6ee64aa8fa776014bbe",
+    "bin/qualification/test_mig03.py": "01c84508aac4981429cfcdad007b7f3e3d68a06e51d6fe359300c8398fc67b89",
     "bin/qualification/test_ret01.py": "5bd88a615606fb080e560cc67ae0c4012a58497506d26f189b2a5843e30644cb",
     "bin/qualification/test_ret02.py": "c39f9f39f46124bc21b719ed930891b7802aff667ee690258fbf577bc41192a5",
     "bin/qualification/test_ret03.py": "ac62f5f4bb17e47a2b877afa2730e9c936c303cb08a3a40dc1e03de1e75af167",
@@ -525,31 +525,31 @@
     "-c",
     "-trimpath",
     "-ldflags",
-    "-X github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11.generatorCommit=316f02a605dee686790d73aeb693153ab675ce9b",
+    "-X github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11.generatorCommit=92331d29940bd51e74349dbfc86751a55cb25ae4",
     "-o",
-    "/private/tmp/cpamp-mig03-clean-runtime-final-1792048706N/qualification",
+    "/private/var/folders/30/bgz4kkbj6k14xrl3m3hzq53r0000gn/T/cpamp-mig03-package-fix-rsj4jhcr/native-replay/qualification",
     "./tests/qualification/src11"
   ],
   "goVersion": "go version go1.26.1 darwin/amd64",
   "moduleGraph": "github.com/seakee/cpa-manager-plus/apps/manager-server\ngithub.com/dustin/go-humanize v1.0.1\ngithub.com/google/go-cmp v0.6.0\ngithub.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e\ngithub.com/google/uuid v1.6.0\ngithub.com/hashicorp/golang-lru/v2 v2.0.7\ngithub.com/mattn/go-isatty v0.0.20\ngithub.com/ncruces/go-strftime v1.0.0\ngithub.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec\ngolang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546\ngolang.org/x/mod v0.29.0\ngolang.org/x/sync v0.17.0\ngolang.org/x/sys v0.37.0\ngolang.org/x/tools v0.38.0\ngolang.org/x/tools/go/expect v0.1.1-deprecated\ngolang.org/x/tools/go/packages/packagestest v0.1.1-deprecated\nmodernc.org/cc/v4 v4.27.1\nmodernc.org/ccgo/v4 v4.30.1\nmodernc.org/fileutil v1.3.40\nmodernc.org/gc/v2 v2.6.5\nmodernc.org/gc/v3 v3.1.1\nmodernc.org/goabi0 v0.2.0\nmodernc.org/libc v1.67.6\nmodernc.org/mathutil v1.7.1\nmodernc.org/memory v1.11.0\nmodernc.org/opt v0.1.4\nmodernc.org/sortutil v1.2.1\nmodernc.org/sqlite v1.46.1\nmodernc.org/strutil v1.2.1\nmodernc.org/token v1.1.0",
-  "executableSHA256": "b103b1716a8f83458bba0d8fde4f90da17cb0e6ce32b494f7675b87cad085097",
+  "executableSHA256": "1553a7b615d98af25622076e29b98ef87016cc35f6091763a1162bec883bf2fb",
   "profileSHA256": "2f69a7ee2b6835b4c09f01a13335e0cea35dcbf28173f13cde5bfc1a3e6255f3",
   "archiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
   "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
   "executionCommand": [
-    "/private/tmp/cpamp-mig03-clean-runtime-final-1792048706N/qualification",
+    "/private/var/folders/30/bgz4kkbj6k14xrl3m3hzq53r0000gn/T/cpamp-mig03-package-fix-rsj4jhcr/native-replay/qualification",
     "-test.v",
     "-test.run",
     "^TestQualifyMIG03$",
     "-test.timeout",
     "4m"
   ],
-  "resultSHA256": "57a7eaf7aaf12efe28557af0c5ff890476d67ac6138c0fa6b5386db9201146ad",
+  "resultSHA256": "ca15c048ef0ed720f453f9cf131aadc74da0d8d896f446cae13f2dbf41e9fb95",
   "executionExitCode": 0,
   "UpgradeAuthorized": false,
   "TrustedHopReceipt": false,
   "logs": {
-    "replay-execution.log": "7b4d3907b413723c9bb7d2543cb329117aed06f5b7d9cc95d8342229532e075b",
+    "replay-execution.log": "83fb24a4b9e17bf5cc68e4fa5e697400551ad9ed57a4306086c9db2f9d4a1f02",
     "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   }
 }

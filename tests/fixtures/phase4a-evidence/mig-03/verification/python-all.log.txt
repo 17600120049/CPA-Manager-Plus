@@ -75,6 +75,6 @@ run-aut03.py: error: output must be absent; never overwrite evidence
 ok
 
 ----------------------------------------------------------------------
-Ran 69 tests in 0.266s
+Ran 69 tests in 0.290s
 
 OK (skipped=7)

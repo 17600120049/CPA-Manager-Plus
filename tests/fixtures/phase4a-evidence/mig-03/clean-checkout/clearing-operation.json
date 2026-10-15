@@ -6,7 +6,7 @@
   ],
   "checkpoint": {
     "name": "usage_cache_accounting_v2",
-    "startedAtMs": 1792048708606,
+    "startedAtMs": 1792051013116,
     "status": "clearing",
     "targetEventId": 3
   },
@@ -19,8 +19,8 @@
       "processedRows": 3,
       "changedRows": 2,
       "appliedRows": 2,
-      "startedAtMs": 1792048708606,
-      "updatedAtMs": 1792048708607
+      "startedAtMs": 1792051013116,
+      "updatedAtMs": 1792051013117
     },
     "Processed": 1,
     "Completed": false
@@ -31,7 +31,7 @@
     "completedClearSteps": 1,
     "mechanism": "context cancellation at the next production clear-batch boundary",
     "noMutationAfterCancel": true,
-    "operationID": "7f62774c13797ecb0cc1d4b7a17a11ccdd23c97d742b6cda867046b3f364014a",
+    "operationID": "19e5b4687a7ed0453eec658d31db1c592a800832f8e470edeb2ec1369669b41a",
     "persistedState": {
       "name": "usage_cache_accounting_v2",
       "status": "clearing",
@@ -40,8 +40,8 @@
       "processedRows": 3,
       "changedRows": 2,
       "appliedRows": 2,
-      "startedAtMs": 1792048708606,
-      "updatedAtMs": 1792048708607
+      "startedAtMs": 1792051013116,
+      "updatedAtMs": 1792051013117
     },
     "postClearCounts": {
       "clearedRows": 1,
@@ -60,7 +60,7 @@
     "remainingCleanupRows": 11
   },
   "migrationRevision": 3,
-  "operationID": "7f62774c13797ecb0cc1d4b7a17a11ccdd23c97d742b6cda867046b3f364014a",
+  "operationID": "19e5b4687a7ed0453eec658d31db1c592a800832f8e470edeb2ec1369669b41a",
   "postClearCounts": {
     "clearedRows": 1,
     "remainingRows": 11,
@@ -83,8 +83,8 @@
     "processedRows": 3,
     "changedRows": 2,
     "appliedRows": 2,
-    "startedAtMs": 1792048708606,
-    "updatedAtMs": 1792048708607
+    "startedAtMs": 1792051013116,
+    "updatedAtMs": 1792051013117
   },
   "remainingCleanupState": {
     "clearedRows": 1,
@@ -96,7 +96,7 @@
   },
   "start": {
     "name": "usage_cache_accounting_v2",
-    "startedAtMs": 1792048708606,
+    "startedAtMs": 1792051013116,
     "targetEventId": 3
   }
 }

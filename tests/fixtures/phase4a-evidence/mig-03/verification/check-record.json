@@ -1,6 +1,6 @@
 {
   "caseID": "MIG-03",
-  "cleanCheckoutExecutionCommit": "316f02a605dee686790d73aeb693153ab675ce9b",
+  "cleanCheckoutExecutionCommit": "92331d29940bd51e74349dbfc86751a55cb25ae4",
   "commands": [
     {
       "command": "go test -mod=readonly ./tests/qualification/src11 -run TestQualifyMIG03|TestCompletedV1144RequiresPersistedEvidence|TestUsageCacheAccounting -count=1",
@@ -36,6 +36,7 @@
   ],
   "independentAcceptance": "pending",
   "noSyntheticSQL": true,
+  "packageVerificationCommit": "92331d29940bd51e74349dbfc86751a55cb25ae4",
   "planCommit": "21035045c425e453bd8f3007619fc0734861012e",
   "productionAuthority": "closed",
   "runtimeExecutionCommit": "316f02a605dee686790d73aeb693153ab675ce9b",

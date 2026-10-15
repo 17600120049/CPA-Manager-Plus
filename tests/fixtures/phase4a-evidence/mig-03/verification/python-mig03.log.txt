@@ -5,6 +5,6 @@ test_provenance_and_scope (test_mig03.Mig03EvidenceTests.test_provenance_and_sco
 test_runtime_and_clean_checkout (test_mig03.Mig03EvidenceTests.test_runtime_and_clean_checkout) ... ok
 
 ----------------------------------------------------------------------
-Ran 5 tests in 0.015s
+Ran 5 tests in 0.039s
 
 OK

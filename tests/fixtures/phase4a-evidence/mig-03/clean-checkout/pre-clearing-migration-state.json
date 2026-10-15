@@ -7,10 +7,10 @@
     "processedRows": 0,
     "changedRows": 0,
     "appliedRows": 0,
-    "startedAtMs": 1792048708606,
-    "updatedAtMs": 1792048708606
+    "startedAtMs": 1792051013116,
+    "updatedAtMs": 1792051013116
   },
-  "executorCommit": "316f02a605dee686790d73aeb693153ab675ce9b",
+  "executorCommit": "92331d29940bd51e74349dbfc86751a55cb25ae4",
   "executorRevision": 3,
   "lifecycleTrace": [
     {
@@ -23,8 +23,8 @@
         "processedRows": 0,
         "changedRows": 0,
         "appliedRows": 0,
-        "startedAtMs": 1792048708606,
-        "updatedAtMs": 1792048708606
+        "startedAtMs": 1792051013116,
+        "updatedAtMs": 1792051013116
       }
     },
     {
@@ -37,8 +37,8 @@
           "processedRows": 3,
           "changedRows": 2,
           "appliedRows": 0,
-          "startedAtMs": 1792048708606,
-          "updatedAtMs": 1792048708606
+          "startedAtMs": 1792051013116,
+          "updatedAtMs": 1792051013116
         },
         "Processed": 3,
         "Completed": false
@@ -55,8 +55,8 @@
           "processedRows": 3,
           "changedRows": 2,
           "appliedRows": 2,
-          "startedAtMs": 1792048708606,
-          "updatedAtMs": 1792048708607
+          "startedAtMs": 1792051013116,
+          "updatedAtMs": 1792051013117
         },
         "Processed": 2,
         "Completed": false
@@ -73,8 +73,8 @@
           "processedRows": 3,
           "changedRows": 2,
           "appliedRows": 2,
-          "startedAtMs": 1792048708606,
-          "updatedAtMs": 1792048708607
+          "startedAtMs": 1792051013116,
+          "updatedAtMs": 1792051013117
         },
         "Processed": 1,
         "Completed": false
@@ -82,7 +82,7 @@
       "phase": "clearing"
     }
   ],
-  "operationID": "7f62774c13797ecb0cc1d4b7a17a11ccdd23c97d742b6cda867046b3f364014a",
+  "operationID": "19e5b4687a7ed0453eec658d31db1c592a800832f8e470edeb2ec1369669b41a",
   "preClearing": {
     "name": "usage_cache_accounting_v2",
     "status": "clearing",
@@ -91,8 +91,8 @@
     "processedRows": 3,
     "changedRows": 2,
     "appliedRows": 2,
-    "startedAtMs": 1792048708606,
-    "updatedAtMs": 1792048708607
+    "startedAtMs": 1792051013116,
+    "updatedAtMs": 1792051013117
   },
   "preparedCounts": {
     "totalRows": 12,
@@ -165,10 +165,10 @@
       "last_event_id": 3,
       "name": "usage_cache_accounting_v2",
       "processed_rows": 3,
-      "started_at_ms": 1792048708606,
+      "started_at_ms": 1792051013116,
       "status": "clearing",
       "target_event_id": 3,
-      "updated_at_ms": 1792048708607
+      "updated_at_ms": 1792051013117
     }
   ],
   "sourceRevision": 2
