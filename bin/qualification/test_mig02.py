@@ -111,29 +111,17 @@ class Mig02EvidenceTests(unittest.TestCase):
         self.assertEqual(scope["verificationCommit"], self.generation["GeneratorCodeCommit"])
         self.assertFalse(scope["productCodeChanged"])
         self.assertTrue(scope["harnessOnly"])
-        # The qualification commits predate the current manager path layout, so the
-        # recorded tree pins cannot be resolved as commit:path pairs. Prove the
-        # harness-only claim by checking that the scoped product paths did not change
-        # between the recorded qualification boundaries, then authenticate each pin as
-        # an actual Git tree object without binding it to mutable HEAD.
-        scoped_paths = tuple(scope["baselineTrees"])
-        diff = subprocess.run(
-            [
-                "git", "diff", "--quiet",
-                scope["baselineCommit"], scope["verificationCommit"],
-                "--", *scoped_paths,
-            ],
-            cwd=ROOT,
-            check=False,
-        )
-        self.assertEqual(diff.returncode, 0, "product scope changed during qualification")
+        # Full-history checkout is required by the qualification workflow. Bind every
+        # recorded product-scope tree to both historical qualification boundaries so
+        # an unrelated Git tree object cannot satisfy the frozen evidence contract.
         for path, expected in scope["baselineTrees"].items():
-            object_type = subprocess.check_output(
-                ["git", "cat-file", "-t", expected],
-                cwd=ROOT,
-                text=True,
-            ).strip()
-            self.assertEqual(object_type, "tree", f"recorded product tree: {path}")
+            for commit in (scope["baselineCommit"], scope["verificationCommit"]):
+                actual = subprocess.check_output(
+                    ["git", "rev-parse", f"{commit}:{path}"],
+                    cwd=ROOT,
+                    text=True,
+                ).strip()
+                self.assertEqual(actual, expected, f"{commit}:{path}")
 
     def _assert_runtime(self, prefix):
         root = EVIDENCE / prefix

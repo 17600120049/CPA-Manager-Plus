@@ -293,7 +293,25 @@ func Classify(e ClassificationEvidence) (Mode, error) {
 	return Upgrade, nil
 }
 
+func validMode(mode Mode) bool {
+	switch mode {
+	case Fresh, Upgrade, UnsupportedUpgrade, Recovery, Completed:
+		return true
+	default:
+		return false
+	}
+}
+
 func ValidateTransition(from, to Mode) error {
+	if !validMode(from) || !validMode(to) {
+		return fmt.Errorf("invalid bootstrap transition %q -> %q", from, to)
+	}
+	if from == Completed && to != Completed {
+		return errors.New("completed bootstrap state is terminal")
+	}
+	if from == UnsupportedUpgrade && to == Fresh {
+		return errors.New("unsupported upgrade cannot downgrade to fresh")
+	}
 	if from == Recovery && to == Completed {
 		return errors.New("recovery cannot transition directly to completed")
 	}

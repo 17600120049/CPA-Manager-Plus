@@ -598,17 +598,43 @@ func TestCheckedInContract(t *testing.T) {
 	if len(f.Paths) != 5 {
 		t.Fatalf("got %d paths, want 5", len(f.Paths))
 	}
+	type pathSignature struct {
+		Mode       bootstrap.Mode
+		Strategy   bootstrap.CPAStrategy
+		Action     bootstrap.CPAMPAction
+		Usage      bootstrap.UsageAction
+		Backup     bool
+		Runtime    bootstrap.RuntimeMode
+	}
+	wantPaths := map[string]pathSignature{
+		"P4-BOOT-01": {bootstrap.Fresh, bootstrap.NewManaged, bootstrap.Initialize, bootstrap.NoUsageAction, false, bootstrap.Embedded},
+		"P4-BOOT-02": {bootstrap.Fresh, bootstrap.AdoptExisting, bootstrap.Initialize, bootstrap.NoUsageAction, false, bootstrap.Embedded},
+		"P4-BOOT-03": {bootstrap.Fresh, bootstrap.ConnectExternal, bootstrap.Initialize, bootstrap.NoUsageAction, false, bootstrap.External},
+		"P4-BOOT-04": {bootstrap.Upgrade, bootstrap.MigrateLegacy, bootstrap.MigrateV1, bootstrap.PreserveUsage, true, bootstrap.Embedded},
+		"P4-BOOT-05": {bootstrap.Upgrade, bootstrap.ConnectExternal, bootstrap.MigrateV1, bootstrap.PreserveUsage, true, bootstrap.External},
+	}
 	seenPaths := map[string]bool{}
 	for _, path := range f.Paths {
 		if seenPaths[path.ID] {
 			t.Fatalf("duplicate path %s", path.ID)
+		}
+		want, ok := wantPaths[path.ID]
+		if !ok {
+			t.Fatalf("unexpected path %s", path.ID)
+		}
+		got := pathSignature{
+			Mode: path.Mode, Strategy: path.CPAStrategy, Action: path.CPAMPAction,
+			Usage: path.UsageAction, Backup: path.BackupRequired, Runtime: path.RuntimeMode,
+		}
+		if got != want {
+			t.Fatalf("%s canonical path drifted: got=%+v want=%+v", path.ID, got, want)
 		}
 		seenPaths[path.ID] = true
 		if err := path.domain().Validate(); err != nil {
 			t.Fatalf("%s: %v", path.ID, err)
 		}
 	}
-	for _, id := range []string{"P4-BOOT-01", "P4-BOOT-02", "P4-BOOT-03", "P4-BOOT-04", "P4-BOOT-05"} {
+	for id := range wantPaths {
 		if !seenPaths[id] {
 			t.Fatalf("missing path %s", id)
 		}
@@ -1207,12 +1233,25 @@ func TestCPACoreContractIsV8OnlyAndKeepsExternalLifecycleUserOwned(t *testing.T)
 	}
 }
 
-func TestRecoveryCannotBecomeCompletedDirectly(t *testing.T) {
-	if err := bootstrap.ValidateTransition(bootstrap.Recovery, bootstrap.Completed); err == nil {
-		t.Fatal("recovery transitioned directly to completed")
-	}
+func TestBootstrapTransitionsFailClosed(t *testing.T) {
 	if err := bootstrap.ValidateTransition(bootstrap.Upgrade, bootstrap.Completed); err != nil {
 		t.Fatal(err)
+	}
+	if err := bootstrap.ValidateTransition(bootstrap.Completed, bootstrap.Completed); err != nil {
+		t.Fatal(err)
+	}
+	for _, transition := range [][2]bootstrap.Mode{
+		{bootstrap.Recovery, bootstrap.Completed},
+		{bootstrap.UnsupportedUpgrade, bootstrap.Fresh},
+		{bootstrap.Completed, bootstrap.Fresh},
+		{bootstrap.Completed, bootstrap.Upgrade},
+		{bootstrap.Completed, bootstrap.Recovery},
+		{"invalid", bootstrap.Fresh},
+		{bootstrap.Fresh, "invalid"},
+	} {
+		if err := bootstrap.ValidateTransition(transition[0], transition[1]); err == nil {
+			t.Fatalf("unsafe bootstrap transition accepted: %q -> %q", transition[0], transition[1])
+		}
 	}
 }
 
