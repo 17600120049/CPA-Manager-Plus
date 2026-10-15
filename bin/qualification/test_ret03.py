@@ -99,6 +99,8 @@ class Ret03EvidenceTests(unittest.TestCase):
             assertions = read(prefix + "/semantic-assertions.json")["assertions"]
             for sem in SEM:
                 self.assertEqual(assertions[sem]["status"], "runtime-pass")
+            self.assertTrue(assertions["SEM-03"]["historicalPricingAuthorityPreserved"])
+            self.assertNotIn("noCurrentPriceFallback", assertions["SEM-03"])
             for imported in assertions["SEM-02"]["archiveImports"]:
                 self.assertEqual(imported["added"], 0)
                 self.assertEqual(imported["skipped"], 4)

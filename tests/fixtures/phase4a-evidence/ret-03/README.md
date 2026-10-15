@@ -8,4 +8,6 @@ macOS and pinned Linux AMD64 replays exercise SEM-01/02/03/06/09. Historical agg
 
 The production identity rebuild guard remains fail-closed after raw deletion; RET-03 reopens the already-qualified retained/archive state and does not regenerate raw rows. No synthetic SQL deletion or marker-only evidence is used.
 
+SEM-03 proves that historical pricing authority and resulting costs remain stable across raw deletion, replay and restore. The retained query loads the preserved `model_prices` authority; this qualification does not prove that later price edits leave historical costs unchanged. Current committed replay assertions supersede the historical replay annotations inside the original immutable asset; its source bundle, generation records and sealed bytes remain unchanged.
+
 The immutable qualification asset is pinned in `source-provenance.json#/sourceArtifact` and `seal-verification.json`. It is a prerelease qualification asset only. `casePass=false`, `independentAcceptance=pending`, `UpgradeAuthorized=false`, `TrustedHopReceipt=false`; the remaining Phase4A-07 cases remain pending.

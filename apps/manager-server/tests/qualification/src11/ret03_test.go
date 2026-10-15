@@ -500,7 +500,7 @@ func TestReplayRET03(t *testing.T) {
 	assertionsHash := save(t, output, "semantic-assertions.json", map[string]any{"caseID": ret03CaseID, "applicableSEM": sem, "assertions": map[string]any{
 		"SEM-01": map[string]any{"status": "runtime-pass", "rawRowsPhysicallyAbsent": true, "archiveProjectionAuthority": true, "unknownAndNullSemanticsPreserved": true},
 		"SEM-02": map[string]any{"status": "runtime-pass", "archiveImports": imports, "before": firstQueries, "after": afterQueries, "noDoubleCounting": true, "rawRemainsDeleted": true},
-		"SEM-03": map[string]any{"status": "runtime-pass", "v1Costs": v1, "v2Queries": afterQueries, "historicalPricingPreserved": true, "noCurrentPriceFallback": true},
+		"SEM-03": map[string]any{"status": "runtime-pass", "v1Costs": v1, "v2Queries": afterQueries, "historicalPricingPreserved": true, "historicalPricingAuthorityPreserved": true},
 		"SEM-06": map[string]any{"status": "runtime-pass", "metadataContinuity": true, "archiveProjectionIdentity": true, "accessTokenSHA256": true},
 		"SEM-09": map[string]any{"status": "runtime-pass", "rawDeleted": true, "archiveComplete": true, "retainedProjectionComplete": true, "onlineRawComplete": false, "rawOnlyQueryDegraded": true, "supportedHistoryQuery": true},
 	}})
