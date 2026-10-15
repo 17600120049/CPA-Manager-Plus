@@ -142,6 +142,24 @@ type coreJSON struct {
 	ExternalLifecycleOwner  string
 }
 
+type ownershipJSON struct {
+	DatabaseOwner            bootstrap.ComponentOwner
+	DataKeyOwner             bootstrap.ComponentOwner
+	MigrationOwner           bootstrap.ComponentOwner
+	ProductCheckpointOwner   bootstrap.ComponentOwner
+	ManagedCPALifecycleOwner bootstrap.ComponentOwner
+}
+
+func (o ownershipJSON) domain() bootstrap.OwnershipContract {
+	return bootstrap.OwnershipContract{
+		DatabaseOwner:            o.DatabaseOwner,
+		DataKeyOwner:             o.DataKeyOwner,
+		MigrationOwner:           o.MigrationOwner,
+		ProductCheckpointOwner:   o.ProductCheckpointOwner,
+		ManagedCPALifecycleOwner: o.ManagedCPALifecycleOwner,
+	}
+}
+
 func (c coreJSON) domain() bootstrap.CPACoreContract {
 	return bootstrap.CPACoreContract{
 		ManagementGeneration:    c.ManagementGeneration,
@@ -158,6 +176,7 @@ type fixture struct {
 	ExecutionBaseline        string
 	PlannedCandidate         candidateJSON
 	CPACore                  coreJSON
+	Ownership                ownershipJSON
 	UpgradeOrdering          []bootstrap.MigrationStage
 	BootstrapModes           []bootstrap.Mode
 	CPAStrategies            []bootstrap.CPAStrategy
@@ -214,6 +233,9 @@ func TestCheckedInContract(t *testing.T) {
 		t.Fatal("planned direct candidate drifted")
 	}
 	if err := f.CPACore.domain().Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Ownership.domain().Validate(); err != nil {
 		t.Fatal(err)
 	}
 	if err := bootstrap.ValidateUpgradeOrdering(f.UpgradeOrdering); err != nil {
@@ -282,6 +304,13 @@ func TestCheckedInContract(t *testing.T) {
 		"external_management_not_lifecycle_authority",
 		"contract_fixture_never_grants_production_authority",
 		"deferred_qualification_remains_pending",
+		"required_migration_checkpoints_before_grant",
+		"forward_hop_requires_trusted_receipt",
+		"trusted_receipt_requires_manager_authenticity",
+		"trusted_receipt_binds_operation_target_input_output_artifact",
+		"trusted_receipt_requires_zero_exit_and_reap",
+		"receipt_replay_or_revocation_rejected",
+		"manager_supervisor_ownership_separated",
 	}
 	if !setEqual(f.GlobalAssertions, wantGlobal) {
 		t.Fatal("global contract assertions drifted")
@@ -389,10 +418,14 @@ func TestEvidenceReadinessAndGrantRemainIndependent(t *testing.T) {
 		bootstrap.WritableMigration,
 	}
 	base := bootstrap.WritablePreconditions{
-		Mode:                      bootstrap.Upgrade,
-		Admission:                 admission,
-		BackupVerified:            true,
-		SourceRevalidated:         true,
+		Mode:              bootstrap.Upgrade,
+		Admission:         admission,
+		BackupVerified:    true,
+		SourceRevalidated: true,
+		RequiredCheckpoints: bootstrap.RequiredMigrationCheckpoints{
+			CacheAccountingRevision2Complete: true,
+			QuotaSnapshotLifecycleComplete:   true,
+		},
 		ManagerAuthorityQualified: true,
 		Ordering:                  ordering,
 	}
@@ -406,6 +439,8 @@ func TestEvidenceReadinessAndGrantRemainIndependent(t *testing.T) {
 		{"backup missing", func(p *bootstrap.WritablePreconditions) { p.BackupVerified = false }},
 		{"source not revalidated", func(p *bootstrap.WritablePreconditions) { p.SourceRevalidated = false }},
 		{"authority unqualified", func(p *bootstrap.WritablePreconditions) { p.ManagerAuthorityQualified = false }},
+		{"cache checkpoint incomplete", func(p *bootstrap.WritablePreconditions) { p.RequiredCheckpoints.CacheAccountingRevision2Complete = false }},
+		{"quota checkpoint incomplete", func(p *bootstrap.WritablePreconditions) { p.RequiredCheckpoints.QuotaSnapshotLifecycleComplete = false }},
 		{"readiness blocked", func(p *bootstrap.WritablePreconditions) { p.Admission.Readiness = bootstrap.BridgeBlocked }},
 		{"source unverified", func(p *bootstrap.WritablePreconditions) { p.Admission.EvidenceStatus = bootstrap.SourceUnverified }},
 		{"ordering broken", func(p *bootstrap.WritablePreconditions) {
@@ -426,6 +461,98 @@ func TestEvidenceReadinessAndGrantRemainIndependent(t *testing.T) {
 				t.Fatal("unsafe writable grant predicate returned true")
 			}
 		})
+	}
+}
+
+func TestForwardHopGrantRequiresTrustedReceiptQualification(t *testing.T) {
+	admission := exactAdmission()
+	admission.EvidenceStatus = bootstrap.ForwardHopVerified
+	admission.ForwardHopEvidenceRef = "evidence:hop"
+	base := bootstrap.WritablePreconditions{
+		Mode:              bootstrap.Upgrade,
+		Admission:         admission,
+		BackupVerified:    true,
+		SourceRevalidated: true,
+		RequiredCheckpoints: bootstrap.RequiredMigrationCheckpoints{
+			CacheAccountingRevision2Complete: true,
+			QuotaSnapshotLifecycleComplete:   true,
+		},
+		ManagerAuthorityQualified: true,
+		Ordering: []bootstrap.MigrationStage{
+			bootstrap.ReadOnlyClassification,
+			bootstrap.CompleteVerifiedBackup,
+			bootstrap.SourceRevalidation,
+			bootstrap.WritableMigration,
+		},
+	}
+	if bootstrap.CanIssueWritableGrant(base) {
+		t.Fatal("forward-hop admission granted without trusted receipt qualification")
+	}
+	base.TrustedForwardHopQualified = true
+	if !bootstrap.CanIssueWritableGrant(base) {
+		t.Fatal("fully qualified forward-hop preconditions were rejected")
+	}
+}
+
+func TestTrustedReceiptBindingIsExactAndReplaySafe(t *testing.T) {
+	binding := bootstrap.ReceiptBinding{
+		OperationID:          "operation-0001",
+		TargetFingerprint:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		InputManifestDigest:  "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		OutputManifestDigest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		ArtifactDigest:       "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+	}
+	base := bootstrap.TrustedReceiptPreconditions{
+		Receipt:                     binding,
+		CurrentOperationID:          binding.OperationID,
+		CurrentTargetFingerprint:    binding.TargetFingerprint,
+		CurrentInputManifestDigest:  binding.InputManifestDigest,
+		CurrentOutputManifestDigest: binding.OutputManifestDigest,
+		CurrentArtifactDigest:       binding.ArtifactDigest,
+		ManagerAuthenticityVerified: true,
+		JournalRecordPresent:        true,
+		ProcessExited:               true,
+		ProcessExitCode:             0,
+		ProcessReaped:               true,
+	}
+	if !bootstrap.CanAcceptTrustedHopReceipt(base) {
+		t.Fatal("matching trusted receipt preconditions were rejected")
+	}
+	tests := []struct {
+		name string
+		edit func(*bootstrap.TrustedReceiptPreconditions)
+	}{
+		{"forged", func(p *bootstrap.TrustedReceiptPreconditions) { p.ManagerAuthenticityVerified = false }},
+		{"journal missing", func(p *bootstrap.TrustedReceiptPreconditions) { p.JournalRecordPresent = false }},
+		{"revoked", func(p *bootstrap.TrustedReceiptPreconditions) { p.JournalRevoked = true }},
+		{"operation replay", func(p *bootstrap.TrustedReceiptPreconditions) { p.CurrentOperationID = "operation-9999" }},
+		{"target mismatch", func(p *bootstrap.TrustedReceiptPreconditions) { p.CurrentTargetFingerprint = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" }},
+		{"input mismatch", func(p *bootstrap.TrustedReceiptPreconditions) { p.CurrentInputManifestDigest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" }},
+		{"output mismatch", func(p *bootstrap.TrustedReceiptPreconditions) { p.CurrentOutputManifestDigest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" }},
+		{"artifact mismatch", func(p *bootstrap.TrustedReceiptPreconditions) { p.CurrentArtifactDigest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" }},
+		{"process not exited", func(p *bootstrap.TrustedReceiptPreconditions) { p.ProcessExited = false }},
+		{"nonzero exit", func(p *bootstrap.TrustedReceiptPreconditions) { p.ProcessExitCode = 1 }},
+		{"process not reaped", func(p *bootstrap.TrustedReceiptPreconditions) { p.ProcessReaped = false }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			value := base
+			tc.edit(&value)
+			if bootstrap.CanAcceptTrustedHopReceipt(value) {
+				t.Fatal("invalid or replayed receipt preconditions were accepted")
+			}
+		})
+	}
+}
+
+func TestOwnershipContractSeparatesManagerAndSupervisor(t *testing.T) {
+	valid := bootstrap.RequiredOwnershipContract()
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	valid.DatabaseOwner = bootstrap.RuntimeSupervisorOwner
+	if err := valid.Validate(); err == nil {
+		t.Fatal("Supervisor was allowed to own Manager database")
 	}
 }
 
