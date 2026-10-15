@@ -368,6 +368,7 @@ type Plan struct {
 	Mode                            Mode
 	CPAMPAction                     CPAMPAction
 	CPAStrategy                     CPAStrategy
+	AdoptSourceClass                AdoptSourceClass
 	CPAQualification                CPAQualification
 	SourceAdmission                 *UpgradeAdmission
 	SourceCPA                       SourceCPA
@@ -451,7 +452,7 @@ func (p Plan) Validate() error {
 	if err != nil || p.RuntimeMode != runtime {
 		return errors.New("runtime mode must derive from CPA strategy")
 	}
-	if err := p.CPAQualification.ValidateForStrategy(p.CPAStrategy); err != nil {
+	if err := p.CPAQualification.ValidateForStrategy(p.CPAStrategy, p.AdoptSourceClass); err != nil {
 		return err
 	}
 	var expectedSource SourceCPA

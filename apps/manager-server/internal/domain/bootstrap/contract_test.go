@@ -81,6 +81,7 @@ type pathJSON struct {
 	Mode                            bootstrap.Mode
 	CPAMPAction                     bootstrap.CPAMPAction
 	CPAStrategy                     bootstrap.CPAStrategy
+	AdoptSourceClass                bootstrap.AdoptSourceClass
 	CPAQualification                bootstrap.CPAQualification
 	SourceAdmission                 *admissionJSON
 	SourceCPA                       bootstrap.SourceCPA
@@ -115,6 +116,7 @@ func (p pathJSON) domain() bootstrap.Plan {
 		Mode:                            p.Mode,
 		CPAMPAction:                     p.CPAMPAction,
 		CPAStrategy:                     p.CPAStrategy,
+		AdoptSourceClass:                p.AdoptSourceClass,
 		CPAQualification:                p.CPAQualification,
 		SourceAdmission:                 admission,
 		SourceCPA:                       p.SourceCPA,
@@ -183,9 +185,23 @@ func (c coreJSON) domain() bootstrap.CPACoreContract {
 	}
 }
 
+type operationConflictJSON struct {
+	ID               string
+	Active           bootstrap.OperationClass
+	Requested        bootstrap.OperationClass
+	SameOperationID  bool
+	ExpectedDecision bootstrap.OperationConflictDecision
+}
+
+type collectorAssertionJSON struct {
+	ID              string
+	Condition       bootstrap.CollectorCondition
+	ExpectedOutcome bootstrap.CollectorOutcome
+}
+
 type fixture struct {
-	Schema                   string `json:"$schema"`
-	SchemaVersion            int
+	Schema                      string `json:"$schema"`
+	SchemaVersion               int
 	ContractID               string
 	ExecutionBaseline        string
 	PlannedCandidate         candidateJSON
@@ -195,8 +211,10 @@ type fixture struct {
 	BootstrapModes           []bootstrap.Mode
 	CPAStrategies            []bootstrap.CPAStrategy
 	Paths                    []pathJSON
-	ClassificationAssertions []classificationJSON
-	GlobalAssertions         []string
+	ClassificationAssertions    []classificationJSON
+	OperationConflictAssertions []operationConflictJSON
+	CollectorAssertions         []collectorAssertionJSON
+	GlobalAssertions            []string
 }
 
 func rejectDuplicateJSONKeys(data []byte) error {
@@ -534,6 +552,21 @@ func TestCheckedInContract(t *testing.T) {
 			t.Fatalf("%s: got %q err=%v want %q", assertion.ID, got, err, assertion.ExpectedMode)
 		}
 	}
+	if len(f.OperationConflictAssertions) == 0 || len(f.CollectorAssertions) == 0 {
+		t.Fatal("operation conflict and Collector assertions must be explicit")
+	}
+	for _, assertion := range f.OperationConflictAssertions {
+		got, err := bootstrap.EvaluateOperationConflict(assertion.Active, assertion.Requested, assertion.SameOperationID)
+		if err != nil || got != assertion.ExpectedDecision {
+			t.Fatalf("%s: conflict got=%q err=%v want=%q", assertion.ID, got, err, assertion.ExpectedDecision)
+		}
+	}
+	for _, assertion := range f.CollectorAssertions {
+		got, err := bootstrap.CollectorOutcomeFor(assertion.Condition)
+		if err != nil || got != assertion.ExpectedOutcome {
+			t.Fatalf("%s: Collector got=%q err=%v want=%q", assertion.ID, got, err, assertion.ExpectedOutcome)
+		}
+	}
 	wantGlobal := []string{
 		"shape_not_release_identity",
 		"planned_candidate_not_artifact_authority",
@@ -570,6 +603,12 @@ func TestCheckedInContract(t *testing.T) {
 		"gateway_activation_separate_from_product_initialized",
 		"journal_unknown_result_inspect_first_same_id_replay",
 		"prefix_cas_desired_effective_lost_result_inspect_first",
+		"adopt_network_source_requires_v8_profile",
+		"adopt_legacy_managed_requires_staging_v8",
+		"journal_retry_requires_accepted_replay",
+		"journal_generation_change_reobserve",
+		"operation_conflicts_are_explicit",
+		"collector_pause_queue_gap_explicit",
 	}
 	if !setEqual(f.GlobalAssertions, wantGlobal) {
 		t.Fatal("global contract assertions drifted")
@@ -1011,23 +1050,70 @@ func TestHistoricalAuthorityAndAdoptionReferencesFailClosed(t *testing.T) {
 
 func TestCPAQualificationFreshClaimAndGatewayAreIndependentGates(t *testing.T) {
 	for _, item := range []struct {
-		strategy bootstrap.CPAStrategy
-		q        bootstrap.CPAQualification
+		name      string
+		strategy  bootstrap.CPAStrategy
+		adopt     bootstrap.AdoptSourceClass
+		q         bootstrap.CPAQualification
+		wantError bool
 	}{
-		{bootstrap.NewManaged, bootstrap.CPAQualification{ManagementGeneration: "v8"}},
-		{bootstrap.ConnectExternal, bootstrap.CPAQualification{ManagementGeneration: "v8"}},
-		{bootstrap.MigrateLegacy, bootstrap.CPAQualification{ManagementGeneration: "v8"}},
-		{bootstrap.AdoptExisting, bootstrap.CPAQualification{ManagementGeneration: "v8"}},
+		{"new managed missing artifact", bootstrap.NewManaged, bootstrap.AdoptSourceNone, bootstrap.CPAQualification{ManagementGeneration: "v8"}, true},
+		{"external missing profile", bootstrap.ConnectExternal, bootstrap.AdoptSourceNone, bootstrap.CPAQualification{ManagementGeneration: "v8"}, true},
+		{"migrate legacy missing staging", bootstrap.MigrateLegacy, bootstrap.AdoptSourceNone, bootstrap.CPAQualification{ManagementGeneration: "v8"}, true},
+		{"adopt missing class", bootstrap.AdoptExisting, bootstrap.AdoptSourceNone, bootstrap.CPAQualification{ManagementGeneration: "v8", RequiredProfileQualified: true}, true},
+		{"network adopt cannot use staging", bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting, bootstrap.CPAQualification{ManagementGeneration: "v8", StagingV8TransitionQualified: true}, true},
+		{"legacy adopt cannot use network profile", bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged, bootstrap.CPAQualification{ManagementGeneration: "v8", RequiredProfileQualified: true}, true},
+		{"network adopt qualified", bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting, bootstrap.CPAQualification{ManagementGeneration: "v8", RequiredProfileQualified: true}, false},
+		{"legacy adopt qualified", bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged, bootstrap.CPAQualification{ManagementGeneration: "v8", StagingV8TransitionQualified: true}, false},
 	} {
-		if err := item.q.ValidateForStrategy(item.strategy); err == nil {
-			t.Fatalf("%s accepted without required qualification", item.strategy)
+		err := item.q.ValidateForStrategy(item.strategy, item.adopt)
+		if item.wantError && err == nil {
+			t.Fatalf("%s unexpectedly accepted", item.name)
+		}
+		if !item.wantError && err != nil {
+			t.Fatalf("%s rejected: %v", item.name, err)
 		}
 	}
 
 	claim := bootstrap.FreshClaim{
-		InstallationID: "install-a", GenerationID: "gen-a", ExpiresAtUnixMilli: 200, NowUnixMilli: 100,
+		InstallationID: "install-a", GenerationID: "gen-a",
+		CurrentInstallationID: "install-a", CurrentGenerationID: "gen-a",
+		ExpiresAtUnixMilli: 200, NowUnixMilli: 100,
 		PersistedAcrossRestart: true, CSRFVerified: true, HostAuthenticityVerified: true,
 	}
+	if !bootstrap.CanConsumeFreshClaim(bootstrap.Fresh, bootstrap.AdminCredentialUninitialized, claim) {
+		t.Fatal("eligible fresh claim rejected")
+	}
+	negative := []struct {
+		name string
+		edit func(*bootstrap.FreshClaim)
+	}{
+		{"expired", func(c *bootstrap.FreshClaim) { c.NowUnixMilli = c.ExpiresAtUnixMilli }},
+		{"revoked", func(c *bootstrap.FreshClaim) { c.Revoked = true }},
+		{"already consumed", func(c *bootstrap.FreshClaim) { c.Consumed = true }},
+		{"restart persistence missing", func(c *bootstrap.FreshClaim) { c.PersistedAcrossRestart = false }},
+		{"csrf missing", func(c *bootstrap.FreshClaim) { c.CSRFVerified = false }},
+		{"host authenticity missing", func(c *bootstrap.FreshClaim) { c.HostAuthenticityVerified = false }},
+		{"installation missing", func(c *bootstrap.FreshClaim) { c.InstallationID = "" }},
+		{"generation missing", func(c *bootstrap.FreshClaim) { c.GenerationID = "" }},
+		{"installation mismatch", func(c *bootstrap.FreshClaim) { c.CurrentInstallationID = "install-b" }},
+		{"generation mismatch", func(c *bootstrap.FreshClaim) { c.CurrentGenerationID = "gen-b" }},
+	}
+	for _, tc := range negative {
+		t.Run("claim/"+tc.name, func(t *testing.T) {
+			value := claim
+			tc.edit(&value)
+			if bootstrap.CanConsumeFreshClaim(bootstrap.Fresh, bootstrap.AdminCredentialUninitialized, value) {
+				t.Fatal("unsafe fresh claim accepted")
+			}
+		})
+	}
+	if bootstrap.CanConsumeFreshClaim(bootstrap.Upgrade, bootstrap.AdminCredentialUninitialized, claim) {
+		t.Fatal("Upgrade acquired Fresh claim authority")
+	}
+	if bootstrap.CanConsumeFreshClaim(bootstrap.Fresh, bootstrap.AdminCredentialInitialized, claim) {
+		t.Fatal("initialized administrator reacquired Fresh claim authority")
+	}
+
 	before := bootstrap.FreshInitializationState{Claim: claim, AdminCredential: bootstrap.AdminCredentialUninitialized}
 	after := before
 	after.Claim.Consumed = true
@@ -1038,6 +1124,11 @@ func TestCPAQualificationFreshClaimAndGatewayAreIndependentGates(t *testing.T) {
 	}
 	if err := bootstrap.ValidateFreshInitializationCommit(after, after); err == nil {
 		t.Fatal("consumed claim replay accepted")
+	}
+	partial := before
+	partial.Claim.Consumed = true
+	if err := bootstrap.ValidateFreshInitializationCommit(before, partial); err == nil {
+		t.Fatal("claim consumption without administrator/product commit accepted")
 	}
 
 	if bootstrap.CanActivatePublicGateway(bootstrap.GatewayActivationPreconditions{
@@ -1084,14 +1175,44 @@ func TestDiscoveryPrefixAndJournalFailClosed(t *testing.T) {
 		t.Fatalf("lost prefix result action=%s err=%v", action, err)
 	}
 
-	record := bootstrap.JournalRecord{Domain: bootstrap.ProductJournal, OperationID: "operation-1000", Result: bootstrap.JournalUnknown}
-	action2, err := bootstrap.JournalReplayAction(record, "operation-1000")
-	if err != nil || action2 != bootstrap.JournalInspectFirst {
-		t.Fatalf("unknown journal result action=%s err=%v", action2, err)
+	for _, domain := range []bootstrap.JournalDomain{bootstrap.ProductJournal, bootstrap.CPAJournal, bootstrap.RoutingJournal} {
+		record := bootstrap.JournalRecord{
+			Domain: domain, OperationID: "operation-1000", Result: bootstrap.JournalUnknown,
+			ObservedGenerationID: "generation-a",
+		}
+		action2, err := bootstrap.JournalReplayAction(record, "operation-1000", "generation-a")
+		if err != nil || action2 != bootstrap.JournalInspectFirst {
+			t.Fatalf("%s unknown result action=%s err=%v", domain, action2, err)
+		}
+		action2, err = bootstrap.JournalReplayAction(record, "operation-2000", "generation-a")
+		if err != nil || action2 != bootstrap.JournalRejectNewOperation {
+			t.Fatalf("%s different operation action=%s err=%v", domain, action2, err)
+		}
+		record.Result = bootstrap.JournalRetryableFailure
+		action2, err = bootstrap.JournalReplayAction(record, "operation-1000", "generation-a")
+		if err != nil || action2 != bootstrap.JournalInspectFirst {
+			t.Fatalf("%s unqualified retry action=%s err=%v", domain, action2, err)
+		}
+		record.AcceptedReplayQualified = true
+		action2, err = bootstrap.JournalReplayAction(record, "operation-1000", "generation-a")
+		if err != nil || action2 != bootstrap.JournalResumeSameOperation {
+			t.Fatalf("%s qualified retry action=%s err=%v", domain, action2, err)
+		}
+		action2, err = bootstrap.JournalReplayAction(record, "operation-1000", "generation-b")
+		if err != nil || action2 != bootstrap.JournalInspectFirst {
+			t.Fatalf("%s changed generation action=%s err=%v", domain, action2, err)
+		}
+		record.Result = bootstrap.JournalCommitted
+		record.CommitRef = "commit:1"
+		action2, err = bootstrap.JournalReplayAction(record, "operation-1000", "generation-b")
+		if err != nil || action2 != bootstrap.JournalInspectFirst {
+			t.Fatalf("%s committed old-generation action=%s err=%v", domain, action2, err)
+		}
 	}
-	action2, err = bootstrap.JournalReplayAction(record, "operation-2000")
-	if err != nil || action2 != bootstrap.JournalRejectNewOperation {
-		t.Fatalf("different operation replay action=%s err=%v", action2, err)
+	if _, err := bootstrap.EvaluateOperationConflict(
+		bootstrap.OperationMigration, bootstrap.OperationMaintenance, true,
+	); err == nil {
+		t.Fatal("same operation id was allowed to change operation class")
 	}
 }
 

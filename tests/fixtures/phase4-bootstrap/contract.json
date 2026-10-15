@@ -76,7 +76,8 @@
         "requiredProfileQualified": false,
         "stagingV8TransitionQualified": false
       },
-      "historicalEvidence": null
+      "historicalEvidence": null,
+      "adoptSourceClass": ""
     },
     {
       "id": "P4-BOOT-02",
@@ -168,7 +169,8 @@
         "requiredProfileQualified": true,
         "stagingV8TransitionQualified": false
       },
-      "historicalEvidence": null
+      "historicalEvidence": null,
+      "adoptSourceClass": "network_existing"
     },
     {
       "id": "P4-BOOT-03",
@@ -214,7 +216,8 @@
         "requiredProfileQualified": true,
         "stagingV8TransitionQualified": false
       },
-      "historicalEvidence": null
+      "historicalEvidence": null,
+      "adoptSourceClass": ""
     },
     {
       "id": "P4-BOOT-04",
@@ -279,7 +282,8 @@
         "sourceState": "full_raw",
         "authorityStatus": "available",
         "retainedEvidenceComplete": false
-      }
+      },
+      "adoptSourceClass": ""
     },
     {
       "id": "P4-BOOT-05",
@@ -348,7 +352,8 @@
         "sourceState": "raw_deleted",
         "authorityStatus": "available",
         "retainedEvidenceComplete": true
-      }
+      },
+      "adoptSourceClass": ""
     }
   ],
   "classificationAssertions": [
@@ -695,6 +700,66 @@
     "fresh_claim_expire_revoke_restart_csrf_fail_closed",
     "gateway_activation_separate_from_product_initialized",
     "journal_unknown_result_inspect_first_same_id_replay",
-    "prefix_cas_desired_effective_lost_result_inspect_first"
+    "prefix_cas_desired_effective_lost_result_inspect_first",
+    "adopt_network_source_requires_v8_profile",
+    "adopt_legacy_managed_requires_staging_v8",
+    "journal_retry_requires_accepted_replay",
+    "journal_generation_change_reobserve",
+    "operation_conflicts_are_explicit",
+    "collector_pause_queue_gap_explicit"
+  ],
+  "operationConflictAssertions": [
+    {
+      "id": "install_vs_restore",
+      "active": "install",
+      "requested": "restore",
+      "sameOperationID": false,
+      "expectedDecision": "blocked"
+    },
+    {
+      "id": "migration_vs_maintenance",
+      "active": "migration",
+      "requested": "maintenance",
+      "sameOperationID": false,
+      "expectedDecision": "blocked"
+    },
+    {
+      "id": "cpa_update_vs_cutover",
+      "active": "cpa_update",
+      "requested": "cutover",
+      "sameOperationID": false,
+      "expectedDecision": "blocked"
+    },
+    {
+      "id": "cutover_vs_prefix_apply",
+      "active": "cutover",
+      "requested": "prefix_apply",
+      "sameOperationID": false,
+      "expectedDecision": "blocked"
+    },
+    {
+      "id": "same_migration_operation_reobserve",
+      "active": "migration",
+      "requested": "migration",
+      "sameOperationID": true,
+      "expectedDecision": "inspect_existing"
+    }
+  ],
+  "collectorAssertions": [
+    {
+      "id": "backup_quiescence_pauses_collector",
+      "condition": "backup_quiescence",
+      "expectedOutcome": "paused"
+    },
+    {
+      "id": "verified_retention_is_queue_window",
+      "condition": "verified_queue_window",
+      "expectedOutcome": "queue_window"
+    },
+    {
+      "id": "unproven_or_outside_window_is_gap_unknown",
+      "condition": "coverage_unproven_or_outside_window",
+      "expectedOutcome": "gap_or_unknown"
+    }
   ]
 }

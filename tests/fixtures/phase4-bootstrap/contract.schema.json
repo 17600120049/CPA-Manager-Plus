@@ -16,6 +16,8 @@
     "cpaStrategies",
     "paths",
     "classificationAssertions",
+    "operationConflictAssertions",
+    "collectorAssertions",
     "globalAssertions"
   ],
   "properties": {
@@ -140,8 +142,8 @@
     },
     "globalAssertions": {
       "type": "array",
-      "minItems": 35,
-      "maxItems": 35,
+      "minItems": 41,
+      "maxItems": 41,
       "uniqueItems": true,
       "items": {
         "enum": [
@@ -179,8 +181,28 @@
           "fresh_claim_expire_revoke_restart_csrf_fail_closed",
           "gateway_activation_separate_from_product_initialized",
           "journal_unknown_result_inspect_first_same_id_replay",
-          "prefix_cas_desired_effective_lost_result_inspect_first"
+          "prefix_cas_desired_effective_lost_result_inspect_first",
+          "adopt_network_source_requires_v8_profile",
+          "adopt_legacy_managed_requires_staging_v8",
+          "journal_retry_requires_accepted_replay",
+          "journal_generation_change_reobserve",
+          "operation_conflicts_are_explicit",
+          "collector_pause_queue_gap_explicit"
         ]
+      }
+    },
+    "operationConflictAssertions": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "$ref": "#/$defs/operationConflictAssertion"
+      }
+    },
+    "collectorAssertions": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "$ref": "#/$defs/collectorAssertion"
       }
     }
   },
@@ -345,6 +367,7 @@
         "mode",
         "cpampAction",
         "cpaStrategy",
+        "adoptSourceClass",
         "cpaQualification",
         "historicalEvidence",
         "sourceAdmission",
@@ -504,6 +527,13 @@
             {
               "$ref": "#/$defs/historicalEvidence"
             }
+          ]
+        },
+        "adoptSourceClass": {
+          "enum": [
+            "",
+            "network_existing",
+            "legacy_managed"
           ]
         }
       }
@@ -670,6 +700,83 @@
             "clearing",
             "failed",
             "offline_required"
+          ]
+        }
+      }
+    },
+    "operationConflictAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "active",
+        "requested",
+        "sameOperationID",
+        "expectedDecision"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "active": {
+          "enum": [
+            "install",
+            "restore",
+            "migration",
+            "maintenance",
+            "cpa_update",
+            "cutover",
+            "prefix_apply"
+          ]
+        },
+        "requested": {
+          "enum": [
+            "install",
+            "restore",
+            "migration",
+            "maintenance",
+            "cpa_update",
+            "cutover",
+            "prefix_apply"
+          ]
+        },
+        "sameOperationID": {
+          "type": "boolean"
+        },
+        "expectedDecision": {
+          "enum": [
+            "blocked",
+            "inspect_existing"
+          ]
+        }
+      }
+    },
+    "collectorAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "condition",
+        "expectedOutcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "condition": {
+          "enum": [
+            "backup_quiescence",
+            "verified_queue_window",
+            "coverage_unproven_or_outside_window"
+          ]
+        },
+        "expectedOutcome": {
+          "enum": [
+            "paused",
+            "queue_window",
+            "gap_or_unknown"
           ]
         }
       }

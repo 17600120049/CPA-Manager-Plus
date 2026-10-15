@@ -8,6 +8,8 @@ import (
 type FreshClaim struct {
 	InstallationID           string
 	GenerationID             string
+	CurrentInstallationID    string
+	CurrentGenerationID      string
 	ExpiresAtUnixMilli       int64
 	NowUnixMilli             int64
 	Revoked                  bool
@@ -20,6 +22,8 @@ type FreshClaim struct {
 func CanConsumeFreshClaim(mode Mode, admin AdminCredentialState, claim FreshClaim) bool {
 	return mode == Fresh && admin == AdminCredentialUninitialized &&
 		claim.InstallationID != "" && claim.GenerationID != "" &&
+		claim.InstallationID == claim.CurrentInstallationID &&
+		claim.GenerationID == claim.CurrentGenerationID &&
 		claim.ExpiresAtUnixMilli > claim.NowUnixMilli && !claim.Revoked && !claim.Consumed &&
 		claim.PersistedAcrossRestart && claim.CSRFVerified && claim.HostAuthenticityVerified
 }
@@ -39,6 +43,8 @@ func ValidateFreshInitializationCommit(before, after FreshInitializationState) e
 	}
 	if before.Claim.InstallationID != after.Claim.InstallationID ||
 		before.Claim.GenerationID != after.Claim.GenerationID ||
+		before.Claim.CurrentInstallationID != after.Claim.CurrentInstallationID ||
+		before.Claim.CurrentGenerationID != after.Claim.CurrentGenerationID ||
 		before.Claim.ExpiresAtUnixMilli != after.Claim.ExpiresAtUnixMilli {
 		return errors.New("claim identity changed during initialization")
 	}
@@ -87,33 +93,55 @@ const (
 )
 
 type JournalRecord struct {
-	Domain      JournalDomain
-	OperationID OperationID
-	Result      JournalResult
-	CommitRef   string
+	Domain                  JournalDomain
+	OperationID             OperationID
+	Result                  JournalResult
+	CommitRef               string
+	ObservedGenerationID    string
+	AcceptedReplayQualified bool
 }
 
-func JournalReplayAction(record JournalRecord, requested OperationID) (JournalAction, error) {
-	switch record.Domain {
+func validJournalDomain(domain JournalDomain) bool {
+	switch domain {
 	case ProductJournal, CPAJournal, RoutingJournal:
+		return true
 	default:
+		return false
+	}
+}
+
+// JournalReplayAction never invents a generic rerun. A retryable failure may
+// resume only when the same operation has an explicitly accepted replay path
+// and the currently observed Supervisor generation is unchanged.
+func JournalReplayAction(record JournalRecord, requested OperationID, currentGenerationID string) (JournalAction, error) {
+	if !validJournalDomain(record.Domain) {
 		return "", fmt.Errorf("unknown journal domain %q", record.Domain)
 	}
 	if !validOperationID(record.OperationID) || !validOperationID(requested) {
 		return "", errors.New("invalid journal operation id")
 	}
+	if record.ObservedGenerationID == "" || currentGenerationID == "" {
+		return "", errors.New("journal replay requires observed and current generation identity")
+	}
 	if requested != record.OperationID {
 		return JournalRejectNewOperation, nil
 	}
-	switch record.Result {
-	case JournalCommitted:
+	if record.ObservedGenerationID != currentGenerationID {
+		return JournalInspectFirst, nil
+	}
+	if record.Result == JournalCommitted {
 		if record.CommitRef == "" {
 			return "", errors.New("committed journal requires commit reference")
 		}
 		return JournalReturnCommitted, nil
+	}
+	switch record.Result {
 	case JournalUnknown, JournalInProgress:
 		return JournalInspectFirst, nil
 	case JournalRetryableFailure:
+		if !record.AcceptedReplayQualified {
+			return JournalInspectFirst, nil
+		}
 		return JournalResumeSameOperation, nil
 	default:
 		return "", fmt.Errorf("unknown journal result %q", record.Result)
