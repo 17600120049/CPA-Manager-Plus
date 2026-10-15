@@ -1,0 +1,10 @@
+{
+  "manifestWritten": true,
+  "matchingEvidenceValidated": true,
+  "operation": "maintenancebundle.Create",
+  "published": true,
+  "sourceRevalidated": true,
+  "sourceRevision": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
+  "sourceRoot": "task-owned-source-root",
+  "verified": true
+}

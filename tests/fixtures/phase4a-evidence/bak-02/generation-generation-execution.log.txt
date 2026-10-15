@@ -1,0 +1,4 @@
+=== RUN   TestGenerateBAK02
+    generation_test.go:412: source generation succeeded; case acceptance remains pending
+--- PASS: TestGenerateBAK02 (31.26s)
+PASS

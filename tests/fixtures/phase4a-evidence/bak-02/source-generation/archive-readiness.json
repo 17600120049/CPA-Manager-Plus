@@ -1,0 +1,52 @@
+{
+  "raw_event_count": 4,
+  "raw_min_timestamp_ms": 1790899200000,
+  "raw_max_timestamp_ms": 1790910000000,
+  "raw_archived_event_count": 0,
+  "raw_deleted_event_count": 0,
+  "migration": {
+    "name": "usage_cache_accounting_v2",
+    "status": "completed",
+    "last_event_id": 0,
+    "target_event_id": 0,
+    "processed_rows": 0,
+    "changed_rows": 0,
+    "updated_at_ms": 0
+  },
+  "hourly_aggregate": {
+    "name": "hourly_core",
+    "schema_version": 3,
+    "status": "ready",
+    "coverage_event_id": 4,
+    "target_event_id": 4,
+    "updated_at_ms": 1792047944404
+  },
+  "readiness": {
+    "migration_ready": true,
+    "hourly_aggregate_ready": true,
+    "archive_delete_enabled": true
+  },
+  "migration_coverage": {
+    "status": "completed",
+    "watermark_event_id": 0,
+    "target_event_id": 0,
+    "complete": true
+  },
+  "hourly_aggregate_coverage": {
+    "status": "ready",
+    "watermark_event_id": 4,
+    "target_event_id": 4,
+    "complete": true
+  },
+  "storage": {
+    "page_size": 4096,
+    "page_count": 161,
+    "freelist_count": 0,
+    "reclaimable_bytes": 0,
+    "database_bytes": 659456,
+    "wal_bytes": 1944672,
+    "shm_bytes": 32768,
+    "total_bytes": 2636896
+  },
+  "compact_requires_stopped_server": true
+}

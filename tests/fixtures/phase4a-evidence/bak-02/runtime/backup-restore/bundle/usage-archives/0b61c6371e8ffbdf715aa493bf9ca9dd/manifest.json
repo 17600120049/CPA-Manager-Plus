@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "format": "gzip-jsonl-v1",
+  "run_id": "0b61c6371e8ffbdf715aa493bf9ca9dd",
+  "mode": "manual",
+  "cutoff_timestamp_ms": 1790985600000,
+  "first_event_id": 1,
+  "last_event_id": 4,
+  "min_timestamp_ms": 1790899200000,
+  "max_timestamp_ms": 1790910000000,
+  "target_event_id": 4,
+  "event_count": 4,
+  "uncompressed_bytes": 12069,
+  "compressed_bytes": 2819,
+  "event_hash_digest": "3076d1b408a0bb1721bf1f0f44f0c543a589c6d7f5e5b5db77ea7b0670eaa4ed",
+  "generated_at_ms": 1792047944470,
+  "segments": [
+    {
+      "sequence": 1,
+      "file_name": "0b61c6371e8ffbdf715aa493bf9ca9dd/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz",
+      "first_event_id": 1,
+      "last_event_id": 4,
+      "min_timestamp_ms": 1790899200000,
+      "max_timestamp_ms": 1790910000000,
+      "event_count": 4,
+      "uncompressed_bytes": 12069,
+      "compressed_bytes": 2819,
+      "content_sha256": "08d52f0f751b9fee574e94612b31b74ecc8371748bce5b75fa074b1f7f65091c",
+      "event_hash_digest": "3076d1b408a0bb1721bf1f0f44f0c543a589c6d7f5e5b5db77ea7b0670eaa4ed"
+    }
+  ]
+}

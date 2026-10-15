@@ -1,0 +1,10 @@
+{
+  "entry": {
+    "present": true,
+    "size": 44,
+    "sha256": "13f6164ea50319848a276344d69d871457936697ac7e4c9ec96555bea5d0941f"
+  },
+  "path": "data-key",
+  "replacementKeyCreated": false,
+  "sourceRevision": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1"
+}

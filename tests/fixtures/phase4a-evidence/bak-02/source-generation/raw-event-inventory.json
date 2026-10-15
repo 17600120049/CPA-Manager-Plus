@@ -1,0 +1,31 @@
+{
+  "authoritativeDigest": "5f20a3ed337ad74f0ff1d86846c3515ae0b697a06b914fe3907fca7b144a4016",
+  "count": 4,
+  "deleted": 0,
+  "events": [
+    {
+      "event_hash": "8647a171a9f0a63aaf0874604dadb9f396461f2b095f8ca4f170f561b7d2fa0c",
+      "id": 1,
+      "request_id": "bak02-codex-cached",
+      "timestamp_ms": 1790899200000
+    },
+    {
+      "event_hash": "3935ddbf2e99be366e18eda25b10cf200e3b7fcd841458ab591657318f0a77c9",
+      "id": 2,
+      "request_id": "bak02-claude-tier",
+      "timestamp_ms": 1790902800000
+    },
+    {
+      "event_hash": "f6df1792c84268c982124ed18a295ea6de029e3315a4a5b4228f44b2eee71811",
+      "id": 3,
+      "request_id": "bak02-explicit-zero",
+      "timestamp_ms": 1790906400000
+    },
+    {
+      "event_hash": "774589bb6a7b5ba964587276aae6310af9995a21b8428f0f2ae635feae981247",
+      "id": 4,
+      "request_id": "bak02-quota-failure",
+      "timestamp_ms": 1790910000000
+    }
+  ]
+}

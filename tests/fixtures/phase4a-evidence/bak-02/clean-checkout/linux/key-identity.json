@@ -1,0 +1,20 @@
+{
+  "createdOnRestore": false,
+  "decryptsManagerConfig": true,
+  "decryptsSetup": true,
+  "input": {
+    "present": true,
+    "size": 44,
+    "sha256": "13f6164ea50319848a276344d69d871457936697ac7e4c9ec96555bea5d0941f"
+  },
+  "restored": {
+    "present": true,
+    "size": 44,
+    "sha256": "13f6164ea50319848a276344d69d871457936697ac7e4c9ec96555bea5d0941f"
+  },
+  "secondRestored": {
+    "present": true,
+    "size": 44,
+    "sha256": "13f6164ea50319848a276344d69d871457936697ac7e4c9ec96555bea5d0941f"
+  }
+}

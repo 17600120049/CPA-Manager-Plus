@@ -1,0 +1,17 @@
+{
+  "bundleCanonicalDataKeyPath": "/output/runtime/restore-new-root-651269718/data-key",
+  "configDataKeyPath": "data.key",
+  "defaultFallback": false,
+  "input": {
+    "present": true,
+    "size": 243,
+    "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+  },
+  "resolvedArchivePath": "/output/runtime/restore-new-root-651269718/usage-archives",
+  "resolvedConfigDataKeyPath": "/output/runtime/restore-new-root-651269718/data.key",
+  "restored": {
+    "present": true,
+    "size": 243,
+    "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+  }
+}

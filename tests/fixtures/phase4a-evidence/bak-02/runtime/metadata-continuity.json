@@ -1,0 +1,51 @@
+{
+  "archiveBacked": true,
+  "fields": [
+    "request_id",
+    "response_model",
+    "session_id",
+    "parent_session_id",
+    "stream",
+    "generate",
+    "access_token_sha256"
+  ],
+  "preserved": true,
+  "rows": [
+    {
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "generate": 1,
+      "parent_session_id": "bak02-parent",
+      "request_id": "bak02-codex-cached",
+      "response_model": "fixture-archive-cached",
+      "session_id": "bak02-session",
+      "stream": 1
+    },
+    {
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "generate": 0,
+      "parent_session_id": "bak02-parent",
+      "request_id": "bak02-claude-tier",
+      "response_model": "claude-fixture",
+      "session_id": "bak02-session",
+      "stream": 0
+    },
+    {
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "generate": null,
+      "parent_session_id": null,
+      "request_id": "bak02-explicit-zero",
+      "response_model": "fixture-free",
+      "session_id": null,
+      "stream": null
+    },
+    {
+      "access_token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "generate": null,
+      "parent_session_id": null,
+      "request_id": "bak02-quota-failure",
+      "response_model": "fixture-paid",
+      "session_id": "bak02-session",
+      "stream": null
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "Phase4A07Complete": false,
+  "Phase4AComplete": false,
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "afterDigest": "d01254ef18920eabb6ee4ce5f6f106dfadffa5b459f122a19b2424edec3f0b5d",
+  "applicableSEM": [
+    "SEM-01",
+    "SEM-06"
+  ],
+  "authoritativeAfterDigest": "5f20a3ed337ad74f0ff1d86846c3515ae0b697a06b914fe3907fca7b144a4016",
+  "authoritativeBeforeDigest": "5f20a3ed337ad74f0ff1d86846c3515ae0b697a06b914fe3907fca7b144a4016",
+  "backupRestore": "matching pass",
+  "beforeDigest": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
+  "caseID": "BAK-02",
+  "casePass": false,
+  "evidence": {
+    "archiveInventory": "53a671c676f7454c9ec5ea28515f9d448841824697a287e942675dd2d6033938",
+    "authoritativeDigest": "fb18715cec7cbe87df2e26e79f24c143eed33689bcda46f3bec797d4ede42d15",
+    "bundleManifest": "e3c9baec5a987b5680b7bda5eed0bbb307920a4ac2e412614d1fe028ad677d6f",
+    "configIdentity": "4b2c4218c75228cfdd692cf56e0f31dbf382beaca65bc908b65523f3a11295a6",
+    "databaseIdentity": "ad57813a41c526eab43f526522ae125bfa2059e8190e895d7b0a06aabce50ba3",
+    "executionRecord": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930",
+    "inputBundle": "1f54ed722196012f8f47ef7943e118dda09f3d54dbf0d12713a40c3b92f8f65d",
+    "keyIdentity": "e27f01ec24035e0a1e685355d2966b7409925a40ac25c3d6af0c21a5dc996214",
+    "metadataContinuity": "4b4cc44615732486601ce664b70376f0eddb5fcb2362d46d7a3887b577f5dcfb",
+    "restoreRecord": "09a5e7a8a592dce772f85fd9b641b00ddd010291fcca059a6e936d47887c93d1",
+    "restoredInventory": "015725f7d300241c927ffe65a5a3da11b569d513df4d276d3372867dfdcf1a68",
+    "semanticAssertions": "a6dc46b25f03d67a10a6602231aac547e06077e32f9104e6de5d8ab85cf5406a"
+  },
+  "independentAcceptance": "pending",
+  "inputBundleDigest": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
+  "remainingCases": {
+    "count": 40,
+    "status": "pending"
+  },
+  "runtimeAssertions": "pass",
+  "runtimeEvidence": "pass",
+  "selfContainedRoot": true,
+  "sourceProvenance": {
+    "caseID": "BAK-02",
+    "SourceRelease": "v1.14.4",
+    "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "SourceProducerKind": "published-artifact",
+    "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "GeneratorCodeCommit": "af53fedab0af8fa272b7816a0c3ee18857a422b6",
+    "PlanCommit": "21035045c425e453bd8f3007619fc0734861012e",
+    "ControlledInputSHA256": "defd5abaeaeb629df90c3db4a08f799ddf6d23bea7e8471c54893dab030305ac",
+    "GenerationProfile": "bak-02-matching-bundle-v1",
+    "GeneratedBundleSHA256": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
+    "GenerationEvidenceFiles": {
+      "archive-flow.json": "c4a0b56994bd431e9fb13560dd8ed5e666a92370d56b979ba9eed4c9d1bac9c2",
+      "archive-inventory.json": "b8dd4f84892116297ab625698d3c3cecf7c82830263bb5f6249679832706f42e",
+      "archive-readiness.json": "fc668f91a0899f798b46525c11d5409ba2fa01c163a5895294613d75c1623800",
+      "authoritative-digest.json": "77bc6c99daf2676cb3a451f28adcfd08184d263e1702c0c570be612b0f32e625",
+      "backup-execution.json": "b26270501feff3a03e6d3d373c26f6857c7308ddbc0c33d8f76fa73ebdcf7661",
+      "config-identity.json": "33af7a114cfa9edc67842abf03d63b62264b45638bfd60b34bb1ec79c073bc3c",
+      "config-write.json": "747b7885aedc40729e0bafe4cb6b5365b848aeec1e9e2f46df5e9b5caf7052f1",
+      "controlled-input.json": "defd5abaeaeb629df90c3db4a08f799ddf6d23bea7e8471c54893dab030305ac",
+      "database-identity.json": "bbab353a7066c290ccb12f5f9a852327a6f6f81735994284196ad66bdbe0dcca",
+      "key-identity.json": "94bb9b90404cfef68efe61b1cfd5707cb61e1e4ff6676df63deea0bdee067da9",
+      "matching-snapshot.json": "299fd47bbb53c67c1a1913b2c91bd684a52f07e6e81b1e4b1985e93ca91e0169",
+      "pre-archive-snapshot.json": "068c02f83eadc878afa3f30abaf71098baa8e820a5338590c88878b59b099665",
+      "price-write.json": "081a41396955b49cb3d6ec242a238b3fa3345533171b9c3421dee3625806ac5c",
+      "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+      "producer.log": "a0c047cfd591d71bf1bb20555f3bf4781ecfc482b18533e6b0c42699c9271b74",
+      "quota-write.json": "ad44e2548c03d480809db93cc9ec9fd3ee3a0cc2c770b7f7ea9c16976867b2ef",
+      "raw-event-inventory.json": "bd851f43175a5f617505b35cd455cb29e99b9f6ef6d78fbacd52ec0718fb7163",
+      "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "source-snapshot.json": "068c02f83eadc878afa3f30abaf71098baa8e820a5338590c88878b59b099665",
+      "v1-analytics.json": "fd6d241791ace0aa6d89c6a14df92c1892d9b737a936213558c4aab8b9a5a209",
+      "v1-archived-analytics.json": "c1f62c4e7b13547bb2ff782501c108358a4bbca4cfd65cc3d91dfb02733936b5",
+      "v1-export.jsonl": "004faea71e1c05a0abfe569177efc20c218b1d5072cf321584c6cbbcb215a9da"
+    },
+    "bundleInventory": {
+      "version": 2,
+      "fence": "cooperating-manager-lock",
+      "sourceRevision": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
+      "entries": {
+        "config": {
+          "present": true,
+          "size": 243,
+          "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+        },
+        "data-key": {
+          "present": true,
+          "size": 44,
+          "sha256": "13f6164ea50319848a276344d69d871457936697ac7e4c9ec96555bea5d0941f"
+        },
+        "database": {
+          "present": true,
+          "size": 659456,
+          "sha256": "82493921e6c377065e1f9651839a8c254a30416609c11974e37589451d3de904"
+        },
+        "database-journal": {
+          "present": false
+        },
+        "database-shm": {
+          "present": false
+        },
+        "database-wal": {
+          "present": false
+        },
+        "usage-archives": {
+          "present": true,
+          "directory": true
+        },
+        "usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd": {
+          "present": true,
+          "directory": true
+        },
+        "usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/manifest.json": {
+          "present": true,
+          "size": 1099,
+          "sha256": "a927c215b59a19e7ef33aa2c611c9ea07cc27bdd1be7ae1059747912580b90b5"
+        },
+        "usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+          "present": true,
+          "size": 2819,
+          "sha256": "08d52f0f751b9fee574e94612b31b74ecc8371748bce5b75fa074b1f7f65091c"
+        }
+      }
+    },
+    "process": {
+      "pid": 15,
+      "exitCode": 0,
+      "reaped": true,
+      "startedAt": "2026-10-15T07:05:14.338063926Z",
+      "finishedAt": "2026-10-15T07:05:44.523431976Z",
+      "deliveredPayloads": 5
+    },
+    "generationSuccess": true,
+    "casePass": false,
+    "UpgradeAuthorized": false,
+    "TrustedHopReceipt": false
+  }
+}

@@ -1,0 +1,538 @@
+{
+  "schemaVersion": 1,
+  "caseID": "BAK-02",
+  "provenanceRole": "case-specific-controlled-generation",
+  "sourceRecord": "bak-02/source-generation",
+  "sourceRelease": "v1.14.4",
+  "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "sourceProducerKind": "published-artifact",
+  "sourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "sourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "sourceBundleDigest": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
+  "sourceGenerationRecordSHA256": "b094b8b8af03ac8f1681e7a52b57ba0af4400f7d1e5beaf1f94eb3d5af81aac1",
+  "generatorCodeCommit": "af53fedab0af8fa272b7816a0c3ee18857a422b6",
+  "externalGenerationFiles": {
+    "producer.log": "a0c047cfd591d71bf1bb20555f3bf4781ecfc482b18533e6b0c42699c9271b74",
+    "generation-runner.json": "3d189017d4f34ccc0ee308bdbd51564bf3ec5ef3fb53ad86e95e11a7bb2ad06b",
+    "generation-generation-execution.log.txt": "b575e268daa5b0aa0e5ede7161a0549b620ce87ad0aebbde82d52bee9256e463"
+  },
+  "sourceArtifact": {
+    "repository": "seakee/CPA-Manager-Plus",
+    "tag": "",
+    "tagCommit": "",
+    "releaseID": 0,
+    "assetID": 0,
+    "immutable": false,
+    "publicationStatus": "not-published; local sealed bytes are committed under sealed/; GitHub release-tag ruleset hosting gap remains",
+    "archiveName": "bak-02-bundle-4e1f3ad0b922-sealed-evidence.zip",
+    "archiveSize": 354965,
+    "archiveSHA256": "3bb18065c7b2e3e9c6e31b198524a7b66d66e4e9f83bf4a0dd1c4863993d3652",
+    "downloadURL": "",
+    "committedArchivePath": "sealed/bak-02-bundle-4e1f3ad0b922-sealed-evidence.zip",
+    "sourceBundleDigest": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
+    "generationRecordSHA256": "b094b8b8af03ac8f1681e7a52b57ba0af4400f7d1e5beaf1f94eb3d5af81aac1",
+    "bundleManifestSHA256": "2253a1eb6eded7d72f06fcf81447e6ee3863911fe22f8b77c57880a0bb17a002",
+    "scope": "BAK-02 exact v1.14.4 matching bundle source, host and clean-checkout replay evidence; exact producer archive is separately pinned to the v1.14.4 product release.",
+    "inventory": {
+      "bak-02/bundle/config": {
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "bak-02/bundle/data-key": {
+        "size": 44,
+        "sha256": "13f6164ea50319848a276344d69d871457936697ac7e4c9ec96555bea5d0941f"
+      },
+      "bak-02/bundle/database": {
+        "size": 659456,
+        "sha256": "82493921e6c377065e1f9651839a8c254a30416609c11974e37589451d3de904"
+      },
+      "bak-02/bundle/manifest.json": {
+        "size": 1424,
+        "sha256": "2253a1eb6eded7d72f06fcf81447e6ee3863911fe22f8b77c57880a0bb17a002"
+      },
+      "bak-02/bundle/usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/manifest.json": {
+        "size": 1099,
+        "sha256": "a927c215b59a19e7ef33aa2c611c9ea07cc27bdd1be7ae1059747912580b90b5"
+      },
+      "bak-02/bundle/usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "size": 2819,
+        "sha256": "08d52f0f751b9fee574e94612b31b74ecc8371748bce5b75fa074b1f7f65091c"
+      },
+      "bak-02/clean-checkout/checkout-record.json": {
+        "size": 1091,
+        "sha256": "5ff6f6bac3366dc3961619e991feff672187c7d96b172ce3e88b0f043d6b9cac"
+      },
+      "bak-02/clean-checkout/linux/archive-inventory.json": {
+        "size": 41222,
+        "sha256": "53a671c676f7454c9ec5ea28515f9d448841824697a287e942675dd2d6033938"
+      },
+      "bak-02/clean-checkout/linux/authoritative-digest.json": {
+        "size": 259,
+        "sha256": "fb18715cec7cbe87df2e26e79f24c143eed33689bcda46f3bec797d4ede42d15"
+      },
+      "bak-02/clean-checkout/linux/build.log.txt": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/clean-checkout/linux/bundle-manifest.json": {
+        "size": 1400,
+        "sha256": "e3c9baec5a987b5680b7bda5eed0bbb307920a4ac2e412614d1fe028ad677d6f"
+      },
+      "bak-02/clean-checkout/linux/config-identity.json": {
+        "size": 602,
+        "sha256": "bfd646be92f10be8642e79790368481f423b1969054511ad9fc1bf8385ce0701"
+      },
+      "bak-02/clean-checkout/linux/database-identity.json": {
+        "size": 458,
+        "sha256": "fba8fdb63921cdd935091ad4b470e5f3ec1aedc3936198985c5507e1e2a23038"
+      },
+      "bak-02/clean-checkout/linux/execution-record.json": {
+        "size": 1077,
+        "sha256": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930"
+      },
+      "bak-02/clean-checkout/linux/input-bundle.json": {
+        "size": 1731,
+        "sha256": "1f54ed722196012f8f47ef7943e118dda09f3d54dbf0d12713a40c3b92f8f65d"
+      },
+      "bak-02/clean-checkout/linux/key-identity.json": {
+        "size": 510,
+        "sha256": "e27f01ec24035e0a1e685355d2966b7409925a40ac25c3d6af0c21a5dc996214"
+      },
+      "bak-02/clean-checkout/linux/metadata-continuity.json": {
+        "size": 1461,
+        "sha256": "4b4cc44615732486601ce664b70376f0eddb5fcb2362d46d7a3887b577f5dcfb"
+      },
+      "bak-02/clean-checkout/linux/replay-execution.log.txt": {
+        "size": 65,
+        "sha256": "fa157afe2ce43fbd0b23e765eee3689855b80266a805db41c11a6e54cb2e86af"
+      },
+      "bak-02/clean-checkout/linux/restore-record.json": {
+        "size": 265,
+        "sha256": "09a5e7a8a592dce772f85fd9b641b00ddd010291fcca059a6e936d47887c93d1"
+      },
+      "bak-02/clean-checkout/linux/restored-inventory.json": {
+        "size": 3080,
+        "sha256": "7966bbb94b56de31935b799791d927232e88581c1a79f15641f87815e7454cf0"
+      },
+      "bak-02/clean-checkout/linux/result.json": {
+        "size": 7054,
+        "sha256": "0d5cc07d205276b3840cb52826fa1b3e94a1536437df1c44fc042287bfce7268"
+      },
+      "bak-02/clean-checkout/linux/runner-evidence.json": {
+        "size": 76709,
+        "sha256": "ce71ac00e4d53b21af85982e83758eca63447a338502d349d52af213ff10d394"
+      },
+      "bak-02/clean-checkout/linux/semantic-assertions.json": {
+        "size": 22562,
+        "sha256": "652aa8e21dc4bceaada5d1cad032950375293f286f7990cdaebf8960e05183c4"
+      },
+      "bak-02/clean-checkout/macos/archive-inventory.json": {
+        "size": 41222,
+        "sha256": "53a671c676f7454c9ec5ea28515f9d448841824697a287e942675dd2d6033938"
+      },
+      "bak-02/clean-checkout/macos/authoritative-digest.json": {
+        "size": 259,
+        "sha256": "fb18715cec7cbe87df2e26e79f24c143eed33689bcda46f3bec797d4ede42d15"
+      },
+      "bak-02/clean-checkout/macos/build.log.txt": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/clean-checkout/macos/bundle-manifest.json": {
+        "size": 1400,
+        "sha256": "e3c9baec5a987b5680b7bda5eed0bbb307920a4ac2e412614d1fe028ad677d6f"
+      },
+      "bak-02/clean-checkout/macos/config-identity.json": {
+        "size": 710,
+        "sha256": "1b9db5e440cdfae5ee71b618c7c5cecd458d11cf2d4644a89a56a668f8d9e816"
+      },
+      "bak-02/clean-checkout/macos/database-identity.json": {
+        "size": 458,
+        "sha256": "40dbfe0f965db7ba208bca9ddd53909527fe41ad7a471d9963b3afc7389deb4b"
+      },
+      "bak-02/clean-checkout/macos/execution-record.json": {
+        "size": 1077,
+        "sha256": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930"
+      },
+      "bak-02/clean-checkout/macos/input-bundle.json": {
+        "size": 1731,
+        "sha256": "1f54ed722196012f8f47ef7943e118dda09f3d54dbf0d12713a40c3b92f8f65d"
+      },
+      "bak-02/clean-checkout/macos/key-identity.json": {
+        "size": 510,
+        "sha256": "e27f01ec24035e0a1e685355d2966b7409925a40ac25c3d6af0c21a5dc996214"
+      },
+      "bak-02/clean-checkout/macos/metadata-continuity.json": {
+        "size": 1461,
+        "sha256": "4b4cc44615732486601ce664b70376f0eddb5fcb2362d46d7a3887b577f5dcfb"
+      },
+      "bak-02/clean-checkout/macos/replay-execution.log.txt": {
+        "size": 65,
+        "sha256": "144d17e724e7cc0dc96e91b303bf199606ecb9937008c7f61ff372e643527203"
+      },
+      "bak-02/clean-checkout/macos/restore-record.json": {
+        "size": 265,
+        "sha256": "09a5e7a8a592dce772f85fd9b641b00ddd010291fcca059a6e936d47887c93d1"
+      },
+      "bak-02/clean-checkout/macos/restored-inventory.json": {
+        "size": 3080,
+        "sha256": "cffd1686110f57f61436ef24532dc7a1f0d4ce7c88190beb3035ae4b42c7d691"
+      },
+      "bak-02/clean-checkout/macos/result.json": {
+        "size": 7054,
+        "sha256": "94f47a22ca79c6f9336b668787b47ee06bfe10895fa1d7de954500c95aef6539"
+      },
+      "bak-02/clean-checkout/macos/runner-evidence.json": {
+        "size": 74945,
+        "sha256": "bfa4f62711015b0d2fdda10c16b7cc5cd6f4c6680d1691ff9fc40e9ae0233c29"
+      },
+      "bak-02/clean-checkout/macos/semantic-assertions.json": {
+        "size": 22562,
+        "sha256": "0185b40db638c7d984507d05c11d82e9d0e8f26764654a65e8d4dbb4a3baa689"
+      },
+      "bak-02/generation-build.log.txt": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/generation-generation-execution.log.txt": {
+        "size": 159,
+        "sha256": "b575e268daa5b0aa0e5ede7161a0549b620ce87ad0aebbde82d52bee9256e463"
+      },
+      "bak-02/generation-index.json": {
+        "size": 266,
+        "sha256": "af5e5affcf12420c2c25ccf5e8d63306345a029c0208e7f5707971452735faa1"
+      },
+      "bak-02/generation-runner.json": {
+        "size": 76426,
+        "sha256": "3d189017d4f34ccc0ee308bdbd51564bf3ec5ef3fb53ad86e95e11a7bb2ad06b"
+      },
+      "bak-02/platform-replay/linux/.manager-bundle-operation-91dd311e95eb707b38a5e7a519887bbd3f600da9cf79516de3588ab859a88f16/state.json": {
+        "size": 1253,
+        "sha256": "41a1ee1ccde47cb98f94c2b9ae96538a6a9ab2531600b472784bdded5ca2b36e"
+      },
+      "bak-02/platform-replay/linux/.manager-bundle-operation-91dd311e95eb707b38a5e7a519887bbd3f600da9cf79516de3588ab859a88f16/state.json.manager.lock": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/platform-replay/linux/.manager-bundle-operation-b386f07dff74a8229ba74ab8c0e6565a4b1af54c13a657d0f7a9c3f5dd87b280/state.json": {
+        "size": 1246,
+        "sha256": "e1d5e9ef20d7b8e921d51e22aa832b5fcf9f237785abd807375e6a6a8d891da3"
+      },
+      "bak-02/platform-replay/linux/.manager-bundle-operation-b386f07dff74a8229ba74ab8c0e6565a4b1af54c13a657d0f7a9c3f5dd87b280/state.json.manager.lock": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/platform-replay/linux/archive-inventory.json": {
+        "size": 41222,
+        "sha256": "53a671c676f7454c9ec5ea28515f9d448841824697a287e942675dd2d6033938"
+      },
+      "bak-02/platform-replay/linux/authoritative-digest.json": {
+        "size": 259,
+        "sha256": "fb18715cec7cbe87df2e26e79f24c143eed33689bcda46f3bec797d4ede42d15"
+      },
+      "bak-02/platform-replay/linux/backup-restore/.manager-bundle-operation-16b36120780423661ff5dd5e7342a1ff80b1010ff18608470d280f7f2f31e62a/state.json": {
+        "size": 1225,
+        "sha256": "4aaac1f6823554492fd740271587995dc0d2b6a416f2853782507654936d7303"
+      },
+      "bak-02/platform-replay/linux/backup-restore/.manager-bundle-operation-16b36120780423661ff5dd5e7342a1ff80b1010ff18608470d280f7f2f31e62a/state.json.manager.lock": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/platform-replay/linux/backup-restore/bundle/config": {
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "bak-02/platform-replay/linux/backup-restore/bundle/data-key": {
+        "size": 44,
+        "sha256": "13f6164ea50319848a276344d69d871457936697ac7e4c9ec96555bea5d0941f"
+      },
+      "bak-02/platform-replay/linux/backup-restore/bundle/database": {
+        "size": 819200,
+        "sha256": "699fe1460e1e8a31833f920da4d8a71370c0e86d6260c9c5b512d23b44cb7355"
+      },
+      "bak-02/platform-replay/linux/backup-restore/bundle/manifest.json": {
+        "size": 1424,
+        "sha256": "4f4e9372fd09f830908e82f72eaa75e6861bcc79c30ba45c92e382103144fd12"
+      },
+      "bak-02/platform-replay/linux/backup-restore/bundle/usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/manifest.json": {
+        "size": 1099,
+        "sha256": "a927c215b59a19e7ef33aa2c611c9ea07cc27bdd1be7ae1059747912580b90b5"
+      },
+      "bak-02/platform-replay/linux/backup-restore/bundle/usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "size": 2819,
+        "sha256": "08d52f0f751b9fee574e94612b31b74ecc8371748bce5b75fa074b1f7f65091c"
+      },
+      "bak-02/platform-replay/linux/build.log.txt": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/platform-replay/linux/bundle-manifest.json": {
+        "size": 1400,
+        "sha256": "e3c9baec5a987b5680b7bda5eed0bbb307920a4ac2e412614d1fe028ad677d6f"
+      },
+      "bak-02/platform-replay/linux/config-identity.json": {
+        "size": 605,
+        "sha256": "6011f435d732d5db86b59606bffb200902c88a0d083ed68733dee0f84ce183ea"
+      },
+      "bak-02/platform-replay/linux/database-identity.json": {
+        "size": 458,
+        "sha256": "752bfa223fe6405a720ec0afc0c12304fa302bc205b2c6db3dc0aa9cb1b38912"
+      },
+      "bak-02/platform-replay/linux/execution-record.json": {
+        "size": 1077,
+        "sha256": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930"
+      },
+      "bak-02/platform-replay/linux/input-bundle.json": {
+        "size": 1731,
+        "sha256": "1f54ed722196012f8f47ef7943e118dda09f3d54dbf0d12713a40c3b92f8f65d"
+      },
+      "bak-02/platform-replay/linux/key-identity.json": {
+        "size": 510,
+        "sha256": "e27f01ec24035e0a1e685355d2966b7409925a40ac25c3d6af0c21a5dc996214"
+      },
+      "bak-02/platform-replay/linux/metadata-continuity.json": {
+        "size": 1461,
+        "sha256": "4b4cc44615732486601ce664b70376f0eddb5fcb2362d46d7a3887b577f5dcfb"
+      },
+      "bak-02/platform-replay/linux/replay-execution.log.txt": {
+        "size": 65,
+        "sha256": "fa157afe2ce43fbd0b23e765eee3689855b80266a805db41c11a6e54cb2e86af"
+      },
+      "bak-02/platform-replay/linux/restore-record.json": {
+        "size": 265,
+        "sha256": "09a5e7a8a592dce772f85fd9b641b00ddd010291fcca059a6e936d47887c93d1"
+      },
+      "bak-02/platform-replay/linux/restored-inventory.json": {
+        "size": 3080,
+        "sha256": "d8bbd3e509ab1f8ee73857ad80db67418bdd61a701cd036114fbf7edf9077308"
+      },
+      "bak-02/platform-replay/linux/result.json": {
+        "size": 7054,
+        "sha256": "c54f1292e01b9434a4a6f034b443177a7f968cb2b01fc0f67b50e8e8206bfda7"
+      },
+      "bak-02/platform-replay/linux/runner-evidence.json": {
+        "size": 76808,
+        "sha256": "9722de3ed404957194da996dc9f9f00ddf56cae0199c771f8a1e31f1c45fd0a6"
+      },
+      "bak-02/platform-replay/linux/semantic-assertions.json": {
+        "size": 22562,
+        "sha256": "16232e8c49ec7d71e7d6a33eae2390780fe9c3698f280882e4f7687fb3389146"
+      },
+      "bak-02/profile.json": {
+        "size": 6215,
+        "sha256": "defd5abaeaeb629df90c3db4a08f799ddf6d23bea7e8471c54893dab030305ac"
+      },
+      "bak-02/runtime/.manager-bundle-operation-050d0f575eb73e137ab9bc0e5166adb9b867bc230efbc09ba90277a356d701bb/state.json": {
+        "size": 1246,
+        "sha256": "ed6e795dcdb3b98f3e9c37ca69625f6e1659bc09b20e7df2b1afb9bbca0d2a32"
+      },
+      "bak-02/runtime/.manager-bundle-operation-050d0f575eb73e137ab9bc0e5166adb9b867bc230efbc09ba90277a356d701bb/state.json.manager.lock": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/runtime/.manager-bundle-operation-38a9cbc31ee0f0e4d16fce5978862c7f72e4d32527c960e2ad3cd2020ec9b40f/state.json": {
+        "size": 1253,
+        "sha256": "cc725c48a46ef345450c504bcd486dec383ae7cef53e485958af80f5a5d79d4d"
+      },
+      "bak-02/runtime/.manager-bundle-operation-38a9cbc31ee0f0e4d16fce5978862c7f72e4d32527c960e2ad3cd2020ec9b40f/state.json.manager.lock": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/runtime/archive-inventory.json": {
+        "size": 41222,
+        "sha256": "53a671c676f7454c9ec5ea28515f9d448841824697a287e942675dd2d6033938"
+      },
+      "bak-02/runtime/authoritative-digest.json": {
+        "size": 259,
+        "sha256": "fb18715cec7cbe87df2e26e79f24c143eed33689bcda46f3bec797d4ede42d15"
+      },
+      "bak-02/runtime/backup-restore/.manager-bundle-operation-507f140ab28cd4f3405423ed1118c3f6a26083a572a2ef6a0fdaee250ced669d/state.json": {
+        "size": 1225,
+        "sha256": "4f94ebbc43c37e444652bcc70f015844968704ce0371301cb0128af5d49b7682"
+      },
+      "bak-02/runtime/backup-restore/.manager-bundle-operation-507f140ab28cd4f3405423ed1118c3f6a26083a572a2ef6a0fdaee250ced669d/state.json.manager.lock": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/runtime/backup-restore/bundle/config": {
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "bak-02/runtime/backup-restore/bundle/data-key": {
+        "size": 44,
+        "sha256": "13f6164ea50319848a276344d69d871457936697ac7e4c9ec96555bea5d0941f"
+      },
+      "bak-02/runtime/backup-restore/bundle/database": {
+        "size": 819200,
+        "sha256": "c1161a01b63e9f811307ae2c4c77249e90415da6d52d66c9891008fe50cb3bed"
+      },
+      "bak-02/runtime/backup-restore/bundle/manifest.json": {
+        "size": 1424,
+        "sha256": "49fb00714eb4136dd00b63c3e35471c5fda11f42a38966c6f81d340b6cf7ec35"
+      },
+      "bak-02/runtime/backup-restore/bundle/usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/manifest.json": {
+        "size": 1099,
+        "sha256": "a927c215b59a19e7ef33aa2c611c9ea07cc27bdd1be7ae1059747912580b90b5"
+      },
+      "bak-02/runtime/backup-restore/bundle/usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "size": 2819,
+        "sha256": "08d52f0f751b9fee574e94612b31b74ecc8371748bce5b75fa074b1f7f65091c"
+      },
+      "bak-02/runtime/build.log.txt": {
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "bak-02/runtime/bundle-manifest.json": {
+        "size": 1400,
+        "sha256": "e3c9baec5a987b5680b7bda5eed0bbb307920a4ac2e412614d1fe028ad677d6f"
+      },
+      "bak-02/runtime/config-identity.json": {
+        "size": 713,
+        "sha256": "4b2c4218c75228cfdd692cf56e0f31dbf382beaca65bc908b65523f3a11295a6"
+      },
+      "bak-02/runtime/database-identity.json": {
+        "size": 458,
+        "sha256": "ad57813a41c526eab43f526522ae125bfa2059e8190e895d7b0a06aabce50ba3"
+      },
+      "bak-02/runtime/execution-record.json": {
+        "size": 1077,
+        "sha256": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930"
+      },
+      "bak-02/runtime/input-bundle.json": {
+        "size": 1731,
+        "sha256": "1f54ed722196012f8f47ef7943e118dda09f3d54dbf0d12713a40c3b92f8f65d"
+      },
+      "bak-02/runtime/key-identity.json": {
+        "size": 510,
+        "sha256": "e27f01ec24035e0a1e685355d2966b7409925a40ac25c3d6af0c21a5dc996214"
+      },
+      "bak-02/runtime/metadata-continuity.json": {
+        "size": 1461,
+        "sha256": "4b4cc44615732486601ce664b70376f0eddb5fcb2362d46d7a3887b577f5dcfb"
+      },
+      "bak-02/runtime/replay-execution.log.txt": {
+        "size": 65,
+        "sha256": "50b0abfd13d52769bfd670db2145a56bf07095c878b04f23fcd6d5eb771b8d64"
+      },
+      "bak-02/runtime/restore-record.json": {
+        "size": 265,
+        "sha256": "09a5e7a8a592dce772f85fd9b641b00ddd010291fcca059a6e936d47887c93d1"
+      },
+      "bak-02/runtime/restored-inventory.json": {
+        "size": 3080,
+        "sha256": "015725f7d300241c927ffe65a5a3da11b569d513df4d276d3372867dfdcf1a68"
+      },
+      "bak-02/runtime/result.json": {
+        "size": 7054,
+        "sha256": "6a783749b270b9f0a47b1b240f18632ae8999229c5af3d833668c38feda8e4d9"
+      },
+      "bak-02/runtime/runner-evidence.json": {
+        "size": 74947,
+        "sha256": "9a6e8d6ae9b85eb79f7ca0bcf02e8b5b03d3f6dbbf06db634679482d3cb4d442"
+      },
+      "bak-02/runtime/semantic-assertions.json": {
+        "size": 22562,
+        "sha256": "a6dc46b25f03d67a10a6602231aac547e06077e32f9104e6de5d8ab85cf5406a"
+      },
+      "bak-02/source-generation/archive-flow.json": {
+        "size": 3152,
+        "sha256": "c4a0b56994bd431e9fb13560dd8ed5e666a92370d56b979ba9eed4c9d1bac9c2"
+      },
+      "bak-02/source-generation/archive-inventory.json": {
+        "size": 19648,
+        "sha256": "b8dd4f84892116297ab625698d3c3cecf7c82830263bb5f6249679832706f42e"
+      },
+      "bak-02/source-generation/archive-readiness.json": {
+        "size": 1240,
+        "sha256": "fc668f91a0899f798b46525c11d5409ba2fa01c163a5895294613d75c1623800"
+      },
+      "bak-02/source-generation/authoritative-digest.json": {
+        "size": 296,
+        "sha256": "77bc6c99daf2676cb3a451f28adcfd08184d263e1702c0c570be612b0f32e625"
+      },
+      "bak-02/source-generation/backup-execution.json": {
+        "size": 310,
+        "sha256": "b26270501feff3a03e6d3d373c26f6857c7308ddbc0c33d8f76fa73ebdcf7661"
+      },
+      "bak-02/source-generation/config-identity.json": {
+        "size": 446,
+        "sha256": "33af7a114cfa9edc67842abf03d63b62264b45638bfd60b34bb1ec79c073bc3c"
+      },
+      "bak-02/source-generation/config-write.json": {
+        "size": 731,
+        "sha256": "747b7885aedc40729e0bafe4cb6b5365b848aeec1e9e2f46df5e9b5caf7052f1"
+      },
+      "bak-02/source-generation/controlled-input.json": {
+        "size": 6215,
+        "sha256": "defd5abaeaeb629df90c3db4a08f799ddf6d23bea7e8471c54893dab030305ac"
+      },
+      "bak-02/source-generation/database-identity.json": {
+        "size": 239,
+        "sha256": "bbab353a7066c290ccb12f5f9a852327a6f6f81735994284196ad66bdbe0dcca"
+      },
+      "bak-02/source-generation/key-identity.json": {
+        "size": 283,
+        "sha256": "94bb9b90404cfef68efe61b1cfd5707cb61e1e4ff6676df63deea0bdee067da9"
+      },
+      "bak-02/source-generation/matching-snapshot.json": {
+        "size": 22310,
+        "sha256": "299fd47bbb53c67c1a1913b2c91bd684a52f07e6e81b1e4b1985e93ca91e0169"
+      },
+      "bak-02/source-generation/pre-archive-snapshot.json": {
+        "size": 24516,
+        "sha256": "068c02f83eadc878afa3f30abaf71098baa8e820a5338590c88878b59b099665"
+      },
+      "bak-02/source-generation/price-write.json": {
+        "size": 1193,
+        "sha256": "081a41396955b49cb3d6ec242a238b3fa3345533171b9c3421dee3625806ac5c"
+      },
+      "bak-02/source-generation/producer-build.json": {
+        "size": 2313,
+        "sha256": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7"
+      },
+      "bak-02/source-generation/producer.log": {
+        "size": 42573,
+        "sha256": "a0c047cfd591d71bf1bb20555f3bf4781ecfc482b18533e6b0c42699c9271b74"
+      },
+      "bak-02/source-generation/quota-write.json": {
+        "size": 193,
+        "sha256": "ad44e2548c03d480809db93cc9ec9fd3ee3a0cc2c770b7f7ea9c16976867b2ef"
+      },
+      "bak-02/source-generation/raw-event-inventory.json": {
+        "size": 921,
+        "sha256": "bd851f43175a5f617505b35cd455cb29e99b9f6ef6d78fbacd52ec0718fb7163"
+      },
+      "bak-02/source-generation/record.json": {
+        "size": 8966,
+        "sha256": "b094b8b8af03ac8f1681e7a52b57ba0af4400f7d1e5beaf1f94eb3d5af81aac1"
+      },
+      "bak-02/source-generation/release-info.json": {
+        "size": 1562,
+        "sha256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5"
+      },
+      "bak-02/source-generation/source-snapshot.json": {
+        "size": 24516,
+        "sha256": "068c02f83eadc878afa3f30abaf71098baa8e820a5338590c88878b59b099665"
+      },
+      "bak-02/source-generation/v1-analytics.json": {
+        "size": 3498,
+        "sha256": "fd6d241791ace0aa6d89c6a14df92c1892d9b737a936213558c4aab8b9a5a209"
+      },
+      "bak-02/source-generation/v1-archived-analytics.json": {
+        "size": 3498,
+        "sha256": "c1f62c4e7b13547bb2ff782501c108358a4bbca4cfd65cc3d91dfb02733936b5"
+      },
+      "bak-02/source-generation/v1-export.jsonl": {
+        "size": 4975,
+        "sha256": "004faea71e1c05a0abfe569177efc20c218b1d5072cf321584c6cbbcb215a9da"
+      }
+    }
+  },
+  "immutableHosting": {
+    "status": "gap",
+    "qualificationRelease": "not-created",
+    "reason": "Protect release tags ruleset blocks qualification evidence tag hosting; committed sealed archive, SHA256 and Git object anchor are retained.",
+    "sourceBundleDigest": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
+    "archiveSHA256": "3bb18065c7b2e3e9c6e31b198524a7b66d66e4e9f83bf4a0dd1c4863993d3652"
+  }
+}

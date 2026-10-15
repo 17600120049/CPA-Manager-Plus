@@ -1,0 +1,14 @@
+{
+  "entry": {
+    "present": true,
+    "size": 659456,
+    "sha256": "82493921e6c377065e1f9651839a8c254a30416609c11974e37589451d3de904"
+  },
+  "path": "database",
+  "shm": {
+    "present": false
+  },
+  "wal": {
+    "present": false
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "config": {
+    "collectorMode": "http",
+    "dataDir": ".",
+    "dataKeyPath": "data.key",
+    "dbPath": "usage.sqlite",
+    "pollIntervalMs": 100,
+    "usageArchiveRetentionEnabled": false
+  },
+  "entry": {
+    "present": true,
+    "size": 243,
+    "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+  },
+  "path": "config",
+  "sourceRevision": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1"
+}
