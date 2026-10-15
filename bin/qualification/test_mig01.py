@@ -45,10 +45,19 @@ class Mig01EvidenceTests(unittest.TestCase):
     def test_frozen_product_scope(self):
         scope = read(EVIDENCE / "product-scope.json")
         self.assertEqual(scope["baselineCommit"], "3f65813749a89371a3005b4a710836df587a7582")
+        self.assertEqual(
+            scope["verificationCommit"],
+            read(EVIDENCE / "result.json")["qualificationExecutionCommit"],
+        )
         self.assertFalse(scope["productCodeChanged"])
-        for path, expected in scope["baselineTrees"].items():
-            actual = subprocess.check_output(["git", "rev-parse", "HEAD:" + path], cwd=ROOT, text=True).strip()
-            self.assertEqual(actual, expected, path)
+        for commit in (scope["baselineCommit"], scope["verificationCommit"]):
+            for path, expected in scope["baselineTrees"].items():
+                actual = subprocess.check_output(
+                    ["git", "rev-parse", commit + ":" + path],
+                    cwd=ROOT,
+                    text=True,
+                ).strip()
+                self.assertEqual(actual, expected, f"{commit}:{path}")
         for path in ("internal/repository/sqlite/legacy_migration_readiness.go",
                      "internal/service/legacypreflight/direct_candidate.go"):
             self.assertFalse((ROOT / "apps/manager-server" / path).exists(), path)
