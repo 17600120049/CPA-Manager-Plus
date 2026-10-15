@@ -50,6 +50,13 @@ func TestGenerateRET03(t *testing.T) {
 	generateExactSource(t, ret03CaseID, ret03PlanCommit, ret03Profile)
 }
 
+func TestGenerateRET07(t *testing.T) {
+	if os.Getenv("CPAMP_RET07_GENERATE") != "1" {
+		t.Skip("opt-in RET-07 controlled generation")
+	}
+	generateExactSource(t, ret07CaseID, ret07PlanCommit, ret07Profile)
+}
+
 func TestGenerateMIG01(t *testing.T) {
 	if os.Getenv("CPAMP_MIG01_GENERATE") != "1" {
 		t.Skip("opt-in MIG-01 controlled generation")
@@ -269,6 +276,9 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 	if caseID == ret03CaseID {
 		generateRET03Archive(t, base, live, generation, p, costs)
 	}
+	if caseID == ret07CaseID {
+		generateRET07Archive(t, base, live, generation, p, costs)
+	}
 	export := httpCall(t, "GET", base, "/v0/management/usage/export", nil)
 	must(t, os.WriteFile(filepath.Join(generation, "v1-export.jsonl"), export, 0600))
 	var bakReadDB *sql.DB
@@ -318,6 +328,8 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		checkRET02Archive(t, db, layout.ArchivesPath)
 	} else if caseID == ret03CaseID {
 		checkRET03Archive(t, db, layout.ArchivesPath)
+	} else if caseID == ret07CaseID {
+		checkRET07Archive(t, db, layout.ArchivesPath)
 	} else {
 		checkFullRaw(t, db)
 	}
@@ -358,6 +370,13 @@ func generateExactSource(t *testing.T, caseID, plan, expectedProfile string) {
 		record["sourceVariant"] = "archived + raw physically deleted; cache/quota completed"
 		record["GenerationProcedure"] = "published exact v1.14.4 executable; isolated collector duplicate + price/quota API; archive HTTP create/resume/verify/delete; checkpoint; maintenancebundle.Create; digest revalidation"
 		for _, name := range ret03GenerationFiles {
+			hashes[name] = fileDigest(t, filepath.Join(generation, name))
+		}
+	}
+	if caseID == ret07CaseID {
+		record["sourceVariant"] = "archived + raw physically deleted; retained pricing source complete; structural price change"
+		record["GenerationProcedure"] = "published exact v1.14.4 executable; isolated collector duplicate + price/quota API; archive HTTP create/resume/verify/delete; structural model-price change through production API; checkpoint; maintenancebundle.Create; digest revalidation"
+		for _, name := range ret07GenerationFiles {
 			hashes[name] = fileDigest(t, filepath.Join(generation, name))
 		}
 	}
