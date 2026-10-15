@@ -69,8 +69,13 @@ func inspectMIG03Candidate(ctx context.Context, bundle string, source maintenanc
 		return out, errors.Join(err, closeErr)
 	}
 	s := out.Migration
+	// The v1.14.4 source is revision 2, but production Discover advances the
+	// persisted semantics marker to the revision-3 executor before it can leave
+	// a clearing checkpoint. Keep that distinction explicit: source provenance
+	// is checked by the caller, while this classifier recognizes the real
+	// persisted revision that owns the clearing state.
 	if source.SourceRevision == "" || before.SourceRevision == source.SourceRevision ||
-		s.CacheRevision == nil || *s.CacheRevision != "2" ||
+		s.CacheRevision == nil || *s.CacheRevision != "3" ||
 		len(s.Cache) != 1 || len(s.Quota) != 1 ||
 		s.CacheStagingRows == nil || *s.CacheStagingRows != 0 ||
 		s.QuotaUnattachedRows == nil || *s.QuotaUnattachedRows != 0 ||
