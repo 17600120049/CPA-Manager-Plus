@@ -261,6 +261,20 @@ func validSessionState(state SessionState) bool {
 	}
 }
 
+type FreshInitializationPreconditions struct {
+	Mode               Mode
+	AdminCredential    AdminCredentialState
+	HostClaimQualified bool
+}
+
+// CanInitializeAdministrator is a pure contract predicate. Fresh
+// classification alone is not initialization authority.
+func CanInitializeAdministrator(p FreshInitializationPreconditions) bool {
+	return p.Mode == Fresh &&
+		p.AdminCredential == AdminCredentialUninitialized &&
+		p.HostClaimQualified
+}
+
 // Classify never infers a release from SourceShape. Only separately verified
 // source/hop evidence plus ready migration state can classify as Upgrade.
 func Classify(e ClassificationEvidence) (Mode, error) {
