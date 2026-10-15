@@ -1,0 +1,11 @@
+{
+  "contextCancelled": false,
+  "executedOn": "private copy",
+  "pendingFramesReported": false,
+  "result": {
+    "busy": 0,
+    "checkpointed": 467,
+    "log": 467
+  },
+  "sourceMutated": false
+}

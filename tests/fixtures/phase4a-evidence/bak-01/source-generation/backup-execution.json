@@ -1,0 +1,26 @@
+{
+  "afterAuthoritativeDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+  "bundleRevalidated": true,
+  "bundleVerified": true,
+  "databaseEntry": {
+    "present": true,
+    "size": 438272,
+    "sha256": "4ab96acdfc6bfa5d60ae8069cce03e6c54426efc1cd8777f09db0a3ff77cd456"
+  },
+  "databaseSHM": {
+    "present": true,
+    "size": 32768,
+    "sha256": "d5da04239b62778e7d67b4ca2521c74e230c1d5a713318ea72d2de353718655a"
+  },
+  "databaseWAL": {
+    "present": true,
+    "size": 1924072,
+    "sha256": "c8cd402795b1fdd0710605fb59d236f37b301a6744097f1397925ced7cdd2077"
+  },
+  "producerReaped": true,
+  "sourceAuthoritativeDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+  "sourcePhysicalMutation": false,
+  "sourceRevision": "bdbbdb90d1ffe302a95d0cb33c202051de0260cc4f908d01639ec5031c35723d",
+  "sourceStopped": true,
+  "strategy": "maintenancebundle.Create complete database plus WAL/SHM capture"
+}

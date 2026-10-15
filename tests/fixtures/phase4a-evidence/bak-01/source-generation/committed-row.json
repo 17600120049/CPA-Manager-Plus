@@ -1,0 +1,16 @@
+{
+  "eventHash": "140ce0e6c69dd2cc2d9497b0d462eaa39563b7c8d3b292307a39d8d3bb717799",
+  "liveConnectionVisible": true,
+  "mainDatabaseOnlyVisible": false,
+  "requestID": "bak01-committed-wal-event",
+  "row": {
+    "event_hash": "140ce0e6c69dd2cc2d9497b0d462eaa39563b7c8d3b292307a39d8d3bb717799",
+    "id": 1,
+    "input_tokens": 1000,
+    "model": "devin/swe-2",
+    "output_tokens": 100,
+    "request_id": "bak01-committed-wal-event",
+    "timestamp_ms": 1790812800000,
+    "total_tokens": 1150
+  }
+}

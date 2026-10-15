@@ -1,0 +1,383 @@
+{
+  "ControlledInputSHA256": "f9d1ddb0a6d6d442faecdeaa6e140c303635cc9ef223be565bba75d0fa28a0b1",
+  "GeneratedBundleSHA256": "bdbbdb90d1ffe302a95d0cb33c202051de0260cc4f908d01639ec5031c35723d",
+  "GenerationEvidenceFiles": {
+    "authoritative-digest.json": "fbaee411108ecfd3d8c5cd1ef496ca78f5cccf534e778932c3e1f386eeda4252",
+    "backup-execution.json": "b705c13109455c9eeb72c4745f5987f3f36d9ed7d6397630033e8fe462ea0d53",
+    "checkpoint-observation.json": "9417385f07a18369c583e8f00a1e34bb4a9862ee0adf7c0a41851d1c401baeff",
+    "committed-row.json": "a028741ac9676c26186cfeac62f9e2c5dba2a050eb03b511aa75aaba329b88d7",
+    "config-write.json": "7fee60da4a7c41f40efdf5f34660bfce3b6f6ed32c690550690320877fc544d6",
+    "controlled-input.json": "f9d1ddb0a6d6d442faecdeaa6e140c303635cc9ef223be565bba75d0fa28a0b1",
+    "main-db-before-backup.sqlite": "4ab96acdfc6bfa5d60ae8069cce03e6c54426efc1cd8777f09db0a3ff77cd456",
+    "price-write.json": "dd6c4208cbda2b7b93dced85e3030de7734b1816f11ceb0204edce3089caf1e4",
+    "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+    "producer.log": "fab7c407d023b3df9815642fea5326f6661dbda3e9267eaf5df818fae04e2b0a",
+    "quota-write.json": "35a92961e2e953db90137ce1851f4dcab22cb49ca6d44b2b27e3db75c96ce07c",
+    "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+    "source-snapshot.json": "e4856808a0d0cee6509dc06a2d147badea260503a35ef2db72eb3fddbe1805a3",
+    "v1-analytics.json": "9353e031818d552c65de1e2993508912053e66a1edf4b84dde7235c8385642ac",
+    "v1-export.jsonl": "d955af1ca4c54cbd5e22b653029d953833c1b4a4cdd5fd6b93e27b15fb0a5558",
+    "wal-state.json": "2dd6f5c8a9953c4e44fd22b774cbed41eae34fae5710a74bca1b1c3e0decfcca"
+  },
+  "GenerationProcedure": "published exact v1.14.4 executable; isolated HTTP collector and controlled price/quota writes; held read snapshot across producer reap; main-file-only row absence; WAL frame inventory; private passive-checkpoint probe; maintenancebundle complete DB+WAL+SHM capture",
+  "GenerationProfile": "bak-01-committed-wal-v1",
+  "GeneratorCodeCommit": "4582ae7be34608083b7105ecec6289362f4fe4d3",
+  "PlanCommit": "06a47aaefff1629b3d556f8a49e0544648bfd4bc",
+  "SQLite": {
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  },
+  "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+  "SourceProducerArtifact": {
+    "asset": "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+    "assetID": 616064478,
+    "immutableReleaseID": 404941931,
+    "releaseInfoSHA256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5"
+  },
+  "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+  "SourceProducerKind": "published-artifact",
+  "SourceRelease": "v1.14.4",
+  "StoppedBeforeCheckpointInventory": {
+    "version": 2,
+    "fence": "",
+    "sourceRevision": "bdbbdb90d1ffe302a95d0cb33c202051de0260cc4f908d01639ec5031c35723d",
+    "entries": {
+      "config": {
+        "present": true,
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "data-key": {
+        "present": true,
+        "size": 44,
+        "sha256": "578a49e1c3a29f2240c301518ac18ebedd79deb7d6e4f853323b50b657bab05d"
+      },
+      "database": {
+        "present": true,
+        "size": 438272,
+        "sha256": "4ab96acdfc6bfa5d60ae8069cce03e6c54426efc1cd8777f09db0a3ff77cd456"
+      },
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": true,
+        "size": 32768,
+        "sha256": "d5da04239b62778e7d67b4ca2521c74e230c1d5a713318ea72d2de353718655a"
+      },
+      "database-wal": {
+        "present": true,
+        "size": 1924072,
+        "sha256": "c8cd402795b1fdd0710605fb59d236f37b301a6744097f1397925ced7cdd2077"
+      },
+      "usage-archives": {
+        "present": false
+      }
+    }
+  },
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "authoritativeAfterBackupDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+  "authoritativeBeforeDigest": "7b798eec7ec66f5757984ffed7a10c8be790c6babb465c7b9882889cf011ff8b",
+  "bundleInventory": {
+    "version": 2,
+    "fence": "cooperating-manager-lock",
+    "sourceRevision": "bdbbdb90d1ffe302a95d0cb33c202051de0260cc4f908d01639ec5031c35723d",
+    "entries": {
+      "config": {
+        "present": true,
+        "size": 243,
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
+      },
+      "data-key": {
+        "present": true,
+        "size": 44,
+        "sha256": "578a49e1c3a29f2240c301518ac18ebedd79deb7d6e4f853323b50b657bab05d"
+      },
+      "database": {
+        "present": true,
+        "size": 438272,
+        "sha256": "4ab96acdfc6bfa5d60ae8069cce03e6c54426efc1cd8777f09db0a3ff77cd456"
+      },
+      "database-journal": {
+        "present": false
+      },
+      "database-shm": {
+        "present": true,
+        "size": 32768,
+        "sha256": "d5da04239b62778e7d67b4ca2521c74e230c1d5a713318ea72d2de353718655a"
+      },
+      "database-wal": {
+        "present": true,
+        "size": 1924072,
+        "sha256": "c8cd402795b1fdd0710605fb59d236f37b301a6744097f1397925ced7cdd2077"
+      },
+      "usage-archives": {
+        "present": false
+      }
+    }
+  },
+  "caseID": "BAK-01",
+  "casePass": false,
+  "checkpointObservation": {
+    "contextCancelled": false,
+    "executedOn": "private copy",
+    "pendingFramesReported": false,
+    "result": {
+      "busy": 0,
+      "checkpointed": 467,
+      "log": 467
+    },
+    "sourceMutated": false
+  },
+  "committedRow": {
+    "event_hash": "140ce0e6c69dd2cc2d9497b0d462eaa39563b7c8d3b292307a39d8d3bb717799",
+    "id": 1,
+    "input_tokens": 1000,
+    "model": "devin/swe-2",
+    "output_tokens": 100,
+    "request_id": "bak01-committed-wal-event",
+    "timestamp_ms": 1790812800000,
+    "total_tokens": 1150
+  },
+  "generationSuccess": true,
+  "harnessToolchain": {
+    "goArch": "amd64",
+    "goOS": "linux",
+    "goVersion": "go1.26.1",
+    "qualificationOnly": true
+  },
+  "process": {
+    "deliveredPayloads": 5,
+    "exitCode": 0,
+    "expectedUniqueEvents": 4,
+    "finishedAt": "2026-10-15T02:18:32.860614548Z",
+    "pid": 15,
+    "queueCalls": 5,
+    "reaped": true,
+    "startedAt": "2026-10-15T02:18:32.507296592Z"
+  },
+  "producerBuildIdentity": "producer-build.json",
+  "sourceVariant": "committed WAL; full raw; cache/quota completed",
+  "walState": {
+    "committedRowVisibleLive": true,
+    "committedRowVisibleMain": false,
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ],
+    "mainDatabaseSHA256": "4ab96acdfc6bfa5d60ae8069cce03e6c54426efc1cd8777f09db0a3ff77cd456",
+    "mainDatabaseSize": 438272,
+    "passiveCheckpointOnSource": "not executed; source premise is preserved by frame and main-file evidence",
+    "preTransactionMainDatabaseSHA256": "4ab96acdfc6bfa5d60ae8069cce03e6c54426efc1cd8777f09db0a3ff77cd456",
+    "preTransactionMainDatabaseSize": 438272,
+    "shmPresent": true,
+    "walAutoCheckpoint": [
+      {
+        "wal_autocheckpoint": 1000
+      }
+    ],
+    "walFrameInventory": {
+      "headerMagic": 931071618,
+      "pageSize": 4096,
+      "frameCount": 467,
+      "commitFrameCount": 179,
+      "commitFramePages": [
+        9,
+        108,
+        9,
+        9,
+        109,
+        9,
+        9,
+        110,
+        9,
+        9,
+        111,
+        9,
+        9,
+        112,
+        9,
+        9,
+        113,
+        9,
+        9,
+        114,
+        9,
+        9,
+        115,
+        9,
+        9,
+        116,
+        9,
+        9,
+        117,
+        9,
+        9,
+        118,
+        9,
+        9,
+        120,
+        9,
+        9,
+        121,
+        9,
+        9,
+        122,
+        9,
+        9,
+        123,
+        9,
+        9,
+        124,
+        9,
+        9,
+        125,
+        9,
+        9,
+        126,
+        9,
+        9,
+        127,
+        9,
+        9,
+        128,
+        9,
+        9,
+        129,
+        9,
+        9,
+        130,
+        9,
+        9,
+        131,
+        9,
+        9,
+        132,
+        9,
+        9,
+        133,
+        9,
+        9,
+        134,
+        9,
+        9,
+        135,
+        9,
+        9,
+        136,
+        9,
+        9,
+        137,
+        9,
+        9,
+        138,
+        9,
+        9,
+        140,
+        9,
+        9,
+        141,
+        9,
+        9,
+        142,
+        9,
+        9,
+        143,
+        9,
+        9,
+        144,
+        9,
+        9,
+        145,
+        9,
+        9,
+        146,
+        9,
+        9,
+        147,
+        9,
+        9,
+        148,
+        9,
+        9,
+        149,
+        9,
+        9,
+        150,
+        9,
+        9,
+        151,
+        9,
+        9,
+        152,
+        9,
+        9,
+        153,
+        9,
+        9,
+        155,
+        9,
+        9,
+        156,
+        9,
+        9,
+        157,
+        9,
+        9,
+        158,
+        9,
+        9,
+        159,
+        9,
+        67,
+        31,
+        13,
+        106,
+        25,
+        45,
+        45,
+        45,
+        72,
+        31,
+        25,
+        106,
+        45,
+        45,
+        45,
+        7,
+        7,
+        7,
+        7,
+        7,
+        12,
+        72,
+        76,
+        31,
+        106,
+        45,
+        45,
+        45,
+        159,
+        141,
+        128,
+        141
+      ]
+    },
+    "walPath": "usage.sqlite-wal",
+    "walSHA256": "c8cd402795b1fdd0710605fb59d236f37b301a6744097f1397925ced7cdd2077",
+    "walSize": 1924072
+  }
+}

@@ -118,7 +118,11 @@ class Bak01EvidenceTests(unittest.TestCase):
         self.assertTrue(pin["immutable"])
         self.assertEqual(pin["sourceBundleDigest"], self.generation["GeneratedBundleSHA256"])
         self.assertEqual(pin["generationRecordSHA256"], digest(EVIDENCE / "source-generation/record.json"))
-        self.assertEqual(pin["inventory"]["producer.tar.gz"]["sha256"], self.generation["SourceProducerArchiveSHA256"])
+        # The producer is independently pinned to the immutable v1.14.4
+        # product release; the BAK sealed archive contains generated fixture
+        # and runtime bytes without duplicating that 8.5 MiB asset.
+        self.assertNotIn("producer.tar.gz", pin["inventory"])
+        self.assertEqual(self.provenance["sourceProducerArchiveSHA256"], self.generation["SourceProducerArchiveSHA256"])
         self.assertRegex(pin["archiveSHA256"], r"^[0-9a-f]{64}$")
         self.assertGreater(pin["archiveSize"], 0)
         for prefix in ("runtime", "platform-replay/linux"):
