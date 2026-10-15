@@ -308,7 +308,8 @@ func TestCheckedInContract(t *testing.T) {
 		"forward_hop_requires_trusted_receipt",
 		"trusted_receipt_requires_manager_authenticity",
 		"trusted_receipt_binds_operation_target_input_output_archive_executable",
-		"trusted_receipt_requires_zero_exit_and_reap",
+		"trusted_receipt_requires_zero_exit_released_handles_and_reap",
+		"actual_operation_record_persisted_with_stage_identity",
 		"receipt_replay_or_revocation_rejected",
 		"manager_supervisor_ownership_separated",
 	}
@@ -494,6 +495,29 @@ func TestForwardHopGrantRequiresTrustedReceiptQualification(t *testing.T) {
 	}
 }
 
+func TestActualOperationRecordRequiresPersistentIdentityFields(t *testing.T) {
+	valid := bootstrap.ActualOperationRecord{
+		OperationID:         "operation-0001",
+		StartedAtUnixMilli:  1,
+		OperatorIdentityRef: "admin-session:fingerprint",
+		Stage:               bootstrap.OperationClassified,
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cases := []bootstrap.ActualOperationRecord{
+		{StartedAtUnixMilli: 1, OperatorIdentityRef: "admin-session:fingerprint", Stage: bootstrap.OperationClassified},
+		{OperationID: "operation-0001", OperatorIdentityRef: "admin-session:fingerprint", Stage: bootstrap.OperationClassified},
+		{OperationID: "operation-0001", StartedAtUnixMilli: 1, Stage: bootstrap.OperationClassified},
+		{OperationID: "operation-0001", StartedAtUnixMilli: 1, OperatorIdentityRef: "admin-session:fingerprint", Stage: "unknown"},
+	}
+	for _, tc := range cases {
+		if err := tc.Validate(); err == nil {
+			t.Fatalf("invalid actual operation record accepted: %+v", tc)
+		}
+	}
+}
+
 func TestTrustedReceiptBindingIsExactAndReplaySafe(t *testing.T) {
 	binding := bootstrap.ReceiptBinding{
 		OperationID:          "operation-0001",
@@ -515,6 +539,7 @@ func TestTrustedReceiptBindingIsExactAndReplaySafe(t *testing.T) {
 		JournalRecordPresent:        true,
 		ProcessExited:               true,
 		ProcessExitCode:             0,
+		ProcessHandlesReleased:      true,
 		ProcessReaped:               true,
 	}
 	if !bootstrap.CanAcceptTrustedHopReceipt(base) {
@@ -535,6 +560,7 @@ func TestTrustedReceiptBindingIsExactAndReplaySafe(t *testing.T) {
 		{"executable mismatch", func(p *bootstrap.TrustedReceiptPreconditions) { p.CurrentExecutableDigest = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }},
 		{"process not exited", func(p *bootstrap.TrustedReceiptPreconditions) { p.ProcessExited = false }},
 		{"nonzero exit", func(p *bootstrap.TrustedReceiptPreconditions) { p.ProcessExitCode = 1 }},
+		{"handles not released", func(p *bootstrap.TrustedReceiptPreconditions) { p.ProcessHandlesReleased = false }},
 		{"process not reaped", func(p *bootstrap.TrustedReceiptPreconditions) { p.ProcessReaped = false }},
 	}
 	for _, tc := range tests {
