@@ -48,6 +48,13 @@ class Mig03EvidenceTests(unittest.TestCase):
             if path.is_file() and path.name not in ("README.md", "evidence-manifest.json")
         }
         self.assertEqual(set(self.manifest["inventory"]), actual)
+        tracked = set(subprocess.check_output(
+            ["git", "ls-files", "-z", "--", "."], cwd=EVIDENCE
+        ).decode("utf-8").split("\0"))
+        self.assertFalse(
+            actual - tracked,
+            f"evidence files missing from Git: {sorted(actual - tracked)}",
+        )
         for name, entry in self.manifest["inventory"].items():
             path = EVIDENCE / name
             self.assertEqual(path.stat().st_size, entry["size"], name)

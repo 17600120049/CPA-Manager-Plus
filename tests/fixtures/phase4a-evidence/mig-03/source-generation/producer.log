@@ -1,0 +1,80 @@
+2026/10/15 07:15:44 CPA Manager Plus admin credential initialized
+2026/10/15 07:15:44 CPA Manager Plus data key created at /tmp/TestGenerateMIG03914070468/002/source/data.key
+2026/10/15 07:15:44 cpa-manager-plus listening on 127.0.0.1:37683
+2026/10/15 07:15:44 [derived-migration] post-listen index preparation started
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_timestamp
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_request_id
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_model
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_auth_index
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_endpoint
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_header_quota_recover
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_header_error_kind
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_header_trace_id
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_latest_request_auth_file
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_events_latest_request_source
+2026/10/15 07:15:44 [derived-migration] creating index idx_account_action_candidates_pending_identity_action
+2026/10/15 07:15:44 [derived-migration] creating index idx_account_action_candidates_status_seen
+2026/10/15 07:15:44 [derived-migration] creating index idx_codex_inspection_runs_started_at
+2026/10/15 07:15:44 [derived-migration] creating index idx_codex_inspection_runs_status
+2026/10/15 07:15:44 [derived-migration] creating index idx_codex_inspection_runs_trigger
+2026/10/15 07:15:44 [derived-migration] creating index idx_codex_inspection_leases_expiry
+2026/10/15 07:15:44 [derived-migration] creating index idx_codex_inspection_results_run
+2026/10/15 07:15:44 [derived-migration] creating index idx_codex_inspection_logs_run
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_cooldowns_due
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_cooldowns_active_identity
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_observations_account_time
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_observations_inventory
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_observations_lifecycle_watermark
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_windows_account_state
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_windows_inventory
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_activations_active
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_cycles_active
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_cycles_history
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_snapshots_latest
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_snapshots_observation
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_snapshots_window_cycle
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_snapshots_cycle_evidence
+2026/10/15 07:15:44 [derived-migration] creating index idx_quota_snapshots_legacy_migration
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_account_model_rollups_last_seen
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_account_model_rollups_auth_index
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_pricing_hourly_bucket
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_pricing_account_key
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_account_daily_bucket
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_account_daily_credential_window
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_account_daily_legacy_window
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_api_key_daily_bucket
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_selector_daily_bucket
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_selector_revision_bucket
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_event_projection_timestamp
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_event_projection_account_window
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_event_projection_model_timestamp
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_monitoring_header_latest_timestamp
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_event_identity_ledger_raw_event_id
+2026/10/15 07:15:44 [derived-migration] creating index idx_usage_event_identity_ledger_bucket
+2026/10/15 07:15:44 [derived-migration] post-listen index preparation completed created=49 removedAccountActionLegacy=false removedQuotaLegacy=false
+2026/10/15 07:15:44 [startup] starting background workers
+2026/10/15 07:15:44 [automation] runtime settings loaded quotaCooldown=true accountActions=false accountActionsAutoDisable=false
+2026/10/15 07:15:44 usage cache accounting migration completed: processed=0 changed=0
+2026/10/15 07:15:44 [usage-derived] pricing rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:15:44 [usage-derived] pricing rebuild completed coverageEventID=0
+2026/10/15 07:15:44 [usage-derived] monitoring stats rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:15:44 [usage-derived] monitoring stats rebuild completed coverageEventID=0
+2026/10/15 07:15:44 [usage-derived] Codex legacy identity evidence rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:15:44 [usage-derived] Codex legacy identity evidence rebuild completed coverageEventID=0
+2026/10/15 07:15:44 http GET /usage-service/info status=200 duration=287.943µs remote=127.0.0.1:49226
+2026/10/15 07:15:44 http PUT /usage-service/config status=200 duration=1.299231ms remote=127.0.0.1:49242
+2026/10/15 07:15:44 http PUT /v0/management/model-prices status=200 duration=606.838µs remote=127.0.0.1:49242
+2026/10/15 07:15:44 [usage-derived] pricing rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:15:44 [usage-derived] pricing rebuild completed coverageEventID=0
+2026/10/15 07:15:44 http GET /usage-service/info status=200 duration=79.689µs remote=127.0.0.1:49242
+2026/10/15 07:15:44 [usage-derived] monitoring stats rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:15:44 [usage-derived] monitoring stats rebuild completed coverageEventID=0
+2026/10/15 07:15:44 http GET /usage-service/info status=200 duration=139.502µs remote=127.0.0.1:49246
+2026/10/15 07:15:44 [quota-auto-disable] quota limit reached for auth file "fixture-codex.json" account="fixture-codex.json" provider="codex" resetAt=2100-01-01T00:00:00Z, disabling
+2026/10/15 07:15:44 http POST /v0/management/quota-snapshots status=200 duration=1.800026ms remote=127.0.0.1:49262
+2026/10/15 07:15:44 [quota-auto-disable] disabled auth file "fixture-codex.json"; persisted CPAMP-owned auto-enable at 2100-01-01T00:00:00Z
+2026/10/15 07:15:44 http POST /v0/management/monitoring/analytics status=200 duration=6.265458ms remote=127.0.0.1:49262
+2026/10/15 07:15:44 http POST /v0/management/monitoring/analytics status=200 duration=5.200891ms remote=127.0.0.1:49262
+2026/10/15 07:15:44 http POST /v0/management/monitoring/analytics status=200 duration=5.07976ms remote=127.0.0.1:49262
+2026/10/15 07:15:44 http POST /v0/management/monitoring/analytics status=200 duration=4.905058ms remote=127.0.0.1:49262
+2026/10/15 07:15:44 http GET /v0/management/usage/export status=200 duration=1.866885ms remote=127.0.0.1:49262
