@@ -24,11 +24,12 @@ func validContentDigest(digest ContentDigest) bool {
 // ReceiptBinding is the immutable identity a future Manager-owned receipt must
 // bind. It is data only; this package neither signs nor trusts a receipt.
 type ReceiptBinding struct {
-	OperationID          OperationID
-	TargetFingerprint    ContentDigest
-	InputManifestDigest  ContentDigest
-	OutputManifestDigest ContentDigest
-	ArtifactDigest       ContentDigest
+	OperationID           OperationID
+	TargetFingerprint     ContentDigest
+	InputManifestDigest   ContentDigest
+	OutputManifestDigest  ContentDigest
+	ArtifactArchiveDigest ContentDigest
+	ExecutableDigest      ContentDigest
 }
 
 func (r ReceiptBinding) Validate() error {
@@ -38,8 +39,9 @@ func (r ReceiptBinding) Validate() error {
 	for name, digest := range map[string]ContentDigest{
 		"target fingerprint":     r.TargetFingerprint,
 		"input manifest digest":  r.InputManifestDigest,
-		"output manifest digest": r.OutputManifestDigest,
-		"artifact digest":        r.ArtifactDigest,
+		"output manifest digest":  r.OutputManifestDigest,
+		"artifact archive digest": r.ArtifactArchiveDigest,
+		"executable digest":       r.ExecutableDigest,
 	} {
 		if !validContentDigest(digest) {
 			return fmt.Errorf("invalid %s %q", name, digest)
@@ -57,9 +59,10 @@ type TrustedReceiptPreconditions struct {
 	CurrentOperationID          OperationID
 	CurrentTargetFingerprint    ContentDigest
 	CurrentInputManifestDigest  ContentDigest
-	CurrentOutputManifestDigest ContentDigest
-	CurrentArtifactDigest       ContentDigest
-	ManagerAuthenticityVerified bool
+	CurrentOutputManifestDigest  ContentDigest
+	CurrentArtifactArchiveDigest ContentDigest
+	CurrentExecutableDigest      ContentDigest
+	ManagerAuthenticityVerified  bool
 	JournalRecordPresent        bool
 	JournalRevoked              bool
 	ProcessExited               bool
@@ -83,7 +86,8 @@ func CanAcceptTrustedHopReceipt(p TrustedReceiptPreconditions) bool {
 		p.Receipt.TargetFingerprint == p.CurrentTargetFingerprint &&
 		p.Receipt.InputManifestDigest == p.CurrentInputManifestDigest &&
 		p.Receipt.OutputManifestDigest == p.CurrentOutputManifestDigest &&
-		p.Receipt.ArtifactDigest == p.CurrentArtifactDigest
+		p.Receipt.ArtifactArchiveDigest == p.CurrentArtifactArchiveDigest &&
+		p.Receipt.ExecutableDigest == p.CurrentExecutableDigest
 }
 
 type RequiredMigrationCheckpoints struct {
