@@ -21,6 +21,53 @@ func validContentDigest(digest ContentDigest) bool {
 	return contentDigestPattern.MatchString(string(digest))
 }
 
+type OperationStage string
+
+const (
+	OperationClassified        OperationStage = "classified"
+	OperationBackupVerified    OperationStage = "backup_verified"
+	OperationSourceRevalidated OperationStage = "source_revalidated"
+	OperationWritableMigration OperationStage = "writable_migration"
+	OperationRecovery          OperationStage = "recovery"
+	OperationCompleted         OperationStage = "completed"
+)
+
+func validOperationStage(stage OperationStage) bool {
+	switch stage {
+	case OperationClassified, OperationBackupVerified, OperationSourceRevalidated,
+		OperationWritableMigration, OperationRecovery, OperationCompleted:
+		return true
+	default:
+		return false
+	}
+}
+
+// ActualOperationRecord freezes the minimum persistent identity every future
+// migration or forward-hop operation must carry. Persistence itself belongs to
+// Phase4 backend implementation.
+type ActualOperationRecord struct {
+	OperationID         OperationID
+	StartedAtUnixMilli  int64
+	OperatorIdentityRef string
+	Stage               OperationStage
+}
+
+func (r ActualOperationRecord) Validate() error {
+	if !validOperationID(r.OperationID) {
+		return fmt.Errorf("invalid operation id %q", r.OperationID)
+	}
+	if r.StartedAtUnixMilli <= 0 {
+		return fmt.Errorf("operation %q requires start time", r.OperationID)
+	}
+	if r.OperatorIdentityRef == "" {
+		return fmt.Errorf("operation %q requires operator identity reference", r.OperationID)
+	}
+	if !validOperationStage(r.Stage) {
+		return fmt.Errorf("operation %q has invalid stage %q", r.OperationID, r.Stage)
+	}
+	return nil
+}
+
 // ReceiptBinding is the immutable identity a future Manager-owned receipt must
 // bind. It is data only; this package neither signs nor trusts a receipt.
 type ReceiptBinding struct {
@@ -67,6 +114,7 @@ type TrustedReceiptPreconditions struct {
 	JournalRevoked              bool
 	ProcessExited               bool
 	ProcessExitCode             int
+	ProcessHandlesReleased      bool
 	ProcessReaped               bool
 }
 
@@ -79,6 +127,7 @@ func CanAcceptTrustedHopReceipt(p TrustedReceiptPreconditions) bool {
 		p.JournalRevoked ||
 		!p.ProcessExited ||
 		p.ProcessExitCode != 0 ||
+		!p.ProcessHandlesReleased ||
 		!p.ProcessReaped {
 		return false
 	}
