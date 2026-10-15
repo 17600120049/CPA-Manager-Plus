@@ -45,7 +45,7 @@
         "analytics": {
           "": [
             {
-              "generated_at_ms": 1792050328043,
+              "generated_at_ms": 1792052210499,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -97,7 +97,7 @@
               }
             },
             {
-              "generated_at_ms": 1792050328045,
+              "generated_at_ms": 1792052210502,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -151,7 +151,7 @@
           ],
           "fixture-free-ret07": [
             {
-              "generated_at_ms": 1792050328016,
+              "generated_at_ms": 1792052210473,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -203,7 +203,7 @@
               }
             },
             {
-              "generated_at_ms": 1792050328019,
+              "generated_at_ms": 1792052210476,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -257,7 +257,7 @@
           ],
           "fixture-manual-ret07": [
             {
-              "generated_at_ms": 1792050328023,
+              "generated_at_ms": 1792052210480,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -309,7 +309,7 @@
               }
             },
             {
-              "generated_at_ms": 1792050328026,
+              "generated_at_ms": 1792052210482,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -363,7 +363,7 @@
           ],
           "fixture-paid-ret07": [
             {
-              "generated_at_ms": 1792050328030,
+              "generated_at_ms": 1792052210486,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -415,7 +415,7 @@
               }
             },
             {
-              "generated_at_ms": 1792050328032,
+              "generated_at_ms": 1792052210489,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -469,7 +469,7 @@
           ],
           "fixture-unknown-ret07": [
             {
-              "generated_at_ms": 1792050328036,
+              "generated_at_ms": 1792052210493,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -521,7 +521,7 @@
               }
             },
             {
-              "generated_at_ms": 1792050328039,
+              "generated_at_ms": 1792052210495,
               "granularity": "hour",
               "coverage": {
                 "scope": "requested_ranges",
@@ -574,7 +574,7 @@
             }
           ],
           "rawOnlyQuery": {
-            "generated_at_ms": 1792050328049,
+            "generated_at_ms": 1792052210505,
             "granularity": "hour",
             "coverage": {
               "scope": "time_range",
@@ -601,6 +601,22 @@
           "retainedProjectionCount": 4
         },
         "pricingSource": {
+          "contextTierRows": [
+            {
+              "cache_configured": 0,
+              "cache_creation_configured": 0,
+              "cache_creation_per_1m": 0,
+              "cache_per_1m": 0,
+              "cache_read_configured": 0,
+              "cache_read_per_1m": 0,
+              "completion_configured": 1,
+              "completion_per_1m": 8,
+              "model": "fixture-paid-ret07",
+              "prompt_configured": 1,
+              "prompt_per_1m": 2,
+              "threshold_tokens": 50
+            }
+          ],
           "coveredPricingEvents": [
             {
               "eventHash": "6caa3b6be7d27c5c32e513de42757365eb41885b2e1b5f4555da23afc5221efa",
@@ -617,7 +633,7 @@
                 },
                 "explicitZero": false,
                 "model": "fixture-manual-ret07",
-                "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+                "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
                 "provider": "codex",
                 "rates": {
                   "cacheCreationPer1M": 3.75,
@@ -652,14 +668,14 @@
                 },
                 "explicitZero": false,
                 "model": "fixture-paid-ret07",
-                "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+                "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
                 "provider": "codex",
                 "rates": {
                   "cacheCreationPer1M": 0,
                   "cachePer1M": 0.2,
                   "cacheReadPer1M": 0,
-                  "completionPer1M": 8,
-                  "promptPer1M": 2
+                  "completionPer1M": 16,
+                  "promptPer1M": 4
                 },
                 "source": "manual",
                 "sourceModelID": "",
@@ -687,7 +703,7 @@
                 },
                 "explicitZero": true,
                 "model": "fixture-free-ret07",
-                "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+                "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
                 "provider": "codex",
                 "rates": {
                   "cacheCreationPer1M": 0,
@@ -717,7 +733,7 @@
                 "configuredFields": {},
                 "explicitZero": false,
                 "model": "fixture-unknown-ret07",
-                "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+                "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
                 "provider": "codex",
                 "rates": {},
                 "source": "",
@@ -784,19 +800,68 @@
               "cache_read_configured": 0,
               "cache_read_per_1m": 0,
               "completion_configured": 1,
-              "completion_per_1m": 8,
+              "completion_per_1m": 16,
               "model": "fixture-paid-ret07",
               "prompt_configured": 1,
-              "prompt_per_1m": 2,
+              "prompt_per_1m": 4,
               "source": "manual",
               "source_model_id": null
             }
           ],
-          "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+          "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
           "retainedPricingSourceComplete": true,
           "unknownUnpricedEvents": [
             4
           ]
+        },
+        "tierSelection": {
+          "baseFallbackUSD": 0.00056,
+          "basePrices": [
+            {
+              "completion_per_1m": 16,
+              "prompt_per_1m": 4
+            }
+          ],
+          "contextTiers": [
+            {
+              "cache_configured": 0,
+              "cache_creation_configured": 0,
+              "cache_creation_per_1m": 0,
+              "cache_per_1m": 0,
+              "cache_read_configured": 0,
+              "cache_read_per_1m": 0,
+              "completion_configured": 1,
+              "completion_per_1m": 8,
+              "model": "fixture-paid-ret07",
+              "prompt_configured": 1,
+              "prompt_per_1m": 2,
+              "threshold_tokens": 50
+            }
+          ],
+          "eventID": 2,
+          "historicalTierUSD": 0.00028,
+          "normalizedInputTokens": 100,
+          "outputTokens": 10,
+          "persistedBands": [
+            {
+              "calls": 1,
+              "context_threshold_tokens": 50,
+              "input_tokens": 100,
+              "output_tokens": 10
+            }
+          ],
+          "predicate": "normalized_input_tokens \u003e threshold_tokens",
+          "retainedProjection": [
+            {
+              "event_id": 2,
+              "input_tokens": 100,
+              "normalized_total_input_tokens": 100,
+              "output_tokens": 10
+            }
+          ],
+          "selectedContextThreshold": 50,
+          "thresholdTokens": 50,
+          "tierWasExercised": true
         }
       },
       "status": "runtime-pass",

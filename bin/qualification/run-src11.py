@@ -212,7 +212,8 @@ def main():
                                   "user": f"{os.getuid()}:{os.getgid()}"}
         if args.evidence_archive:
             build["sealedEvidenceArchiveSHA256"] = digest(args.evidence_archive)
-            pin_path = ROOT / "tests/fixtures/phase4a-evidence/bak-01/source-provenance.json" if bak01 else module.PIN
+            pin_case = "ret-07" if ret07 else "bak-01" if bak01 else None
+            pin_path = ROOT / f"tests/fixtures/phase4a-evidence/{pin_case}/source-provenance.json" if pin_case else module.PIN
             build["sealedArtifactPinSHA256"] = digest(pin_path)
         run(command, output / "replay-execution.log", env=env)
         build["executionCommand"] = command

@@ -19,7 +19,7 @@
     "status": "ready",
     "coverage_event_id": 4,
     "target_event_id": 4,
-    "updated_at_ms": 1792050321542
+    "updated_at_ms": 1792052197165
   },
   "readiness": {
     "migration_ready": true,
@@ -44,9 +44,9 @@
     "freelist_count": 0,
     "reclaimable_bytes": 0,
     "database_bytes": 659456,
-    "wal_bytes": 1796352,
+    "wal_bytes": 1755152,
     "shm_bytes": 32768,
-    "total_bytes": 2488576
+    "total_bytes": 2447376
   },
   "compact_requires_stopped_server": true
 }

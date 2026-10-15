@@ -472,6 +472,23 @@ def verify_historical_source(root: Path, archive: Path | None) -> bool:
     return True
 
 
+def verify_sealed_clean_checkout(root: Path, pin: dict[str, Any]) -> None:
+    clean = read(root, "sealed-clean-checkout-replay.json")
+    require(clean.get("materializedArchiveSHA256") == pin.get("archiveSHA256") and
+            clean.get("workingTreeStatus") == "clean", "sealed clean checkout input mismatch")
+    for platform in ("linux", "macos"):
+        run = clean.get("platforms", {}).get(platform, {})
+        result, runner = run.get("runtimeResult", {}), run.get("runner", {})
+        require(run.get("executionExitCode") == 0 and run.get("newRootRecovery") is True and
+                result.get("inputBundleDigest") == pin.get("sourceBundleDigest") and
+                result.get("runtimeEvidence") == "pass" and result.get("casePass") is False and
+                result.get("onlineRawComplete") is False and result.get("rawEventCount") == 0,
+                f"{platform} sealed clean checkout runtime failed")
+        require(runner.get("codeCommit") == clean.get("testedCommit") and
+                runner.get("sealedEvidenceArchiveSHA256") == pin.get("archiveSHA256") and
+                runner.get("executionExitCode") == 0, f"{platform} sealed clean checkout runner mismatch")
+
+
 def verify(root: Path, archive: Path | None = None, historical_archive: Path | None = None) -> dict[str, Any]:
     manifest = verify_manifest(root)
     profile = verify_profile(root)
@@ -486,13 +503,14 @@ def verify(root: Path, archive: Path | None = None, historical_archive: Path | N
     verify_clean_checkout(root, generation["GeneratorCodeCommit"], source_bundle)
     original_bytes_verified = verify_artifact(root, archive)
     historical_bytes_verified = verify_historical_source(root, historical_archive)
+    verify_sealed_clean_checkout(root, provenance["sourceArtifact"])
     require(manifest.get("authority", {}).get("casePass") is False, "manifest casePass must remain false")
     require(provenance.get("casePass") is False and runner.get("UpgradeAuthorized") is False,
             "provenance/runner authority boundary changed")
     return {
         "caseID": "RET-07",
-        "status": "pass",
-        "runtimeEvidence": "pass",
+        "status": "pass" if original_bytes_verified and historical_bytes_verified else "metadata-pass",
+        "runtimeEvidence": "pass" if original_bytes_verified and historical_bytes_verified else "recorded-pass",
         "originalSourceBytesVerified": original_bytes_verified,
         "historicalOriginalBytesVerified": historical_bytes_verified,
         "verificationScope": "original-source-bytes-and-evidence" if original_bytes_verified else "committed-evidence-metadata-only",

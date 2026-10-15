@@ -1,13 +1,13 @@
 {
   "archiveEventCount": 4,
-  "backupManifestDigest": "b802fd49030493d371de8a86461afd0fe141cc0f70f8025b06913be61c27013c",
+  "backupManifestDigest": "30ac1a33ade293352a0c6a5581a70a3b7405074bc360a848d6b9bac4c70fe0e2",
   "inventoryMatched": true,
   "newRoot": true,
   "queries": {
     "analytics": {
       "": [
         {
-          "generated_at_ms": 1792050333199,
+          "generated_at_ms": 1792052210107,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -59,7 +59,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050333202,
+          "generated_at_ms": 1792052210109,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -113,7 +113,7 @@
       ],
       "fixture-free-ret07": [
         {
-          "generated_at_ms": 1792050333169,
+          "generated_at_ms": 1792052210078,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -165,7 +165,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050333172,
+          "generated_at_ms": 1792052210081,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -219,7 +219,7 @@
       ],
       "fixture-manual-ret07": [
         {
-          "generated_at_ms": 1792050333177,
+          "generated_at_ms": 1792052210086,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -271,7 +271,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050333180,
+          "generated_at_ms": 1792052210089,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -325,7 +325,7 @@
       ],
       "fixture-paid-ret07": [
         {
-          "generated_at_ms": 1792050333185,
+          "generated_at_ms": 1792052210093,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -377,7 +377,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050333188,
+          "generated_at_ms": 1792052210095,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -431,7 +431,7 @@
       ],
       "fixture-unknown-ret07": [
         {
-          "generated_at_ms": 1792050333192,
+          "generated_at_ms": 1792052210100,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -483,7 +483,7 @@
           }
         },
         {
-          "generated_at_ms": 1792050333195,
+          "generated_at_ms": 1792052210103,
           "granularity": "hour",
           "coverage": {
             "scope": "requested_ranges",
@@ -536,7 +536,7 @@
         }
       ],
       "rawOnlyQuery": {
-        "generated_at_ms": 1792050333208,
+        "generated_at_ms": 1792052210113,
         "granularity": "hour",
         "coverage": {
           "scope": "time_range",
@@ -563,6 +563,22 @@
       "retainedProjectionCount": 4
     },
     "pricingSource": {
+      "contextTierRows": [
+        {
+          "cache_configured": 0,
+          "cache_creation_configured": 0,
+          "cache_creation_per_1m": 0,
+          "cache_per_1m": 0,
+          "cache_read_configured": 0,
+          "cache_read_per_1m": 0,
+          "completion_configured": 1,
+          "completion_per_1m": 8,
+          "model": "fixture-paid-ret07",
+          "prompt_configured": 1,
+          "prompt_per_1m": 2,
+          "threshold_tokens": 50
+        }
+      ],
       "coveredPricingEvents": [
         {
           "eventHash": "6caa3b6be7d27c5c32e513de42757365eb41885b2e1b5f4555da23afc5221efa",
@@ -579,7 +595,7 @@
             },
             "explicitZero": false,
             "model": "fixture-manual-ret07",
-            "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+            "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
             "provider": "codex",
             "rates": {
               "cacheCreationPer1M": 3.75,
@@ -614,14 +630,14 @@
             },
             "explicitZero": false,
             "model": "fixture-paid-ret07",
-            "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+            "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
             "provider": "codex",
             "rates": {
               "cacheCreationPer1M": 0,
               "cachePer1M": 0.2,
               "cacheReadPer1M": 0,
-              "completionPer1M": 8,
-              "promptPer1M": 2
+              "completionPer1M": 16,
+              "promptPer1M": 4
             },
             "source": "manual",
             "sourceModelID": "",
@@ -649,7 +665,7 @@
             },
             "explicitZero": true,
             "model": "fixture-free-ret07",
-            "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+            "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
             "provider": "codex",
             "rates": {
               "cacheCreationPer1M": 0,
@@ -679,7 +695,7 @@
             "configuredFields": {},
             "explicitZero": false,
             "model": "fixture-unknown-ret07",
-            "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+            "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
             "provider": "codex",
             "rates": {},
             "source": "",
@@ -746,23 +762,72 @@
           "cache_read_configured": 0,
           "cache_read_per_1m": 0,
           "completion_configured": 1,
-          "completion_per_1m": 8,
+          "completion_per_1m": 16,
           "model": "fixture-paid-ret07",
           "prompt_configured": 1,
-          "prompt_per_1m": 2,
+          "prompt_per_1m": 4,
           "source": "manual",
           "source_model_id": null
         }
       ],
-      "pricingRevision": "model-1:identity-3:codex-2:context-v1:8a5c64e02bcecce26efc14e73b9b60c98329575eca80301273016acd6ede7848",
+      "pricingRevision": "model-1:identity-3:codex-2:context-v1:64bf3111b21056e2d81a454937b07a18965aeb0c347890456f60d1b507562931",
       "retainedPricingSourceComplete": true,
       "unknownUnpricedEvents": [
         4
       ]
+    },
+    "tierSelection": {
+      "baseFallbackUSD": 0.00056,
+      "basePrices": [
+        {
+          "completion_per_1m": 16,
+          "prompt_per_1m": 4
+        }
+      ],
+      "contextTiers": [
+        {
+          "cache_configured": 0,
+          "cache_creation_configured": 0,
+          "cache_creation_per_1m": 0,
+          "cache_per_1m": 0,
+          "cache_read_configured": 0,
+          "cache_read_per_1m": 0,
+          "completion_configured": 1,
+          "completion_per_1m": 8,
+          "model": "fixture-paid-ret07",
+          "prompt_configured": 1,
+          "prompt_per_1m": 2,
+          "threshold_tokens": 50
+        }
+      ],
+      "eventID": 2,
+      "historicalTierUSD": 0.00028,
+      "normalizedInputTokens": 100,
+      "outputTokens": 10,
+      "persistedBands": [
+        {
+          "calls": 1,
+          "context_threshold_tokens": 50,
+          "input_tokens": 100,
+          "output_tokens": 10
+        }
+      ],
+      "predicate": "normalized_input_tokens \u003e threshold_tokens",
+      "retainedProjection": [
+        {
+          "event_id": 2,
+          "input_tokens": 100,
+          "normalized_total_input_tokens": 100,
+          "output_tokens": 10
+        }
+      ],
+      "selectedContextThreshold": 50,
+      "thresholdTokens": 50,
+      "tierWasExercised": true
     }
   },
   "rawEventCount": 0,
   "rawStillDeleted": true,
-  "restoredManifestDigest": "b802fd49030493d371de8a86461afd0fe141cc0f70f8025b06913be61c27013c",
+  "restoredManifestDigest": "30ac1a33ade293352a0c6a5581a70a3b7405074bc360a848d6b9bac4c70fe0e2",
   "retainedProjectionCount": 4
 }
