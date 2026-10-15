@@ -200,6 +200,71 @@ type collectorAssertionJSON struct {
 	ExpectedOutcome bootstrap.CollectorOutcome
 }
 
+type prefixObservationJSON struct {
+	CurrentInstallationID    string
+	CurrentRoutingRevision   uint64
+	CurrentEffectivePath     string
+	PublicIdentityHealthy    bool
+	StaticAssetsHealthy      bool
+	APIAuthenticationHealthy bool
+}
+
+func (o prefixObservationJSON) domain() bootstrap.PrefixRecoveryObservation {
+	return bootstrap.PrefixRecoveryObservation{
+		CurrentInstallationID:    o.CurrentInstallationID,
+		CurrentRoutingRevision:   o.CurrentRoutingRevision,
+		CurrentEffectivePath:     o.CurrentEffectivePath,
+		PublicIdentityHealthy:    o.PublicIdentityHealthy,
+		StaticAssetsHealthy:      o.StaticAssetsHealthy,
+		APIAuthenticationHealthy: o.APIAuthenticationHealthy,
+	}
+}
+
+type prefixAssertionJSON struct {
+	ID                             string
+	OperationID                    bootstrap.OperationID
+	InstallationID                 string
+	CurrentInstallationID          string
+	ExpectedRoutingRevision        uint64
+	CurrentRoutingRevision         uint64
+	PreviousVerifiedEffectivePath  string
+	DesiredControlBasePath         string
+	VerifiedEffectivePath          string
+	Impact                         bootstrap.PrefixImpact
+	Stage                          bootstrap.PrefixOperationStage
+	AuthorityQualified             bool
+	CollisionFree                  bool
+	PublicIdentityHealthy          bool
+	StaticAssetsHealthy            bool
+	APIAuthenticationHealthy       bool
+	Result                         bootstrap.PrefixOperationResult
+	ExpectedAction                 bootstrap.PrefixRecoveryAction
+	Observation                    *prefixObservationJSON
+	ExpectedCompleteAfterObservation bool
+	ExpectedConditionalRestore       bool
+}
+
+func (p prefixAssertionJSON) domain() bootstrap.PrefixOperation {
+	return bootstrap.PrefixOperation{
+		OperationID:                   p.OperationID,
+		InstallationID:                p.InstallationID,
+		CurrentInstallationID:         p.CurrentInstallationID,
+		ExpectedRoutingRevision:       p.ExpectedRoutingRevision,
+		CurrentRoutingRevision:        p.CurrentRoutingRevision,
+		PreviousVerifiedEffectivePath: p.PreviousVerifiedEffectivePath,
+		DesiredControlBasePath:        p.DesiredControlBasePath,
+		VerifiedEffectivePath:         p.VerifiedEffectivePath,
+		Impact:                        p.Impact,
+		Stage:                         p.Stage,
+		AuthorityQualified:            p.AuthorityQualified,
+		CollisionFree:                 p.CollisionFree,
+		PublicIdentityHealthy:         p.PublicIdentityHealthy,
+		StaticAssetsHealthy:           p.StaticAssetsHealthy,
+		APIAuthenticationHealthy:      p.APIAuthenticationHealthy,
+		Result:                        p.Result,
+	}
+}
+
 type fixture struct {
 	Schema                      string `json:"$schema"`
 	SchemaVersion               int
@@ -215,6 +280,7 @@ type fixture struct {
 	ClassificationAssertions    []classificationJSON
 	OperationConflictAssertions []operationConflictJSON
 	CollectorAssertions         []collectorAssertionJSON
+	PrefixAssertions            []prefixAssertionJSON
 	GlobalAssertions            []string
 }
 
@@ -337,6 +403,10 @@ func validateSchemaValue(value any, schema, root map[string]any) error {
 	case "boolean":
 		if _, ok := value.(bool); !ok {
 			return fmt.Errorf("want boolean, got %T", value)
+		}
+	case "number":
+		if _, ok := value.(float64); !ok {
+			return fmt.Errorf("want number, got %T", value)
 		}
 	case "string":
 		s, ok := value.(string)
@@ -533,7 +603,30 @@ func TestCheckedInContract(t *testing.T) {
 			t.Fatalf("missing path %s", id)
 		}
 	}
+	wantClassificationIDs := map[string]bool{
+		"no_v1_is_fresh": true,
+		"schema_c_without_authority_is_unsupported": true,
+		"verified_exact_ready_is_upgrade": true,
+		"verified_hop_ready_is_upgrade": true,
+		"verified_but_blocked_is_recovery": true,
+		"offline_required_is_recovery": true,
+		"unknown_newer_same_shape_is_unsupported": true,
+		"damaged_state_overrides": true,
+		"completed_is_terminal": true,
+		"checkpoint_incomplete_is_recovery": true,
+		"historical_authority_incomplete_is_recovery": true,
+		"administrator_unverifiable_is_recovery": true,
+		"completed_with_uninitialized_admin_is_recovery": true,
+	}
+	if len(f.ClassificationAssertions) != len(wantClassificationIDs) {
+		t.Fatalf("got %d classification cases, want %d", len(f.ClassificationAssertions), len(wantClassificationIDs))
+	}
+	seenClassificationIDs := map[string]bool{}
 	for _, assertion := range f.ClassificationAssertions {
+		if !wantClassificationIDs[assertion.ID] || seenClassificationIDs[assertion.ID] {
+			t.Fatalf("unexpected or duplicate classification case %q", assertion.ID)
+		}
+		seenClassificationIDs[assertion.ID] = true
 		var admission *bootstrap.UpgradeAdmission
 		if assertion.Admission != nil {
 			value := assertion.Admission.domain()
@@ -562,7 +655,6 @@ func TestCheckedInContract(t *testing.T) {
 		"cpa_update_vs_cutover": true,
 		"cutover_vs_prefix_apply": true,
 		"same_migration_operation_reobserve": true,
-		"migration_vs_cpa_update_independent": true,
 	}
 	if len(f.OperationConflictAssertions) != len(wantConflictIDs) {
 		t.Fatalf("got %d operation conflict cases, want %d", len(f.OperationConflictAssertions), len(wantConflictIDs))
@@ -573,7 +665,11 @@ func TestCheckedInContract(t *testing.T) {
 			t.Fatalf("unexpected or duplicate operation conflict case %q", assertion.ID)
 		}
 		seenConflictIDs[assertion.ID] = true
-		got, err := bootstrap.EvaluateOperationConflict(assertion.Active, assertion.Requested, assertion.Scope, assertion.SameOperationID)
+		scope, err := bootstrap.ClassifyOperationConflictScope(assertion.Active, assertion.Requested)
+		if err != nil || scope != assertion.Scope {
+			t.Fatalf("%s: scope got=%q err=%v want=%q", assertion.ID, scope, err, assertion.Scope)
+		}
+		got, err := bootstrap.EvaluateOperationConflict(assertion.Active, assertion.Requested, assertion.SameOperationID)
 		if err != nil || got != assertion.ExpectedDecision {
 			t.Fatalf("%s: conflict got=%q err=%v want=%q", assertion.ID, got, err, assertion.ExpectedDecision)
 		}
@@ -595,6 +691,37 @@ func TestCheckedInContract(t *testing.T) {
 		got, err := bootstrap.CollectorOutcomeFor(assertion.Condition)
 		if err != nil || got != assertion.ExpectedOutcome {
 			t.Fatalf("%s: Collector got=%q err=%v want=%q", assertion.ID, got, err, assertion.ExpectedOutcome)
+		}
+	}
+	wantPrefixIDs := map[string]bool{
+		"lost_result_healthy_target_can_complete": true,
+		"lost_result_unhealthy_target_can_restore": true,
+		"stale_revision_refuses_prefix_recovery": true,
+		"committed_applied_prefix_is_complete": true,
+		"effective_mismatch_requires_resolution": true,
+	}
+	if len(f.PrefixAssertions) != len(wantPrefixIDs) {
+		t.Fatalf("got %d prefix cases, want %d", len(f.PrefixAssertions), len(wantPrefixIDs))
+	}
+	seenPrefixIDs := map[string]bool{}
+	for _, assertion := range f.PrefixAssertions {
+		if !wantPrefixIDs[assertion.ID] || seenPrefixIDs[assertion.ID] {
+			t.Fatalf("unexpected or duplicate prefix case %q", assertion.ID)
+		}
+		seenPrefixIDs[assertion.ID] = true
+		op := assertion.domain()
+		action, err := bootstrap.PrefixActionAfterOperation(op)
+		if err != nil || action != assertion.ExpectedAction {
+			t.Fatalf("%s: prefix action got=%q err=%v want=%q", assertion.ID, action, err, assertion.ExpectedAction)
+		}
+		if assertion.Observation != nil {
+			obs := assertion.Observation.domain()
+			if got := bootstrap.CanCompletePrefixAfterObservation(op, obs); got != assertion.ExpectedCompleteAfterObservation {
+				t.Fatalf("%s: complete-after-observation got=%v want=%v", assertion.ID, got, assertion.ExpectedCompleteAfterObservation)
+			}
+			if got := bootstrap.CanConditionallyRestorePrefix(op, obs); got != assertion.ExpectedConditionalRestore {
+				t.Fatalf("%s: conditional-restore got=%v want=%v", assertion.ID, got, assertion.ExpectedConditionalRestore)
+			}
 		}
 	}
 	wantGlobal := []string{
@@ -644,6 +771,11 @@ func TestCheckedInContract(t *testing.T) {
 		"fresh_claim_revision_cas_single_winner",
 		"operation_conflict_scoped_not_global",
 		"fixture_required_case_ids_locked",
+		"control_base_path_rejects_encoded_backslash_bypass",
+		"conflict_scope_server_classified",
+		"writable_grant_requires_historical_authority",
+		"prefix_conditional_recovery_fail_closed",
+		"classification_fixture_ids_locked",
 	}
 	if !setEqual(f.GlobalAssertions, wantGlobal) {
 		t.Fatal("global contract assertions drifted")
@@ -736,6 +868,10 @@ func TestEvidenceReadinessAndGrantRemainIndependent(t *testing.T) {
 		bootstrap.SourceRevalidation,
 		bootstrap.WritableMigration,
 	}
+	history := bootstrap.HistoricalEvidence{
+		SourceState: bootstrap.HistoryFullRaw,
+		AuthorityStatus: bootstrap.HistoryAvailable,
+	}
 	base := bootstrap.WritablePreconditions{
 		Mode:              bootstrap.Upgrade,
 		Admission:         admission,
@@ -745,6 +881,7 @@ func TestEvidenceReadinessAndGrantRemainIndependent(t *testing.T) {
 			CacheAccounting: bootstrap.CheckpointComplete,
 			QuotaSnapshot: bootstrap.CheckpointComplete,
 		},
+		HistoricalEvidence:        &history,
 		ManagerAuthorityQualified: true,
 		Ordering:                  ordering,
 	}
@@ -760,6 +897,11 @@ func TestEvidenceReadinessAndGrantRemainIndependent(t *testing.T) {
 		{"authority unqualified", func(p *bootstrap.WritablePreconditions) { p.ManagerAuthorityQualified = false }},
 		{"cache checkpoint incomplete", func(p *bootstrap.WritablePreconditions) { p.RequiredCheckpoints.CacheAccounting = bootstrap.CheckpointPending }},
 		{"quota checkpoint incomplete", func(p *bootstrap.WritablePreconditions) { p.RequiredCheckpoints.QuotaSnapshot = bootstrap.CheckpointPending }},
+		{"historical authority missing", func(p *bootstrap.WritablePreconditions) { p.HistoricalEvidence = nil }},
+		{"historical authority incomplete", func(p *bootstrap.WritablePreconditions) {
+			value := bootstrap.HistoricalEvidence{SourceState: bootstrap.HistoryIncomplete, AuthorityStatus: bootstrap.HistoryIndeterminate}
+			p.HistoricalEvidence = &value
+		}},
 		{"readiness blocked", func(p *bootstrap.WritablePreconditions) { p.Admission.Readiness = bootstrap.BridgeBlocked }},
 		{"source unverified", func(p *bootstrap.WritablePreconditions) { p.Admission.EvidenceStatus = bootstrap.SourceUnverified }},
 		{"ordering broken", func(p *bootstrap.WritablePreconditions) {
@@ -787,6 +929,10 @@ func TestForwardHopGrantRequiresTrustedReceiptQualification(t *testing.T) {
 	admission := exactAdmission()
 	admission.EvidenceStatus = bootstrap.ForwardHopVerified
 	admission.ForwardHopEvidenceRef = "evidence:hop"
+	history := bootstrap.HistoricalEvidence{
+		SourceState: bootstrap.HistoryFullRaw,
+		AuthorityStatus: bootstrap.HistoryAvailable,
+	}
 	base := bootstrap.WritablePreconditions{
 		Mode:              bootstrap.Upgrade,
 		Admission:         admission,
@@ -796,6 +942,7 @@ func TestForwardHopGrantRequiresTrustedReceiptQualification(t *testing.T) {
 			CacheAccounting: bootstrap.CheckpointComplete,
 			QuotaSnapshot: bootstrap.CheckpointComplete,
 		},
+		HistoricalEvidence:        &history,
 		ManagerAuthorityQualified: true,
 		Ordering: []bootstrap.MigrationStage{
 			bootstrap.ReadOnlyClassification,
@@ -1216,8 +1363,13 @@ func TestDiscoveryPrefixAndJournalFailClosed(t *testing.T) {
 	}
 
 	prefix := bootstrap.PrefixOperation{
-		OperationID: "operation-1000", ExpectedRoutingRevision: 7, CurrentRoutingRevision: 7,
-		DesiredControlBasePath: "/admin-x", AuthorityQualified: true, CollisionFree: true,
+		OperationID: "operation-1000",
+		InstallationID: "install-a", CurrentInstallationID: "install-a",
+		ExpectedRoutingRevision: 7, CurrentRoutingRevision: 7,
+		PreviousVerifiedEffectivePath: "/admin-old",
+		DesiredControlBasePath: "/admin-x",
+		Impact: bootstrap.PrefixControlRouteOnly, Stage: bootstrap.PrefixHealthVerified,
+		AuthorityQualified: true, CollisionFree: true,
 		PublicIdentityHealthy: true, StaticAssetsHealthy: true, APIAuthenticationHealthy: true,
 		Result: bootstrap.PrefixPending,
 	}
@@ -1229,6 +1381,7 @@ func TestDiscoveryPrefixAndJournalFailClosed(t *testing.T) {
 		t.Fatal("routing CAS conflict accepted")
 	}
 	prefix.CurrentRoutingRevision = 7
+	prefix.Stage = bootstrap.PrefixRouteActivated
 	prefix.Result = bootstrap.PrefixUnknown
 	action, err := bootstrap.PrefixActionAfterOperation(prefix)
 	if err != nil || action != bootstrap.PrefixInspectFirst {
@@ -1322,9 +1475,40 @@ func TestDiscoveryPrefixAndJournalFailClosed(t *testing.T) {
 	}
 
 	if _, err := bootstrap.EvaluateOperationConflict(
-		bootstrap.OperationMigration, bootstrap.OperationMaintenance, bootstrap.ConflictManagerStore, true,
+		bootstrap.OperationMigration, bootstrap.OperationMaintenance, true,
 	); err == nil {
 		t.Fatal("same operation id was allowed to change operation class")
+	}
+	if _, err := bootstrap.ClassifyOperationConflictScope(
+		bootstrap.OperationMigration, bootstrap.OperationCPAUpdate,
+	); err == nil {
+		t.Fatal("unfrozen operation pair was prematurely classified")
+	}
+}
+
+func TestControlBasePathRejectsEncodedAndBackslashBypasses(t *testing.T) {
+	base := bootstrap.PrefixOperation{
+		OperationID: "operation-2000",
+		InstallationID: "install-a", CurrentInstallationID: "install-a",
+		ExpectedRoutingRevision: 9, CurrentRoutingRevision: 9,
+		PreviousVerifiedEffectivePath: "/old-control",
+		DesiredControlBasePath: "/valid-control",
+		Impact: bootstrap.PrefixControlRouteOnly,
+		Stage: bootstrap.PrefixIntentPersisted,
+		Result: bootstrap.PrefixPending,
+	}
+	for _, target := range []string{
+		"", "/", "/admin/", "/admin//x", "/admin/../x", "/admin/./x",
+		"/admin/%2e%2e/x", "/admin/%2f/x", "/admin/%252e%252e/x",
+		"/admin\\x", "/admin x", "/admin?x", "/admin#x",
+	} {
+		t.Run(target, func(t *testing.T) {
+			value := base
+			value.DesiredControlBasePath = target
+			if err := value.Validate(); err == nil {
+				t.Fatalf("unsafe controlBasePath accepted: %q", target)
+			}
+		})
 	}
 }
 

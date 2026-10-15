@@ -18,6 +18,7 @@
     "classificationAssertions",
     "operationConflictAssertions",
     "collectorAssertions",
+    "prefixAssertions",
     "globalAssertions"
   ],
   "properties": {
@@ -138,12 +139,14 @@
       "minItems": 13,
       "items": {
         "$ref": "#/$defs/classificationAssertion"
-      }
+      },
+      "maxItems": 13,
+      "uniqueItems": true
     },
     "globalAssertions": {
       "type": "array",
-      "minItems": 46,
-      "maxItems": 46,
+      "minItems": 51,
+      "maxItems": 51,
       "uniqueItems": true,
       "items": {
         "enum": [
@@ -192,17 +195,22 @@
           "journal_domain_specific_authority_fence",
           "fresh_claim_revision_cas_single_winner",
           "operation_conflict_scoped_not_global",
-          "fixture_required_case_ids_locked"
+          "fixture_required_case_ids_locked",
+          "control_base_path_rejects_encoded_backslash_bypass",
+          "conflict_scope_server_classified",
+          "writable_grant_requires_historical_authority",
+          "prefix_conditional_recovery_fail_closed",
+          "classification_fixture_ids_locked"
         ]
       }
     },
     "operationConflictAssertions": {
       "type": "array",
-      "minItems": 6,
+      "minItems": 5,
       "items": {
         "$ref": "#/$defs/operationConflictAssertion"
       },
-      "maxItems": 6,
+      "maxItems": 5,
       "uniqueItems": true
     },
     "collectorAssertions": {
@@ -213,6 +221,15 @@
       },
       "maxItems": 3,
       "uniqueItems": true
+    },
+    "prefixAssertions": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/prefixAssertion"
+      }
     }
   },
   "$defs": {
@@ -564,8 +581,21 @@
       ],
       "properties": {
         "id": {
-          "type": "string",
-          "minLength": 1
+          "enum": [
+            "no_v1_is_fresh",
+            "schema_c_without_authority_is_unsupported",
+            "verified_exact_ready_is_upgrade",
+            "verified_hop_ready_is_upgrade",
+            "verified_but_blocked_is_recovery",
+            "offline_required_is_recovery",
+            "unknown_newer_same_shape_is_unsupported",
+            "damaged_state_overrides",
+            "completed_is_terminal",
+            "checkpoint_incomplete_is_recovery",
+            "historical_authority_incomplete_is_recovery",
+            "administrator_unverifiable_is_recovery",
+            "completed_with_uninitialized_admin_is_recovery"
+          ]
         },
         "hasV1ProductState": {
           "type": "boolean"
@@ -757,16 +787,14 @@
         "expectedDecision": {
           "enum": [
             "blocked",
-            "inspect_existing",
-            "no_contract_block"
+            "inspect_existing"
           ]
         },
         "scope": {
           "enum": [
             "manager_store",
             "runtime_target",
-            "routing_deployment",
-            "independent_resource"
+            "routing_deployment"
           ]
         }
       }
@@ -797,6 +825,163 @@
             "queue_window",
             "gap_or_unknown"
           ]
+        }
+      }
+    },
+    "prefixObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currentInstallationID",
+        "currentRoutingRevision",
+        "currentEffectivePath",
+        "publicIdentityHealthy",
+        "staticAssetsHealthy",
+        "apiAuthenticationHealthy"
+      ],
+      "properties": {
+        "currentInstallationID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "currentRoutingRevision": {
+          "type": "number"
+        },
+        "currentEffectivePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "publicIdentityHealthy": {
+          "type": "boolean"
+        },
+        "staticAssetsHealthy": {
+          "type": "boolean"
+        },
+        "apiAuthenticationHealthy": {
+          "type": "boolean"
+        }
+      }
+    },
+    "prefixAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "operationID",
+        "installationID",
+        "currentInstallationID",
+        "expectedRoutingRevision",
+        "currentRoutingRevision",
+        "previousVerifiedEffectivePath",
+        "desiredControlBasePath",
+        "verifiedEffectivePath",
+        "impact",
+        "stage",
+        "authorityQualified",
+        "collisionFree",
+        "publicIdentityHealthy",
+        "staticAssetsHealthy",
+        "apiAuthenticationHealthy",
+        "result",
+        "expectedAction",
+        "observation",
+        "expectedCompleteAfterObservation",
+        "expectedConditionalRestore"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "lost_result_healthy_target_can_complete",
+            "lost_result_unhealthy_target_can_restore",
+            "stale_revision_refuses_prefix_recovery",
+            "committed_applied_prefix_is_complete",
+            "effective_mismatch_requires_resolution"
+          ]
+        },
+        "operationID": {
+          "type": "string",
+          "minLength": 8
+        },
+        "installationID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "currentInstallationID": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedRoutingRevision": {
+          "type": "number"
+        },
+        "currentRoutingRevision": {
+          "type": "number"
+        },
+        "previousVerifiedEffectivePath": {
+          "type": "string"
+        },
+        "desiredControlBasePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verifiedEffectivePath": {
+          "type": "string"
+        },
+        "impact": {
+          "const": "control_route_only"
+        },
+        "stage": {
+          "enum": [
+            "intent_persisted",
+            "route_activated",
+            "health_verified",
+            "committed"
+          ]
+        },
+        "authorityQualified": {
+          "type": "boolean"
+        },
+        "collisionFree": {
+          "type": "boolean"
+        },
+        "publicIdentityHealthy": {
+          "type": "boolean"
+        },
+        "staticAssetsHealthy": {
+          "type": "boolean"
+        },
+        "apiAuthenticationHealthy": {
+          "type": "boolean"
+        },
+        "result": {
+          "enum": [
+            "pending",
+            "applied",
+            "unknown",
+            "conflict"
+          ]
+        },
+        "expectedAction": {
+          "enum": [
+            "inspect_first",
+            "complete",
+            "resolve_conflict"
+          ]
+        },
+        "observation": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/prefixObservation"
+            }
+          ]
+        },
+        "expectedCompleteAfterObservation": {
+          "type": "boolean"
+        },
+        "expectedConditionalRestore": {
+          "type": "boolean"
         }
       }
     }

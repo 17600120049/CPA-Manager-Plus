@@ -329,13 +329,16 @@ type WritablePreconditions struct {
 	BackupVerified             bool
 	SourceRevalidated          bool
 	RequiredCheckpoints        RequiredMigrationCheckpoints
+	HistoricalEvidence         *HistoricalEvidence
 	ManagerAuthorityQualified  bool
 	TrustedForwardHopQualified bool
 	Ordering                   []MigrationStage
 }
 
 func CanIssueWritableGrant(p WritablePreconditions) bool {
-	if p.Mode != Upgrade || !p.BackupVerified || !p.SourceRevalidated || !p.RequiredCheckpoints.Complete() || !p.ManagerAuthorityQualified {
+	if p.Mode != Upgrade || !p.BackupVerified || !p.SourceRevalidated ||
+		!p.RequiredCheckpoints.Complete() || p.HistoricalEvidence == nil ||
+		!p.HistoricalEvidence.MigrationReady() || !p.ManagerAuthorityQualified {
 		return false
 	}
 	if p.Admission.Validate() != nil || !p.Admission.trustedSource() || p.Admission.Readiness != BridgeReady {

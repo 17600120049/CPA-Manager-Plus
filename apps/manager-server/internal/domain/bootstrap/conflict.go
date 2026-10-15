@@ -27,47 +27,67 @@ func validOperationClass(value OperationClass) bool {
 type ConflictScope string
 
 const (
-	ConflictManagerStore       ConflictScope = "manager_store"
-	ConflictRuntimeTarget      ConflictScope = "runtime_target"
-	ConflictRoutingDeployment  ConflictScope = "routing_deployment"
-	ConflictIndependentResource ConflictScope = "independent_resource"
+	ConflictManagerStore      ConflictScope = "manager_store"
+	ConflictRuntimeTarget     ConflictScope = "runtime_target"
+	ConflictRoutingDeployment ConflictScope = "routing_deployment"
 )
-
-func validConflictScope(scope ConflictScope) bool {
-	switch scope {
-	case ConflictManagerStore, ConflictRuntimeTarget, ConflictRoutingDeployment, ConflictIndependentResource:
-		return true
-	default:
-		return false
-	}
-}
 
 type OperationConflictDecision string
 
 const (
 	ConflictBlocked         OperationConflictDecision = "blocked"
 	ConflictInspectExisting OperationConflictDecision = "inspect_existing"
-	ConflictNoContractBlock OperationConflictDecision = "no_contract_block"
 )
 
-// EvaluateOperationConflict freezes only the known shared-resource boundary.
-// It intentionally does not define Phase4-04 lock ordering or create a global
-// mutex across unrelated mutation domains.
-func EvaluateOperationConflict(active, requested OperationClass, scope ConflictScope, sameOperationID bool) (OperationConflictDecision, error) {
+func operationPair(a, b OperationClass) string {
+	if a < b {
+		return string(a) + "|" + string(b)
+	}
+	return string(b) + "|" + string(a)
+}
+
+// ClassifyOperationConflictScope is the server-owned classifier for only the
+// conflict pairs that Phase4A-08 is authorized to freeze. Unknown pairs are
+// deliberately left undecided for Phase4-04 rather than globally blocked or
+// prematurely declared independent.
+func ClassifyOperationConflictScope(active, requested OperationClass) (ConflictScope, error) {
 	if !validOperationClass(active) || !validOperationClass(requested) {
 		return "", fmt.Errorf("unknown operation class %q/%q", active, requested)
 	}
-	if !validConflictScope(scope) {
-		return "", fmt.Errorf("unknown conflict scope %q", scope)
+	if active == requested {
+		switch active {
+		case OperationMigration, OperationMaintenance:
+			return ConflictManagerStore, nil
+		case OperationCPAUpdate:
+			return ConflictRuntimeTarget, nil
+		case OperationInstall, OperationRestore, OperationCutover, OperationPrefixApply:
+			return ConflictRoutingDeployment, nil
+		}
+	}
+	switch operationPair(active, requested) {
+	case "install|restore":
+		return ConflictRoutingDeployment, nil
+	case "maintenance|migration":
+		return ConflictManagerStore, nil
+	case "cpa_update|cutover":
+		return ConflictRuntimeTarget, nil
+	case "cutover|prefix_apply":
+		return ConflictRoutingDeployment, nil
+	default:
+		return "", fmt.Errorf("operation conflict scope is deferred for %q/%q", active, requested)
+	}
+}
+
+func EvaluateOperationConflict(active, requested OperationClass, sameOperationID bool) (OperationConflictDecision, error) {
+	_, err := ClassifyOperationConflictScope(active, requested)
+	if err != nil {
+		return "", err
 	}
 	if sameOperationID {
 		if active != requested {
 			return "", fmt.Errorf("same operation id cannot change class from %q to %q", active, requested)
 		}
 		return ConflictInspectExisting, nil
-	}
-	if scope == ConflictIndependentResource {
-		return ConflictNoContractBlock, nil
 	}
 	return ConflictBlocked, nil
 }

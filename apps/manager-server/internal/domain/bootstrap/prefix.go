@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"unicode"
 )
 
 type PrefixOperationResult string
@@ -16,6 +17,21 @@ const (
 	PrefixConflict PrefixOperationResult = "conflict"
 )
 
+type PrefixOperationStage string
+
+const (
+	PrefixIntentPersisted PrefixOperationStage = "intent_persisted"
+	PrefixRouteActivated  PrefixOperationStage = "route_activated"
+	PrefixHealthVerified  PrefixOperationStage = "health_verified"
+	PrefixCommitted       PrefixOperationStage = "committed"
+)
+
+type PrefixImpact string
+
+const (
+	PrefixControlRouteOnly PrefixImpact = "control_route_only"
+)
+
 type PrefixRecoveryAction string
 
 const (
@@ -24,37 +40,85 @@ const (
 	PrefixResolveConflict PrefixRecoveryAction = "resolve_conflict"
 )
 
+func hexDigit(b byte) bool {
+	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
+}
+
+func containsPercentEncoding(value string) bool {
+	for i := 0; i+2 < len(value); i++ {
+		if value[i] == '%' && hexDigit(value[i+1]) && hexDigit(value[i+2]) {
+			return true
+		}
+	}
+	return false
+}
+
 func validControlBasePath(value string) bool {
-	if value == "" || !strings.HasPrefix(value, "/") || strings.ContainsAny(value, "?#") || strings.Contains(value, "//") || strings.TrimSpace(value) != value {
+	if value == "" || !strings.HasPrefix(value, "/") || value == "/" ||
+		strings.ContainsAny(value, "?#\\") || strings.Contains(value, "//") ||
+		containsPercentEncoding(value) || strings.TrimSpace(value) != value {
 		return false
 	}
-	clean := path.Clean(value)
-	return clean == value && value != "." && value != "/"
+	for _, r := range value {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return false
+		}
+	}
+	return path.Clean(value) == value
+}
+
+func validPrefixStage(stage PrefixOperationStage) bool {
+	switch stage {
+	case PrefixIntentPersisted, PrefixRouteActivated, PrefixHealthVerified, PrefixCommitted:
+		return true
+	default:
+		return false
+	}
 }
 
 type PrefixOperation struct {
-	OperationID              OperationID
-	ExpectedRoutingRevision  uint64
-	CurrentRoutingRevision   uint64
-	DesiredControlBasePath   string
-	VerifiedEffectivePath    string
-	AuthorityQualified       bool
-	CollisionFree            bool
-	PublicIdentityHealthy    bool
-	StaticAssetsHealthy      bool
-	APIAuthenticationHealthy bool
-	Result                   PrefixOperationResult
+	OperationID                   OperationID
+	InstallationID                string
+	CurrentInstallationID         string
+	ExpectedRoutingRevision       uint64
+	CurrentRoutingRevision        uint64
+	PreviousVerifiedEffectivePath string
+	DesiredControlBasePath        string
+	VerifiedEffectivePath         string
+	Impact                        PrefixImpact
+	Stage                         PrefixOperationStage
+	AuthorityQualified            bool
+	CollisionFree                 bool
+	PublicIdentityHealthy         bool
+	StaticAssetsHealthy           bool
+	APIAuthenticationHealthy      bool
+	Result                        PrefixOperationResult
 }
 
 func (p PrefixOperation) Validate() error {
 	if !validOperationID(p.OperationID) {
 		return fmt.Errorf("invalid prefix operation id %q", p.OperationID)
 	}
+	if p.InstallationID == "" || p.CurrentInstallationID == "" || p.InstallationID != p.CurrentInstallationID {
+		return errors.New("prefix operation requires matching installation identity")
+	}
+	if p.ExpectedRoutingRevision == 0 || p.CurrentRoutingRevision == 0 {
+		return errors.New("prefix operation requires routing revision authority")
+	}
 	if !validControlBasePath(p.DesiredControlBasePath) {
 		return errors.New("desired controlBasePath is not canonical")
 	}
+	if p.PreviousVerifiedEffectivePath != "" && !validControlBasePath(p.PreviousVerifiedEffectivePath) {
+		return errors.New("previous verified effective controlBasePath is not canonical")
+	}
 	if p.VerifiedEffectivePath != "" && !validControlBasePath(p.VerifiedEffectivePath) {
 		return errors.New("verified effective controlBasePath is not canonical")
+	}
+	if p.Impact != PrefixControlRouteOnly {
+		return fmt.Errorf("unknown prefix impact %q", p.Impact)
+	}
+	if !validPrefixStage(p.Stage) {
+		return fmt.Errorf("unknown prefix operation stage %q", p.Stage)
 	}
 	switch p.Result {
 	case PrefixPending, PrefixApplied, PrefixUnknown, PrefixConflict:
@@ -67,7 +131,8 @@ func (p PrefixOperation) Validate() error {
 func CanCommitPrefix(p PrefixOperation) bool {
 	return p.Validate() == nil && p.ExpectedRoutingRevision == p.CurrentRoutingRevision &&
 		p.AuthorityQualified && p.CollisionFree && p.PublicIdentityHealthy &&
-		p.StaticAssetsHealthy && p.APIAuthenticationHealthy && p.Result == PrefixPending
+		p.StaticAssetsHealthy && p.APIAuthenticationHealthy &&
+		p.Stage == PrefixHealthVerified && p.Result == PrefixPending
 }
 
 func PrefixActionAfterOperation(p PrefixOperation) (PrefixRecoveryAction, error) {
@@ -81,10 +146,61 @@ func PrefixActionAfterOperation(p PrefixOperation) (PrefixRecoveryAction, error)
 		if p.VerifiedEffectivePath != p.DesiredControlBasePath {
 			return PrefixResolveConflict, nil
 		}
-		return PrefixComplete, nil
+		if p.Stage == PrefixCommitted {
+			if p.ExpectedRoutingRevision != p.CurrentRoutingRevision ||
+				!p.AuthorityQualified || !p.CollisionFree ||
+				!p.PublicIdentityHealthy || !p.StaticAssetsHealthy || !p.APIAuthenticationHealthy {
+				return PrefixInspectFirst, nil
+			}
+			return PrefixComplete, nil
+		}
+		return PrefixInspectFirst, nil
 	case PrefixConflict:
 		return PrefixResolveConflict, nil
 	default:
 		return "", fmt.Errorf("unknown prefix result %q", p.Result)
 	}
+}
+
+type PrefixRecoveryObservation struct {
+	CurrentInstallationID    string
+	CurrentRoutingRevision   uint64
+	CurrentEffectivePath     string
+	PublicIdentityHealthy    bool
+	StaticAssetsHealthy      bool
+	APIAuthenticationHealthy bool
+}
+
+func (o PrefixRecoveryObservation) valid() bool {
+	return o.CurrentInstallationID != "" &&
+		o.CurrentRoutingRevision > 0 &&
+		validControlBasePath(o.CurrentEffectivePath)
+}
+
+func CanCompletePrefixAfterObservation(p PrefixOperation, o PrefixRecoveryObservation) bool {
+	if p.Validate() != nil || !o.valid() {
+		return false
+	}
+	if p.Stage != PrefixRouteActivated && p.Stage != PrefixHealthVerified {
+		return false
+	}
+	return p.AuthorityQualified && p.CollisionFree &&
+		o.CurrentInstallationID == p.InstallationID &&
+		o.CurrentRoutingRevision == p.CurrentRoutingRevision &&
+		o.CurrentEffectivePath == p.DesiredControlBasePath &&
+		o.PublicIdentityHealthy && o.StaticAssetsHealthy && o.APIAuthenticationHealthy
+}
+
+func CanConditionallyRestorePrefix(p PrefixOperation, o PrefixRecoveryObservation) bool {
+	if p.Validate() != nil || !o.valid() || p.PreviousVerifiedEffectivePath == "" {
+		return false
+	}
+	if p.Stage != PrefixRouteActivated && p.Stage != PrefixHealthVerified {
+		return false
+	}
+	return p.AuthorityQualified &&
+		o.CurrentInstallationID == p.InstallationID &&
+		o.CurrentRoutingRevision == p.CurrentRoutingRevision &&
+		o.CurrentEffectivePath == p.DesiredControlBasePath &&
+		(!o.PublicIdentityHealthy || !o.StaticAssetsHealthy || !o.APIAuthenticationHealthy)
 }

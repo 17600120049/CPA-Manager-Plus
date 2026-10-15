@@ -726,7 +726,12 @@
     "journal_domain_specific_authority_fence",
     "fresh_claim_revision_cas_single_winner",
     "operation_conflict_scoped_not_global",
-    "fixture_required_case_ids_locked"
+    "fixture_required_case_ids_locked",
+    "control_base_path_rejects_encoded_backslash_bypass",
+    "conflict_scope_server_classified",
+    "writable_grant_requires_historical_authority",
+    "prefix_conditional_recovery_fail_closed",
+    "classification_fixture_ids_locked"
   ],
   "operationConflictAssertions": [
     {
@@ -768,14 +773,6 @@
       "sameOperationID": true,
       "expectedDecision": "inspect_existing",
       "scope": "manager_store"
-    },
-    {
-      "id": "migration_vs_cpa_update_independent",
-      "active": "migration",
-      "requested": "cpa_update",
-      "scope": "independent_resource",
-      "sameOperationID": false,
-      "expectedDecision": "no_contract_block"
     }
   ],
   "collectorAssertions": [
@@ -793,6 +790,144 @@
       "id": "unproven_or_outside_window_is_gap_unknown",
       "condition": "coverage_unproven_or_outside_window",
       "expectedOutcome": "gap_or_unknown"
+    }
+  ],
+  "prefixAssertions": [
+    {
+      "id": "lost_result_healthy_target_can_complete",
+      "operationID": "operation-prefix-0001",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 7,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": true,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true
+      },
+      "expectedCompleteAfterObservation": true,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "lost_result_unhealthy_target_can_restore",
+      "operationID": "operation-prefix-0002",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 7,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": false,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true
+      },
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": true
+    },
+    {
+      "id": "stale_revision_refuses_prefix_recovery",
+      "operationID": "operation-prefix-0003",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 8,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": false,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true
+      },
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "committed_applied_prefix_is_complete",
+      "operationID": "operation-prefix-0004",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 8,
+      "currentRoutingRevision": 8,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "/new-control",
+      "impact": "control_route_only",
+      "stage": "committed",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": true,
+      "staticAssetsHealthy": true,
+      "apiAuthenticationHealthy": true,
+      "result": "applied",
+      "expectedAction": "complete",
+      "observation": null,
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "effective_mismatch_requires_resolution",
+      "operationID": "operation-prefix-0005",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "/old-control",
+      "impact": "control_route_only",
+      "stage": "health_verified",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": true,
+      "staticAssetsHealthy": true,
+      "apiAuthenticationHealthy": true,
+      "result": "applied",
+      "expectedAction": "resolve_conflict",
+      "observation": null,
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
     }
   ]
 }
