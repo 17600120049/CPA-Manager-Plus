@@ -347,7 +347,7 @@
     "required_migration_checkpoints_before_grant",
     "forward_hop_requires_trusted_receipt",
     "trusted_receipt_requires_manager_authenticity",
-    "trusted_receipt_binds_operation_target_input_output_artifact",
+    "trusted_receipt_binds_operation_target_input_output_archive_executable",
     "trusted_receipt_requires_zero_exit_and_reap",
     "receipt_replay_or_revocation_rejected",
     "manager_supervisor_ownership_separated"
