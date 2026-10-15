@@ -1,0 +1,380 @@
+2026/10/15 07:05:14 CPA Manager Plus admin credential initialized
+2026/10/15 07:05:14 CPA Manager Plus data key created at /tmp/TestGenerateBAK022238904049/002/source/data.key
+2026/10/15 07:05:14 cpa-manager-plus listening on 127.0.0.1:33503
+2026/10/15 07:05:14 [derived-migration] post-listen index preparation started
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_timestamp
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_request_id
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_model
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_auth_index
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_endpoint
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_header_quota_recover
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_header_error_kind
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_header_trace_id
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_latest_request_auth_file
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_events_latest_request_source
+2026/10/15 07:05:14 [derived-migration] creating index idx_account_action_candidates_pending_identity_action
+2026/10/15 07:05:14 [derived-migration] creating index idx_account_action_candidates_status_seen
+2026/10/15 07:05:14 [derived-migration] creating index idx_codex_inspection_runs_started_at
+2026/10/15 07:05:14 [derived-migration] creating index idx_codex_inspection_runs_status
+2026/10/15 07:05:14 [derived-migration] creating index idx_codex_inspection_runs_trigger
+2026/10/15 07:05:14 [derived-migration] creating index idx_codex_inspection_leases_expiry
+2026/10/15 07:05:14 [derived-migration] creating index idx_codex_inspection_results_run
+2026/10/15 07:05:14 [derived-migration] creating index idx_codex_inspection_logs_run
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_cooldowns_due
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_cooldowns_active_identity
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_observations_account_time
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_observations_inventory
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_observations_lifecycle_watermark
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_windows_account_state
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_windows_inventory
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_activations_active
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_cycles_active
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_cycles_history
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_snapshots_latest
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_snapshots_observation
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_snapshots_window_cycle
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_snapshots_cycle_evidence
+2026/10/15 07:05:14 [derived-migration] creating index idx_quota_snapshots_legacy_migration
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_account_model_rollups_last_seen
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_account_model_rollups_auth_index
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_pricing_hourly_bucket
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_pricing_account_key
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_account_daily_bucket
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_account_daily_credential_window
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_account_daily_legacy_window
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_api_key_daily_bucket
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_selector_daily_bucket
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_selector_revision_bucket
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_event_projection_timestamp
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_event_projection_account_window
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_event_projection_model_timestamp
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_monitoring_header_latest_timestamp
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_event_identity_ledger_raw_event_id
+2026/10/15 07:05:14 [derived-migration] creating index idx_usage_event_identity_ledger_bucket
+2026/10/15 07:05:14 [derived-migration] post-listen index preparation completed created=49 removedAccountActionLegacy=false removedQuotaLegacy=false
+2026/10/15 07:05:14 [startup] starting background workers
+2026/10/15 07:05:14 [automation] runtime settings loaded quotaCooldown=true accountActions=false accountActionsAutoDisable=false
+2026/10/15 07:05:14 usage cache accounting migration completed: processed=0 changed=0
+2026/10/15 07:05:14 [usage-derived] pricing rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:05:14 [usage-derived] pricing rebuild completed coverageEventID=0
+2026/10/15 07:05:14 [usage-derived] monitoring stats rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:05:14 [usage-derived] monitoring stats rebuild completed coverageEventID=0
+2026/10/15 07:05:14 [usage-derived] Codex legacy identity evidence rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:05:14 [usage-derived] Codex legacy identity evidence rebuild completed coverageEventID=0
+2026/10/15 07:05:14 http GET /usage-service/info status=200 duration=233.608µs remote=127.0.0.1:52452
+2026/10/15 07:05:14 http PUT /usage-service/config status=200 duration=1.560602ms remote=127.0.0.1:52458
+2026/10/15 07:05:14 http PUT /v0/management/model-prices status=200 duration=655.64µs remote=127.0.0.1:52458
+2026/10/15 07:05:14 [usage-derived] pricing rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:05:14 [usage-derived] pricing rebuild completed coverageEventID=0
+2026/10/15 07:05:14 [usage-derived] monitoring stats rebuild started targetEventID=0 batchSize=1000
+2026/10/15 07:05:14 [usage-derived] monitoring stats rebuild completed coverageEventID=0
+2026/10/15 07:05:14 http GET /usage-service/info status=200 duration=144.411µs remote=127.0.0.1:52458
+2026/10/15 07:05:14 http GET /usage-service/info status=200 duration=171.542µs remote=127.0.0.1:52466
+2026/10/15 07:05:14 [quota-auto-disable] quota limit reached for auth file "fixture-codex.json" account="fixture-codex.json" provider="codex" resetAt=2100-01-01T00:00:00Z, disabling
+2026/10/15 07:05:14 http POST /v0/management/quota-snapshots status=200 duration=2.072054ms remote=127.0.0.1:52470
+2026/10/15 07:05:14 [quota-auto-disable] disabled auth file "fixture-codex.json"; persisted CPAMP-owned auto-enable at 2100-01-01T00:00:00Z
+2026/10/15 07:05:14 http POST /v0/management/monitoring/analytics status=200 duration=5.968156ms remote=127.0.0.1:52470
+2026/10/15 07:05:14 http POST /v0/management/monitoring/analytics status=200 duration=5.612786ms remote=127.0.0.1:52470
+2026/10/15 07:05:14 http POST /v0/management/monitoring/analytics status=200 duration=4.910669ms remote=127.0.0.1:52470
+2026/10/15 07:05:14 http POST /v0/management/monitoring/analytics status=200 duration=4.923091ms remote=127.0.0.1:52470
+2026/10/15 07:05:14 http GET /v0/management/usage/maintenance status=200 duration=686.027µs remote=127.0.0.1:52470
+2026/10/15 07:05:14 http GET /v0/management/usage/maintenance status=200 duration=603.084µs remote=127.0.0.1:52470
+2026/10/15 07:05:14 http GET /v0/management/usage/maintenance status=200 duration=403.401µs remote=127.0.0.1:52470
+2026/10/15 07:05:14 http GET /v0/management/usage/maintenance status=200 duration=393.769µs remote=127.0.0.1:52470
+2026/10/15 07:05:14 http GET /v0/management/usage/maintenance status=200 duration=411.959µs remote=127.0.0.1:52470
+2026/10/15 07:05:15 http GET /v0/management/usage/maintenance status=200 duration=409.757µs remote=127.0.0.1:52470
+2026/10/15 07:05:15 http GET /v0/management/usage/maintenance status=200 duration=478.119µs remote=127.0.0.1:52470
+2026/10/15 07:05:15 http GET /v0/management/usage/maintenance status=200 duration=440.942µs remote=127.0.0.1:52470
+2026/10/15 07:05:15 http GET /v0/management/usage/maintenance status=200 duration=580.148µs remote=127.0.0.1:52470
+2026/10/15 07:05:15 http GET /v0/management/usage/maintenance status=200 duration=422.039µs remote=127.0.0.1:52470
+2026/10/15 07:05:15 http GET /v0/management/usage/maintenance status=200 duration=408.658µs remote=127.0.0.1:52470
+2026/10/15 07:05:15 http GET /v0/management/usage/maintenance status=200 duration=483.107µs remote=127.0.0.1:52470
+2026/10/15 07:05:15 http GET /v0/management/usage/maintenance status=200 duration=473.824µs remote=127.0.0.1:52470
+2026/10/15 07:05:15 http GET /v0/management/usage/maintenance status=200 duration=409.983µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=468.496µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=437.838µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=399.231µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=416.131µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=435.109µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=405.361µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=460.214µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=704.919µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=484.414µs remote=127.0.0.1:52470
+2026/10/15 07:05:16 http GET /v0/management/usage/maintenance status=200 duration=438.929µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=457.414µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=452.567µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=509.064µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=412.305µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=450.667µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=461.435µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=453.036µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=407.078µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=408.86µs remote=127.0.0.1:52470
+2026/10/15 07:05:17 http GET /v0/management/usage/maintenance status=200 duration=456.774µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=405.768µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=401.799µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=440.859µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=429.013µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=415.531µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=445.499µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=422.977µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=485.372µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=415.669µs remote=127.0.0.1:52470
+2026/10/15 07:05:18 http GET /v0/management/usage/maintenance status=200 duration=407.474µs remote=127.0.0.1:52470
+2026/10/15 07:05:19 http GET /v0/management/usage/maintenance status=200 duration=477.679µs remote=127.0.0.1:52470
+2026/10/15 07:05:19 http GET /v0/management/usage/maintenance status=200 duration=413.403µs remote=127.0.0.1:52470
+2026/10/15 07:05:19 http GET /v0/management/usage/maintenance status=200 duration=404.005µs remote=127.0.0.1:52470
+2026/10/15 07:05:19 http GET /v0/management/usage/maintenance status=200 duration=496.978µs remote=127.0.0.1:52470
+2026/10/15 07:05:19 http GET /v0/management/usage/maintenance status=200 duration=430.88µs remote=127.0.0.1:52470
+2026/10/15 07:05:19 http GET /v0/management/usage/maintenance status=200 duration=492.238µs remote=127.0.0.1:52470
+2026/10/15 07:05:19 http GET /v0/management/usage/maintenance status=200 duration=404.38µs remote=127.0.0.1:52470
+2026/10/15 07:05:19 http GET /v0/management/usage/maintenance status=200 duration=564.573µs remote=127.0.0.1:52470
+2026/10/15 07:05:19 http GET /v0/management/usage/maintenance status=200 duration=424.414µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=405.457µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=430.001µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=442.794µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=441.399µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=419.099µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=417.451µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=424.558µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=405.79µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=484.366µs remote=127.0.0.1:52470
+2026/10/15 07:05:20 http GET /v0/management/usage/maintenance status=200 duration=486.87µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=507.589µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=409.756µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=411.402µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=415.222µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=460.861µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=416.871µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=397.256µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=447.931µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=411.606µs remote=127.0.0.1:52470
+2026/10/15 07:05:21 http GET /v0/management/usage/maintenance status=200 duration=412.269µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=406.535µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=412.152µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=414.835µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=411.98µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=424.602µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=405.767µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=408.21µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=423.058µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=414.891µs remote=127.0.0.1:52470
+2026/10/15 07:05:22 http GET /v0/management/usage/maintenance status=200 duration=403.446µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=404.108µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=444.446µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=429.39µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=420.338µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=428.141µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=461.248µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=415.826µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=405.833µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=399.08µs remote=127.0.0.1:52470
+2026/10/15 07:05:23 http GET /v0/management/usage/maintenance status=200 duration=457.446µs remote=127.0.0.1:52470
+2026/10/15 07:05:24 http GET /v0/management/usage/maintenance status=200 duration=457.835µs remote=127.0.0.1:52470
+2026/10/15 07:05:24 http GET /v0/management/usage/maintenance status=200 duration=404.729µs remote=127.0.0.1:52470
+2026/10/15 07:05:24 http GET /v0/management/usage/maintenance status=200 duration=544.71µs remote=127.0.0.1:52470
+2026/10/15 07:05:24 http GET /v0/management/usage/maintenance status=200 duration=475.241µs remote=127.0.0.1:52470
+2026/10/15 07:05:24 http GET /v0/management/usage/maintenance status=200 duration=614.546µs remote=127.0.0.1:52470
+2026/10/15 07:05:24 http GET /v0/management/usage/maintenance status=200 duration=444.964µs remote=127.0.0.1:52470
+2026/10/15 07:05:24 http GET /v0/management/usage/maintenance status=200 duration=478.772µs remote=127.0.0.1:52470
+2026/10/15 07:05:24 http GET /v0/management/usage/maintenance status=200 duration=403.75µs remote=127.0.0.1:52470
+2026/10/15 07:05:24 http GET /v0/management/usage/maintenance status=200 duration=482.063µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=412.01µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=438.054µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=415.237µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=415.083µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=425.96µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=414.87µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=398.011µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=408.811µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=415.532µs remote=127.0.0.1:52470
+2026/10/15 07:05:25 http GET /v0/management/usage/maintenance status=200 duration=421.202µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=418.948µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=402.527µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=440.926µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=407.411µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=413.242µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=414.221µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=406.551µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=406.963µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=467.635µs remote=127.0.0.1:52470
+2026/10/15 07:05:26 http GET /v0/management/usage/maintenance status=200 duration=400.147µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=453.023µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=412.753µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=405.119µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=461.477µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=406.458µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=405.857µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=411.911µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=414.733µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=412.772µs remote=127.0.0.1:52470
+2026/10/15 07:05:27 http GET /v0/management/usage/maintenance status=200 duration=414.458µs remote=127.0.0.1:52470
+2026/10/15 07:05:28 http GET /v0/management/usage/maintenance status=200 duration=446.416µs remote=127.0.0.1:52470
+2026/10/15 07:05:28 http GET /v0/management/usage/maintenance status=200 duration=399.916µs remote=127.0.0.1:52470
+2026/10/15 07:05:28 http GET /v0/management/usage/maintenance status=200 duration=405.891µs remote=127.0.0.1:52470
+2026/10/15 07:05:28 http GET /v0/management/usage/maintenance status=200 duration=426.636µs remote=127.0.0.1:52470
+2026/10/15 07:05:28 http GET /v0/management/usage/maintenance status=200 duration=440.05µs remote=127.0.0.1:52470
+2026/10/15 07:05:28 http GET /v0/management/usage/maintenance status=200 duration=419.99µs remote=127.0.0.1:52470
+2026/10/15 07:05:28 http GET /v0/management/usage/maintenance status=200 duration=399.059µs remote=127.0.0.1:52470
+2026/10/15 07:05:28 http GET /v0/management/usage/maintenance status=200 duration=492.538µs remote=127.0.0.1:52470
+2026/10/15 07:05:28 http GET /v0/management/usage/maintenance status=200 duration=487.29µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=472.361µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=506.375µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=404.343µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=486.96µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=491.874µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=422.564µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=438.714µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=402.525µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=402.581µs remote=127.0.0.1:52470
+2026/10/15 07:05:29 http GET /v0/management/usage/maintenance status=200 duration=446.395µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=402.12µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=475.945µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=468.834µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=427.447µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=411.585µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=406.508µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=441.91µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=392.59µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=422.955µs remote=127.0.0.1:52470
+2026/10/15 07:05:30 http GET /v0/management/usage/maintenance status=200 duration=431.951µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=652.928µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=418.658µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=425.935µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=423.078µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=403.361µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=409.539µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=410.888µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=437.443µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=417.019µs remote=127.0.0.1:52470
+2026/10/15 07:05:31 http GET /v0/management/usage/maintenance status=200 duration=410.17µs remote=127.0.0.1:52470
+2026/10/15 07:05:32 http GET /v0/management/usage/maintenance status=200 duration=418.532µs remote=127.0.0.1:52470
+2026/10/15 07:05:32 http GET /v0/management/usage/maintenance status=200 duration=474.705µs remote=127.0.0.1:52470
+2026/10/15 07:05:32 http GET /v0/management/usage/maintenance status=200 duration=421.658µs remote=127.0.0.1:52470
+2026/10/15 07:05:32 http GET /v0/management/usage/maintenance status=200 duration=414.589µs remote=127.0.0.1:52470
+2026/10/15 07:05:32 http GET /v0/management/usage/maintenance status=200 duration=407.303µs remote=127.0.0.1:52470
+2026/10/15 07:05:32 http GET /v0/management/usage/maintenance status=200 duration=434.615µs remote=127.0.0.1:52470
+2026/10/15 07:05:32 http GET /v0/management/usage/maintenance status=200 duration=423.597µs remote=127.0.0.1:52470
+2026/10/15 07:05:32 http GET /v0/management/usage/maintenance status=200 duration=404.945µs remote=127.0.0.1:52470
+2026/10/15 07:05:32 http GET /v0/management/usage/maintenance status=200 duration=551.958µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=430.428µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=416.282µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=431.145µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=401.703µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=429.279µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=559.435µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=466.395µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=417.896µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=468.018µs remote=127.0.0.1:52470
+2026/10/15 07:05:33 http GET /v0/management/usage/maintenance status=200 duration=532.511µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=410.927µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=472.909µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=415.991µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=434.074µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=415.831µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=399.73µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=399.763µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=412.174µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=396.368µs remote=127.0.0.1:52470
+2026/10/15 07:05:34 http GET /v0/management/usage/maintenance status=200 duration=419.287µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=421.545µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=408.71µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=400.464µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=425.381µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=419.239µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=417.013µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=420.883µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=473.341µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=418.346µs remote=127.0.0.1:52470
+2026/10/15 07:05:35 http GET /v0/management/usage/maintenance status=200 duration=490.08µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=444.453µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=485.889µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=413.709µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=403.88µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=398.076µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=410.903µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=442.226µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=412.153µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=430.551µs remote=127.0.0.1:52470
+2026/10/15 07:05:36 http GET /v0/management/usage/maintenance status=200 duration=417.04µs remote=127.0.0.1:52470
+2026/10/15 07:05:37 http GET /v0/management/usage/maintenance status=200 duration=412.844µs remote=127.0.0.1:52470
+2026/10/15 07:05:37 http GET /v0/management/usage/maintenance status=200 duration=403.148µs remote=127.0.0.1:52470
+2026/10/15 07:05:37 http GET /v0/management/usage/maintenance status=200 duration=403.905µs remote=127.0.0.1:52470
+2026/10/15 07:05:37 http GET /v0/management/usage/maintenance status=200 duration=398.967µs remote=127.0.0.1:52470
+2026/10/15 07:05:37 http GET /v0/management/usage/maintenance status=200 duration=421.24µs remote=127.0.0.1:52470
+2026/10/15 07:05:37 http GET /v0/management/usage/maintenance status=200 duration=411.331µs remote=127.0.0.1:52470
+2026/10/15 07:05:37 http GET /v0/management/usage/maintenance status=200 duration=435.094µs remote=127.0.0.1:52470
+2026/10/15 07:05:37 http GET /v0/management/usage/maintenance status=200 duration=424.811µs remote=127.0.0.1:52470
+2026/10/15 07:05:37 http GET /v0/management/usage/maintenance status=200 duration=434.22µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=410.198µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=416.971µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=414.426µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=498.134µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=476.074µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=424.261µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=468.924µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=429.729µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=439.774µs remote=127.0.0.1:52470
+2026/10/15 07:05:38 http GET /v0/management/usage/maintenance status=200 duration=419.61µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=638.403µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=428.167µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=430.463µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=504.087µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=554.656µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=415.967µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=423.45µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=415.121µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=534.723µs remote=127.0.0.1:52470
+2026/10/15 07:05:39 http GET /v0/management/usage/maintenance status=200 duration=498.55µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=436.674µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=468.356µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=464.105µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=410.913µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=412.617µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=471.71µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=424.161µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=402.026µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=471.475µs remote=127.0.0.1:52470
+2026/10/15 07:05:40 http GET /v0/management/usage/maintenance status=200 duration=558.121µs remote=127.0.0.1:52470
+2026/10/15 07:05:41 http GET /v0/management/usage/maintenance status=200 duration=415.149µs remote=127.0.0.1:52470
+2026/10/15 07:05:41 http GET /v0/management/usage/maintenance status=200 duration=469.996µs remote=127.0.0.1:52470
+2026/10/15 07:05:41 http GET /v0/management/usage/maintenance status=200 duration=503.883µs remote=127.0.0.1:52470
+2026/10/15 07:05:41 http GET /v0/management/usage/maintenance status=200 duration=2.202579ms remote=127.0.0.1:52470
+2026/10/15 07:05:41 http GET /v0/management/usage/maintenance status=200 duration=456.993µs remote=127.0.0.1:52470
+2026/10/15 07:05:41 http GET /v0/management/usage/maintenance status=200 duration=411.149µs remote=127.0.0.1:52470
+2026/10/15 07:05:41 http GET /v0/management/usage/maintenance status=200 duration=415.382µs remote=127.0.0.1:52470
+2026/10/15 07:05:41 http GET /v0/management/usage/maintenance status=200 duration=402.037µs remote=127.0.0.1:52470
+2026/10/15 07:05:41 http GET /v0/management/usage/maintenance status=200 duration=435.781µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=444.049µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=413.668µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=420.705µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=423.071µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=455.496µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=432.38µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=552.707µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=448.66µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=420.935µs remote=127.0.0.1:52470
+2026/10/15 07:05:42 http GET /v0/management/usage/maintenance status=200 duration=416.34µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=430.65µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=435.829µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=406.686µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=407.684µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=788.617µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=408.677µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=453.869µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=570.844µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=433.747µs remote=127.0.0.1:52470
+2026/10/15 07:05:43 http GET /v0/management/usage/maintenance status=200 duration=567.071µs remote=127.0.0.1:52470
+2026/10/15 07:05:44 http GET /v0/management/usage/maintenance status=200 duration=431.48µs remote=127.0.0.1:52470
+2026/10/15 07:05:44 http GET /v0/management/usage/maintenance status=200 duration=417.712µs remote=127.0.0.1:52470
+2026/10/15 07:05:44 http GET /v0/management/usage/maintenance status=200 duration=405.902µs remote=127.0.0.1:52470
+2026/10/15 07:05:44 http GET /v0/management/usage/maintenance status=200 duration=431.26µs remote=127.0.0.1:52470
+2026/10/15 07:05:44 http GET /v0/management/usage/maintenance status=200 duration=520.361µs remote=127.0.0.1:52470
+2026/10/15 07:05:44 http POST /v0/management/usage/archives status=201 duration=749.616µs remote=127.0.0.1:52470
+2026/10/15 07:05:44 http POST /v0/management/usage/archives/0b61c6371e8ffbdf715aa493bf9ca9dd/resume status=200 duration=9.790459ms remote=127.0.0.1:52470
+2026/10/15 07:05:44 http POST /v0/management/usage/archives/0b61c6371e8ffbdf715aa493bf9ca9dd/verify status=200 duration=5.820544ms remote=127.0.0.1:52470
+2026/10/15 07:05:44 http POST /v0/management/monitoring/analytics status=200 duration=5.221807ms remote=127.0.0.1:52470
+2026/10/15 07:05:44 http POST /v0/management/monitoring/analytics status=200 duration=5.918164ms remote=127.0.0.1:52470
+2026/10/15 07:05:44 http POST /v0/management/monitoring/analytics status=200 duration=4.770894ms remote=127.0.0.1:52470
+2026/10/15 07:05:44 http POST /v0/management/monitoring/analytics status=200 duration=5.55588ms remote=127.0.0.1:52470
+2026/10/15 07:05:44 http GET /v0/management/usage/export status=200 duration=1.717545ms remote=127.0.0.1:52470
