@@ -1,11 +1,17 @@
 package bootstrap_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
+	"strings"
 	"testing"
 
 	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -51,6 +57,7 @@ type adoptionJSON struct {
 	ReadEvidenceRef   bootstrap.CapabilityEvidenceRef
 	ReplayEvidenceRef bootstrap.CapabilityEvidenceRef
 	VerifyEvidenceRef bootstrap.CapabilityEvidenceRef
+	Qualification     bootstrap.CapabilityQualification
 	ManualAction      bootstrap.AdoptionManualAction
 	Disposition       bootstrap.AdoptionDisposition
 }
@@ -63,6 +70,7 @@ func (a adoptionJSON) domain() bootstrap.AdoptionResourceDecision {
 		ReadEvidenceRef:   a.ReadEvidenceRef,
 		ReplayEvidenceRef: a.ReplayEvidenceRef,
 		VerifyEvidenceRef: a.VerifyEvidenceRef,
+		Qualification:     a.Qualification,
 		ManualAction:      a.ManualAction,
 		Disposition:       a.Disposition,
 	}
@@ -73,8 +81,10 @@ type pathJSON struct {
 	Mode                            bootstrap.Mode
 	CPAMPAction                     bootstrap.CPAMPAction
 	CPAStrategy                     bootstrap.CPAStrategy
+	CPAQualification                bootstrap.CPAQualification
 	SourceAdmission                 *admissionJSON
 	SourceCPA                       bootstrap.SourceCPA
+	HistoricalEvidence              *bootstrap.HistoricalEvidence
 	UsageAction                     bootstrap.UsageAction
 	BackupRequired                  bool
 	RuntimeMode                     bootstrap.RuntimeMode
@@ -105,8 +115,10 @@ func (p pathJSON) domain() bootstrap.Plan {
 		Mode:                            p.Mode,
 		CPAMPAction:                     p.CPAMPAction,
 		CPAStrategy:                     p.CPAStrategy,
+		CPAQualification:                p.CPAQualification,
 		SourceAdmission:                 admission,
 		SourceCPA:                       p.SourceCPA,
+		HistoricalEvidence:              p.HistoricalEvidence,
 		UsageAction:                     p.UsageAction,
 		BackupRequired:                  p.BackupRequired,
 		RuntimeMode:                     p.RuntimeMode,
@@ -125,14 +137,16 @@ func (p pathJSON) domain() bootstrap.Plan {
 }
 
 type classificationJSON struct {
-	ID                string
-	HasV1ProductState bool
-	Admission         *admissionJSON
-	RecoveryReason    bootstrap.RecoveryReason
-	BootstrapComplete bool
-	AdminCredential   bootstrap.AdminCredentialState
-	Session           bootstrap.SessionState
-	ExpectedMode      bootstrap.Mode
+	ID                  string
+	HasV1ProductState   bool
+	Admission           *admissionJSON
+	RecoveryReason      bootstrap.RecoveryReason
+	BootstrapComplete   bool
+	AdminCredential     bootstrap.AdminCredentialState
+	Session             bootstrap.SessionState
+	RequiredCheckpoints bootstrap.RequiredMigrationCheckpoints
+	HistoricalEvidence *bootstrap.HistoricalEvidence
+	ExpectedMode        bootstrap.Mode
 }
 
 type coreJSON struct {
@@ -170,7 +184,7 @@ func (c coreJSON) domain() bootstrap.CPACoreContract {
 }
 
 type fixture struct {
-	Schema                   string
+	Schema                   string `json:"$schema"`
 	SchemaVersion            int
 	ContractID               string
 	ExecutionBaseline        string
@@ -185,21 +199,252 @@ type fixture struct {
 	GlobalAssertions         []string
 }
 
+func rejectDuplicateJSONKeys(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	var walk func() error
+	walk = func() error {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		delim, ok := tok.(json.Delim)
+		if !ok {
+			return nil
+		}
+		switch delim {
+		case '{':
+			seen := map[string]bool{}
+			for dec.More() {
+				kt, err := dec.Token()
+				if err != nil {
+					return err
+				}
+				key, ok := kt.(string)
+				if !ok {
+					return errors.New("object key is not string")
+				}
+				if seen[key] {
+					return fmt.Errorf("duplicate JSON key %q", key)
+				}
+				seen[key] = true
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+			_, err = dec.Token()
+			return err
+		case '[':
+			for dec.More() {
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+			_, err = dec.Token()
+			return err
+		default:
+			return fmt.Errorf("unexpected delimiter %q", delim)
+		}
+	}
+	if err := walk(); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return errors.New("trailing JSON data")
+	}
+	return nil
+}
+
+func resolveSchema(schema, root map[string]any) (map[string]any, error) {
+	ref, ok := schema["$ref"].(string)
+	if !ok {
+		return schema, nil
+	}
+	const prefix = "#/$defs/"
+	if !strings.HasPrefix(ref, prefix) {
+		return nil, fmt.Errorf("unsupported schema ref %q", ref)
+	}
+	defs, ok := root["$defs"].(map[string]any)
+	if !ok {
+		return nil, errors.New("schema defs missing")
+	}
+	resolved, ok := defs[strings.TrimPrefix(ref, prefix)].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("schema ref missing %q", ref)
+	}
+	return resolved, nil
+}
+
+func validateSchemaValue(value any, schema, root map[string]any) error {
+	var err error
+	schema, err = resolveSchema(schema, root)
+	if err != nil {
+		return err
+	}
+	if variants, ok := schema["oneOf"].([]any); ok {
+		var matched int
+		for _, variant := range variants {
+			if m, ok := variant.(map[string]any); ok && validateSchemaValue(value, m, root) == nil {
+				matched++
+			}
+		}
+		if matched != 1 {
+			return fmt.Errorf("oneOf matched %d variants", matched)
+		}
+		return nil
+	}
+	if c, ok := schema["const"]; ok && !reflect.DeepEqual(value, c) {
+		return fmt.Errorf("const mismatch: got=%v want=%v", value, c)
+	}
+	if enum, ok := schema["enum"].([]any); ok {
+		found := false
+		for _, item := range enum {
+			if reflect.DeepEqual(value, item) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("enum mismatch: %v", value)
+		}
+	}
+	typeName, _ := schema["type"].(string)
+	switch typeName {
+	case "":
+		// schema may be defined only by const/enum/ref/oneOf
+	case "null":
+		if value != nil {
+			return fmt.Errorf("want null, got %T", value)
+		}
+	case "boolean":
+		if _, ok := value.(bool); !ok {
+			return fmt.Errorf("want boolean, got %T", value)
+		}
+	case "string":
+		s, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("want string, got %T", value)
+		}
+		if n, ok := schema["minLength"].(float64); ok && len(s) < int(n) {
+			return errors.New("string below minLength")
+		}
+		if pattern, ok := schema["pattern"].(string); ok && !regexp.MustCompile(pattern).MatchString(s) {
+			return fmt.Errorf("string does not match %q", pattern)
+		}
+	case "object":
+		obj, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("want object, got %T", value)
+		}
+		props, _ := schema["properties"].(map[string]any)
+		if required, ok := schema["required"].([]any); ok {
+			for _, item := range required {
+				key, _ := item.(string)
+				if _, exists := obj[key]; !exists {
+					return fmt.Errorf("missing required key %q", key)
+				}
+			}
+		}
+		if closed, ok := schema["additionalProperties"].(bool); ok && !closed {
+			for key := range obj {
+				if _, exists := props[key]; !exists {
+					return fmt.Errorf("unknown key %q", key)
+				}
+			}
+		}
+		for key, child := range obj {
+			if childSchema, ok := props[key].(map[string]any); ok {
+				if err := validateSchemaValue(child, childSchema, root); err != nil {
+					return fmt.Errorf("%s: %w", key, err)
+				}
+			}
+		}
+	case "array":
+		items, ok := value.([]any)
+		if !ok {
+			return fmt.Errorf("want array, got %T", value)
+		}
+		if n, ok := schema["minItems"].(float64); ok && len(items) < int(n) {
+			return errors.New("array below minItems")
+		}
+		if n, ok := schema["maxItems"].(float64); ok && len(items) > int(n) {
+			return errors.New("array above maxItems")
+		}
+		if unique, ok := schema["uniqueItems"].(bool); ok && unique {
+			for i := range items {
+				for j := 0; j < i; j++ {
+					if reflect.DeepEqual(items[i], items[j]) {
+						return errors.New("array contains duplicate item")
+					}
+				}
+			}
+		}
+		if prefix, ok := schema["prefixItems"].([]any); ok {
+			for i, entry := range prefix {
+				if i >= len(items) {
+					break
+				}
+				if m, ok := entry.(map[string]any); ok {
+					if err := validateSchemaValue(items[i], m, root); err != nil {
+						return fmt.Errorf("prefix item %d: %w", i, err)
+					}
+				}
+			}
+		}
+		if itemSchema, ok := schema["items"].(map[string]any); ok {
+			for i, item := range items {
+				if err := validateSchemaValue(item, itemSchema, root); err != nil {
+					return fmt.Errorf("item %d: %w", i, err)
+				}
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported schema type %q", typeName)
+	}
+	return nil
+}
+
+func strictDecodeFixture(data, schemaData []byte) (fixture, error) {
+	var result fixture
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return result, err
+	}
+	if err := rejectDuplicateJSONKeys(schemaData); err != nil {
+		return result, fmt.Errorf("schema: %w", err)
+	}
+	var rootSchema map[string]any
+	var raw any
+	if err := json.Unmarshal(schemaData, &rootSchema); err != nil {
+		return result, err
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return result, err
+	}
+	if err := validateSchemaValue(raw, rootSchema, rootSchema); err != nil {
+		return result, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&result); err != nil {
+		return result, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return result, errors.New("trailing fixture JSON")
+	}
+	return result, nil
+}
+
 func readFixture(t *testing.T) fixture {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(fixtureDir, "contract.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
+	schema, err := os.ReadFile(filepath.Join(fixtureDir, "contract.schema.json"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	var result fixture
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(raw["$schema"], &result.Schema); err != nil {
+	result, err := strictDecodeFixture(data, schema)
+	if err != nil {
 		t.Fatal(err)
 	}
 	return result
@@ -280,8 +525,10 @@ func TestCheckedInContract(t *testing.T) {
 			Admission:         admission,
 			RecoveryReason:    assertion.RecoveryReason,
 			BootstrapComplete: assertion.BootstrapComplete,
-			AdminCredential:   assertion.AdminCredential,
-			Session:           assertion.Session,
+			AdminCredential:     assertion.AdminCredential,
+			Session:             assertion.Session,
+			RequiredCheckpoints: assertion.RequiredCheckpoints,
+			HistoricalEvidence: assertion.HistoricalEvidence,
 		})
 		if err != nil || got != assertion.ExpectedMode {
 			t.Fatalf("%s: got %q err=%v want %q", assertion.ID, got, err, assertion.ExpectedMode)
@@ -312,6 +559,17 @@ func TestCheckedInContract(t *testing.T) {
 		"actual_operation_record_persisted_with_stage_identity",
 		"receipt_replay_or_revocation_rejected",
 		"manager_supervisor_ownership_separated",
+		"admin_unverifiable_routes_recovery",
+		"checkpoints_incomplete_route_recovery",
+		"historical_source_state_explicit_fail_closed",
+		"cpa_strategy_requires_v8_qualification",
+		"adoption_references_not_authority",
+		"unauthenticated_discovery_is_minimal",
+		"fresh_claim_bound_consume_once",
+		"fresh_claim_expire_revoke_restart_csrf_fail_closed",
+		"gateway_activation_separate_from_product_initialized",
+		"journal_unknown_result_inspect_first_same_id_replay",
+		"prefix_cas_desired_effective_lost_result_inspect_first",
 	}
 	if !setEqual(f.GlobalAssertions, wantGlobal) {
 		t.Fatal("global contract assertions drifted")
@@ -330,11 +588,20 @@ func exactAdmission() bootstrap.UpgradeAdmission {
 }
 
 func baseClassification(admission *bootstrap.UpgradeAdmission) bootstrap.ClassificationEvidence {
+	history := bootstrap.HistoricalEvidence{
+		SourceState:     bootstrap.HistoryFullRaw,
+		AuthorityStatus: bootstrap.HistoryAvailable,
+	}
 	return bootstrap.ClassificationEvidence{
 		HasV1ProductState: true,
 		Admission:         admission,
 		AdminCredential:   bootstrap.AdminCredentialInitialized,
 		Session:           bootstrap.SessionMissing,
+		RequiredCheckpoints: bootstrap.RequiredMigrationCheckpoints{
+			CacheAccounting: bootstrap.CheckpointComplete,
+			QuotaSnapshot: bootstrap.CheckpointComplete,
+		},
+		HistoricalEvidence: &history,
 	}
 }
 
@@ -377,29 +644,6 @@ func TestVerifiedCandidateRequiresCurrentSchemaC(t *testing.T) {
 	}
 }
 
-func TestFreshModeAloneCannotInitializeAdministrator(t *testing.T) {
-	base := bootstrap.FreshInitializationPreconditions{
-		Mode:               bootstrap.Fresh,
-		AdminCredential:    bootstrap.AdminCredentialUninitialized,
-		HostClaimQualified: true,
-	}
-	if !bootstrap.CanInitializeAdministrator(base) {
-		t.Fatal("qualified fresh initialization was rejected")
-	}
-
-	cases := []bootstrap.FreshInitializationPreconditions{
-		{Mode: bootstrap.Upgrade, AdminCredential: bootstrap.AdminCredentialUninitialized, HostClaimQualified: true},
-		{Mode: bootstrap.Fresh, AdminCredential: bootstrap.AdminCredentialInitialized, HostClaimQualified: true},
-		{Mode: bootstrap.Fresh, AdminCredential: bootstrap.AdminCredentialUnverifiable, HostClaimQualified: true},
-		{Mode: bootstrap.Fresh, AdminCredential: bootstrap.AdminCredentialUninitialized, HostClaimQualified: false},
-	}
-	for _, tc := range cases {
-		if bootstrap.CanInitializeAdministrator(tc) {
-			t.Fatalf("unsafe fresh initialization predicate returned true: %+v", tc)
-		}
-	}
-}
-
 func TestEvidenceReadinessAndGrantRemainIndependent(t *testing.T) {
 	admission := exactAdmission()
 	admission.Readiness = bootstrap.BridgeBlocked
@@ -424,8 +668,8 @@ func TestEvidenceReadinessAndGrantRemainIndependent(t *testing.T) {
 		BackupVerified:    true,
 		SourceRevalidated: true,
 		RequiredCheckpoints: bootstrap.RequiredMigrationCheckpoints{
-			CacheAccountingRevision2Complete: true,
-			QuotaSnapshotLifecycleComplete:   true,
+			CacheAccounting: bootstrap.CheckpointComplete,
+			QuotaSnapshot: bootstrap.CheckpointComplete,
 		},
 		ManagerAuthorityQualified: true,
 		Ordering:                  ordering,
@@ -440,8 +684,8 @@ func TestEvidenceReadinessAndGrantRemainIndependent(t *testing.T) {
 		{"backup missing", func(p *bootstrap.WritablePreconditions) { p.BackupVerified = false }},
 		{"source not revalidated", func(p *bootstrap.WritablePreconditions) { p.SourceRevalidated = false }},
 		{"authority unqualified", func(p *bootstrap.WritablePreconditions) { p.ManagerAuthorityQualified = false }},
-		{"cache checkpoint incomplete", func(p *bootstrap.WritablePreconditions) { p.RequiredCheckpoints.CacheAccountingRevision2Complete = false }},
-		{"quota checkpoint incomplete", func(p *bootstrap.WritablePreconditions) { p.RequiredCheckpoints.QuotaSnapshotLifecycleComplete = false }},
+		{"cache checkpoint incomplete", func(p *bootstrap.WritablePreconditions) { p.RequiredCheckpoints.CacheAccounting = bootstrap.CheckpointPending }},
+		{"quota checkpoint incomplete", func(p *bootstrap.WritablePreconditions) { p.RequiredCheckpoints.QuotaSnapshot = bootstrap.CheckpointPending }},
 		{"readiness blocked", func(p *bootstrap.WritablePreconditions) { p.Admission.Readiness = bootstrap.BridgeBlocked }},
 		{"source unverified", func(p *bootstrap.WritablePreconditions) { p.Admission.EvidenceStatus = bootstrap.SourceUnverified }},
 		{"ordering broken", func(p *bootstrap.WritablePreconditions) {
@@ -475,8 +719,8 @@ func TestForwardHopGrantRequiresTrustedReceiptQualification(t *testing.T) {
 		BackupVerified:    true,
 		SourceRevalidated: true,
 		RequiredCheckpoints: bootstrap.RequiredMigrationCheckpoints{
-			CacheAccountingRevision2Complete: true,
-			QuotaSnapshotLifecycleComplete:   true,
+			CacheAccounting: bootstrap.CheckpointComplete,
+			QuotaSnapshot: bootstrap.CheckpointComplete,
 		},
 		ManagerAuthorityQualified: true,
 		Ordering: []bootstrap.MigrationStage{
@@ -590,17 +834,22 @@ func TestBootstrapModeDoesNotDependOnSessionState(t *testing.T) {
 	for _, session := range []bootstrap.SessionState{
 		bootstrap.SessionMissing, bootstrap.SessionAuthenticated, bootstrap.SessionExpired,
 	} {
-		for _, admin := range []bootstrap.AdminCredentialState{
-			bootstrap.AdminCredentialInitialized, bootstrap.AdminCredentialUnverifiable,
-		} {
-			input := baseClassification(&admission)
-			input.Session = session
-			input.AdminCredential = admin
-			got, err := bootstrap.Classify(input)
-			if err != nil || got != bootstrap.Upgrade {
-				t.Fatalf("session=%s admin=%s got=%s err=%v", session, admin, got, err)
-			}
+		input := baseClassification(&admission)
+		input.Session = session
+		got, err := bootstrap.Classify(input)
+		if err != nil || got != bootstrap.Upgrade {
+			t.Fatalf("session=%s got=%s err=%v", session, got, err)
 		}
+	}
+}
+
+func TestUnverifiableAdministratorRoutesRecovery(t *testing.T) {
+	admission := exactAdmission()
+	input := baseClassification(&admission)
+	input.AdminCredential = bootstrap.AdminCredentialUnverifiable
+	got, err := bootstrap.Classify(input)
+	if err != nil || got != bootstrap.Recovery {
+		t.Fatalf("got=%s err=%v, want recovery", got, err)
 	}
 }
 
@@ -681,6 +930,168 @@ func TestRecoveryCannotBecomeCompletedDirectly(t *testing.T) {
 	}
 	if err := bootstrap.ValidateTransition(bootstrap.Upgrade, bootstrap.Completed); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStrictFixtureRejectsUnknownDuplicateAndMissing(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(fixtureDir, "contract.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := os.ReadFile(filepath.Join(fixtureDir, "contract.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown := bytes.Replace(data, []byte(`"schemaVersion": 2,`), []byte(`"schemaVersion": 2, "unexpected": true,`), 1)
+	if _, err := strictDecodeFixture(unknown, schema); err == nil {
+		t.Fatal("unknown field accepted")
+	}
+	duplicate := bytes.Replace(data, []byte(`"schemaVersion": 2,`), []byte(`"schemaVersion": 2, "schemaVersion": 2,`), 1)
+	if _, err := strictDecodeFixture(duplicate, schema); err == nil {
+		t.Fatal("duplicate key accepted")
+	}
+	missing := bytes.Replace(data, []byte("  \"contractId\": \"cpamp-v2-phase4-00-bootstrap-contract-v2\",\n"), nil, 1)
+	if _, err := strictDecodeFixture(missing, schema); err == nil {
+		t.Fatal("missing required field accepted")
+	}
+}
+
+func TestEveryIncompleteCheckpointRoutesRecovery(t *testing.T) {
+	admission := exactAdmission()
+	states := []bootstrap.CheckpointState{
+		bootstrap.CheckpointPending, bootstrap.CheckpointRunning, bootstrap.CheckpointApplying,
+		bootstrap.CheckpointClearing, bootstrap.CheckpointFailed, bootstrap.CheckpointOfflineRequired,
+	}
+	for _, state := range states {
+		input := baseClassification(&admission)
+		input.RequiredCheckpoints.CacheAccounting = state
+		got, err := bootstrap.Classify(input)
+		if err != nil || got != bootstrap.Recovery {
+			t.Fatalf("cache %s got=%s err=%v", state, got, err)
+		}
+		input = baseClassification(&admission)
+		input.RequiredCheckpoints.QuotaSnapshot = state
+		got, err = bootstrap.Classify(input)
+		if err != nil || got != bootstrap.Recovery {
+			t.Fatalf("quota %s got=%s err=%v", state, got, err)
+		}
+	}
+}
+
+func TestHistoricalAuthorityAndAdoptionReferencesFailClosed(t *testing.T) {
+	admission := exactAdmission()
+	for _, history := range []bootstrap.HistoricalEvidence{
+		{SourceState: bootstrap.HistoryRawDeleted, AuthorityStatus: bootstrap.HistoryAvailable, RetainedEvidenceComplete: false},
+		{SourceState: bootstrap.HistoryIncomplete, AuthorityStatus: bootstrap.HistoryIndeterminate},
+		{SourceState: bootstrap.HistoryFullRaw, AuthorityStatus: bootstrap.HistoryUnavailable},
+	} {
+		input := baseClassification(&admission)
+		input.HistoricalEvidence = &history
+		got, err := bootstrap.Classify(input)
+		if err != nil || got != bootstrap.Recovery {
+			t.Fatalf("history %+v got=%s err=%v", history, got, err)
+		}
+	}
+
+	decision := bootstrap.AdoptionResourceDecision{
+		ResourceRef: "credential-a", Kind: bootstrap.Credentials, Scope: bootstrap.CPAAuthFiles,
+		ReadEvidenceRef: "preflight:read-a", ReplayEvidenceRef: "preflight:replay-a",
+		VerifyEvidenceRef: "preflight:verify-a", Qualification: bootstrap.CapabilityPending,
+	}
+	got, err := bootstrap.DecideAdoptionResource(decision)
+	if err != nil || got != bootstrap.Unsupported {
+		t.Fatalf("pending references got=%s err=%v", got, err)
+	}
+	decision.Qualification = bootstrap.CapabilityQualified
+	got, err = bootstrap.DecideAdoptionResource(decision)
+	if err != nil || got != bootstrap.Migrate {
+		t.Fatalf("qualified references got=%s err=%v", got, err)
+	}
+}
+
+func TestCPAQualificationFreshClaimAndGatewayAreIndependentGates(t *testing.T) {
+	for _, item := range []struct {
+		strategy bootstrap.CPAStrategy
+		q        bootstrap.CPAQualification
+	}{
+		{bootstrap.NewManaged, bootstrap.CPAQualification{ManagementGeneration: "v8"}},
+		{bootstrap.ConnectExternal, bootstrap.CPAQualification{ManagementGeneration: "v8"}},
+		{bootstrap.MigrateLegacy, bootstrap.CPAQualification{ManagementGeneration: "v8"}},
+		{bootstrap.AdoptExisting, bootstrap.CPAQualification{ManagementGeneration: "v8"}},
+	} {
+		if err := item.q.ValidateForStrategy(item.strategy); err == nil {
+			t.Fatalf("%s accepted without required qualification", item.strategy)
+		}
+	}
+
+	claim := bootstrap.FreshClaim{
+		InstallationID: "install-a", GenerationID: "gen-a", ExpiresAtUnixMilli: 200, NowUnixMilli: 100,
+		PersistedAcrossRestart: true, CSRFVerified: true, HostAuthenticityVerified: true,
+	}
+	before := bootstrap.FreshInitializationState{Claim: claim, AdminCredential: bootstrap.AdminCredentialUninitialized}
+	after := before
+	after.Claim.Consumed = true
+	after.AdminCredential = bootstrap.AdminCredentialInitialized
+	after.ProductInitialized = true
+	if err := bootstrap.ValidateFreshInitializationCommit(before, after); err != nil {
+		t.Fatal(err)
+	}
+	if err := bootstrap.ValidateFreshInitializationCommit(after, after); err == nil {
+		t.Fatal("consumed claim replay accepted")
+	}
+
+	if bootstrap.CanActivatePublicGateway(bootstrap.GatewayActivationPreconditions{
+		ProductInitialized: true, ManagementProfileQualified: true, RequiredEffectiveConfigQualified: true,
+	}) {
+		t.Fatal("initialized product activated Gateway without client-auth qualification")
+	}
+}
+
+func TestDiscoveryPrefixAndJournalFailClosed(t *testing.T) {
+	public := []bootstrap.DiscoveryField{
+		bootstrap.DiscoveryMode, bootstrap.DiscoveryAuthenticationRequired, bootstrap.DiscoveryRecoveryRequired,
+	}
+	if err := bootstrap.ValidateDiscoveryProjection(false, public); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []bootstrap.DiscoveryField{
+		bootstrap.DiscoverySourceCPA, bootstrap.DiscoverySourceAdmission, bootstrap.DiscoveryDatabase,
+		bootstrap.DiscoveryBackup, bootstrap.DiscoveryResourceRefs, bootstrap.DiscoveryMutations,
+		bootstrap.DiscoveryPreserved, bootstrap.DiscoveryUnsupported,
+	} {
+		if err := bootstrap.ValidateDiscoveryProjection(false, []bootstrap.DiscoveryField{bootstrap.DiscoveryMode, field}); err == nil {
+			t.Fatalf("unauthenticated discovery leak accepted: %s", field)
+		}
+	}
+
+	prefix := bootstrap.PrefixOperation{
+		OperationID: "operation-1000", ExpectedRoutingRevision: 7, CurrentRoutingRevision: 7,
+		DesiredControlBasePath: "/admin-x", AuthorityQualified: true, CollisionFree: true,
+		PublicIdentityHealthy: true, StaticAssetsHealthy: true, APIAuthenticationHealthy: true,
+		Result: bootstrap.PrefixPending,
+	}
+	if !bootstrap.CanCommitPrefix(prefix) {
+		t.Fatal("valid prefix commit rejected")
+	}
+	prefix.CurrentRoutingRevision = 8
+	if bootstrap.CanCommitPrefix(prefix) {
+		t.Fatal("routing CAS conflict accepted")
+	}
+	prefix.CurrentRoutingRevision = 7
+	prefix.Result = bootstrap.PrefixUnknown
+	action, err := bootstrap.PrefixActionAfterOperation(prefix)
+	if err != nil || action != bootstrap.PrefixInspectFirst {
+		t.Fatalf("lost prefix result action=%s err=%v", action, err)
+	}
+
+	record := bootstrap.JournalRecord{Domain: bootstrap.ProductJournal, OperationID: "operation-1000", Result: bootstrap.JournalUnknown}
+	action2, err := bootstrap.JournalReplayAction(record, "operation-1000")
+	if err != nil || action2 != bootstrap.JournalInspectFirst {
+		t.Fatalf("unknown journal result action=%s err=%v", action2, err)
+	}
+	action2, err = bootstrap.JournalReplayAction(record, "operation-2000")
+	if err != nil || action2 != bootstrap.JournalRejectNewOperation {
+		t.Fatalf("different operation replay action=%s err=%v", action2, err)
 	}
 }
 

@@ -9,17 +9,12 @@ type OperationID string
 type ContentDigest string
 
 var (
-	operationIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{7,127}$`)
+	operationIDPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{7,127}$`)
 	contentDigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
-func validOperationID(id OperationID) bool {
-	return operationIDPattern.MatchString(string(id))
-}
-
-func validContentDigest(digest ContentDigest) bool {
-	return contentDigestPattern.MatchString(string(digest))
-}
+func validOperationID(id OperationID) bool    { return operationIDPattern.MatchString(string(id)) }
+func validContentDigest(d ContentDigest) bool { return contentDigestPattern.MatchString(string(d)) }
 
 type OperationStage string
 
@@ -42,9 +37,6 @@ func validOperationStage(stage OperationStage) bool {
 	}
 }
 
-// ActualOperationRecord freezes the minimum persistent identity every future
-// migration or forward-hop operation must carry. Persistence itself belongs to
-// Phase4 backend implementation.
 type ActualOperationRecord struct {
 	OperationID         OperationID
 	StartedAtUnixMilli  int64
@@ -68,8 +60,6 @@ func (r ActualOperationRecord) Validate() error {
 	return nil
 }
 
-// ReceiptBinding is the immutable identity a future Manager-owned receipt must
-// bind. It is data only; this package neither signs nor trusts a receipt.
 type ReceiptBinding struct {
 	OperationID           OperationID
 	TargetFingerprint     ContentDigest
@@ -84,8 +74,8 @@ func (r ReceiptBinding) Validate() error {
 		return fmt.Errorf("invalid operation id %q", r.OperationID)
 	}
 	for name, digest := range map[string]ContentDigest{
-		"target fingerprint":     r.TargetFingerprint,
-		"input manifest digest":  r.InputManifestDigest,
+		"target fingerprint":      r.TargetFingerprint,
+		"input manifest digest":   r.InputManifestDigest,
 		"output manifest digest":  r.OutputManifestDigest,
 		"artifact archive digest": r.ArtifactArchiveDigest,
 		"executable digest":       r.ExecutableDigest,
@@ -97,38 +87,27 @@ func (r ReceiptBinding) Validate() error {
 	return nil
 }
 
-// TrustedReceiptPreconditions captures facts that a future production
-// validator must establish. ManagerAuthenticityVerified must come from the
-// private Manager authority implementation; a JSON field or EvidenceRef is
-// never sufficient.
 type TrustedReceiptPreconditions struct {
-	Receipt                     ReceiptBinding
-	CurrentOperationID          OperationID
-	CurrentTargetFingerprint    ContentDigest
-	CurrentInputManifestDigest  ContentDigest
+	Receipt                      ReceiptBinding
+	CurrentOperationID           OperationID
+	CurrentTargetFingerprint     ContentDigest
+	CurrentInputManifestDigest   ContentDigest
 	CurrentOutputManifestDigest  ContentDigest
 	CurrentArtifactArchiveDigest ContentDigest
 	CurrentExecutableDigest      ContentDigest
 	ManagerAuthenticityVerified  bool
-	JournalRecordPresent        bool
-	JournalRevoked              bool
-	ProcessExited               bool
-	ProcessExitCode             int
-	ProcessHandlesReleased      bool
-	ProcessReaped               bool
+	JournalRecordPresent         bool
+	JournalRevoked               bool
+	ProcessExited                bool
+	ProcessExitCode              int
+	ProcessHandlesReleased       bool
+	ProcessReaped                bool
 }
 
-// CanAcceptTrustedHopReceipt is a pure acceptance predicate. It does not mint,
-// sign, persist, revoke, or publish any receipt.
 func CanAcceptTrustedHopReceipt(p TrustedReceiptPreconditions) bool {
 	if p.Receipt.Validate() != nil ||
-		!p.ManagerAuthenticityVerified ||
-		!p.JournalRecordPresent ||
-		p.JournalRevoked ||
-		!p.ProcessExited ||
-		p.ProcessExitCode != 0 ||
-		!p.ProcessHandlesReleased ||
-		!p.ProcessReaped {
+		!p.ManagerAuthenticityVerified || !p.JournalRecordPresent || p.JournalRevoked ||
+		!p.ProcessExited || p.ProcessExitCode != 0 || !p.ProcessHandlesReleased || !p.ProcessReaped {
 		return false
 	}
 	return p.Receipt.OperationID == p.CurrentOperationID &&
@@ -139,11 +118,50 @@ func CanAcceptTrustedHopReceipt(p TrustedReceiptPreconditions) bool {
 		p.Receipt.ExecutableDigest == p.CurrentExecutableDigest
 }
 
+type CheckpointState string
+
+const (
+	CheckpointComplete        CheckpointState = "complete"
+	CheckpointPending         CheckpointState = "pending"
+	CheckpointRunning         CheckpointState = "running"
+	CheckpointApplying        CheckpointState = "applying"
+	CheckpointClearing        CheckpointState = "clearing"
+	CheckpointFailed          CheckpointState = "failed"
+	CheckpointOfflineRequired CheckpointState = "offline_required"
+)
+
+func validCheckpointState(s CheckpointState) bool {
+	switch s {
+	case CheckpointComplete, CheckpointPending, CheckpointRunning, CheckpointApplying,
+		CheckpointClearing, CheckpointFailed, CheckpointOfflineRequired:
+		return true
+	default:
+		return false
+	}
+}
+
 type RequiredMigrationCheckpoints struct {
-	CacheAccountingRevision2Complete bool
-	QuotaSnapshotLifecycleComplete   bool
+	CacheAccounting CheckpointState
+	QuotaSnapshot   CheckpointState
+}
+
+func (c RequiredMigrationCheckpoints) Validate() error {
+	if !validCheckpointState(c.CacheAccounting) || !validCheckpointState(c.QuotaSnapshot) {
+		return fmt.Errorf("invalid required migration checkpoint state")
+	}
+	return nil
 }
 
 func (c RequiredMigrationCheckpoints) Complete() bool {
-	return c.CacheAccountingRevision2Complete && c.QuotaSnapshotLifecycleComplete
+	return c.Validate() == nil && c.CacheAccounting == CheckpointComplete && c.QuotaSnapshot == CheckpointComplete
+}
+
+func (c RequiredMigrationCheckpoints) RecoveryReason() (RecoveryReason, bool) {
+	if c.Validate() != nil || c.Complete() {
+		return "", false
+	}
+	if c.CacheAccounting == CheckpointOfflineRequired || c.QuotaSnapshot == CheckpointOfflineRequired {
+		return OfflineActionRequired, true
+	}
+	return MigrationIncomplete, true
 }

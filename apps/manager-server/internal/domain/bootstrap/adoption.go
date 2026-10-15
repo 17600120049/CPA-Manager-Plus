@@ -7,8 +7,6 @@ import (
 	"strings"
 )
 
-// AdoptionResourceKind names the supported migration taxonomy, not a unit of
-// migration. Distinct resources of the same kind may need distinct decisions.
 type AdoptionResourceKind string
 
 const (
@@ -42,27 +40,34 @@ const (
 	ReconfigureAfterAdoption    AdoptionManualAction = "reconfigure_after_adoption"
 )
 
-// ResourceRef is an opaque identifier assigned to one discovered source CPA
-// resource by server-owned preflight. It must not contain a secret or URL.
 type ResourceRef string
-
-// CapabilityEvidenceRef points to a server-owned detection/preflight record.
-// Presence alone is never capability authority; Phase4-01+ must resolve the
-// reference against server-owned evidence before execution.
 type CapabilityEvidenceRef string
+
+type CapabilityQualification string
+
+const (
+	CapabilityPending   CapabilityQualification = "pending"
+	CapabilityQualified CapabilityQualification = "qualified"
+	CapabilityRejected  CapabilityQualification = "rejected"
+)
 
 var resourceRefPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
-func validResourceRef(ref ResourceRef) bool {
-	return resourceRefPattern.MatchString(string(ref))
-}
-
+func validResourceRef(ref ResourceRef) bool { return resourceRefPattern.MatchString(string(ref)) }
 func validCapabilityEvidenceRef(ref CapabilityEvidenceRef) bool {
 	if ref == "" {
 		return true
 	}
 	id, ok := strings.CutPrefix(string(ref), "preflight:")
 	return ok && validResourceRef(ResourceRef(id))
+}
+func validCapabilityQualification(v CapabilityQualification) bool {
+	switch v {
+	case CapabilityPending, CapabilityQualified, CapabilityRejected:
+		return true
+	default:
+		return false
+	}
 }
 
 type AdoptionResourceDecision struct {
@@ -72,6 +77,7 @@ type AdoptionResourceDecision struct {
 	ReadEvidenceRef   CapabilityEvidenceRef
 	ReplayEvidenceRef CapabilityEvidenceRef
 	VerifyEvidenceRef CapabilityEvidenceRef
+	Qualification     CapabilityQualification
 	ManualAction      AdoptionManualAction
 	Disposition       AdoptionDisposition
 }
@@ -91,8 +97,6 @@ func adoptionScope(kind AdoptionResourceKind) (AdoptionScope, bool) {
 	}
 }
 
-// DecideAdoptionResource freezes the evidence shape only. Later production
-// consumers must resolve the referenced evidence before any mutation.
 func DecideAdoptionResource(item AdoptionResourceDecision) (AdoptionDisposition, error) {
 	if !validResourceRef(item.ResourceRef) {
 		return "", fmt.Errorf("invalid adoption resource reference %q", item.ResourceRef)
@@ -106,8 +110,14 @@ func DecideAdoptionResource(item AdoptionResourceDecision) (AdoptionDisposition,
 			return "", fmt.Errorf("invalid server preflight evidence reference %q", ref)
 		}
 	}
-	complete := item.ReadEvidenceRef != "" && item.ReplayEvidenceRef != "" && item.VerifyEvidenceRef != ""
-	if complete {
+	if !validCapabilityQualification(item.Qualification) {
+		return "", fmt.Errorf("unknown capability qualification %q", item.Qualification)
+	}
+	completeRefs := item.ReadEvidenceRef != "" && item.ReplayEvidenceRef != "" && item.VerifyEvidenceRef != ""
+	if item.Qualification == CapabilityQualified && !completeRefs {
+		return "", errors.New("qualified capability requires read/replay/verify evidence references")
+	}
+	if completeRefs && item.Qualification == CapabilityQualified {
 		if item.ManualAction != "" {
 			return "", errors.New("migratable resource cannot also require manual action")
 		}
@@ -123,8 +133,8 @@ func DecideAdoptionResource(item AdoptionResourceDecision) (AdoptionDisposition,
 	}
 }
 
-func adoptionEffect(disposition AdoptionDisposition, ref ResourceRef) string {
-	return "adoption:" + string(disposition) + ":" + string(ref)
+func adoptionEffect(d AdoptionDisposition, ref ResourceRef) string {
+	return "adoption:" + string(d) + ":" + string(ref)
 }
 
 func validateAdoptionDecisions(discovered []ResourceRef, decisions []AdoptionResourceDecision, mutations, unsupported []string) error {
@@ -134,15 +144,15 @@ func validateAdoptionDecisions(discovered []ResourceRef, decisions []AdoptionRes
 	if len(discovered) != len(decisions) {
 		return errors.New("each discovered adoption resource needs exactly one decision")
 	}
-	seenDiscovered := make(map[ResourceRef]bool, len(discovered))
+	seenDiscovered := map[ResourceRef]bool{}
 	for _, ref := range discovered {
 		if !validResourceRef(ref) || seenDiscovered[ref] {
 			return fmt.Errorf("invalid or duplicate discovered resource %q", ref)
 		}
 		seenDiscovered[ref] = true
 	}
-	seenDecisions := make(map[ResourceRef]bool, len(decisions))
-	expected := make(map[string]bool, len(decisions))
+	seenDecisions := map[ResourceRef]bool{}
+	expected := map[string]bool{}
 	for _, item := range decisions {
 		if !seenDiscovered[item.ResourceRef] || seenDecisions[item.ResourceRef] {
 			return fmt.Errorf("missing or duplicate discovered resource decision %q", item.ResourceRef)
@@ -150,7 +160,7 @@ func validateAdoptionDecisions(discovered []ResourceRef, decisions []AdoptionRes
 		seenDecisions[item.ResourceRef] = true
 		decision, err := DecideAdoptionResource(item)
 		if err != nil || item.Disposition != decision {
-			return fmt.Errorf("adoption resource %q disposition conflicts with evidence references: %v", item.ResourceRef, err)
+			return fmt.Errorf("adoption resource %q disposition conflicts with qualification: %v", item.ResourceRef, err)
 		}
 		effect := adoptionEffect(decision, item.ResourceRef)
 		expected[effect] = true
@@ -159,7 +169,7 @@ func validateAdoptionDecisions(discovered []ResourceRef, decisions []AdoptionRes
 				return fmt.Errorf("migratable resource %q missing from mutations", item.ResourceRef)
 			}
 		} else if !has(unsupported, effect) || has(mutations, effect) {
-			return fmt.Errorf("resource %q missing from unsupported or manual actions", item.ResourceRef)
+			return fmt.Errorf("resource %q missing from unsupported/manual actions", item.ResourceRef)
 		}
 	}
 	for _, group := range [][]string{mutations, unsupported} {

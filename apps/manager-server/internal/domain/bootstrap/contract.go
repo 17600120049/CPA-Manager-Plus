@@ -74,10 +74,10 @@ const (
 type SourceEvidenceStatus string
 
 const (
-	SourceUnverified            SourceEvidenceStatus = "unverified"
-	ExactCandidateVerified      SourceEvidenceStatus = "exact_candidate_verified"
-	ForwardHopVerified          SourceEvidenceStatus = "forward_hop_verified"
-	UnknownOrNewerSource        SourceEvidenceStatus = "unknown_or_newer"
+	SourceUnverified       SourceEvidenceStatus = "unverified"
+	ExactCandidateVerified SourceEvidenceStatus = "exact_candidate_verified"
+	ForwardHopVerified     SourceEvidenceStatus = "forward_hop_verified"
+	UnknownOrNewerSource   SourceEvidenceStatus = "unknown_or_newer"
 )
 
 type BridgeReadiness string
@@ -120,18 +120,12 @@ const (
 	SessionExpired       SessionState = "expired"
 )
 
-type PlannedCandidate struct {
-	Release      string
-	SourceCommit string
-}
+type PlannedCandidate struct{ Release, SourceCommit string }
 
 func ExactV1144Candidate() PlannedCandidate {
 	return PlannedCandidate{Release: PlannedDirectRelease, SourceCommit: PlannedDirectSourceCommit}
 }
-
-func (c PlannedCandidate) valid() bool {
-	return c == ExactV1144Candidate()
-}
+func (c PlannedCandidate) valid() bool { return c == ExactV1144Candidate() }
 
 type EvidenceRef string
 
@@ -143,9 +137,6 @@ func validEvidenceRef(ref EvidenceRef) bool {
 	return ok && id != "" && strings.TrimSpace(id) == id
 }
 
-// UpgradeAdmission freezes six independent dimensions:
-// shape -> planned candidate -> artifact evidence -> source/hop evidence ->
-// bridge readiness -> writable grant. Nothing here issues a grant.
 type UpgradeAdmission struct {
 	Shape                 SourceShape
 	PlannedCandidate      PlannedCandidate
@@ -156,22 +147,19 @@ type UpgradeAdmission struct {
 	Readiness             BridgeReadiness
 }
 
-func validSourceShape(shape SourceShape) bool {
-	switch shape {
+func validSourceShape(s SourceShape) bool {
+	switch s {
 	case LegacySchemaA, LegacySchemaB, LegacySchemaC, UnknownShape:
 		return true
-	default:
-		return false
 	}
+	return false
 }
-
-func validReadiness(readiness BridgeReadiness) bool {
-	switch readiness {
+func validReadiness(r BridgeReadiness) bool {
+	switch r {
 	case BridgeUnknown, BridgeReady, BridgeBlocked, BridgeRecovery, BridgeOfflineRequired:
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
 func (a UpgradeAdmission) Validate() error {
@@ -191,8 +179,6 @@ func (a UpgradeAdmission) Validate() error {
 	}
 	switch a.EvidenceStatus {
 	case SourceUnverified, UnknownOrNewerSource:
-		// Shape and planned target are observations/planning only. They cannot
-		// upgrade an unverified source.
 		return nil
 	case ExactCandidateVerified:
 		if a.Shape != LegacySchemaC {
@@ -216,67 +202,45 @@ func (a UpgradeAdmission) Validate() error {
 	}
 	return nil
 }
-
 func (a UpgradeAdmission) trustedSource() bool {
 	return a.EvidenceStatus == ExactCandidateVerified || a.EvidenceStatus == ForwardHopVerified
 }
 
-func validRecoveryReason(reason RecoveryReason) bool {
-	switch reason {
-	case OperationIncomplete, RollbackRequired, DamagedState, MigrationIncomplete,
-		BackupInvalid, SourceChanged, OfflineActionRequired, AuthorityUnqualified,
-		ManualRecoveryRequired:
+func validRecoveryReason(r RecoveryReason) bool {
+	switch r {
+	case OperationIncomplete, RollbackRequired, DamagedState, MigrationIncomplete, BackupInvalid, SourceChanged, OfflineActionRequired, AuthorityUnqualified, ManualRecoveryRequired:
 		return true
-	default:
-		return false
 	}
+	return false
 }
-
-// ClassificationEvidence deliberately keeps administrator/session state
-// orthogonal to product mode classification.
-type ClassificationEvidence struct {
-	HasV1ProductState bool
-	Admission         *UpgradeAdmission
-	RecoveryReason    RecoveryReason
-	BootstrapComplete bool
-	AdminCredential   AdminCredentialState
-	Session           SessionState
-}
-
-func validAdminCredentialState(state AdminCredentialState) bool {
-	switch state {
+func validAdminCredentialState(s AdminCredentialState) bool {
+	switch s {
 	case AdminCredentialUninitialized, AdminCredentialInitialized, AdminCredentialUnverifiable:
 		return true
-	default:
-		return false
 	}
+	return false
 }
-
-func validSessionState(state SessionState) bool {
-	switch state {
+func validSessionState(s SessionState) bool {
+	switch s {
 	case SessionMissing, SessionAuthenticated, SessionExpired:
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
-type FreshInitializationPreconditions struct {
-	Mode               Mode
-	AdminCredential    AdminCredentialState
-	HostClaimQualified bool
+type ClassificationEvidence struct {
+	HasV1ProductState   bool
+	Admission           *UpgradeAdmission
+	RecoveryReason      RecoveryReason
+	BootstrapComplete   bool
+	AdminCredential     AdminCredentialState
+	Session             SessionState
+	RequiredCheckpoints RequiredMigrationCheckpoints
+	HistoricalEvidence  *HistoricalEvidence
 }
 
-// CanInitializeAdministrator is a pure contract predicate. Fresh
-// classification alone is not initialization authority.
-func CanInitializeAdministrator(p FreshInitializationPreconditions) bool {
-	return p.Mode == Fresh &&
-		p.AdminCredential == AdminCredentialUninitialized &&
-		p.HostClaimQualified
-}
-
-// Classify never infers a release from SourceShape. Only separately verified
-// source/hop evidence plus ready migration state can classify as Upgrade.
+// Classify keeps browser session state orthogonal, but credential integrity,
+// migration checkpoints and historical authority are server-side recovery gates.
 func Classify(e ClassificationEvidence) (Mode, error) {
 	if !validAdminCredentialState(e.AdminCredential) || !validSessionState(e.Session) {
 		return "", errors.New("invalid administrator credential or session state")
@@ -287,6 +251,9 @@ func Classify(e ClassificationEvidence) (Mode, error) {
 		}
 		return Recovery, nil
 	}
+	if e.AdminCredential == AdminCredentialUnverifiable {
+		return Recovery, nil
+	}
 	if e.BootstrapComplete {
 		return Completed, nil
 	}
@@ -294,7 +261,13 @@ func Classify(e ClassificationEvidence) (Mode, error) {
 		if e.Admission != nil {
 			return "", errors.New("upgrade admission supplied without v1 product state")
 		}
+		if e.AdminCredential != AdminCredentialUninitialized {
+			return Recovery, nil
+		}
 		return Fresh, nil
+	}
+	if e.AdminCredential != AdminCredentialInitialized {
+		return Recovery, nil
 	}
 	if e.Admission == nil {
 		return UnsupportedUpgrade, nil
@@ -308,10 +281,15 @@ func Classify(e ClassificationEvidence) (Mode, error) {
 	if e.Admission.Readiness != BridgeReady {
 		return Recovery, nil
 	}
+	if !e.RequiredCheckpoints.Complete() {
+		return Recovery, nil
+	}
+	if e.HistoricalEvidence == nil || !e.HistoricalEvidence.MigrationReady() {
+		return Recovery, nil
+	}
 	return Upgrade, nil
 }
 
-// ValidateTransition prevents unresolved recovery from being relabeled as done.
 func ValidateTransition(from, to Mode) error {
 	if from == Recovery && to == Completed {
 		return errors.New("recovery cannot transition directly to completed")
@@ -322,20 +300,14 @@ func ValidateTransition(from, to Mode) error {
 type MigrationStage string
 
 const (
-	ReadOnlyClassification   MigrationStage = "read_only_classification"
-	CompleteVerifiedBackup   MigrationStage = "complete_verified_backup"
-	SourceRevalidation       MigrationStage = "source_revalidation"
-	WritableMigration        MigrationStage = "writable_migration"
+	ReadOnlyClassification MigrationStage = "read_only_classification"
+	CompleteVerifiedBackup MigrationStage = "complete_verified_backup"
+	SourceRevalidation     MigrationStage = "source_revalidation"
+	WritableMigration      MigrationStage = "writable_migration"
 )
 
-var requiredUpgradeOrdering = []MigrationStage{
-	ReadOnlyClassification,
-	CompleteVerifiedBackup,
-	SourceRevalidation,
-	WritableMigration,
-}
+var requiredUpgradeOrdering = []MigrationStage{ReadOnlyClassification, CompleteVerifiedBackup, SourceRevalidation, WritableMigration}
 
-// ValidateUpgradeOrdering freezes the one-way first-write boundary.
 func ValidateUpgradeOrdering(stages []MigrationStage) error {
 	if len(stages) != len(requiredUpgradeOrdering) {
 		return errors.New("upgrade ordering must contain exactly four stages")
@@ -348,8 +320,6 @@ func ValidateUpgradeOrdering(stages []MigrationStage) error {
 	return nil
 }
 
-// WritablePreconditions describes what a future Manager-owned production
-// authority must prove. Phase4A-08 does not implement that authority.
 type WritablePreconditions struct {
 	Mode                       Mode
 	Admission                  UpgradeAdmission
@@ -361,13 +331,8 @@ type WritablePreconditions struct {
 	Ordering                   []MigrationStage
 }
 
-// CanIssueWritableGrant is a pure contract predicate, not a grant issuer.
 func CanIssueWritableGrant(p WritablePreconditions) bool {
-	if p.Mode != Upgrade ||
-		!p.BackupVerified ||
-		!p.SourceRevalidated ||
-		!p.RequiredCheckpoints.Complete() ||
-		!p.ManagerAuthorityQualified {
+	if p.Mode != Upgrade || !p.BackupVerified || !p.SourceRevalidated || !p.RequiredCheckpoints.Complete() || !p.ManagerAuthorityQualified {
 		return false
 	}
 	if p.Admission.Validate() != nil || !p.Admission.trustedSource() || p.Admission.Readiness != BridgeReady {
@@ -380,10 +345,10 @@ func CanIssueWritableGrant(p WritablePreconditions) bool {
 }
 
 type CPACoreContract struct {
-	ManagementGeneration      string
-	CoreV0FallbackAllowed     bool
-	ExternalManagementOwner   string
-	ExternalLifecycleOwner    string
+	ManagementGeneration    string
+	CoreV0FallbackAllowed   bool
+	ExternalManagementOwner string
+	ExternalLifecycleOwner  string
 }
 
 func (c CPACoreContract) Validate() error {
@@ -399,14 +364,14 @@ func (c CPACoreContract) Validate() error {
 	return nil
 }
 
-// Plan is a product-domain decision, not a Public API DTO or executable
-// operation. It carries no trusted receipt and cannot authorize a write.
 type Plan struct {
 	Mode                            Mode
 	CPAMPAction                     CPAMPAction
 	CPAStrategy                     CPAStrategy
+	CPAQualification                CPAQualification
 	SourceAdmission                 *UpgradeAdmission
 	SourceCPA                       SourceCPA
+	HistoricalEvidence              *HistoricalEvidence
 	UsageAction                     UsageAction
 	BackupRequired                  bool
 	RuntimeMode                     RuntimeMode
@@ -423,14 +388,14 @@ type Plan struct {
 	MigrationOrdering               []MigrationStage
 }
 
-func RuntimeForStrategy(strategy CPAStrategy) (RuntimeMode, error) {
-	switch strategy {
+func RuntimeForStrategy(s CPAStrategy) (RuntimeMode, error) {
+	switch s {
 	case NewManaged, AdoptExisting, MigrateLegacy:
 		return Embedded, nil
 	case ConnectExternal:
 		return External, nil
 	default:
-		return "", fmt.Errorf("unknown CPA strategy %q", strategy)
+		return "", fmt.Errorf("unknown CPA strategy %q", s)
 	}
 }
 
@@ -438,7 +403,6 @@ func (p Plan) Validate() error {
 	var expectedAction CPAMPAction
 	var expectedUsage UsageAction
 	var expectedBackup bool
-
 	switch p.Mode {
 	case Fresh:
 		expectedAction, expectedUsage = Initialize, NoUsageAction
@@ -453,6 +417,9 @@ func (p Plan) Validate() error {
 		}
 		if len(p.MigrationOrdering) != 0 {
 			return errors.New("fresh cannot carry legacy migration ordering")
+		}
+		if p.HistoricalEvidence != nil {
+			return errors.New("fresh cannot carry legacy historical evidence")
 		}
 	case Upgrade:
 		expectedAction, expectedUsage, expectedBackup = MigrateV1, PreserveUsage, true
@@ -471,16 +438,21 @@ func (p Plan) Validate() error {
 		if err := ValidateUpgradeOrdering(p.MigrationOrdering); err != nil {
 			return err
 		}
+		if p.HistoricalEvidence == nil || !p.HistoricalEvidence.MigrationReady() {
+			return errors.New("upgrade requires migration-ready authoritative historical evidence")
+		}
 	default:
 		return fmt.Errorf("mode %q cannot produce a user path plan", p.Mode)
 	}
-
 	if p.CPAMPAction != expectedAction || p.UsageAction != expectedUsage || p.BackupRequired != expectedBackup {
 		return errors.New("CPAMP action, usage action or backup requirement conflicts with mode")
 	}
 	runtime, err := RuntimeForStrategy(p.CPAStrategy)
 	if err != nil || p.RuntimeMode != runtime {
 		return errors.New("runtime mode must derive from CPA strategy")
+	}
+	if err := p.CPAQualification.ValidateForStrategy(p.CPAStrategy); err != nil {
+		return err
 	}
 	var expectedSource SourceCPA
 	switch p.CPAStrategy {
@@ -494,13 +466,12 @@ func (p Plan) Validate() error {
 	if p.SourceCPA != expectedSource {
 		return errors.New("source CPA conflicts with strategy")
 	}
-	if strings.TrimSpace(p.ControlBasePath) == "" || len(p.EstimatedSteps) == 0 || len(p.Mutations) == 0 {
-		return errors.New("plan requires controlBasePath, mutations and estimated steps")
+	if !validControlBasePath(p.ControlBasePath) || len(p.EstimatedSteps) == 0 || len(p.Mutations) == 0 {
+		return errors.New("plan requires canonical controlBasePath, mutations and estimated steps")
 	}
 	if err := validateLists(p.Mutations, p.Preserved, p.Unsupported, p.EstimatedSteps); err != nil {
 		return err
 	}
-
 	if p.Mode == Upgrade {
 		for _, required := range []string{"authoritative_usage_history", "archive_retained_evidence_when_required"} {
 			if !has(p.Preserved, required) {
@@ -511,19 +482,13 @@ func (p Plan) Validate() error {
 			return errors.New("upgrade must forbid replacing authoritative history by export-transform-reimport")
 		}
 	}
-
 	if p.CPAStrategy == AdoptExisting {
-		for _, value := range []string{
-			"historical_usage_import", "request_history_import", "cpa_log_import",
-			"historical_analytics_import", "plugin_runtime_implicit_import",
-			"source_cpa_stop", "source_cpa_delete", "source_cpa_overwrite",
-		} {
-			if !has(p.Unsupported, value) {
-				return fmt.Errorf("adoption must disallow %s", value)
+		for _, v := range []string{"historical_usage_import", "request_history_import", "cpa_log_import", "historical_analytics_import", "plugin_runtime_implicit_import", "source_cpa_stop", "source_cpa_delete", "source_cpa_overwrite"} {
+			if !has(p.Unsupported, v) {
+				return fmt.Errorf("adoption must disallow %s", v)
 			}
 		}
-		if !has(p.Preserved, "source_cpa_recoverable_until_success") ||
-			!has(p.Preserved, "source_cpa_available_until_commit") {
+		if !has(p.Preserved, "source_cpa_recoverable_until_success") || !has(p.Preserved, "source_cpa_available_until_commit") {
 			return errors.New("adoption must keep source CPA available and recoverable")
 		}
 		if err := validateAdoptionDecisions(p.DiscoveredResourceRefs, p.AdoptionDecisions, p.Mutations, p.Unsupported); err != nil {
@@ -541,11 +506,10 @@ func (p Plan) Validate() error {
 			}
 		}
 	}
-
 	if p.CPAStrategy == ConnectExternal {
-		for _, value := range []string{"source_cpa_stop", "source_cpa_delete", "source_cpa_takeover"} {
-			if !has(p.Unsupported, value) {
-				return fmt.Errorf("external connection must disallow %s", value)
+		for _, v := range []string{"source_cpa_stop", "source_cpa_delete", "source_cpa_takeover"} {
+			if !has(p.Unsupported, v) {
+				return fmt.Errorf("external connection must disallow %s", v)
 			}
 		}
 		if !has(p.Preserved, "source_cpa_user_owned") {
@@ -559,24 +523,23 @@ func (p Plan) Validate() error {
 }
 
 func validateLists(groups ...[]string) error {
-	for _, group := range groups {
-		if group == nil {
+	for _, g := range groups {
+		if g == nil {
 			return errors.New("plan lists must be explicit")
 		}
 		seen := map[string]bool{}
-		for _, value := range group {
-			if value == "" || seen[value] {
+		for _, v := range g {
+			if v == "" || seen[v] {
 				return errors.New("plan lists contain empty or duplicate value")
 			}
-			seen[value] = true
+			seen[v] = true
 		}
 	}
 	return nil
 }
-
 func has(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
+	for _, v := range values {
+		if v == target {
 			return true
 		}
 	}

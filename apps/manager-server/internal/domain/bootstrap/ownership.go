@@ -9,8 +9,6 @@ const (
 	RuntimeSupervisorOwner ComponentOwner = "runtime_supervisor"
 )
 
-// OwnershipContract freezes control-plane authority boundaries. It contains no
-// runtime implementation or IPC contract.
 type OwnershipContract struct {
 	DatabaseOwner            ComponentOwner
 	DataKeyOwner             ComponentOwner

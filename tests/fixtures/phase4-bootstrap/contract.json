@@ -26,8 +26,19 @@
     "source_revalidation",
     "writable_migration"
   ],
-  "bootstrapModes": ["fresh", "upgrade", "unsupported_upgrade", "recovery", "completed"],
-  "cpaStrategies": ["new_managed", "adopt_existing", "connect_external", "migrate_legacy"],
+  "bootstrapModes": [
+    "fresh",
+    "upgrade",
+    "unsupported_upgrade",
+    "recovery",
+    "completed"
+  ],
+  "cpaStrategies": [
+    "new_managed",
+    "adopt_existing",
+    "connect_external",
+    "migrate_legacy"
+  ],
   "paths": [
     {
       "id": "P4-BOOT-01",
@@ -42,14 +53,30 @@
       "initializeAdminCredential": true,
       "preserveExistingAdminCredential": false,
       "authenticationRequired": false,
-      "mutations": ["cpamp_state", "managed_cpa", "control_base_path"],
+      "mutations": [
+        "cpamp_state",
+        "managed_cpa",
+        "control_base_path"
+      ],
       "preserved": [],
       "unsupported": [],
       "discoveredResourceRefs": [],
       "adoptionDecisions": [],
       "controlBasePath": "/phase4-fixture-control",
-      "estimatedSteps": ["choose_strategy", "choose_control_base_path", "initialize_cpamp", "verify_runtime"],
-      "migrationOrdering": []
+      "estimatedSteps": [
+        "choose_strategy",
+        "choose_control_base_path",
+        "initialize_cpamp",
+        "verify_runtime"
+      ],
+      "migrationOrdering": [],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": true,
+        "requiredProfileQualified": false,
+        "stagingV8TransitionQualified": false
+      },
+      "historicalEvidence": null
     },
     {
       "id": "P4-BOOT-02",
@@ -64,10 +91,33 @@
       "initializeAdminCredential": true,
       "preserveExistingAdminCredential": false,
       "authenticationRequired": false,
-      "mutations": ["cpamp_state", "managed_cpa", "control_base_path", "adoption:migrate:api-key-primary", "adoption:migrate:credential-a"],
-      "preserved": ["source_cpa_recoverable_until_success", "source_cpa_available_until_commit"],
-      "unsupported": ["historical_usage_import", "request_history_import", "cpa_log_import", "historical_analytics_import", "plugin_runtime_implicit_import", "source_cpa_stop", "source_cpa_delete", "source_cpa_overwrite", "adoption:manual_action:credential-b"],
-      "discoveredResourceRefs": ["api-key-primary", "credential-a", "credential-b"],
+      "mutations": [
+        "cpamp_state",
+        "managed_cpa",
+        "control_base_path",
+        "adoption:migrate:api-key-primary",
+        "adoption:migrate:credential-a"
+      ],
+      "preserved": [
+        "source_cpa_recoverable_until_success",
+        "source_cpa_available_until_commit"
+      ],
+      "unsupported": [
+        "historical_usage_import",
+        "request_history_import",
+        "cpa_log_import",
+        "historical_analytics_import",
+        "plugin_runtime_implicit_import",
+        "source_cpa_stop",
+        "source_cpa_delete",
+        "source_cpa_overwrite",
+        "adoption:manual_action:credential-b"
+      ],
+      "discoveredResourceRefs": [
+        "api-key-primary",
+        "credential-a",
+        "credential-b"
+      ],
       "adoptionDecisions": [
         {
           "resourceRef": "api-key-primary",
@@ -77,7 +127,8 @@
           "replayEvidenceRef": "preflight:replay-api-key-primary",
           "verifyEvidenceRef": "preflight:verify-api-key-primary",
           "manualAction": "",
-          "disposition": "migrate"
+          "disposition": "migrate",
+          "qualification": "qualified"
         },
         {
           "resourceRef": "credential-a",
@@ -87,7 +138,8 @@
           "replayEvidenceRef": "preflight:replay-credential-a",
           "verifyEvidenceRef": "preflight:verify-credential-a",
           "manualAction": "",
-          "disposition": "migrate"
+          "disposition": "migrate",
+          "qualification": "qualified"
         },
         {
           "resourceRef": "credential-b",
@@ -97,12 +149,26 @@
           "replayEvidenceRef": "",
           "verifyEvidenceRef": "",
           "manualAction": "reauthenticate_after_adoption",
-          "disposition": "manual_action"
+          "disposition": "manual_action",
+          "qualification": "pending"
         }
       ],
       "controlBasePath": "/phase4-fixture-control",
-      "estimatedSteps": ["choose_strategy", "inspect_source_cpa", "choose_control_base_path", "initialize_cpamp", "verify_adoption"],
-      "migrationOrdering": []
+      "estimatedSteps": [
+        "choose_strategy",
+        "inspect_source_cpa",
+        "choose_control_base_path",
+        "initialize_cpamp",
+        "verify_adoption"
+      ],
+      "migrationOrdering": [],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": false,
+        "requiredProfileQualified": true,
+        "stagingV8TransitionQualified": false
+      },
+      "historicalEvidence": null
     },
     {
       "id": "P4-BOOT-03",
@@ -117,14 +183,38 @@
       "initializeAdminCredential": true,
       "preserveExistingAdminCredential": false,
       "authenticationRequired": false,
-      "mutations": ["cpamp_state", "control_base_path", "external_connection"],
-      "preserved": ["source_cpa_user_owned"],
-      "unsupported": ["historical_usage_import", "source_cpa_stop", "source_cpa_delete", "source_cpa_takeover"],
+      "mutations": [
+        "cpamp_state",
+        "control_base_path",
+        "external_connection"
+      ],
+      "preserved": [
+        "source_cpa_user_owned"
+      ],
+      "unsupported": [
+        "historical_usage_import",
+        "source_cpa_stop",
+        "source_cpa_delete",
+        "source_cpa_takeover"
+      ],
       "discoveredResourceRefs": [],
       "adoptionDecisions": [],
       "controlBasePath": "/phase4-fixture-control",
-      "estimatedSteps": ["choose_strategy", "inspect_source_cpa", "choose_control_base_path", "initialize_cpamp", "verify_connection"],
-      "migrationOrdering": []
+      "estimatedSteps": [
+        "choose_strategy",
+        "inspect_source_cpa",
+        "choose_control_base_path",
+        "initialize_cpamp",
+        "verify_connection"
+      ],
+      "migrationOrdering": [],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": false,
+        "requiredProfileQualified": true,
+        "stagingV8TransitionQualified": false
+      },
+      "historicalEvidence": null
     },
     {
       "id": "P4-BOOT-04",
@@ -133,7 +223,10 @@
       "cpaStrategy": "migrate_legacy",
       "sourceAdmission": {
         "shape": "legacy_schema_c",
-        "plannedCandidate": {"release": "v1.14.4", "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"},
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
         "artifactEvidenceRef": "evidence:contract-fixture-artifact",
         "sourceProvenanceRef": "evidence:contract-fixture-source",
         "forwardHopEvidenceRef": "",
@@ -147,14 +240,46 @@
       "initializeAdminCredential": false,
       "preserveExistingAdminCredential": true,
       "authenticationRequired": true,
-      "mutations": ["cpamp_state", "managed_cpa", "control_base_path"],
-      "preserved": ["authoritative_usage_history", "archive_retained_evidence_when_required"],
-      "unsupported": ["full_history_export_transform_reimport"],
+      "mutations": [
+        "cpamp_state",
+        "managed_cpa",
+        "control_base_path"
+      ],
+      "preserved": [
+        "authoritative_usage_history",
+        "archive_retained_evidence_when_required"
+      ],
+      "unsupported": [
+        "full_history_export_transform_reimport"
+      ],
       "discoveredResourceRefs": [],
       "adoptionDecisions": [],
       "controlBasePath": "/phase4-fixture-control",
-      "estimatedSteps": ["authenticate_existing_admin", "verify_source", "backup", "revalidate_source", "migrate_cpamp", "verify_runtime"],
-      "migrationOrdering": ["read_only_classification", "complete_verified_backup", "source_revalidation", "writable_migration"]
+      "estimatedSteps": [
+        "authenticate_existing_admin",
+        "verify_source",
+        "backup",
+        "revalidate_source",
+        "migrate_cpamp",
+        "verify_runtime"
+      ],
+      "migrationOrdering": [
+        "read_only_classification",
+        "complete_verified_backup",
+        "source_revalidation",
+        "writable_migration"
+      ],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": false,
+        "requiredProfileQualified": false,
+        "stagingV8TransitionQualified": true
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      }
     },
     {
       "id": "P4-BOOT-05",
@@ -163,7 +288,10 @@
       "cpaStrategy": "connect_external",
       "sourceAdmission": {
         "shape": "legacy_schema_c",
-        "plannedCandidate": {"release": "v1.14.4", "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"},
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
         "artifactEvidenceRef": "evidence:contract-fixture-artifact",
         "sourceProvenanceRef": "evidence:contract-fixture-source",
         "forwardHopEvidenceRef": "",
@@ -177,14 +305,50 @@
       "initializeAdminCredential": false,
       "preserveExistingAdminCredential": true,
       "authenticationRequired": true,
-      "mutations": ["cpamp_state", "control_base_path", "external_connection"],
-      "preserved": ["authoritative_usage_history", "archive_retained_evidence_when_required", "source_cpa_user_owned"],
-      "unsupported": ["full_history_export_transform_reimport", "source_cpa_stop", "source_cpa_delete", "source_cpa_takeover"],
+      "mutations": [
+        "cpamp_state",
+        "control_base_path",
+        "external_connection"
+      ],
+      "preserved": [
+        "authoritative_usage_history",
+        "archive_retained_evidence_when_required",
+        "source_cpa_user_owned"
+      ],
+      "unsupported": [
+        "full_history_export_transform_reimport",
+        "source_cpa_stop",
+        "source_cpa_delete",
+        "source_cpa_takeover"
+      ],
       "discoveredResourceRefs": [],
       "adoptionDecisions": [],
       "controlBasePath": "/phase4-fixture-control",
-      "estimatedSteps": ["authenticate_existing_admin", "verify_source", "backup", "revalidate_source", "migrate_cpamp", "verify_connection"],
-      "migrationOrdering": ["read_only_classification", "complete_verified_backup", "source_revalidation", "writable_migration"]
+      "estimatedSteps": [
+        "authenticate_existing_admin",
+        "verify_source",
+        "backup",
+        "revalidate_source",
+        "migrate_cpamp",
+        "verify_connection"
+      ],
+      "migrationOrdering": [
+        "read_only_classification",
+        "complete_verified_backup",
+        "source_revalidation",
+        "writable_migration"
+      ],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": false,
+        "requiredProfileQualified": true,
+        "stagingV8TransitionQualified": false
+      },
+      "historicalEvidence": {
+        "sourceState": "raw_deleted",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": true
+      }
     }
   ],
   "classificationAssertions": [
@@ -196,14 +360,22 @@
       "bootstrapComplete": false,
       "adminCredential": "uninitialized",
       "session": "missing",
-      "expectedMode": "fresh"
+      "expectedMode": "fresh",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null
     },
     {
       "id": "schema_c_without_authority_is_unsupported",
       "hasV1ProductState": true,
       "admission": {
         "shape": "legacy_schema_c",
-        "plannedCandidate": {"release": "v1.14.4", "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"},
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
         "artifactEvidenceRef": "",
         "sourceProvenanceRef": "",
         "forwardHopEvidenceRef": "",
@@ -214,14 +386,22 @@
       "bootstrapComplete": false,
       "adminCredential": "initialized",
       "session": "missing",
-      "expectedMode": "unsupported_upgrade"
+      "expectedMode": "unsupported_upgrade",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null
     },
     {
       "id": "verified_exact_ready_is_upgrade",
       "hasV1ProductState": true,
       "admission": {
         "shape": "legacy_schema_c",
-        "plannedCandidate": {"release": "v1.14.4", "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"},
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
         "artifactEvidenceRef": "evidence:artifact",
         "sourceProvenanceRef": "evidence:source",
         "forwardHopEvidenceRef": "",
@@ -232,14 +412,26 @@
       "bootstrapComplete": false,
       "adminCredential": "initialized",
       "session": "expired",
-      "expectedMode": "upgrade"
+      "expectedMode": "upgrade",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      }
     },
     {
       "id": "verified_hop_ready_is_upgrade",
       "hasV1ProductState": true,
       "admission": {
         "shape": "legacy_schema_c",
-        "plannedCandidate": {"release": "v1.14.4", "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"},
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
         "artifactEvidenceRef": "evidence:artifact",
         "sourceProvenanceRef": "evidence:older-source",
         "forwardHopEvidenceRef": "evidence:hop",
@@ -250,14 +442,26 @@
       "bootstrapComplete": false,
       "adminCredential": "initialized",
       "session": "authenticated",
-      "expectedMode": "upgrade"
+      "expectedMode": "upgrade",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      }
     },
     {
       "id": "verified_but_blocked_is_recovery",
       "hasV1ProductState": true,
       "admission": {
         "shape": "legacy_schema_c",
-        "plannedCandidate": {"release": "v1.14.4", "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"},
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
         "artifactEvidenceRef": "evidence:artifact",
         "sourceProvenanceRef": "evidence:source",
         "forwardHopEvidenceRef": "",
@@ -268,14 +472,26 @@
       "bootstrapComplete": false,
       "adminCredential": "initialized",
       "session": "missing",
-      "expectedMode": "recovery"
+      "expectedMode": "recovery",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      }
     },
     {
       "id": "offline_required_is_recovery",
       "hasV1ProductState": true,
       "admission": {
         "shape": "legacy_schema_c",
-        "plannedCandidate": {"release": "v1.14.4", "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"},
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
         "artifactEvidenceRef": "evidence:artifact",
         "sourceProvenanceRef": "evidence:source",
         "forwardHopEvidenceRef": "",
@@ -286,14 +502,26 @@
       "bootstrapComplete": false,
       "adminCredential": "initialized",
       "session": "missing",
-      "expectedMode": "recovery"
+      "expectedMode": "recovery",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      }
     },
     {
       "id": "unknown_newer_same_shape_is_unsupported",
       "hasV1ProductState": true,
       "admission": {
         "shape": "legacy_schema_c",
-        "plannedCandidate": {"release": "v1.14.4", "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"},
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
         "artifactEvidenceRef": "",
         "sourceProvenanceRef": "",
         "forwardHopEvidenceRef": "",
@@ -304,7 +532,12 @@
       "bootstrapComplete": false,
       "adminCredential": "initialized",
       "session": "authenticated",
-      "expectedMode": "unsupported_upgrade"
+      "expectedMode": "unsupported_upgrade",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null
     },
     {
       "id": "damaged_state_overrides",
@@ -314,7 +547,12 @@
       "bootstrapComplete": false,
       "adminCredential": "unverifiable",
       "session": "missing",
-      "expectedMode": "recovery"
+      "expectedMode": "recovery",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null
     },
     {
       "id": "completed_is_terminal",
@@ -324,7 +562,102 @@
       "bootstrapComplete": true,
       "adminCredential": "initialized",
       "session": "expired",
-      "expectedMode": "completed"
+      "expectedMode": "completed",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": null
+    },
+    {
+      "id": "checkpoint_incomplete_is_recovery",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "ready"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "missing",
+      "requiredCheckpoints": {
+        "cacheAccounting": "applying",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      },
+      "expectedMode": "recovery"
+    },
+    {
+      "id": "historical_authority_incomplete_is_recovery",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "ready"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "authenticated",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "incomplete",
+        "authorityStatus": "indeterminate",
+        "retainedEvidenceComplete": false
+      },
+      "expectedMode": "recovery"
+    },
+    {
+      "id": "administrator_unverifiable_is_recovery",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "ready"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "unverifiable",
+      "session": "expired",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      },
+      "expectedMode": "recovery"
     }
   ],
   "globalAssertions": [
@@ -351,6 +684,17 @@
     "trusted_receipt_requires_zero_exit_released_handles_and_reap",
     "actual_operation_record_persisted_with_stage_identity",
     "receipt_replay_or_revocation_rejected",
-    "manager_supervisor_ownership_separated"
+    "manager_supervisor_ownership_separated",
+    "admin_unverifiable_routes_recovery",
+    "checkpoints_incomplete_route_recovery",
+    "historical_source_state_explicit_fail_closed",
+    "cpa_strategy_requires_v8_qualification",
+    "adoption_references_not_authority",
+    "unauthenticated_discovery_is_minimal",
+    "fresh_claim_bound_consume_once",
+    "fresh_claim_expire_revoke_restart_csrf_fail_closed",
+    "gateway_activation_separate_from_product_initialized",
+    "journal_unknown_result_inspect_first_same_id_replay",
+    "prefix_cas_desired_effective_lost_result_inspect_first"
   ]
 }

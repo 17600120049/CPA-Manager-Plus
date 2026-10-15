@@ -135,6 +135,10 @@ jobs:
         working-directory: apps/manager-server
         run: go test ./...
 
+      - name: Race test Bootstrap contract
+        working-directory: apps/manager-server
+        run: go test -race ./internal/domain/bootstrap
+
       - name: Race test Runtime ownership paths
         if: needs.changes.outputs.manager_runtime == 'true'
         working-directory: apps/manager-server
