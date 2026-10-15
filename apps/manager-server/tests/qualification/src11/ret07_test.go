@@ -254,7 +254,7 @@ func TestReplayRET07(t *testing.T) {
 	must(t, err)
 	st, err := store.Open(restored.DatabasePath, protector)
 	must(t, err)
-	states := qualificationRetentionCatchUp(t, ctx, st, p)
+	states := ret07RetentionReopen(t, ctx, st, restored.DatabasePath)
 	var v1 map[string]monitoring.Response
 	must(t, json.Unmarshal(read(t, filepath.Join(root, "source-generation", "v1-analytics.json")), &v1))
 	first := ret07Queries(t, ctx, st, restored.DatabasePath, p, v1)
@@ -272,7 +272,6 @@ func TestReplayRET07(t *testing.T) {
 			t.Fatalf("RET-07 retained archive replay changed event count: %+v", result)
 		}
 		imports = append(imports, result)
-		qualificationRetentionCatchUp(t, ctx, st, p)
 	}
 	after := ret07Queries(t, ctx, st, restored.DatabasePath, p, v1)
 	if jsonDigest(first) != jsonDigest(after) {
@@ -326,6 +325,32 @@ func TestReplayRET07(t *testing.T) {
 	executionHash := save(t, output, "execution-record.json", map[string]any{"caseID": ret07CaseID, "executionCommit": codeIdentity(t), "sourceGenerationCaseID": ret07CaseID, "migrationStates": states, "archiveImports": imports, "newRootRecovery": true, "deletionVerified": true, "rawRowsAfterDelete": 0, "retainedPricingSourceComplete": true})
 	inputHash := save(t, output, "input-bundle.json", map[string]any{"caseID": ret07CaseID, "inputBundleIdentity": ret07CaseID + "/input-bundle@" + sealed.SourceRevision, "sourceGenerationRecordSHA256": fileDigest(t, filepath.Join(root, "source-generation/record.json")), "sourceBundleDigest": sealed.SourceRevision, "inventory": sealed})
 	save(t, output, "result.json", map[string]any{"caseID": ret07CaseID, "runtimeEvidence": "pass", "casePass": false, "independentAcceptance": "pending", "UpgradeAuthorized": false, "TrustedHopReceipt": false, "Phase4A07Complete": false, "Phase4AComplete": false, "remainingCases": map[string]any{"count": 41, "status": "pending"}, "sourceProvenance": anchor, "inputBundleIdentity": ret07CaseID + "/input-bundle@" + sealed.SourceRevision, "inputBundleDigest": sealed.SourceRevision, "rawEventCount": 0, "beforeRawCount": 4, "deletedCount": 4, "afterRawCount": 0, "archiveEventCount": 4, "retainedProjectionCount": 4, "retainedPricingSourceComplete": true, "onlineRawComplete": false, "backupRestore": "pass", "applicableSEM": sem, "evidence": map[string]any{"inputBundle": inputHash, "semanticAssertions": assertionsHash, "executionRecord": executionHash, "backupRestore": backupHash, "rawEventInventory": rawHash, "retainedPricingSource": projectionHash}})
+}
+
+// RET-07 reopens the already-qualified retained projections without invoking
+// a raw-source rebuild. The production identity projection is intentionally
+// fail-closed after raw deletion; retained pricing reconciliation must reuse
+// the accepted RET-03 read-only reopen boundary.
+func ret07RetentionReopen(t *testing.T, ctx context.Context, st *store.Store, dbPath string) []any {
+	t.Helper()
+	state, err := st.DiscoverUsageCacheAccounting(ctx)
+	must(t, err)
+	if state.Status != "completed" {
+		t.Fatalf("RET-07 retained reopen requires completed cache accounting: %#v", state)
+	}
+	db := openDB(t, dbPath, true)
+	defer db.Close()
+	if scalar(t, db, "select count(*) from usage_events") != 0 || scalar(t, db, "select count(*) from "+usageprojection.EventTable) != 4 {
+		t.Fatal("RET-07 retained reopen lost the deleted raw boundary or retained projection")
+	}
+	return []any{map[string]any{
+		"mode":                    "retained-pricing-read-only",
+		"cacheAccounting":         state,
+		"rawEventCount":           0,
+		"retainedProjectionCount": 4,
+		"derivedRebuild":          "not-run-after-raw-deletion",
+		"rawOnlyRebuildGuard":     "fail-closed-by-production-source-guard",
+	}}
 }
 
 func ret07Queries(t *testing.T, ctx context.Context, st *store.Store, dbPath string, p profile, v1 map[string]monitoring.Response) map[string]any {
