@@ -103,7 +103,7 @@ func generateRET07Archive(t *testing.T, base, live, generation string, p profile
 	wait(t, func() bool {
 		priceRows = query(t, db, "select model,prompt_per_1m,completion_per_1m,cache_read_per_1m,cache_creation_per_1m,prompt_configured,completion_configured,cache_read_configured,cache_creation_configured,source from model_prices order by model")
 		state := query(t, db, "select status,structure_revision,coverage_event_id,target_event_id from usage_pricing_rollup_state where rollup_name='pricing_v1'")
-		return len(state) == 1 && state[0]["status"] == "ready" && state[0]["coverage_event_id"] == state[0]["target_event_id"]
+		return len(state) == 1 && state[0]["status"] == "ready" && state[0]["coverage_event_id"] == state[0]["target_event_id"] && state[0]["structure_revision"] != beforeRevision
 	})
 	afterRevision := scalarString(t, db, "select structure_revision from usage_pricing_rollup_state where rollup_name='pricing_v1'")
 	if beforeRevision == afterRevision {
