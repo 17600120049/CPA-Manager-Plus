@@ -193,7 +193,8 @@ def main():
                                   "user": f"{os.getuid()}:{os.getgid()}"}
         if args.evidence_archive:
             build["sealedEvidenceArchiveSHA256"] = digest(args.evidence_archive)
-            build["sealedArtifactPinSHA256"] = digest(module.PIN)
+            pin_path = ROOT / "tests/fixtures/phase4a-evidence/bak-01/source-provenance.json" if bak01 else module.PIN
+            build["sealedArtifactPinSHA256"] = digest(pin_path)
         run(command, output / "replay-execution.log", env=env)
         build["executionCommand"] = command
         build["resultSHA256"] = digest(output / "runtime/result.json")
