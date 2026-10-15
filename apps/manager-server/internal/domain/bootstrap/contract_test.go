@@ -275,6 +275,7 @@ func TestCheckedInContract(t *testing.T) {
 		"complete_verified_backup_before_write",
 		"source_revalidation_before_write",
 		"bootstrap_mode_admin_session_orthogonal",
+		"fresh_mode_not_admin_initialization_authority",
 		"upgrade_preserves_existing_admin_credential",
 		"authoritative_history_includes_archive_retained_evidence",
 		"cpa_core_v8_only_no_v0_fallback",
@@ -327,6 +328,45 @@ func TestShapeNeverProvesExactRelease(t *testing.T) {
 	}
 	if got != bootstrap.UnsupportedUpgrade {
 		t.Fatalf("unknown/newer SchemaC classified %q", got)
+	}
+}
+
+func TestVerifiedCandidateRequiresCurrentSchemaC(t *testing.T) {
+	admission := exactAdmission()
+	admission.Shape = bootstrap.LegacySchemaB
+	if err := admission.Validate(); err == nil {
+		t.Fatal("verified exact candidate accepted with non-SchemaC current shape")
+	}
+
+	admission = exactAdmission()
+	admission.EvidenceStatus = bootstrap.ForwardHopVerified
+	admission.ForwardHopEvidenceRef = "evidence:hop"
+	admission.Shape = bootstrap.LegacySchemaA
+	if err := admission.Validate(); err == nil {
+		t.Fatal("verified forward-hop output accepted with non-SchemaC current shape")
+	}
+}
+
+func TestFreshModeAloneCannotInitializeAdministrator(t *testing.T) {
+	base := bootstrap.FreshInitializationPreconditions{
+		Mode:               bootstrap.Fresh,
+		AdminCredential:    bootstrap.AdminCredentialUninitialized,
+		HostClaimQualified: true,
+	}
+	if !bootstrap.CanInitializeAdministrator(base) {
+		t.Fatal("qualified fresh initialization was rejected")
+	}
+
+	cases := []bootstrap.FreshInitializationPreconditions{
+		{Mode: bootstrap.Upgrade, AdminCredential: bootstrap.AdminCredentialUninitialized, HostClaimQualified: true},
+		{Mode: bootstrap.Fresh, AdminCredential: bootstrap.AdminCredentialInitialized, HostClaimQualified: true},
+		{Mode: bootstrap.Fresh, AdminCredential: bootstrap.AdminCredentialUnverifiable, HostClaimQualified: true},
+		{Mode: bootstrap.Fresh, AdminCredential: bootstrap.AdminCredentialUninitialized, HostClaimQualified: false},
+	}
+	for _, tc := range cases {
+		if bootstrap.CanInitializeAdministrator(tc) {
+			t.Fatalf("unsafe fresh initialization predicate returned true: %+v", tc)
+		}
 	}
 }
 
