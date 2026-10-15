@@ -52,7 +52,7 @@
   "second": {
     "version": 2,
     "fence": "",
-    "sourceRevision": "02f253222f03d60b21da63bd79f4745c47525eb39eb9fd8444d8eef11c0e88ae",
+    "sourceRevision": "ca12d55a9621dba4ee2e61ca1d1c228d25a630c0b6a19d549b3ab899b9fc68e9",
     "entries": {
       "config": {
         "present": true,
@@ -67,7 +67,7 @@
       "database": {
         "present": true,
         "size": 819200,
-        "sha256": "699fe1460e1e8a31833f920da4d8a71370c0e86d6260c9c5b512d23b44cb7355"
+        "sha256": "ceb655917881f3882f4c360bd4031eeca08cbb829c562f486000df9fdcdc7b02"
       },
       "database-journal": {
         "present": false

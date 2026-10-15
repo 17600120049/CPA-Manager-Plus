@@ -4,6 +4,19 @@ This fixture records only Phase4A-07 / BAK-02 against the frozen contract:
 exact v1.14.4, matching maintenance bundle, complete cross-asset snapshot,
 RestoreNew to a distinct root, and applicable SEM-01 / SEM-06.
 
+The original generator commit `af53fedab0af8fa272b7816a0c3ee18857a422b6`
+is retained at `refs/heads/qualification/bak02-generator-af53fed` and is
+accessible through the repository commit API. `generator-provenance.json`
+binds the Git object/tree to all 516 source-file SHA256 values in the original
+generation runner, its executable, the unchanged generation record, and the
+original source bundle. CI fetches this ref and verifies every source blob.
+Preserve this provenance branch when cleaning up task branches.
+`generator-build-verification.json` records a clean checkout rebuild using
+Go 1.26.1 and the original build flags; its executable SHA256 exactly matches
+the original runner's `5846e4849ccc0c7d19679618cade0c3182f2aa847231bc92223ac22ac0c5d30a`.
+The later replay commit has three different BAK-02 source files and does not
+authenticate the original generator; the original commit and source inventory do.
+
 The exact producer is `v1.14.4` at
 `166262365d506157b99968105c890f480cc7c07c`. Its Linux AMD64 archive is pinned
 by SHA256 in `source-provenance.json` and in the source-generation record. The
@@ -35,6 +48,17 @@ The sealed archive under `sealed/` is committed with its SHA256 and Git object
 anchor. A qualification Release/tag could not be hosted because the current
 GitHub `Protect release tags` ruleset blocks the required evidence tag; this is
 recorded as a hosting gap and does not invalidate the committed evidence.
+
+The current archive is `bak-02-bundle-4e1f3ad0b922-reviewed-evidence.zip`.
+It contains the unchanged original source generation and bundle plus the new
+actual macOS/Linux and clean-checkout replays at `9ae1137a2777928d63431967ff6dd6ffe76b1ff8`.
+The earlier sealed archive is preserved byte-for-byte as historical input;
+its replay results incorrectly reported 40 pending and are explicitly
+superseded in `source-provenance.json`. They carry no current matrix authority.
+The current 49-case matrix remains **8 accepted / 41 pending**, including
+BAK-02 pending independent acceptance. The BAK family itself has 10 cases:
+1 accepted / 9 pending. Only independent acceptance of BAK-02 can reduce
+the matrix to 40 pending.
 
 `casePass` remains `false` while `independentAcceptance` is `pending`. This
 case does not authorize upgrades or trusted hops and does not complete

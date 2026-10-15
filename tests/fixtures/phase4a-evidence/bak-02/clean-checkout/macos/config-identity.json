@@ -1,5 +1,5 @@
 {
-  "bundleCanonicalDataKeyPath": "/private/tmp/cpamp-bak02-clean-macos-final/runtime/restore-new-root-2957835224/data-key",
+  "bundleCanonicalDataKeyPath": "/private/tmp/cpamp-bak02-p1p2-clean-macos/runtime/restore-new-root-2809213451/data-key",
   "configDataKeyPath": "data.key",
   "defaultFallback": false,
   "input": {
@@ -7,8 +7,8 @@
     "size": 243,
     "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844"
   },
-  "resolvedArchivePath": "/private/tmp/cpamp-bak02-clean-macos-final/runtime/restore-new-root-2957835224/usage-archives",
-  "resolvedConfigDataKeyPath": "/private/tmp/cpamp-bak02-clean-macos-final/runtime/restore-new-root-2957835224/data.key",
+  "resolvedArchivePath": "/private/tmp/cpamp-bak02-p1p2-clean-macos/runtime/restore-new-root-2809213451/usage-archives",
+  "resolvedConfigDataKeyPath": "/private/tmp/cpamp-bak02-p1p2-clean-macos/runtime/restore-new-root-2809213451/data.key",
   "restored": {
     "present": true,
     "size": 243,

@@ -59,6 +59,8 @@ class Bak02EvidenceTests(unittest.TestCase):
         self.assertFalse(self.result["Phase4AComplete"])
         self.assertEqual(self.result["applicableSEM"], ["SEM-01", "SEM-06"])
         self.assertEqual(self.manifest["remainingCases"], {"count": 41, "status": "pending"})
+        self.assertEqual(self.manifest["caseMatrix"], {"total": 49, "accepted": 8, "pending": 41, "includesBAK02Pending": True})
+        self.assertEqual(self.manifest["backupFamily"], {"total": 10, "accepted": 1, "pending": 9})
         for prefix in ("runtime", "platform-replay/linux", "clean-checkout/macos", "clean-checkout/linux"):
             result = read(f"{prefix}/result.json")
             self.assertEqual(result["remainingCases"], {"count": 41, "status": "pending"})
@@ -80,6 +82,15 @@ class Bak02EvidenceTests(unittest.TestCase):
         self.assertEqual(proof["generationRecordSHA256"], digest(EVIDENCE / "source-generation/record.json"))
         self.assertEqual(proof["sourceBundleDigest"], self.generation["GeneratedBundleSHA256"])
         self.assertEqual(self.manifest["generatorProvenance"], "generator-provenance.json")
+        build = read("generator-build-verification.json")
+        self.assertEqual(build["generatorCodeCommit"], runner["codeCommit"])
+        self.assertEqual(build["checkoutStatus"], "clean")
+        self.assertEqual(build["goVersion"], runner["goVersion"])
+        self.assertEqual(build["actualExecutableSHA256"], runner["executableSHA256"])
+        self.assertEqual(build["expectedExecutableSHA256"], runner["executableSHA256"])
+        self.assertTrue(build["executableDigestMatchesOriginal"])
+        self.assertTrue(build["originalGenerationRecordUnchanged"])
+        self.assertTrue(build["originalBundleUnchanged"])
 
     def test_generator_verifier_rejects_other_commit_or_changed_source(self):
         spec = importlib.util.spec_from_file_location("verify_bak02_generator", ROOT / "bin/qualification/verify-bak02-generator.py")

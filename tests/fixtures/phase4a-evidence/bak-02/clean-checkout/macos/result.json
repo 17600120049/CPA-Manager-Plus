@@ -3,7 +3,7 @@
   "Phase4AComplete": false,
   "TrustedHopReceipt": false,
   "UpgradeAuthorized": false,
-  "afterDigest": "c3ed92c2f5b2432e647025dac1dfa55a3b510a9fe9cd37268ebfc028ec936969",
+  "afterDigest": "bdf7aa6a23249960875f6313834274e1dbfa1a5dbcc0906c364ca78a1b92644a",
   "applicableSEM": [
     "SEM-01",
     "SEM-06"
@@ -18,20 +18,20 @@
     "archiveInventory": "53a671c676f7454c9ec5ea28515f9d448841824697a287e942675dd2d6033938",
     "authoritativeDigest": "fb18715cec7cbe87df2e26e79f24c143eed33689bcda46f3bec797d4ede42d15",
     "bundleManifest": "e3c9baec5a987b5680b7bda5eed0bbb307920a4ac2e412614d1fe028ad677d6f",
-    "configIdentity": "1b9db5e440cdfae5ee71b618c7c5cecd458d11cf2d4644a89a56a668f8d9e816",
-    "databaseIdentity": "40dbfe0f965db7ba208bca9ddd53909527fe41ad7a471d9963b3afc7389deb4b",
-    "executionRecord": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930",
+    "configIdentity": "6811f0464f7514faaaf027182cde21748574c294a3379aaaa57e51a848d21523",
+    "databaseIdentity": "dfdd3ab2dbed2674c9290385141167e15b4409f75eb6c3b07e0025e7a7a22a96",
+    "executionRecord": "d4941108185b51d48dab44e9c65bc4233f842ed8b2c81c2760833869dbfa5c58",
     "inputBundle": "1f54ed722196012f8f47ef7943e118dda09f3d54dbf0d12713a40c3b92f8f65d",
     "keyIdentity": "e27f01ec24035e0a1e685355d2966b7409925a40ac25c3d6af0c21a5dc996214",
     "metadataContinuity": "4b4cc44615732486601ce664b70376f0eddb5fcb2362d46d7a3887b577f5dcfb",
     "restoreRecord": "09a5e7a8a592dce772f85fd9b641b00ddd010291fcca059a6e936d47887c93d1",
-    "restoredInventory": "cffd1686110f57f61436ef24532dc7a1f0d4ce7c88190beb3035ae4b42c7d691",
-    "semanticAssertions": "0185b40db638c7d984507d05c11d82e9d0e8f26764654a65e8d4dbb4a3baa689"
+    "restoredInventory": "18bbcbcaf44e942f49893f947c984c1bbf8174810f324f8060841da50fa0c4c7",
+    "semanticAssertions": "8f8ec838788e5772fdb8ef062cea67fed71745f697f3cad90fa93219b0c02308"
   },
   "independentAcceptance": "pending",
   "inputBundleDigest": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
   "remainingCases": {
-    "count": 40,
+    "count": 41,
     "status": "pending"
   },
   "runtimeAssertions": "pass",

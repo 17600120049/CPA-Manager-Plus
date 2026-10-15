@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "caseID": "BAK-02",
+  "generatorCodeCommit": "af53fedab0af8fa272b7816a0c3ee18857a422b6",
+  "checkoutPath": "/private/tmp/cpamp-bak02-generator-audit",
+  "checkoutStatus": "clean",
+  "goVersion": "go version go1.26.1 darwin/amd64",
+  "environment": {
+    "GOWORK": "off",
+    "GOFLAGS": "-mod=readonly",
+    "CGO_ENABLED": "0",
+    "GOOS": "linux",
+    "GOARCH": "amd64"
+  },
+  "command": [
+    "go",
+    "test",
+    "-c",
+    "-trimpath",
+    "-ldflags",
+    "-X github.com/seakee/cpa-manager-plus/apps/manager-server/tests/qualification/src11.generatorCommit=af53fedab0af8fa272b7816a0c3ee18857a422b6",
+    "-o",
+    "/private/tmp/cpamp-bak02-generator-audit-executable",
+    "./tests/qualification/src11"
+  ],
+  "workingDirectory": "/private/tmp/cpamp-bak02-generator-audit/apps/manager-server",
+  "expectedExecutableSHA256": "5846e4849ccc0c7d19679618cade0c3182f2aa847231bc92223ac22ac0c5d30a",
+  "actualExecutableSHA256": "5846e4849ccc0c7d19679618cade0c3182f2aa847231bc92223ac22ac0c5d30a",
+  "executableDigestMatchesOriginal": true,
+  "generationRunnerSHA256": "3d189017d4f34ccc0ee308bdbd51564bf3ec5ef3fb53ad86e95e11a7bb2ad06b",
+  "originalGenerationRecordUnchanged": true,
+  "originalBundleUnchanged": true
+}

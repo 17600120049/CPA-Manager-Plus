@@ -28,7 +28,7 @@
     "costs": {
       "": [
         {
-          "generated_at_ms": 1792049466089,
+          "generated_at_ms": 1792051689317,
           "granularity": "hour",
           "summary": {
             "total_calls": 4,
@@ -60,7 +60,7 @@
           }
         },
         {
-          "generated_at_ms": 1792049466092,
+          "generated_at_ms": 1792051689319,
           "granularity": "hour",
           "summary": {
             "total_calls": 4,
@@ -94,7 +94,7 @@
       ],
       "claude-fixture": [
         {
-          "generated_at_ms": 1792049466062,
+          "generated_at_ms": 1792051689288,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -126,7 +126,7 @@
           }
         },
         {
-          "generated_at_ms": 1792049466065,
+          "generated_at_ms": 1792051689291,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -160,7 +160,7 @@
       ],
       "fixture-archive-cached": [
         {
-          "generated_at_ms": 1792049466069,
+          "generated_at_ms": 1792051689296,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -192,7 +192,7 @@
           }
         },
         {
-          "generated_at_ms": 1792049466072,
+          "generated_at_ms": 1792051689299,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -226,7 +226,7 @@
       ],
       "fixture-free": [
         {
-          "generated_at_ms": 1792049466076,
+          "generated_at_ms": 1792051689303,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -258,7 +258,7 @@
           }
         },
         {
-          "generated_at_ms": 1792049466079,
+          "generated_at_ms": 1792051689306,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -292,7 +292,7 @@
       ],
       "fixture-paid": [
         {
-          "generated_at_ms": 1792049466083,
+          "generated_at_ms": 1792051689310,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,
@@ -324,7 +324,7 @@
           }
         },
         {
-          "generated_at_ms": 1792049466085,
+          "generated_at_ms": 1792051689313,
           "granularity": "hour",
           "summary": {
             "total_calls": 1,

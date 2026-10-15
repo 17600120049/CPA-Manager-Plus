@@ -67,7 +67,7 @@
   "archiveInventory": "runtime/archive-inventory.json",
   "metadataContinuity": "runtime/metadata-continuity.json",
   "cleanCheckout": {
-    "commit": "9d62a7ddaf243160a98cb841e208dc10753cfea1",
+    "commit": "9ae1137a2777928d63431967ff6dd6ffe76b1ff8",
     "status": "replayed",
     "macos": "clean-checkout/macos/",
     "linux-amd64": "clean-checkout/linux/"
@@ -85,7 +85,7 @@
     "Phase4AComplete": false
   },
   "remainingCases": {
-    "count": 40,
+    "count": 41,
     "status": "pending"
   },
   "externalInput": {
@@ -164,7 +164,7 @@
     "qualificationRelease": "not-created",
     "reason": "Protect release tags ruleset blocks qualification evidence tag hosting; committed sealed archive, SHA256 and Git object anchor are retained.",
     "sourceBundleDigest": "4e1f3ad0b922283b87374a31a4c1520a0ad32f64bd93757d38d4ce4739a758d1",
-    "archiveSHA256": "3bb18065c7b2e3e9c6e31b198524a7b66d66e4e9f83bf4a0dd1c4863993d3652"
+    "archiveSHA256": "affd76d9b75274f320175b5151f0d224da4912abc1785582aaf2421854b46984"
   },
   "inventory": {
     "bundle/config": {
@@ -192,8 +192,8 @@
       "sha256": "08d52f0f751b9fee574e94612b31b74ecc8371748bce5b75fa074b1f7f65091c"
     },
     "clean-checkout/checkout-record.json": {
-      "size": 1091,
-      "sha256": "5ff6f6bac3366dc3961619e991feff672187c7d96b172ce3e88b0f043d6b9cac"
+      "size": 1087,
+      "sha256": "9cb9a76d3a910f52512bd3f7a98a176fdb9a5b511b2a743f00735b15892398bf"
     },
     "clean-checkout/linux/archive-inventory.json": {
       "size": 41222,
@@ -212,16 +212,16 @@
       "sha256": "e3c9baec5a987b5680b7bda5eed0bbb307920a4ac2e412614d1fe028ad677d6f"
     },
     "clean-checkout/linux/config-identity.json": {
-      "size": 602,
-      "sha256": "bfd646be92f10be8642e79790368481f423b1969054511ad9fc1bf8385ce0701"
+      "size": 605,
+      "sha256": "36dcace22dcd1e8f8bee85fb491a69ea66026919ce605a2a282bce0875a3e008"
     },
     "clean-checkout/linux/database-identity.json": {
       "size": 458,
-      "sha256": "fba8fdb63921cdd935091ad4b470e5f3ec1aedc3936198985c5507e1e2a23038"
+      "sha256": "5df3b2c2e4a250510f7ccc70ff21c09837e819b88f89f3f5200333a04120952c"
     },
     "clean-checkout/linux/execution-record.json": {
       "size": 1077,
-      "sha256": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930"
+      "sha256": "d4941108185b51d48dab44e9c65bc4233f842ed8b2c81c2760833869dbfa5c58"
     },
     "clean-checkout/linux/input-bundle.json": {
       "size": 1731,
@@ -237,7 +237,7 @@
     },
     "clean-checkout/linux/replay-execution.log.txt": {
       "size": 65,
-      "sha256": "fa157afe2ce43fbd0b23e765eee3689855b80266a805db41c11a6e54cb2e86af"
+      "sha256": "910f4f4a7572a3e0e698cf2d02dd720c1206076fe8e49ba519fd1dcb5e5eaac6"
     },
     "clean-checkout/linux/restore-record.json": {
       "size": 265,
@@ -245,19 +245,19 @@
     },
     "clean-checkout/linux/restored-inventory.json": {
       "size": 3080,
-      "sha256": "7966bbb94b56de31935b799791d927232e88581c1a79f15641f87815e7454cf0"
+      "sha256": "d54461c67a58cd4499f7d2e34a661c3509ab0f080bda45fedde420a6975b43c7"
     },
     "clean-checkout/linux/result.json": {
       "size": 7054,
-      "sha256": "0d5cc07d205276b3840cb52826fa1b3e94a1536437df1c44fc042287bfce7268"
+      "sha256": "40e90b231ceb81ce7f5dc45c000a5f31fe874c8612682c16cbd46c0a825acef8"
     },
     "clean-checkout/linux/runner-evidence.json": {
-      "size": 76709,
-      "sha256": "ce71ac00e4d53b21af85982e83758eca63447a338502d349d52af213ff10d394"
+      "size": 77002,
+      "sha256": "86c437403d9e029eb76e31d80766106a00ce9b659df088d683bcacaed7916762"
     },
     "clean-checkout/linux/semantic-assertions.json": {
       "size": 22562,
-      "sha256": "652aa8e21dc4bceaada5d1cad032950375293f286f7990cdaebf8960e05183c4"
+      "sha256": "734d52e961cadd9e5f5ce5ea44cb6c6db7039a533b56cb88c91602e68d7facf1"
     },
     "clean-checkout/macos/archive-inventory.json": {
       "size": 41222,
@@ -276,16 +276,16 @@
       "sha256": "e3c9baec5a987b5680b7bda5eed0bbb307920a4ac2e412614d1fe028ad677d6f"
     },
     "clean-checkout/macos/config-identity.json": {
-      "size": 710,
-      "sha256": "1b9db5e440cdfae5ee71b618c7c5cecd458d11cf2d4644a89a56a668f8d9e816"
+      "size": 707,
+      "sha256": "6811f0464f7514faaaf027182cde21748574c294a3379aaaa57e51a848d21523"
     },
     "clean-checkout/macos/database-identity.json": {
       "size": 458,
-      "sha256": "40dbfe0f965db7ba208bca9ddd53909527fe41ad7a471d9963b3afc7389deb4b"
+      "sha256": "dfdd3ab2dbed2674c9290385141167e15b4409f75eb6c3b07e0025e7a7a22a96"
     },
     "clean-checkout/macos/execution-record.json": {
       "size": 1077,
-      "sha256": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930"
+      "sha256": "d4941108185b51d48dab44e9c65bc4233f842ed8b2c81c2760833869dbfa5c58"
     },
     "clean-checkout/macos/input-bundle.json": {
       "size": 1731,
@@ -301,7 +301,7 @@
     },
     "clean-checkout/macos/replay-execution.log.txt": {
       "size": 65,
-      "sha256": "144d17e724e7cc0dc96e91b303bf199606ecb9937008c7f61ff372e643527203"
+      "sha256": "7ab8f2f9216f69214e7962445e6c126bdae47435647e4b6ac31e740a5f4f5b76"
     },
     "clean-checkout/macos/restore-record.json": {
       "size": 265,
@@ -309,19 +309,19 @@
     },
     "clean-checkout/macos/restored-inventory.json": {
       "size": 3080,
-      "sha256": "cffd1686110f57f61436ef24532dc7a1f0d4ce7c88190beb3035ae4b42c7d691"
+      "sha256": "18bbcbcaf44e942f49893f947c984c1bbf8174810f324f8060841da50fa0c4c7"
     },
     "clean-checkout/macos/result.json": {
       "size": 7054,
-      "sha256": "94f47a22ca79c6f9336b668787b47ee06bfe10895fa1d7de954500c95aef6539"
+      "sha256": "2e94eb23d1011bca4baf0e283ca2376536872bd1adf590b6a324a70027ad50c0"
     },
     "clean-checkout/macos/runner-evidence.json": {
-      "size": 74945,
-      "sha256": "bfa4f62711015b0d2fdda10c16b7cc5cd6f4c6680d1691ff9fc40e9ae0233c29"
+      "size": 75260,
+      "sha256": "c9bd3f8ddf79396aeec123893dd92c22b91e80b8a040f82239e675833a99f547"
     },
     "clean-checkout/macos/semantic-assertions.json": {
       "size": 22562,
-      "sha256": "0185b40db638c7d984507d05c11d82e9d0e8f26764654a65e8d4dbb4a3baa689"
+      "sha256": "8f8ec838788e5772fdb8ef062cea67fed71745f697f3cad90fa93219b0c02308"
     },
     "generation-build.log.txt": {
       "size": 0,
@@ -339,19 +339,27 @@
       "size": 76426,
       "sha256": "3d189017d4f34ccc0ee308bdbd51564bf3ec5ef3fb53ad86e95e11a7bb2ad06b"
     },
-    "platform-replay/linux/.manager-bundle-operation-91dd311e95eb707b38a5e7a519887bbd3f600da9cf79516de3588ab859a88f16/state.json": {
-      "size": 1253,
-      "sha256": "41a1ee1ccde47cb98f94c2b9ae96538a6a9ab2531600b472784bdded5ca2b36e"
+    "generator-build-verification.json": {
+      "size": 1237,
+      "sha256": "9f925cffee8fbfca840435b265868166d592e79354971bcf221a0cf7f88ae8f3"
     },
-    "platform-replay/linux/.manager-bundle-operation-91dd311e95eb707b38a5e7a519887bbd3f600da9cf79516de3588ab859a88f16/state.json.manager.lock": {
+    "generator-provenance.json": {
+      "size": 988,
+      "sha256": "ff8610423ec052cdc4474e4ff4f2ece8a3e2a95d4f0f10384b00e23649fbb83c"
+    },
+    "platform-replay/linux/.manager-bundle-operation-415cae4e7ee99adf215c52c14096e7707ffe05a2de65d63e0ffacfd97ee5bc95/state.json": {
+      "size": 1253,
+      "sha256": "4f4ec59c8df966f593c089c9a39a163475a68db2053ec237365f95dd4fb5fe88"
+    },
+    "platform-replay/linux/.manager-bundle-operation-415cae4e7ee99adf215c52c14096e7707ffe05a2de65d63e0ffacfd97ee5bc95/state.json.manager.lock": {
       "size": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
-    "platform-replay/linux/.manager-bundle-operation-b386f07dff74a8229ba74ab8c0e6565a4b1af54c13a657d0f7a9c3f5dd87b280/state.json": {
+    "platform-replay/linux/.manager-bundle-operation-a47b1c32985bb2c1a6bc57908dd10a075482aec3b5d88b11a12b0e939578f628/state.json": {
       "size": 1246,
-      "sha256": "e1d5e9ef20d7b8e921d51e22aa832b5fcf9f237785abd807375e6a6a8d891da3"
+      "sha256": "c90534e69a31e7eb988ffa12ce7491190ce551dfc847a6a814c051d9ff07c1b1"
     },
-    "platform-replay/linux/.manager-bundle-operation-b386f07dff74a8229ba74ab8c0e6565a4b1af54c13a657d0f7a9c3f5dd87b280/state.json.manager.lock": {
+    "platform-replay/linux/.manager-bundle-operation-a47b1c32985bb2c1a6bc57908dd10a075482aec3b5d88b11a12b0e939578f628/state.json.manager.lock": {
       "size": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
@@ -365,7 +373,7 @@
     },
     "platform-replay/linux/backup-restore/.manager-bundle-operation-16b36120780423661ff5dd5e7342a1ff80b1010ff18608470d280f7f2f31e62a/state.json": {
       "size": 1225,
-      "sha256": "4aaac1f6823554492fd740271587995dc0d2b6a416f2853782507654936d7303"
+      "sha256": "976b37a3baee11c43e805ded5c789773d24df85cfce3c4ab5acd448f53bd690e"
     },
     "platform-replay/linux/backup-restore/.manager-bundle-operation-16b36120780423661ff5dd5e7342a1ff80b1010ff18608470d280f7f2f31e62a/state.json.manager.lock": {
       "size": 0,
@@ -381,11 +389,11 @@
     },
     "platform-replay/linux/backup-restore/bundle/database": {
       "size": 819200,
-      "sha256": "699fe1460e1e8a31833f920da4d8a71370c0e86d6260c9c5b512d23b44cb7355"
+      "sha256": "ceb655917881f3882f4c360bd4031eeca08cbb829c562f486000df9fdcdc7b02"
     },
     "platform-replay/linux/backup-restore/bundle/manifest.json": {
       "size": 1424,
-      "sha256": "4f4e9372fd09f830908e82f72eaa75e6861bcc79c30ba45c92e382103144fd12"
+      "sha256": "188f8c0f32914b6965449bd9037466df3e377d62dc8cb5cbfe579444ae60cf0a"
     },
     "platform-replay/linux/backup-restore/bundle/usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/manifest.json": {
       "size": 1099,
@@ -405,15 +413,15 @@
     },
     "platform-replay/linux/config-identity.json": {
       "size": 605,
-      "sha256": "6011f435d732d5db86b59606bffb200902c88a0d083ed68733dee0f84ce183ea"
+      "sha256": "2c2152aa3991d322629f20161f2729de96d3ba420c225c5b53d86faf5ac920cd"
     },
     "platform-replay/linux/database-identity.json": {
       "size": 458,
-      "sha256": "752bfa223fe6405a720ec0afc0c12304fa302bc205b2c6db3dc0aa9cb1b38912"
+      "sha256": "cdd458e4d0f61714937c2d6884c164186f4000a619c2c67cac023b7d7f785022"
     },
     "platform-replay/linux/execution-record.json": {
       "size": 1077,
-      "sha256": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930"
+      "sha256": "d4941108185b51d48dab44e9c65bc4233f842ed8b2c81c2760833869dbfa5c58"
     },
     "platform-replay/linux/input-bundle.json": {
       "size": 1731,
@@ -429,7 +437,7 @@
     },
     "platform-replay/linux/replay-execution.log.txt": {
       "size": 65,
-      "sha256": "fa157afe2ce43fbd0b23e765eee3689855b80266a805db41c11a6e54cb2e86af"
+      "sha256": "b42710c602f5d1f3f46b1332e63fcf37bb4aafffa8e5625bbc0409cf12f3edc4"
     },
     "platform-replay/linux/restore-record.json": {
       "size": 265,
@@ -437,37 +445,37 @@
     },
     "platform-replay/linux/restored-inventory.json": {
       "size": 3080,
-      "sha256": "d8bbd3e509ab1f8ee73857ad80db67418bdd61a701cd036114fbf7edf9077308"
+      "sha256": "5a8e4e2d864029eb0ca0ea902a1af038bb86f60f6eae3a621906999edc8ac1b1"
     },
     "platform-replay/linux/result.json": {
       "size": 7054,
-      "sha256": "c54f1292e01b9434a4a6f034b443177a7f968cb2b01fc0f67b50e8e8206bfda7"
+      "sha256": "8ff1687ed82d9e84c747629498ad2b81d07f2885a5d1b27883769706d61a8a20"
     },
     "platform-replay/linux/runner-evidence.json": {
-      "size": 76808,
-      "sha256": "9722de3ed404957194da996dc9f9f00ddf56cae0199c771f8a1e31f1c45fd0a6"
+      "size": 77030,
+      "sha256": "ee2af493e21fe9953735b35a9eaecda38d5cf7a0d8d9d8fadd5903248a142d05"
     },
     "platform-replay/linux/semantic-assertions.json": {
       "size": 22562,
-      "sha256": "16232e8c49ec7d71e7d6a33eae2390780fe9c3698f280882e4f7687fb3389146"
+      "sha256": "0323d157abdb9055746df733e315bf57139fe780ac1394f8f3884ca84b95d90e"
     },
     "profile.json": {
       "size": 6215,
       "sha256": "defd5abaeaeb629df90c3db4a08f799ddf6d23bea7e8471c54893dab030305ac"
     },
-    "runtime/.manager-bundle-operation-050d0f575eb73e137ab9bc0e5166adb9b867bc230efbc09ba90277a356d701bb/state.json": {
-      "size": 1246,
-      "sha256": "ed6e795dcdb3b98f3e9c37ca69625f6e1659bc09b20e7df2b1afb9bbca0d2a32"
+    "runtime/.manager-bundle-operation-991e5909071fe9b7500c5b58a57b88f6e24b546d3ea391b64797e18464d9318a/state.json": {
+      "size": 1252,
+      "sha256": "bd5d5bf3687d8773629e69e157e56e51eed485124de568c02b271e5a23efc694"
     },
-    "runtime/.manager-bundle-operation-050d0f575eb73e137ab9bc0e5166adb9b867bc230efbc09ba90277a356d701bb/state.json.manager.lock": {
+    "runtime/.manager-bundle-operation-991e5909071fe9b7500c5b58a57b88f6e24b546d3ea391b64797e18464d9318a/state.json.manager.lock": {
       "size": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
-    "runtime/.manager-bundle-operation-38a9cbc31ee0f0e4d16fce5978862c7f72e4d32527c960e2ad3cd2020ec9b40f/state.json": {
-      "size": 1253,
-      "sha256": "cc725c48a46ef345450c504bcd486dec383ae7cef53e485958af80f5a5d79d4d"
+    "runtime/.manager-bundle-operation-a5f2dc82aa606b6d056b8981ca039ab78d680f50b23dd9d93e305c7aed1610f8/state.json": {
+      "size": 1246,
+      "sha256": "378d8de313e951cf1dcde14cc89ac0d756451388b1704ca483c1823bf067c6e2"
     },
-    "runtime/.manager-bundle-operation-38a9cbc31ee0f0e4d16fce5978862c7f72e4d32527c960e2ad3cd2020ec9b40f/state.json.manager.lock": {
+    "runtime/.manager-bundle-operation-a5f2dc82aa606b6d056b8981ca039ab78d680f50b23dd9d93e305c7aed1610f8/state.json.manager.lock": {
       "size": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
@@ -479,11 +487,11 @@
       "size": 259,
       "sha256": "fb18715cec7cbe87df2e26e79f24c143eed33689bcda46f3bec797d4ede42d15"
     },
-    "runtime/backup-restore/.manager-bundle-operation-507f140ab28cd4f3405423ed1118c3f6a26083a572a2ef6a0fdaee250ced669d/state.json": {
+    "runtime/backup-restore/.manager-bundle-operation-e8a6d0ac4f4611d74c7ef2c0872e5920dcb61a2a1f05fe206a3a63bbc774e4a4/state.json": {
       "size": 1225,
-      "sha256": "4f94ebbc43c37e444652bcc70f015844968704ce0371301cb0128af5d49b7682"
+      "sha256": "41247518f877dac68eb01ed7b5db1b0ad97b6a1aff538545b14fd44319c827e0"
     },
-    "runtime/backup-restore/.manager-bundle-operation-507f140ab28cd4f3405423ed1118c3f6a26083a572a2ef6a0fdaee250ced669d/state.json.manager.lock": {
+    "runtime/backup-restore/.manager-bundle-operation-e8a6d0ac4f4611d74c7ef2c0872e5920dcb61a2a1f05fe206a3a63bbc774e4a4/state.json.manager.lock": {
       "size": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
@@ -497,11 +505,11 @@
     },
     "runtime/backup-restore/bundle/database": {
       "size": 819200,
-      "sha256": "c1161a01b63e9f811307ae2c4c77249e90415da6d52d66c9891008fe50cb3bed"
+      "sha256": "4783a121fd3027fbf8fc661ea67d2449ded0d5a7cd5e97c0b69ee189e485c36f"
     },
     "runtime/backup-restore/bundle/manifest.json": {
       "size": 1424,
-      "sha256": "49fb00714eb4136dd00b63c3e35471c5fda11f42a38966c6f81d340b6cf7ec35"
+      "sha256": "a26c77ecf3126e165c04c34060102b69c74a0a379b4d17f02b9399af874d88b4"
     },
     "runtime/backup-restore/bundle/usage-archives/0b61c6371e8ffbdf715aa493bf9ca9dd/manifest.json": {
       "size": 1099,
@@ -520,16 +528,16 @@
       "sha256": "e3c9baec5a987b5680b7bda5eed0bbb307920a4ac2e412614d1fe028ad677d6f"
     },
     "runtime/config-identity.json": {
-      "size": 713,
-      "sha256": "4b2c4218c75228cfdd692cf56e0f31dbf382beaca65bc908b65523f3a11295a6"
+      "size": 689,
+      "sha256": "993782ee9fc128d5e891c61d3dc5275ede6d11b535d95932d1abe8954338091d"
     },
     "runtime/database-identity.json": {
       "size": 458,
-      "sha256": "ad57813a41c526eab43f526522ae125bfa2059e8190e895d7b0a06aabce50ba3"
+      "sha256": "def56af3711f169aeccea1c987e1434b039d06b53d9a3b554bb2e772c750b904"
     },
     "runtime/execution-record.json": {
       "size": 1077,
-      "sha256": "2c0801aa84e8764cd518f386a4512993c06e0fcef77688bbb1b557eec67cd930"
+      "sha256": "d4941108185b51d48dab44e9c65bc4233f842ed8b2c81c2760833869dbfa5c58"
     },
     "runtime/input-bundle.json": {
       "size": 1731,
@@ -545,7 +553,7 @@
     },
     "runtime/replay-execution.log.txt": {
       "size": 65,
-      "sha256": "50b0abfd13d52769bfd670db2145a56bf07095c878b04f23fcd6d5eb771b8d64"
+      "sha256": "5daacaf08eab7334a91b5bebfd939e8a6df23e789d1f2eb79b815ba260401cad"
     },
     "runtime/restore-record.json": {
       "size": 265,
@@ -553,19 +561,23 @@
     },
     "runtime/restored-inventory.json": {
       "size": 3080,
-      "sha256": "015725f7d300241c927ffe65a5a3da11b569d513df4d276d3372867dfdcf1a68"
+      "sha256": "d34f4a22d9381c0abd307b5fca48334b819cdde254765a7dc79cb7cb1036ca1b"
     },
     "runtime/result.json": {
       "size": 7054,
-      "sha256": "6a783749b270b9f0a47b1b240f18632ae8999229c5af3d833668c38feda8e4d9"
+      "sha256": "824efd86d0268f7a9ca6283b2949678aa7125022966fb58802f2d26232938a24"
     },
     "runtime/runner-evidence.json": {
-      "size": 74947,
-      "sha256": "9a6e8d6ae9b85eb79f7ca0bcf02e8b5b03d3f6dbbf06db634679482d3cb4d442"
+      "size": 75248,
+      "sha256": "f7532d8f8aa3ebba63a81e9edc278ffe39fddc3a188d4714e86e628d5da46984"
     },
     "runtime/semantic-assertions.json": {
       "size": 22562,
-      "sha256": "a6dc46b25f03d67a10a6602231aac547e06077e32f9104e6de5d8ab85cf5406a"
+      "sha256": "aa8b2bbbb8864b7947f005a9a3592af4b4de1b4340c257fd46547d9be5dec5a2"
+    },
+    "sealed/bak-02-bundle-4e1f3ad0b922-reviewed-evidence.zip": {
+      "size": 353015,
+      "sha256": "affd76d9b75274f320175b5151f0d224da4912abc1785582aaf2421854b46984"
     },
     "sealed/bak-02-bundle-4e1f3ad0b922-sealed-evidence.zip": {
       "size": 354965,
@@ -664,8 +676,21 @@
       "sha256": "004faea71e1c05a0abfe569177efc20c218b1d5072cf321584c6cbbcb215a9da"
     },
     "source-provenance.json": {
-      "size": 25261,
-      "sha256": "4321cc913be2985939dd800d18e629cc410f8d91ab3e1017cd32a27d0a4b34b8"
+      "size": 26269,
+      "sha256": "82abd97982a05992153063e9fdacc37167119483c93040e8ebd70be107e5f1f8"
     }
+  },
+  "generatorProvenance": "generator-provenance.json",
+  "generatorBuildVerification": "generator-build-verification.json",
+  "caseMatrix": {
+    "total": 49,
+    "accepted": 8,
+    "pending": 41,
+    "includesBAK02Pending": true
+  },
+  "backupFamily": {
+    "total": 10,
+    "accepted": 1,
+    "pending": 9
   }
 }
