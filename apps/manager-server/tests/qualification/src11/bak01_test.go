@@ -143,7 +143,7 @@ func TestReplayBAK01(t *testing.T) {
 	result := map[string]any{
 		"caseID": bak01CaseID, "runtimeEvidence": "pass", "runtimeAssertions": "pass", "casePass": false,
 		"independentAcceptance": "pending", "SourceRelease": r.SourceRelease, "SourceCommit": r.SourceCommit,
-		"PlanCommit": bak01PlanCommit, "SourceGeneratorCodeCommit": r.GeneratorCodeCommit,
+		"PlanCommit": bak01PlanCommit, "SourceGeneratorCodeCommit": r.GeneratorCodeCommit, "executionCommit": codeIdentity(t),
 		"inputBundleDigest": sealed.SourceRevision, "beforeDigest": sealed.SourceRevision,
 		"afterDigest": backup.SourceRevision, "authoritativeBeforeDigest": authoritativeBefore,
 		"authoritativeAfterDigest": authoritativeAfter, "applicableSEM": []string{"SEM-01"},

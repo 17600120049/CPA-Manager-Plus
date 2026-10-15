@@ -67,8 +67,8 @@ def main():
         parser.error("retention replay requires --evidence pointing to its own complete generated fixture")
     if args.action == "mig01" and (not args.evidence or args.evidence_archive or args.release_info):
         parser.error("mig01 requires --evidence pointing to its own complete generated fixture")
-    if args.action == "bak01" and (not args.evidence or args.evidence_archive or args.release_info):
-        parser.error("bak01 requires --evidence pointing to its own complete generated fixture")
+    if args.action == "bak01" and (bool(args.evidence) == bool(args.evidence_archive) or args.release_info):
+        parser.error("bak01 requires exactly one of --evidence or --evidence-archive")
     if generating and (args.evidence_archive or args.linux):
         parser.error("--evidence-archive and --linux are replay options")
     if generating and args.evidence:
@@ -98,7 +98,10 @@ def main():
         spec = importlib.util.spec_from_file_location("materialize_src11", ROOT / "bin/qualification/materialize-src11.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        evidence = module.materialize(args.evidence_archive, output / "materialized")
+        if bak01:
+            evidence = module.materialize_case(args.evidence_archive, output / "materialized", "bak-01")
+        else:
+            evidence = module.materialize(args.evidence_archive, output / "materialized")
     env = {k: v for k, v in os.environ.items() if not k.startswith(("CPA_", "CPAMP_", "USAGE_"))}
     env.update(GOWORK="off", GOFLAGS="-mod=readonly", CGO_ENABLED="0")
     if generating or args.linux:
