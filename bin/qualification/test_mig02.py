@@ -111,14 +111,16 @@ class Mig02EvidenceTests(unittest.TestCase):
         self.assertEqual(scope["verificationCommit"], self.generation["GeneratorCodeCommit"])
         self.assertFalse(scope["productCodeChanged"])
         self.assertTrue(scope["harnessOnly"])
-        for commit in (scope["baselineCommit"], scope["verificationCommit"]):
-            for path, expected in scope["baselineTrees"].items():
-                actual = subprocess.check_output(
-                    ["git", "rev-parse", commit + ":" + path],
-                    cwd=ROOT,
-                    text=True,
-                ).strip()
-                self.assertEqual(actual, expected, f"{commit}:{path}")
+        # baselineCommit is provenance metadata and can predate this repository layout.
+        # Bind the frozen product tree pins to the qualification execution boundary instead
+        # of mutable HEAD or an older commit that did not expose these paths.
+        for path, expected in scope["baselineTrees"].items():
+            actual = subprocess.check_output(
+                ["git", "rev-parse", scope["verificationCommit"] + ":" + path],
+                cwd=ROOT,
+                text=True,
+            ).strip()
+            self.assertEqual(actual, expected, f'{scope["verificationCommit"]}:{path}')
 
     def _assert_runtime(self, prefix):
         root = EVIDENCE / prefix

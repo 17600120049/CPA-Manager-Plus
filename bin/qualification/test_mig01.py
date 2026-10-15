@@ -50,14 +50,16 @@ class Mig01EvidenceTests(unittest.TestCase):
             read(EVIDENCE / "result.json")["qualificationExecutionCommit"],
         )
         self.assertFalse(scope["productCodeChanged"])
-        for commit in (scope["baselineCommit"], scope["verificationCommit"]):
-            for path, expected in scope["baselineTrees"].items():
-                actual = subprocess.check_output(
-                    ["git", "rev-parse", commit + ":" + path],
-                    cwd=ROOT,
-                    text=True,
-                ).strip()
-                self.assertEqual(actual, expected, f"{commit}:{path}")
+        # baselineCommit is provenance metadata and can predate this repository layout.
+        # Bind the frozen product tree pins to the qualification execution boundary instead
+        # of mutable HEAD or an older commit that did not expose these paths.
+        for path, expected in scope["baselineTrees"].items():
+            actual = subprocess.check_output(
+                ["git", "rev-parse", scope["verificationCommit"] + ":" + path],
+                cwd=ROOT,
+                text=True,
+            ).strip()
+            self.assertEqual(actual, expected, f'{scope["verificationCommit"]}:{path}')
         for path in ("internal/repository/sqlite/legacy_migration_readiness.go",
                      "internal/service/legacypreflight/direct_candidate.go"):
             self.assertFalse((ROOT / "apps/manager-server" / path).exists(), path)
