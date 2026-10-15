@@ -1,0 +1,153 @@
+{
+  "actions": [
+    "create",
+    "resume?wait=true\u0026expected_stage=archiving",
+    "verify?wait=true",
+    "delete?wait=true"
+  ],
+  "automaticRetentionEnabled": false,
+  "create": {
+    "run": {
+      "id": "bb5e71cea8079660248716324edc1103",
+      "mode": "manual",
+      "status": "previewed",
+      "cutoff_timestamp_ms": 1790985600000,
+      "target_event_id": 4,
+      "event_count": 4,
+      "estimated_bytes": 6566,
+      "last_archived_event_id": 0,
+      "archived_event_count": 0,
+      "archived_uncompressed_bytes": 0,
+      "archived_compressed_bytes": 0,
+      "last_deleted_event_id": 0,
+      "deleted_event_count": 0,
+      "created_at_ms": 1792026316108,
+      "updated_at_ms": 1792026316108,
+      "has_error": false
+    },
+    "segments": []
+  },
+  "delete": {
+    "run": {
+      "id": "bb5e71cea8079660248716324edc1103",
+      "mode": "manual",
+      "status": "completed",
+      "requested_stage": "deleting",
+      "cutoff_timestamp_ms": 1790985600000,
+      "target_event_id": 4,
+      "event_count": 4,
+      "estimated_bytes": 6566,
+      "last_archived_event_id": 4,
+      "archived_event_count": 4,
+      "archived_uncompressed_bytes": 12228,
+      "archived_compressed_bytes": 2911,
+      "last_deleted_event_id": 4,
+      "deleted_event_count": 4,
+      "created_at_ms": 1792026316108,
+      "updated_at_ms": 1792026316134,
+      "started_at_ms": 1792026316110,
+      "archived_at_ms": 1792026316113,
+      "verified_at_ms": 1792026316122,
+      "delete_started_at_ms": 1792026316129,
+      "completed_at_ms": 1792026316134,
+      "has_error": false
+    },
+    "segments": [
+      {
+        "run_id": "bb5e71cea8079660248716324edc1103",
+        "sequence": 1,
+        "status": "verified",
+        "first_event_id": 1,
+        "last_event_id": 4,
+        "min_timestamp_ms": 1790899200000,
+        "max_timestamp_ms": 1790910000000,
+        "event_count": 4,
+        "uncompressed_bytes": 12228,
+        "compressed_bytes": 2911,
+        "created_at_ms": 1792026316112,
+        "verified_at_ms": 1792026316122
+      }
+    ]
+  },
+  "deleteCalled": true,
+  "deletionMethod": "production DeleteArchive/DeleteBatch",
+  "producer": "published exact v1.14.4",
+  "resume": {
+    "run": {
+      "id": "bb5e71cea8079660248716324edc1103",
+      "mode": "manual",
+      "status": "archived",
+      "requested_stage": "archiving",
+      "cutoff_timestamp_ms": 1790985600000,
+      "target_event_id": 4,
+      "event_count": 4,
+      "estimated_bytes": 6566,
+      "last_archived_event_id": 4,
+      "archived_event_count": 4,
+      "archived_uncompressed_bytes": 12228,
+      "archived_compressed_bytes": 2911,
+      "last_deleted_event_id": 0,
+      "deleted_event_count": 0,
+      "created_at_ms": 1792026316108,
+      "updated_at_ms": 1792026316113,
+      "started_at_ms": 1792026316110,
+      "archived_at_ms": 1792026316113,
+      "has_error": false
+    },
+    "segments": [
+      {
+        "run_id": "bb5e71cea8079660248716324edc1103",
+        "sequence": 1,
+        "status": "published",
+        "first_event_id": 1,
+        "last_event_id": 4,
+        "min_timestamp_ms": 1790899200000,
+        "max_timestamp_ms": 1790910000000,
+        "event_count": 4,
+        "uncompressed_bytes": 12228,
+        "compressed_bytes": 2911,
+        "created_at_ms": 1792026316112
+      }
+    ]
+  },
+  "verify": {
+    "run": {
+      "id": "bb5e71cea8079660248716324edc1103",
+      "mode": "manual",
+      "status": "verified",
+      "requested_stage": "verifying",
+      "cutoff_timestamp_ms": 1790985600000,
+      "target_event_id": 4,
+      "event_count": 4,
+      "estimated_bytes": 6566,
+      "last_archived_event_id": 4,
+      "archived_event_count": 4,
+      "archived_uncompressed_bytes": 12228,
+      "archived_compressed_bytes": 2911,
+      "last_deleted_event_id": 0,
+      "deleted_event_count": 0,
+      "created_at_ms": 1792026316108,
+      "updated_at_ms": 1792026316122,
+      "started_at_ms": 1792026316110,
+      "archived_at_ms": 1792026316113,
+      "verified_at_ms": 1792026316122,
+      "has_error": false
+    },
+    "segments": [
+      {
+        "run_id": "bb5e71cea8079660248716324edc1103",
+        "sequence": 1,
+        "status": "verified",
+        "first_event_id": 1,
+        "last_event_id": 4,
+        "min_timestamp_ms": 1790899200000,
+        "max_timestamp_ms": 1790910000000,
+        "event_count": 4,
+        "uncompressed_bytes": 12228,
+        "compressed_bytes": 2911,
+        "created_at_ms": 1792026316112,
+        "verified_at_ms": 1792026316122
+      }
+    ]
+  }
+}

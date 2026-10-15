@@ -1,0 +1,22 @@
+{
+  "afterRawCount": 0,
+  "archiveEventCount": 4,
+  "beforeRawCount": 4,
+  "deletedCount": 4,
+  "onlineRawEventIDsAfter": [],
+  "rawEventIDsBefore": [
+    {
+      "raw_event_id": 1
+    },
+    {
+      "raw_event_id": 2
+    },
+    {
+      "raw_event_id": 3
+    },
+    {
+      "raw_event_id": 4
+    }
+  ],
+  "retainedProjectionCount": 4
+}
