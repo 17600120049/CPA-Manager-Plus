@@ -17,7 +17,7 @@
       "after": {
         "": [
           {
-            "generated_at_ms": 1792026322497,
+            "generated_at_ms": 1792035986906,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -69,7 +69,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322499,
+            "generated_at_ms": 1792035986908,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -123,7 +123,7 @@
         ],
         "claude-fixture-ret03": [
           {
-            "generated_at_ms": 1792026322471,
+            "generated_at_ms": 1792035986880,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -175,7 +175,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322474,
+            "generated_at_ms": 1792035986883,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -229,7 +229,7 @@
         ],
         "fixture-archive-cached-ret03": [
           {
-            "generated_at_ms": 1792026322478,
+            "generated_at_ms": 1792035986887,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -281,7 +281,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322480,
+            "generated_at_ms": 1792035986889,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -335,7 +335,7 @@
         ],
         "fixture-free-ret03": [
           {
-            "generated_at_ms": 1792026322484,
+            "generated_at_ms": 1792035986893,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -387,7 +387,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322487,
+            "generated_at_ms": 1792035986896,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -441,7 +441,7 @@
         ],
         "fixture-paid-ret03": [
           {
-            "generated_at_ms": 1792026322490,
+            "generated_at_ms": 1792035986900,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -493,7 +493,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322493,
+            "generated_at_ms": 1792035986902,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -546,7 +546,7 @@
           }
         ],
         "rawOnlyQuery": {
-          "generated_at_ms": 1792026322503,
+          "generated_at_ms": 1792035986912,
           "granularity": "hour",
           "coverage": {
             "scope": "time_range",
@@ -595,7 +595,7 @@
       "before": {
         "": [
           {
-            "generated_at_ms": 1792026322452,
+            "generated_at_ms": 1792035986861,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -647,7 +647,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322454,
+            "generated_at_ms": 1792035986863,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -701,7 +701,7 @@
         ],
         "claude-fixture-ret03": [
           {
-            "generated_at_ms": 1792026322425,
+            "generated_at_ms": 1792035986834,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -753,7 +753,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322428,
+            "generated_at_ms": 1792035986837,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -807,7 +807,7 @@
         ],
         "fixture-archive-cached-ret03": [
           {
-            "generated_at_ms": 1792026322432,
+            "generated_at_ms": 1792035986841,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -859,7 +859,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322435,
+            "generated_at_ms": 1792035986844,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -913,7 +913,7 @@
         ],
         "fixture-free-ret03": [
           {
-            "generated_at_ms": 1792026322439,
+            "generated_at_ms": 1792035986848,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -965,7 +965,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322441,
+            "generated_at_ms": 1792035986850,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1019,7 +1019,7 @@
         ],
         "fixture-paid-ret03": [
           {
-            "generated_at_ms": 1792026322445,
+            "generated_at_ms": 1792035986854,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1071,7 +1071,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322448,
+            "generated_at_ms": 1792035986857,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1124,7 +1124,7 @@
           }
         ],
         "rawOnlyQuery": {
-          "generated_at_ms": 1792026322458,
+          "generated_at_ms": 1792035986867,
           "granularity": "hour",
           "coverage": {
             "scope": "time_range",
@@ -1155,8 +1155,8 @@
       "status": "runtime-pass"
     },
     "SEM-03": {
+      "historicalPricingAuthorityPreserved": true,
       "historicalPricingPreserved": true,
-      "noCurrentPriceFallback": true,
       "status": "runtime-pass",
       "v1Costs": {
         "claude-fixture-ret03": {
@@ -1291,7 +1291,7 @@
       "v2Queries": {
         "": [
           {
-            "generated_at_ms": 1792026322497,
+            "generated_at_ms": 1792035986906,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1343,7 +1343,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322499,
+            "generated_at_ms": 1792035986908,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1397,7 +1397,7 @@
         ],
         "claude-fixture-ret03": [
           {
-            "generated_at_ms": 1792026322471,
+            "generated_at_ms": 1792035986880,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1449,7 +1449,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322474,
+            "generated_at_ms": 1792035986883,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1503,7 +1503,7 @@
         ],
         "fixture-archive-cached-ret03": [
           {
-            "generated_at_ms": 1792026322478,
+            "generated_at_ms": 1792035986887,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1555,7 +1555,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322480,
+            "generated_at_ms": 1792035986889,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1609,7 +1609,7 @@
         ],
         "fixture-free-ret03": [
           {
-            "generated_at_ms": 1792026322484,
+            "generated_at_ms": 1792035986893,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1661,7 +1661,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322487,
+            "generated_at_ms": 1792035986896,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1715,7 +1715,7 @@
         ],
         "fixture-paid-ret03": [
           {
-            "generated_at_ms": 1792026322490,
+            "generated_at_ms": 1792035986900,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1767,7 +1767,7 @@
             }
           },
           {
-            "generated_at_ms": 1792026322493,
+            "generated_at_ms": 1792035986902,
             "granularity": "hour",
             "coverage": {
               "scope": "requested_ranges",
@@ -1820,7 +1820,7 @@
           }
         ],
         "rawOnlyQuery": {
-          "generated_at_ms": 1792026322503,
+          "generated_at_ms": 1792035986912,
           "granularity": "hour",
           "coverage": {
             "scope": "time_range",

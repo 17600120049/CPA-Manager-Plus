@@ -28,8 +28,8 @@
   "generationRunner": "generation-runner.json",
   "inventory": {
     "clean-checkout-replay.json": {
-      "sha256": "e7a466525a8a4d8f0cb930e3abf544e8df82b6f836c2d8626f9772e6d9ed0289",
-      "size": 18467
+      "sha256": "6be91ec5de8d1648fad63c0e35595024f2f8e9794ff405cddc2d352032d36cbc",
+      "size": 18561
     },
     "generation-index.json": {
       "sha256": "da0b177d7413383ca45ee0349432c8f37040e72e78788def3861b1451eced335",
@@ -44,11 +44,11 @@
       "size": 27558
     },
     "platform-replay/linux/backup-restore.json": {
-      "sha256": "0c063798ee87afb839dc2a8f8618701e502df961aab44b7b86e7b5ea2098c006",
+      "sha256": "15623248f346c0c9c03d04d3577137fbc9f0ed08b03b7d06b236caa8d5cfd94a",
       "size": 17819
     },
     "platform-replay/linux/execution-record.json": {
-      "sha256": "3455fa46f61a928f9de7bcd8bee58ba4402476fe9ac0a62d750e837e8e6c4d19",
+      "sha256": "45a1aabe71a384147781eeee945a25dc5b25b6b56fdff7de320a53def214526f",
       "size": 1125
     },
     "platform-replay/linux/input-bundle.json": {
@@ -60,7 +60,7 @@
       "size": 188
     },
     "platform-replay/linux/result.json": {
-      "sha256": "279c75890728c4758803f42266ed1e4443f9d51f139de0e601f1e6f60b712547",
+      "sha256": "ef8a82a0351dcc090a605ccde5cf27cf72f78939f6ba1f8e3fc48821c1bf782b",
       "size": 6399
     },
     "platform-replay/linux/retained-projection-snapshot.json": {
@@ -68,12 +68,12 @@
       "size": 7273
     },
     "platform-replay/linux/runner-evidence.json": {
-      "sha256": "6a0ff3250a49534f09ee5154ad9ee2da2611beaa8c202bca17bae6e7595fbdbc",
-      "size": 74943
+      "sha256": "bede03b067ef0ae91f14a4f3abc6805d32f9ee013ab5a77f22fc2ede44dcdfc2",
+      "size": 74908
     },
     "platform-replay/linux/semantic-assertions.json": {
-      "sha256": "7df3ca26efcb918dbaf2b11f3fa0cc1137563c8325ec0eaca9da2e4ea55a2126",
-      "size": 64795
+      "sha256": "4b04dacd005fe31a3f8804f51d67ae0cf7d9cf620a859f366340f491112a1bea",
+      "size": 64808
     },
     "profile.json": {
       "sha256": "e8dea6f72f9d199a27b88898a4b604c970ba9e698019825de3c82cf8c2201d7c",
@@ -84,11 +84,11 @@
       "size": 27558
     },
     "runtime/backup-restore.json": {
-      "sha256": "efc29143c8dc43f438d0f2a2b1c1e076565dc62aea5bb3aeca2d8fc08e464b65",
+      "sha256": "e7196fa78cc200cd38189e74722bd86f55cc39218f3fc032a28cf5d739b61009",
       "size": 17819
     },
     "runtime/execution-record.json": {
-      "sha256": "3455fa46f61a928f9de7bcd8bee58ba4402476fe9ac0a62d750e837e8e6c4d19",
+      "sha256": "45a1aabe71a384147781eeee945a25dc5b25b6b56fdff7de320a53def214526f",
       "size": 1125
     },
     "runtime/input-bundle.json": {
@@ -100,7 +100,7 @@
       "size": 188
     },
     "runtime/result.json": {
-      "sha256": "d59177bea5207700a252bac0e8e6bd3fd9384507670f804ffa10ec08ea2e70e7",
+      "sha256": "f3f86e38fef38b7bfb0fcc14b1fc850d54796ad6366298fb5f4d8b66d2d7e886",
       "size": 6399
     },
     "runtime/retained-projection-snapshot.json": {
@@ -108,12 +108,12 @@
       "size": 7273
     },
     "runtime/runner-evidence.json": {
-      "sha256": "686aae26c76a6d9e5fbaeb5377c67fa811553e2864b49a159614c764a8a3a0f9",
-      "size": 73135
+      "sha256": "703ffc8c1aa00fb762523bc064ae84eaa5ff051c1a3b1470af2c58bfdd5eab4b",
+      "size": 73147
     },
     "runtime/semantic-assertions.json": {
-      "sha256": "4e83e348072e204180c95fd33c4860c9f52b492d4f809e78b376d8e1d90e09bb",
-      "size": 64795
+      "sha256": "88509a9c7c92345b0cfb65d8be82b56063aed55738ffb962ea762848ae96ab26",
+      "size": 64808
     },
     "seal-verification.json": {
       "sha256": "f15b0c094af547aadbdc04af039276ff602601783b8cd3403f3b29f0f541891a",

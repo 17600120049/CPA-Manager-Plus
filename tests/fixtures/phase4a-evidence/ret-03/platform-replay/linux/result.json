@@ -21,12 +21,12 @@
   "deletedCount": 4,
   "evidence": {
     "archiveInventory": "2864fce8176cdf86e9aa3f2676640ac33685e27f4265911e83a1fd68c3b7dc9d",
-    "backupRestore": "0c063798ee87afb839dc2a8f8618701e502df961aab44b7b86e7b5ea2098c006",
-    "executionRecord": "3455fa46f61a928f9de7bcd8bee58ba4402476fe9ac0a62d750e837e8e6c4d19",
+    "backupRestore": "15623248f346c0c9c03d04d3577137fbc9f0ed08b03b7d06b236caa8d5cfd94a",
+    "executionRecord": "45a1aabe71a384147781eeee945a25dc5b25b6b56fdff7de320a53def214526f",
     "inputBundle": "f04faf530834cd206b43a63c23617d9894c600e70c8ac46928fb3ddbe4c7b460",
     "rawEventInventory": "ddd60f4b723d20bc94a7887f7d10f28cceed196f1cef5a1abb4f29a5316c995f",
     "retainedProjectionSnapshot": "001f7c34a5ee2000d1ce7d8e149f7cf7b978aabd22b0157d3f819f349faca822",
-    "semanticAssertions": "7df3ca26efcb918dbaf2b11f3fa0cc1137563c8325ec0eaca9da2e4ea55a2126"
+    "semanticAssertions": "4b04dacd005fe31a3f8804f51d67ae0cf7d9cf620a859f366340f491112a1bea"
   },
   "independentAcceptance": "pending",
   "inputBundleDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",

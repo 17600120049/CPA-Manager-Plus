@@ -1,13 +1,13 @@
 {
   "archiveEventCount": 4,
   "archiveRawParity": true,
-  "backupManifestDigest": "6f853bc9a536385a2eaf344ed9ef0daf309d2a401de253702184ab0dd5f92383",
+  "backupManifestDigest": "85fab8461d0800f7172717e3cf7c6755ea195039f3b6f1ae10a4a7a4ae2065fd",
   "inventoryMatched": true,
   "newRoot": true,
   "queries": {
     "": [
       {
-        "generated_at_ms": 1792026345631,
+        "generated_at_ms": 1792035987273,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -59,7 +59,7 @@
         }
       },
       {
-        "generated_at_ms": 1792026345633,
+        "generated_at_ms": 1792035987276,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -113,7 +113,7 @@
     ],
     "claude-fixture-ret03": [
       {
-        "generated_at_ms": 1792026345599,
+        "generated_at_ms": 1792035987244,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -165,7 +165,7 @@
         }
       },
       {
-        "generated_at_ms": 1792026345603,
+        "generated_at_ms": 1792035987248,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -219,7 +219,7 @@
     ],
     "fixture-archive-cached-ret03": [
       {
-        "generated_at_ms": 1792026345607,
+        "generated_at_ms": 1792035987252,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -271,7 +271,7 @@
         }
       },
       {
-        "generated_at_ms": 1792026345610,
+        "generated_at_ms": 1792035987255,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -325,7 +325,7 @@
     ],
     "fixture-free-ret03": [
       {
-        "generated_at_ms": 1792026345614,
+        "generated_at_ms": 1792035987260,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -377,7 +377,7 @@
         }
       },
       {
-        "generated_at_ms": 1792026345617,
+        "generated_at_ms": 1792035987262,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -431,7 +431,7 @@
     ],
     "fixture-paid-ret03": [
       {
-        "generated_at_ms": 1792026345624,
+        "generated_at_ms": 1792035987267,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -483,7 +483,7 @@
         }
       },
       {
-        "generated_at_ms": 1792026345627,
+        "generated_at_ms": 1792035987269,
         "granularity": "hour",
         "coverage": {
           "scope": "requested_ranges",
@@ -536,7 +536,7 @@
       }
     ],
     "rawOnlyQuery": {
-      "generated_at_ms": 1792026345638,
+      "generated_at_ms": 1792035987280,
       "granularity": "hour",
       "coverage": {
         "scope": "time_range",
@@ -564,6 +564,6 @@
   },
   "rawEventCount": 0,
   "rawStillDeleted": true,
-  "restoredManifestDigest": "6f853bc9a536385a2eaf344ed9ef0daf309d2a401de253702184ab0dd5f92383",
+  "restoredManifestDigest": "85fab8461d0800f7172717e3cf7c6755ea195039f3b6f1ae10a4a7a4ae2065fd",
   "retainedProjectionCount": 4
 }
