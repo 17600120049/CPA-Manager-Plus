@@ -13,6 +13,13 @@
     "externalManagementOwner": "cpamp_manager",
     "externalLifecycleOwner": "operator"
   },
+  "ownership": {
+    "databaseOwner": "manager_server",
+    "dataKeyOwner": "manager_server",
+    "migrationOwner": "manager_server",
+    "productCheckpointOwner": "manager_server",
+    "managedCPALifecycleOwner": "runtime_supervisor"
+  },
   "upgradeOrdering": [
     "read_only_classification",
     "complete_verified_backup",
@@ -336,6 +343,13 @@
     "cpa_core_v8_only_no_v0_fallback",
     "external_management_not_lifecycle_authority",
     "contract_fixture_never_grants_production_authority",
-    "deferred_qualification_remains_pending"
+    "deferred_qualification_remains_pending",
+    "required_migration_checkpoints_before_grant",
+    "forward_hop_requires_trusted_receipt",
+    "trusted_receipt_requires_manager_authenticity",
+    "trusted_receipt_binds_operation_target_input_output_artifact",
+    "trusted_receipt_requires_zero_exit_and_reap",
+    "receipt_replay_or_revocation_rejected",
+    "manager_supervisor_ownership_separated"
   ]
 }
