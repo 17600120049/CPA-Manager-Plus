@@ -1,0 +1,368 @@
+{
+  "caseID": "RET-03",
+  "checkout": "task-owned local clone at a detached committed checkout without copied worktree or runtime files",
+  "checkoutCommit": "d252f1cc65be12495e9b6d19865f5aaa0b7b5c35",
+  "materializedArchiveSHA256": "6de91fb033927db62f1fb6f06aa1e3e7e598a62a9d57c97cc6434a7004e36db1",
+  "materializer": "bin/qualification/materialize-src11.py --case ret-03 --release-metadata --tag-metadata",
+  "platforms": {
+    "linux": {
+      "executionCommand": [
+        "docker",
+        "run",
+        "--rm",
+        "--platform",
+        "linux/amd64",
+        "--network",
+        "none",
+        "--read-only",
+        "--user",
+        "501:20",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--tmpfs",
+        "/tmp:rw,exec,mode=1777",
+        "--mount",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/clean-replay-linux/qualification,dst=/qualification,readonly",
+        "--mount",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/materialized/producer.tar.gz,dst=/archive,readonly",
+        "--mount",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/materialized/ret-03,dst=/evidence,readonly",
+        "--mount",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/clean-checkout/tests/fixtures/phase4a-evidence/ret-03/profile.json,dst=/profile,readonly",
+        "--mount",
+        "type=bind,src=/private/tmp/cpamp-ret03-20261015/clean-replay-linux,dst=/output",
+        "--env",
+        "CPAMP_SRC11_EVIDENCE=/evidence",
+        "--env",
+        "CPAMP_SRC11_ARCHIVE=/archive",
+        "--env",
+        "CPAMP_SRC11_PROFILE=/profile",
+        "--env",
+        "CPAMP_SRC11_REPLAY_OUTPUT=/output/runtime",
+        "--env",
+        "CPAMP_RET03_SOURCE_EVIDENCE=/evidence",
+        "--env",
+        "CPAMP_RET03_ARCHIVE=/archive",
+        "--env",
+        "CPAMP_RET03_REPLAY_OUTPUT=/output/runtime",
+        "debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b",
+        "/qualification",
+        "-test.v",
+        "-test.run",
+        "^TestReplayRET03$",
+        "-test.timeout",
+        "4m"
+      ],
+      "executionExitCode": 0,
+      "goVersion": "go version go1.26.1 darwin/amd64",
+      "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
+      "logs": {
+        "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "replay-execution.log": "da14bd4a5b60b0ccb4eb887af70f258186dd325988931d2333b2b6e00c448622"
+      },
+      "newRootRecovery": true,
+      "runnerEvidenceSHA256": "229b4aed0f777dbeea8dece0208540ae8b3ee1ebd90900a6949763df14daea6d",
+      "runtimeResult": {
+        "Phase4A07Complete": false,
+        "Phase4AComplete": false,
+        "TrustedHopReceipt": false,
+        "UpgradeAuthorized": false,
+        "afterDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+        "afterRawCount": 0,
+        "applicableSEM": [
+          "SEM-01",
+          "SEM-02",
+          "SEM-03",
+          "SEM-06",
+          "SEM-09"
+        ],
+        "archiveEventCount": 4,
+        "backupRestore": "pass",
+        "beforeDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+        "beforeRawCount": 4,
+        "caseID": "RET-03",
+        "casePass": false,
+        "deletedCount": 4,
+        "evidence": {
+          "archiveInventory": "2864fce8176cdf86e9aa3f2676640ac33685e27f4265911e83a1fd68c3b7dc9d",
+          "backupRestore": "51e43b39ddf5aca98fda062bca8d70ff127b622c2746e7fd73b1b7ee7276b7aa",
+          "executionRecord": "6368509ef775101d0479ea27a07abcb24c4b944059d4eae706116134c1362d15",
+          "inputBundle": "f04faf530834cd206b43a63c23617d9894c600e70c8ac46928fb3ddbe4c7b460",
+          "rawEventInventory": "ddd60f4b723d20bc94a7887f7d10f28cceed196f1cef5a1abb4f29a5316c995f",
+          "retainedProjectionSnapshot": "001f7c34a5ee2000d1ce7d8e149f7cf7b978aabd22b0157d3f819f349faca822",
+          "semanticAssertions": "6b21f1d43c830dc6b51900504eb561bb373c86dc9b9fd9f8496fe0fdb7083ef9"
+        },
+        "independentAcceptance": "pending",
+        "inputBundleDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+        "inputBundleIdentity": "RET-03/input-bundle@f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+        "onlineRawComplete": false,
+        "rawEventCount": 0,
+        "remainingCases": {
+          "count": 44,
+          "status": "pending"
+        },
+        "retainedProjectionCount": 4,
+        "runtimeEvidence": "pass",
+        "sourceProvenance": {
+          "ControlledInputSHA256": "e8dea6f72f9d199a27b88898a4b604c970ba9e698019825de3c82cf8c2201d7c",
+          "GeneratedBundleSHA256": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+          "GenerationEvidenceFiles": {
+            "archive-flow.json": "a7ec07af927fa66592b92669a153d8a7409f921ff56e97b321d5a138ff248629",
+            "archive-inventory.json": "2864fce8176cdf86e9aa3f2676640ac33685e27f4265911e83a1fd68c3b7dc9d",
+            "archive-readiness.json": "9623fa44dff531432fe888947891927d58e0ceae683b8ca2c5a42914ff40a5e0",
+            "config-write.json": "fbcde2069f3f35ef00f62f4c09a51419103fdf03194f92a2f1cb634ad9782877",
+            "controlled-input.json": "e8dea6f72f9d199a27b88898a4b604c970ba9e698019825de3c82cf8c2201d7c",
+            "post-delete-snapshot.json": "72534729c858478aa4cbeb89501a0ae6fc08701c19a36cd258ed67cf2e768c09",
+            "pre-archive-snapshot.json": "2e374eaa040e9ca86250145692028f84706dc9af7f5d074d7be9b6dacc20cc6b",
+            "pre-delete-snapshot.json": "2e374eaa040e9ca86250145692028f84706dc9af7f5d074d7be9b6dacc20cc6b",
+            "price-write.json": "94d8aea3ed2f1b00cbe05864bc903b91ccaf8acb908b6e96adb2498513578417",
+            "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+            "producer.log": "6e91f79ab862c75f4e9810e85dfb309f3b8fb5e5e58b8348df99a4e83b37c4f5",
+            "quota-write.json": "0c41d1b3ea485c216d1c36ea71d818db438394e658d5cd0f1b11bfaeea71ef77",
+            "raw-event-inventory.json": "b5ce5b2f112ce598639c9a7a4d4d9064fd8b8f71f5b3564ab9bf022b19b3cf3f",
+            "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+            "retained-projection-snapshot.json": "001f7c34a5ee2000d1ce7d8e149f7cf7b978aabd22b0157d3f819f349faca822",
+            "source-snapshot.json": "72534729c858478aa4cbeb89501a0ae6fc08701c19a36cd258ed67cf2e768c09",
+            "v1-analytics.json": "ec69f6af57445147036b602257d87ed4c1e7aa73bef22301e194c2a206b5d2e5",
+            "v1-archived-analytics.json": "f9dd53e72f9f14324755d2a325b9e684e89196153a41a2e528e961e89242513d",
+            "v1-export.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "GenerationProfile": "ret-03-archived-raw-deleted-v1",
+          "GeneratorCodeCommit": "61291586999216515c4b42f9c5fecf7ae4cdbe45",
+          "PlanCommit": "06a47aaefff1629b3d556f8a49e0544648bfd4bc",
+          "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+          "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+          "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+          "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+          "SourceProducerKind": "published-artifact",
+          "SourceRelease": "v1.14.4",
+          "TrustedHopReceipt": false,
+          "UpgradeAuthorized": false,
+          "bundleInventory": {
+            "entries": {
+              "config": {
+                "present": true,
+                "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+                "size": 243
+              },
+              "data-key": {
+                "present": true,
+                "sha256": "0030e06e7db86ea577e82ad7303c4f1c84a7caf645ffe8d0343b482777699b25",
+                "size": 44
+              },
+              "database": {
+                "present": true,
+                "sha256": "e6680c7bce21970a1a5561887cebaf7de0bc51b5441579523b70f2221faa7347",
+                "size": 659456
+              },
+              "database-journal": {
+                "present": false
+              },
+              "database-shm": {
+                "present": false
+              },
+              "database-wal": {
+                "present": false
+              },
+              "usage-archives": {
+                "directory": true,
+                "present": true
+              },
+              "usage-archives/bb5e71cea8079660248716324edc1103": {
+                "directory": true,
+                "present": true
+              },
+              "usage-archives/bb5e71cea8079660248716324edc1103/manifest.json": {
+                "present": true,
+                "sha256": "78a82a20c21ae20f7ca94547b92f788c2bb0c6ccfbe4764e4c6f6e773d9b0f03",
+                "size": 1099
+              },
+              "usage-archives/bb5e71cea8079660248716324edc1103/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+                "present": true,
+                "sha256": "c6fee0bf549e02f37eafae2e01f70c053da2994e347d13e4062c1258943c0d25",
+                "size": 2911
+              }
+            },
+            "fence": "cooperating-manager-lock",
+            "sourceRevision": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+            "version": 2
+          },
+          "caseID": "RET-03",
+          "casePass": false,
+          "generationSuccess": true,
+          "process": {
+            "deliveredPayloads": 5,
+            "exitCode": 0,
+            "finishedAt": "2026-10-15T01:05:16.176089612Z",
+            "pid": 15,
+            "reaped": true,
+            "startedAt": "2026-10-15T01:04:45.962943296Z"
+          }
+        }
+      },
+      "testedCommit": "d252f1cc65be12495e9b6d19865f5aaa0b7b5c35"
+    },
+    "macos": {
+      "executionCommand": [
+        "/private/tmp/cpamp-ret03-20261015/clean-replay-macos/qualification",
+        "-test.v",
+        "-test.run",
+        "^TestReplayRET03$",
+        "-test.timeout",
+        "4m"
+      ],
+      "executionExitCode": 0,
+      "goVersion": "go version go1.26.1 darwin/amd64",
+      "host": "macOS-13.6.3-x86_64-i386-64bit-Mach-O",
+      "logs": {
+        "build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "replay-execution.log": "e8ac50879caf2e84b22376d9af4d8b238bdb59268b88273181e5f3bbb8d86af7"
+      },
+      "newRootRecovery": true,
+      "runnerEvidenceSHA256": "7a652b0fb07b4b2932034dddbf4f3bb3a92a0dc24f6b07838cb8e03fde602c7b",
+      "runtimeResult": {
+        "Phase4A07Complete": false,
+        "Phase4AComplete": false,
+        "TrustedHopReceipt": false,
+        "UpgradeAuthorized": false,
+        "afterDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+        "afterRawCount": 0,
+        "applicableSEM": [
+          "SEM-01",
+          "SEM-02",
+          "SEM-03",
+          "SEM-06",
+          "SEM-09"
+        ],
+        "archiveEventCount": 4,
+        "backupRestore": "pass",
+        "beforeDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+        "beforeRawCount": 4,
+        "caseID": "RET-03",
+        "casePass": false,
+        "deletedCount": 4,
+        "evidence": {
+          "archiveInventory": "2864fce8176cdf86e9aa3f2676640ac33685e27f4265911e83a1fd68c3b7dc9d",
+          "backupRestore": "1c226844e62b2de917822fafdc26debd60f26fa14016c7fea3d6bec9f04e4dcf",
+          "executionRecord": "6368509ef775101d0479ea27a07abcb24c4b944059d4eae706116134c1362d15",
+          "inputBundle": "f04faf530834cd206b43a63c23617d9894c600e70c8ac46928fb3ddbe4c7b460",
+          "rawEventInventory": "ddd60f4b723d20bc94a7887f7d10f28cceed196f1cef5a1abb4f29a5316c995f",
+          "retainedProjectionSnapshot": "001f7c34a5ee2000d1ce7d8e149f7cf7b978aabd22b0157d3f819f349faca822",
+          "semanticAssertions": "38024bad2d50b3cf44bc06e0fb7b90e83c64e26a63d9ec217b9f1d8b7cf0bf44"
+        },
+        "independentAcceptance": "pending",
+        "inputBundleDigest": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+        "inputBundleIdentity": "RET-03/input-bundle@f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+        "onlineRawComplete": false,
+        "rawEventCount": 0,
+        "remainingCases": {
+          "count": 44,
+          "status": "pending"
+        },
+        "retainedProjectionCount": 4,
+        "runtimeEvidence": "pass",
+        "sourceProvenance": {
+          "ControlledInputSHA256": "e8dea6f72f9d199a27b88898a4b604c970ba9e698019825de3c82cf8c2201d7c",
+          "GeneratedBundleSHA256": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+          "GenerationEvidenceFiles": {
+            "archive-flow.json": "a7ec07af927fa66592b92669a153d8a7409f921ff56e97b321d5a138ff248629",
+            "archive-inventory.json": "2864fce8176cdf86e9aa3f2676640ac33685e27f4265911e83a1fd68c3b7dc9d",
+            "archive-readiness.json": "9623fa44dff531432fe888947891927d58e0ceae683b8ca2c5a42914ff40a5e0",
+            "config-write.json": "fbcde2069f3f35ef00f62f4c09a51419103fdf03194f92a2f1cb634ad9782877",
+            "controlled-input.json": "e8dea6f72f9d199a27b88898a4b604c970ba9e698019825de3c82cf8c2201d7c",
+            "post-delete-snapshot.json": "72534729c858478aa4cbeb89501a0ae6fc08701c19a36cd258ed67cf2e768c09",
+            "pre-archive-snapshot.json": "2e374eaa040e9ca86250145692028f84706dc9af7f5d074d7be9b6dacc20cc6b",
+            "pre-delete-snapshot.json": "2e374eaa040e9ca86250145692028f84706dc9af7f5d074d7be9b6dacc20cc6b",
+            "price-write.json": "94d8aea3ed2f1b00cbe05864bc903b91ccaf8acb908b6e96adb2498513578417",
+            "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+            "producer.log": "6e91f79ab862c75f4e9810e85dfb309f3b8fb5e5e58b8348df99a4e83b37c4f5",
+            "quota-write.json": "0c41d1b3ea485c216d1c36ea71d818db438394e658d5cd0f1b11bfaeea71ef77",
+            "raw-event-inventory.json": "b5ce5b2f112ce598639c9a7a4d4d9064fd8b8f71f5b3564ab9bf022b19b3cf3f",
+            "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+            "retained-projection-snapshot.json": "001f7c34a5ee2000d1ce7d8e149f7cf7b978aabd22b0157d3f819f349faca822",
+            "source-snapshot.json": "72534729c858478aa4cbeb89501a0ae6fc08701c19a36cd258ed67cf2e768c09",
+            "v1-analytics.json": "ec69f6af57445147036b602257d87ed4c1e7aa73bef22301e194c2a206b5d2e5",
+            "v1-archived-analytics.json": "f9dd53e72f9f14324755d2a325b9e684e89196153a41a2e528e961e89242513d",
+            "v1-export.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "GenerationProfile": "ret-03-archived-raw-deleted-v1",
+          "GeneratorCodeCommit": "61291586999216515c4b42f9c5fecf7ae4cdbe45",
+          "PlanCommit": "06a47aaefff1629b3d556f8a49e0544648bfd4bc",
+          "SourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+          "SourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+          "SourceProducerBuildCodeCommit": "166262365d506157b99968105c890f480cc7c07c",
+          "SourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+          "SourceProducerKind": "published-artifact",
+          "SourceRelease": "v1.14.4",
+          "TrustedHopReceipt": false,
+          "UpgradeAuthorized": false,
+          "bundleInventory": {
+            "entries": {
+              "config": {
+                "present": true,
+                "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+                "size": 243
+              },
+              "data-key": {
+                "present": true,
+                "sha256": "0030e06e7db86ea577e82ad7303c4f1c84a7caf645ffe8d0343b482777699b25",
+                "size": 44
+              },
+              "database": {
+                "present": true,
+                "sha256": "e6680c7bce21970a1a5561887cebaf7de0bc51b5441579523b70f2221faa7347",
+                "size": 659456
+              },
+              "database-journal": {
+                "present": false
+              },
+              "database-shm": {
+                "present": false
+              },
+              "database-wal": {
+                "present": false
+              },
+              "usage-archives": {
+                "directory": true,
+                "present": true
+              },
+              "usage-archives/bb5e71cea8079660248716324edc1103": {
+                "directory": true,
+                "present": true
+              },
+              "usage-archives/bb5e71cea8079660248716324edc1103/manifest.json": {
+                "present": true,
+                "sha256": "78a82a20c21ae20f7ca94547b92f788c2bb0c6ccfbe4764e4c6f6e773d9b0f03",
+                "size": 1099
+              },
+              "usage-archives/bb5e71cea8079660248716324edc1103/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+                "present": true,
+                "sha256": "c6fee0bf549e02f37eafae2e01f70c053da2994e347d13e4062c1258943c0d25",
+                "size": 2911
+              }
+            },
+            "fence": "cooperating-manager-lock",
+            "sourceRevision": "f5f22e9f0e9126e1d9bba8dd6ca43d6828db228ce4a4873f16a5579ddf2af28e",
+            "version": 2
+          },
+          "caseID": "RET-03",
+          "casePass": false,
+          "generationSuccess": true,
+          "process": {
+            "deliveredPayloads": 5,
+            "exitCode": 0,
+            "finishedAt": "2026-10-15T01:05:16.176089612Z",
+            "pid": 15,
+            "reaped": true,
+            "startedAt": "2026-10-15T01:04:45.962943296Z"
+          }
+        }
+      },
+      "testedCommit": "d252f1cc65be12495e9b6d19865f5aaa0b7b5c35"
+    }
+  },
+  "scope": "clean committed checkout; immutable download/materialization; full Linux/macOS SQLite replay",
+  "sourceProvenanceSHA256": "f37ad3137ca87a3a988b0a0fe7619f7a9ca0d9939f12ef0a998ae17d844a2962"
+}

@@ -27,6 +27,10 @@
   "generationIndex": "generation-index.json",
   "generationRunner": "generation-runner.json",
   "inventory": {
+    "clean-checkout-replay.json": {
+      "sha256": "ddf12828171df09dd0b0d83ce55d495201cf4c34fff60761f0413f459f7ab890",
+      "size": 18180
+    },
     "generation-index.json": {
       "sha256": "da0b177d7413383ca45ee0349432c8f37040e72e78788def3861b1451eced335",
       "size": 266
