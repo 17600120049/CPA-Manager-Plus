@@ -80,7 +80,7 @@ func loadProfile(t *testing.T, path string) (profile, []byte) {
 	b := read(t, path)
 	var p profile
 	must(t, json.Unmarshal(b, &p))
-	if (p.Profile != "src-11-full-raw-revision2-v1" && p.Profile != "ret-01-full-raw-revision2-v1" && p.Profile != ret02Profile && p.Profile != ret03Profile && p.Profile != mig01Profile && p.Profile != mig02Profile && p.Profile != bak01Profile) || len(p.Events) != 4 || len(p.ExpectedUSD) != 4 {
+	if (p.Profile != "src-11-full-raw-revision2-v1" && p.Profile != "ret-01-full-raw-revision2-v1" && p.Profile != ret02Profile && p.Profile != ret03Profile && p.Profile != mig01Profile && p.Profile != mig02Profile && p.Profile != bak01Profile && p.Profile != bak02Profile) || len(p.Events) != 4 || len(p.ExpectedUSD) != 4 {
 		t.Fatal("unknown/incomplete profile")
 	}
 	return p, b

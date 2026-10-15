@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PIN = ROOT / "tests/fixtures/phase4a-evidence/src-11/sealed-artifact.json"
 MAX_BYTES = 128 * 1024 * 1024
 # MIG-02 uses a committed fixture plus the exact producer archive, not a sealed ZIP.
-SEALED_ZIP_CASES = ("ret-01", "ret-02", "ret-03", "mig-01", "bak-01")
+SEALED_ZIP_CASES = ("ret-01", "ret-02", "ret-03", "mig-01", "bak-01", "bak-02")
 
 
 def sha256(data):
