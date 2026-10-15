@@ -83,6 +83,9 @@ func revalidateCase(t *testing.T, root, archive, caseID, plan, expectedProfile s
 	if caseID == ret03CaseID {
 		expected = append(expected, ret03GenerationFiles...)
 	}
+	if caseID == ret07CaseID {
+		expected = append(expected, ret07GenerationFiles...)
+	}
 	if caseID == bak01CaseID {
 		expected = bak01GenerationFiles
 	}

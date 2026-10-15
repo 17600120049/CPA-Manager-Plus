@@ -1,0 +1,34 @@
+{
+  "checkout": {
+    "method": "detached git worktree",
+    "path": "<task-owned-clean-checkout>",
+    "trackedSourceMatchesBranch": true
+  },
+  "cleanCheckout": true,
+  "committedEvidenceInput": true,
+  "executionCommit": "92331d29940bd51e74349dbfc86751a55cb25ae4",
+  "normalReadinessBlocked": true,
+  "packageContractExitCode": 0,
+  "packageInventoryCount": 62,
+  "packageManifestSHA256": "31d82870ee03ce6141fdf6137cee182d011e5e9bb7f736fc5e28a6bb7c4fbe6f",
+  "recoveryInspectionActuallyExecuted": true,
+  "recoveryResumeActuallyExecuted": false,
+  "replayCommand": [
+    "python3",
+    "bin/qualification/run-src11.py",
+    "mig03",
+    "--archive",
+    "<pinned-v1.14.4-producer>",
+    "--evidence",
+    "tests/fixtures/phase4a-evidence/mig-03",
+    "--output",
+    "<task-owned-clean-runtime>"
+  ],
+  "runtimeEvidence": "pass",
+  "schemaVersion": 1,
+  "sourceBundleDigest": "fe55ea3bdc3ddb313b1f8a5532ea28c69da94c26151993a1f1241a049300caed",
+  "sourceGenerationRecordSHA256": "75aafdf0e706bf0ae31720519af4e0f9d33ab6f413337fdd0bc774bfaea31843",
+  "statusAfter": "",
+  "statusBefore": "",
+  "testedCommit": "92331d29940bd51e74349dbfc86751a55cb25ae4"
+}

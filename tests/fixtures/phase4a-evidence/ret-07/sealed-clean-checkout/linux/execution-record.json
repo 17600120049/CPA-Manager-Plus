@@ -1,0 +1,48 @@
+{
+  "archiveImports": [
+    {
+      "format": "usage_service_jsonl",
+      "added": 0,
+      "skipped": 4,
+      "total": 4,
+      "failed": 0,
+      "unsupported": 0,
+      "warnings": null
+    },
+    {
+      "format": "usage_service_jsonl",
+      "added": 0,
+      "skipped": 4,
+      "total": 4,
+      "failed": 0,
+      "unsupported": 0,
+      "warnings": null
+    }
+  ],
+  "caseID": "RET-07",
+  "deletionVerified": true,
+  "executionCommit": "91fd7b6b1ff55016854a0d4d3e07e76d8954ed1e",
+  "migrationStates": [
+    {
+      "cacheAccounting": {
+        "name": "usage_cache_accounting_v2",
+        "status": "completed",
+        "lastEventId": 0,
+        "targetEventId": 0,
+        "processedRows": 0,
+        "changedRows": 0,
+        "appliedRows": 0,
+        "updatedAtMs": 0
+      },
+      "derivedRebuild": "not-run-after-raw-deletion",
+      "mode": "retained-pricing-read-only",
+      "rawEventCount": 0,
+      "rawOnlyRebuildGuard": "fail-closed-by-production-source-guard",
+      "retainedProjectionCount": 4
+    }
+  ],
+  "newRootRecovery": true,
+  "rawRowsAfterDelete": 0,
+  "retainedPricingSourceComplete": true,
+  "sourceGenerationCaseID": "RET-07"
+}

@@ -1,0 +1,15 @@
+{
+  "afterUsageEventsDigest": "1fb058779bd96ca59cc0de3ca2a345a421a27c1217169b453ad0b8acdac64031",
+  "beforeUsageEventsDigest": "d3083357fad8d428951ba2cadaa1c4c3f4477bd5cbd525025e9288a093f7f703",
+  "blockedReadinessSnapshotDigest": "909997eb4445a13a7d1ef336cf5e99207caa4c1c74dc95a15b40bc38251f4752",
+  "blockedReadinessUsageEventsDigest": "1fb058779bd96ca59cc0de3ca2a345a421a27c1217169b453ad0b8acdac64031",
+  "clearingSnapshotDigest": "909997eb4445a13a7d1ef336cf5e99207caa4c1c74dc95a15b40bc38251f4752",
+  "clearingUsageEventsDigest": "1fb058779bd96ca59cc0de3ca2a345a421a27c1217169b453ad0b8acdac64031",
+  "noMutationDuringBlockedReadiness": true,
+  "sourceBundleAfter": "bdbc99765b013fe0f51095b40ec376f6b8b03c97f23898cd2bcfa5eb3680d274",
+  "sourceBundleBefore": "fe55ea3bdc3ddb313b1f8a5532ea28c69da94c26151993a1f1241a049300caed",
+  "sourceBytesUnchanged": true,
+  "usageEventRowsAfter": 4,
+  "usageEventRowsBefore": 4,
+  "usageEventsStableDuringBlockedReadiness": true
+}

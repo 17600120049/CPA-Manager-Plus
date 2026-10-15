@@ -1,0 +1,37 @@
+{
+  "applicableSEM": [
+    "SEM-07"
+  ],
+  "clearingBundleDigest": "bdbc99765b013fe0f51095b40ec376f6b8b03c97f23898cd2bcfa5eb3680d274",
+  "controlledDirectCandidateReadiness": "blocked",
+  "executionCommit": "92331d29940bd51e74349dbfc86751a55cb25ae4",
+  "interruptionActuallyExecuted": true,
+  "normalStartupBlocked": true,
+  "observedBridgeClassification": "blocked",
+  "operationID": "19e5b4687a7ed0453eec658d31db1c592a800832f8e470edeb2ec1369669b41a",
+  "productionBridgeReadiness": "unknown",
+  "recoveryInspectionActuallyExecuted": true,
+  "recoveryResumeActuallyExecuted": false,
+  "sourceBundleDigest": "fe55ea3bdc3ddb313b1f8a5532ea28c69da94c26151993a1f1241a049300caed",
+  "sourceProducerCommit": "166262365d506157b99968105c890f480cc7c07c",
+  "sqlite": {
+    "checkpoint": [
+      {
+        "busy": 0,
+        "checkpointed": 0,
+        "log": 0
+      }
+    ],
+    "foreignKeyCheck": [],
+    "integrityCheck": [
+      {
+        "integrity_check": "ok"
+      }
+    ],
+    "journalMode": [
+      {
+        "journal_mode": "wal"
+      }
+    ]
+  }
+}

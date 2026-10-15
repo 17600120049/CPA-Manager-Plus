@@ -1,0 +1,175 @@
+{
+  "discovered": {
+    "name": "usage_cache_accounting_v2",
+    "status": "pending",
+    "lastEventId": 0,
+    "targetEventId": 3,
+    "processedRows": 0,
+    "changedRows": 0,
+    "appliedRows": 0,
+    "startedAtMs": 1792048702819,
+    "updatedAtMs": 1792048702819
+  },
+  "executorCommit": "316f02a605dee686790d73aeb693153ab675ce9b",
+  "executorRevision": 3,
+  "lifecycleTrace": [
+    {
+      "phase": "discovery",
+      "state": {
+        "name": "usage_cache_accounting_v2",
+        "status": "pending",
+        "lastEventId": 0,
+        "targetEventId": 3,
+        "processedRows": 0,
+        "changedRows": 0,
+        "appliedRows": 0,
+        "startedAtMs": 1792048702819,
+        "updatedAtMs": 1792048702819
+      }
+    },
+    {
+      "batch": {
+        "State": {
+          "name": "usage_cache_accounting_v2",
+          "status": "applying",
+          "lastEventId": 3,
+          "targetEventId": 3,
+          "processedRows": 3,
+          "changedRows": 2,
+          "appliedRows": 0,
+          "startedAtMs": 1792048702819,
+          "updatedAtMs": 1792048702820
+        },
+        "Processed": 3,
+        "Completed": false
+      },
+      "phase": "scan-or-apply"
+    },
+    {
+      "batch": {
+        "State": {
+          "name": "usage_cache_accounting_v2",
+          "status": "clearing",
+          "lastEventId": 3,
+          "targetEventId": 3,
+          "processedRows": 3,
+          "changedRows": 2,
+          "appliedRows": 2,
+          "startedAtMs": 1792048702819,
+          "updatedAtMs": 1792048702820
+        },
+        "Processed": 2,
+        "Completed": false
+      },
+      "phase": "scan-or-apply"
+    },
+    {
+      "batch": {
+        "State": {
+          "name": "usage_cache_accounting_v2",
+          "status": "clearing",
+          "lastEventId": 3,
+          "targetEventId": 3,
+          "processedRows": 3,
+          "changedRows": 2,
+          "appliedRows": 2,
+          "startedAtMs": 1792048702819,
+          "updatedAtMs": 1792048702821
+        },
+        "Processed": 1,
+        "Completed": false
+      },
+      "phase": "clearing"
+    }
+  ],
+  "operationID": "be2e175f881b9821a7c932d5ae76bd53628d763e1849f3bce4a817eca2cfb2f3",
+  "preClearing": {
+    "name": "usage_cache_accounting_v2",
+    "status": "clearing",
+    "lastEventId": 3,
+    "targetEventId": 3,
+    "processedRows": 3,
+    "changedRows": 2,
+    "appliedRows": 2,
+    "startedAtMs": 1792048702819,
+    "updatedAtMs": 1792048702820
+  },
+  "preparedCounts": {
+    "totalRows": 12,
+    "usage_account_model_rollups": 4,
+    "usage_dashboard_hourly_rollups": 4,
+    "usage_hourly_aggregate_v1": 4
+  },
+  "seedDerivedLifecycle": {
+    "accountHistory": {
+      "Processed": 4,
+      "LastEventID": 4,
+      "Pending": false,
+      "Rebuilt": false,
+      "RebuildTargetEventID": 0
+    },
+    "dashboardHourly": {
+      "Processed": 4,
+      "LastEventID": 4,
+      "Pending": false,
+      "Rebuilt": false,
+      "RebuildTargetEventID": 0
+    },
+    "hourlyAggregate": {
+      "Processed": 4,
+      "LastEventID": 4,
+      "CoverageEventID": 4,
+      "TargetEventID": 4,
+      "Pending": false,
+      "Rebuilt": false
+    },
+    "noSQLStateInjection": true,
+    "productionCalls": [
+      "usagerollup.CatchUpAccountHistory",
+      "usagerollup.CatchUpDashboardHourly",
+      "usageaggregate.CatchUp"
+    ]
+  },
+  "source": [
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": 1792048544554,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "quota_snapshot_lifecycle_v1",
+      "processed_rows": 0,
+      "started_at_ms": 1792048544554,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 1792048544554
+    },
+    {
+      "applied_rows": 0,
+      "changed_rows": 0,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 0,
+      "name": "usage_cache_accounting_v1",
+      "processed_rows": 0,
+      "started_at_ms": null,
+      "status": "completed",
+      "target_event_id": 0,
+      "updated_at_ms": 0
+    },
+    {
+      "applied_rows": 2,
+      "changed_rows": 2,
+      "finished_at_ms": null,
+      "last_error": null,
+      "last_event_id": 3,
+      "name": "usage_cache_accounting_v2",
+      "processed_rows": 3,
+      "started_at_ms": 1792048702819,
+      "status": "clearing",
+      "target_event_id": 3,
+      "updated_at_ms": 1792048702821
+    }
+  ],
+  "sourceRevision": 2
+}

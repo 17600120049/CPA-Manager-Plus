@@ -13,8 +13,10 @@ on:
       - 'tests/fixtures/phase4a-evidence/ret-01/**'
       - 'tests/fixtures/phase4a-evidence/ret-02/**'
       - 'tests/fixtures/phase4a-evidence/ret-03/**'
+      - 'tests/fixtures/phase4a-evidence/ret-07/**'
       - 'tests/fixtures/phase4a-evidence/mig-01/**'
       - 'tests/fixtures/phase4a-evidence/mig-02/**'
+      - 'tests/fixtures/phase4a-evidence/mig-03/**'
 
 permissions:
   contents: read
@@ -285,6 +287,187 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+  ret07-generate:
+    name: RET-07 equivalent generation smoke (not sealed-source authentication)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Download exact v1.14.4 producer asset
+        shell: bash
+        run: |
+          gh release download v1.14.4 --repo seakee/CPA-Manager-Plus \
+            --pattern cpa-manager-plus_v1.14.4_linux_amd64.tar.gz \
+            --dir "$RUNNER_TEMP/ret07-producer"
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path(__import__('os').environ['RUNNER_TEMP'])
+          archive = root / 'ret07-producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz'
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/ret-07/source-provenance.json').read_text())['producerArtifact']
+          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+          if actual != pin['archiveSHA256']:
+              raise SystemExit(f'v1.14.4 producer archive digest mismatch: {actual} != {pin["archiveSHA256"]}')
+          PY
+      - name: Prepare pinned Linux isolation image
+        run: docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+      - name: Generate RET-07 source bundle through production lifecycle
+        shell: bash
+        run: |
+          python bin/qualification/run-src11.py generate-ret07 \
+            --archive "$RUNNER_TEMP/ret07-producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
+            --release-info tests/fixtures/phase4a-evidence/ret-07/source-generation/release-info.json \
+            --output "$RUNNER_TEMP/ret07-generation"
+          tar -czf "$RUNNER_TEMP/ret07-generation.tar.gz" \
+            -C "$RUNNER_TEMP/ret07-generation" ret-07
+      - name: Upload isolated RET-07 source bundle
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ret-07-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ret07-generation.tar.gz
+            ${{ runner.temp }}/ret07-generation/*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  ret07:
+    name: RET-07 retained pricing replay (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Verify committed RET-07 evidence contract
+        run: python bin/qualification/verify-ret07-evidence.py
+      - name: Download exact v1.14.4 producer asset
+        shell: bash
+        run: |
+          gh release download v1.14.4 --repo seakee/CPA-Manager-Plus \
+            --pattern cpa-manager-plus_v1.14.4_linux_amd64.tar.gz \
+            --dir "$RUNNER_TEMP/ret07-producer"
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path(__import__('os').environ['RUNNER_TEMP'])
+          archive = root / 'ret07-producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz'
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/ret-07/source-provenance.json').read_text())['producerArtifact']
+          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+          if actual != pin['archiveSHA256']:
+              raise SystemExit(f'v1.14.4 producer archive digest mismatch: {actual} != {pin["archiveSHA256"]}')
+          PY
+      - name: Download and authenticate the original immutable RET-07 source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import importlib.util, json, os, subprocess
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'ret07-sealed'
+          root.mkdir()
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/ret-07/source-provenance.json').read_text())['sourceArtifact']
+          def api(endpoint):
+              return json.loads(subprocess.check_output(['gh', 'api', 'repos/' + pin['repository'] + endpoint], text=True))
+          spec = importlib.util.spec_from_file_location('materializer', 'bin/qualification/materialize-src11.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          module.validate_retention_release(api('/releases/tags/' + pin['tag']), pin, 'ret-07', api('/git/ref/tags/' + pin['tag']))
+          subprocess.run(['gh', 'release', 'download', pin['tag'], '--repo', pin['repository'], '--pattern', pin['archiveName'], '--dir', str(root)], check=True)
+          archive = root / pin['archiveName']
+          module.materialize_case(archive, root / 'original', 'ret-07')
+          historical = json.loads(Path('tests/fixtures/phase4a-evidence/ret-07/historical-original-source.json').read_text())['sourceArtifact']
+          module.validate_retention_release(api('/releases/tags/' + historical['tag']), historical, 'ret-07', api('/git/ref/tags/' + historical['tag']))
+          subprocess.run(['gh', 'release', 'download', historical['tag'], '--repo', historical['repository'], '--pattern', historical['archiveName'], '--dir', str(root)], check=True)
+          subprocess.run(['python', 'bin/qualification/verify-ret07-evidence.py', '--archive', str(archive), '--historical-archive', str(root / historical['archiveName'])], check=True)
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write('RET07_SEALED_ARCHIVE=' + str(archive) + '\n')
+          PY
+      - name: Replay RET-07 on the original sealed raw-deleted state
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+            extra=(--linux)
+          fi
+          python bin/qualification/run-src11.py ret07 \
+            --archive "$RUNNER_TEMP/ret07-producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
+            --evidence-archive "$RET07_SEALED_ARCHIVE" \
+            --output "$RUNNER_TEMP/ret07-replay" "${extra[@]}"
+      - name: Replay RET-07 from a clean detached checkout
+        shell: bash
+        run: |
+          clean="$RUNNER_TEMP/ret07-clean-checkout"
+          git clone --no-local --quiet "$GITHUB_WORKSPACE" "$clean"
+          git -C "$clean" checkout --quiet --detach "$GITHUB_SHA"
+          test -z "$(git -C "$clean" status --porcelain --untracked-files=all)"
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            extra=(--linux)
+          fi
+          python "$clean/bin/qualification/run-src11.py" ret07 \
+            --archive "$RUNNER_TEMP/ret07-producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
+            --evidence-archive "$RET07_SEALED_ARCHIVE" \
+            --output "$RUNNER_TEMP/ret07-clean-replay" "${extra[@]}"
+      - name: Assert RET-07 runtime and pricing reconciliation are not skipped
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          result = json.loads((root / 'ret07-replay/runtime/result.json').read_text())
+          pricing = json.loads((root / 'ret07-sealed/original/ret-07/source-generation/retained-pricing-source.json').read_text())
+          sem = json.loads((root / 'ret07-replay/runtime/semantic-assertions.json').read_text())
+          if result.get('runtimeEvidence') != 'pass' or result.get('casePass') is not False:
+              raise SystemExit(f'RET-07 runtime/authority boundary invalid: {result}')
+          if result.get('retainedPricingSourceComplete') is not True or result.get('onlineRawComplete') is not False:
+              raise SystemExit('RET-07 retained/raw completeness boundary invalid')
+          if pricing.get('missingPricingEvents') != [] or pricing.get('duplicateEventIDs') != [] or pricing.get('retainedPricingSourceComplete') is not True:
+              raise SystemExit('RET-07 pricing reconciliation was incomplete')
+          if pricing.get('explicitZeroEvents') != [3] or pricing.get('unknownUnpricedEvents') != [4]:
+              raise SystemExit('RET-07 explicit-zero/unknown distinction was not executed')
+          for sem_id in ('SEM-01', 'SEM-02', 'SEM-03', 'SEM-04', 'SEM-05', 'SEM-09'):
+              if sem.get('assertions', {}).get(sem_id, {}).get('status') != 'runtime-pass':
+                  raise SystemExit(f'RET-07 {sem_id} was skipped or did not pass')
+          PY
+      - name: Upload RET-07 runtime observations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ret-07-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ret07-replay/runner-evidence.json
+            ${{ runner.temp }}/ret07-replay/*.log
+            ${{ runner.temp }}/ret07-replay/runtime/
+            ${{ runner.temp }}/ret07-clean-replay/runner-evidence.json
+            ${{ runner.temp }}/ret07-clean-replay/*.log
+            ${{ runner.temp }}/ret07-clean-replay/runtime/
+          if-no-files-found: warn
+          retention-days: 90
+
   mig01:
     name: MIG-01 completed migrations (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -421,5 +604,73 @@ jobs:
             ${{ runner.temp }}/mig02-replay/runner-evidence.json
             ${{ runner.temp }}/mig02-replay/*.log
             ${{ runner.temp }}/mig02-replay/runtime/
+          if-no-files-found: warn
+          retention-days: 90
+
+  mig03:
+    name: MIG-03 clearing Recovery/block (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      CPAMP_MIG03_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: apps/manager-server/go.mod
+          cache-dependency-path: apps/manager-server/go.sum
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Download accepted exact v1.14.4 producer archive
+        shell: bash
+        run: |
+          gh release download qualification-mig01-d337ad0eeef2-20261014 \
+            --repo seakee/CPA-Manager-Plus \
+            --pattern mig-01-d337ad0eeef2-sealed-evidence.zip \
+            --dir "$RUNNER_TEMP/mig01-download"
+          gh api repos/seakee/CPA-Manager-Plus/releases/412855420 > "$RUNNER_TEMP/mig01-release.json"
+          gh api repos/seakee/CPA-Manager-Plus/git/ref/tags/qualification-mig01-d337ad0eeef2-20261014 > "$RUNNER_TEMP/mig01-tag.json"
+          python bin/qualification/materialize-src11.py --case mig-01 \
+            --release-metadata "$RUNNER_TEMP/mig01-release.json" \
+            --tag-metadata "$RUNNER_TEMP/mig01-tag.json" \
+            --archive "$RUNNER_TEMP/mig01-download/mig-01-d337ad0eeef2-sealed-evidence.zip" \
+            --output "$RUNNER_TEMP/mig01-original"
+      - name: Verify committed MIG-03 evidence contract
+        shell: bash
+        run: python -m unittest discover -s bin/qualification -p test_mig03.py -v
+      - name: Execute MIG-03 clearing qualification
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            docker pull --platform linux/amd64 debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b
+            extra=(--linux)
+          fi
+          python bin/qualification/run-src11.py mig03 \
+            --archive "$RUNNER_TEMP/mig01-original/producer.tar.gz" \
+            --evidence "$GITHUB_WORKSPACE/tests/fixtures/phase4a-evidence/mig-03" \
+            --output "$RUNNER_TEMP/mig03-replay" "${extra[@]}"
+      - name: Compile Windows qualification harness
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: apps/manager-server
+        run: go test -mod=readonly -c -o "$RUNNER_TEMP/mig03-qualification.exe" ./tests/qualification/src11
+      - name: Upload MIG-03 runtime observations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mig03-replay-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mig03-replay/runner-evidence.json
+            ${{ runner.temp }}/mig03-replay/*.log
+            ${{ runner.temp }}/mig03-replay/runtime/
           if-no-files-found: warn
           retention-days: 90

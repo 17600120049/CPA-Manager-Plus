@@ -1,0 +1,43 @@
+{
+  "TrustedHopReceipt": false,
+  "UpgradeAuthorized": false,
+  "allGitBlobSizesAndDigestsMatch": true,
+  "allInventoryFilesInTestedGitTree": true,
+  "caseID": "MIG-03",
+  "checkoutMethod": "detached git worktree",
+  "committedEvidenceInput": true,
+  "evidenceInput": "tests/fixtures/phase4a-evidence/mig-03",
+  "independentAcceptance": "pending",
+  "inventoryCount": 62,
+  "linuxReplay": {
+    "exitCode": 0,
+    "runnerEvidence": "verification/linux-runner-evidence.json"
+  },
+  "manifestSHA256": "31d82870ee03ce6141fdf6137cee182d011e5e9bb7f736fc5e28a6bb7c4fbe6f",
+  "nativeReplay": {
+    "exitCode": 0,
+    "runnerEvidence": "clean-checkout/runner-evidence.json"
+  },
+  "producerLog": {
+    "sha256": "054a3bba680e8a60c60cee659193b01f127f7879f6f3a74dd03caff36ea3301d",
+    "size": 7721
+  },
+  "pythonMIG03": {
+    "exitCode": 0,
+    "log": "verification/python-mig03.log.txt",
+    "passed": 5,
+    "skipped": 0,
+    "total": 5
+  },
+  "pythonQualificationSuite": {
+    "exitCode": 0,
+    "log": "verification/python-all.log.txt",
+    "passed": 62,
+    "skipped": 7,
+    "total": 69
+  },
+  "schemaVersion": 1,
+  "statusAfter": "",
+  "statusBefore": "",
+  "testedCommit": "92331d29940bd51e74349dbfc86751a55cb25ae4"
+}

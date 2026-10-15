@@ -1,0 +1,498 @@
+{
+  "originalProvenance": {
+    "Phase4A07Complete": false,
+    "Phase4AComplete": false,
+    "TrustedHopReceipt": false,
+    "UpgradeAuthorized": false,
+    "bundleInventory": {
+      "entries": {
+        "config": {
+          "present": true,
+          "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+          "size": 243
+        },
+        "data-key": {
+          "present": true,
+          "sha256": "e5d4ccd10d90f9abf12e1acf72943d0eda00c3cdee69c1fa2395dcfb8d3ece54",
+          "size": 44
+        },
+        "database": {
+          "present": true,
+          "sha256": "5d7b35fc1875a17e2b991d2d3c50993c59f9f6c3bd2bd5b33541225423971639",
+          "size": 659456
+        },
+        "database-journal": {
+          "present": false
+        },
+        "database-shm": {
+          "present": false
+        },
+        "database-wal": {
+          "present": false
+        },
+        "usage-archives": {
+          "directory": true,
+          "present": true
+        },
+        "usage-archives/266aac4f9372a77c74a137be82d19050": {
+          "directory": true,
+          "present": true
+        },
+        "usage-archives/266aac4f9372a77c74a137be82d19050/manifest.json": {
+          "present": true,
+          "sha256": "df5909e74bcf72b7c4ff092cd6d5505b2fa5f7f722a61468e30c7b7c9296f135",
+          "size": 1099
+        },
+        "usage-archives/266aac4f9372a77c74a137be82d19050/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+          "present": true,
+          "sha256": "b34226fd2ce181e34c5d874233fd095365a04119ad48ccfea61ba99fe8e8c89f",
+          "size": 2063
+        }
+      },
+      "fence": "cooperating-manager-lock",
+      "sourceRevision": "ce2efcbfea5e225240893cdaccba86f8e31c8b71d42e134a3b304f40adc56a43",
+      "version": 2
+    },
+    "caseID": "RET-07",
+    "casePass": false,
+    "controlledInputSHA256": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
+    "externalGenerationFiles": {
+      "producer.log": "75880736dfdd080eb87f29837e4531c00048e0cab1b59226249aaacf1b1c0102"
+    },
+    "generationEvidenceFiles": {
+      "archive-flow.json": "06f645732a7691cb676b98d98e0257809a78e716eabd8b89a074707043792f29",
+      "archive-inventory.json": "0a9552a0c72d099e0794b40e8ad8afe9d85826b1cb78d9f41453f739edeb529d",
+      "archive-readiness.json": "e5a9f311d3b3e78345055a4d0228e96a61265c1f0a35e4ee8ada1ce45aac3bfa",
+      "config-write.json": "ba78df6d1a788441bb503a40d68a1ffc2ea94d04a411dea3cfdd18159caae336",
+      "controlled-input.json": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
+      "historical-reconciliation.json": "eeaf21f5e92d969f1b386e9ff4e21b630260a36e43d083a65f2bffccd2ccc88d",
+      "post-delete-snapshot.json": "b30eeb4608e4a892274919063e3884d6df9263e4c36ca960abaffeaecc08b143",
+      "pre-archive-snapshot.json": "bdb976a4ff3480143fe3f9132398c2162508a01339a6e1b0bdd5993ed8290cbf",
+      "pre-delete-snapshot.json": "bdb976a4ff3480143fe3f9132398c2162508a01339a6e1b0bdd5993ed8290cbf",
+      "price-authority-snapshot.json": "ed4e91005984618a8b8ab14be9ad511eda8d6a995177ca173598fea54817d90d",
+      "price-write.json": "66cec0553ade3f63b4297a5086627089f2f66f8c5fdb4f0cad5c406f1c238ee9",
+      "producer-build.json": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+      "producer.log": "75880736dfdd080eb87f29837e4531c00048e0cab1b59226249aaacf1b1c0102",
+      "quota-write.json": "26e81023391678fb9c98cf2b691b4e62c80ea8e54c1160b8e53c0b574a8d0717",
+      "raw-event-inventory.json": "901a299f875f04eb2fd9ae0597770ea64099981d208777466a72e98009f688db",
+      "release-info.json": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "retained-pricing-source.json": "927c3b852bd49cb5673414cbcbb70b28a57cf1492f5c36d61388123399b023c0",
+      "source-snapshot.json": "376c7f1731961ec6abfd3a0f0e77ee95131bfa1347e7d6769ba081cd11e1ba2b",
+      "structural-price-change.json": "ad632e9e1fbc13c649a301e7e93c2b5f2e835becedb3841166feaed4e00824a2",
+      "v1-analytics.json": "aec3b4336b452f37d06b5a6d498546399b13111e3d2246bf56aff85310fd38b0",
+      "v1-archived-analytics.json": "7ef35f839e76f0177e0e27c7c51ad0bb2f656777d074ff168a14e4916a15c692",
+      "v1-export.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "generationProfile": "ret-07-retained-pricing-source-complete-v1",
+    "generationSuccess": true,
+    "generator": {
+      "codeCommit": "2b362c4876f80db40e527af5a7b0f1f5bfffbb82",
+      "isolation": {
+        "capabilities": "none",
+        "image": "debian@sha256:f3034a6ec3c1205360777c4aae76234998866ad18806ae62b63a3f84ccad782b",
+        "imageID": "sha256:db9f02c6bde9fa90cc8074c92754b2b046947392f1a857726e77f041febb7b82",
+        "mounts": "runner/archive/profile read-only; unique output writable; private tmpfs",
+        "network": "none",
+        "parentIndex": "sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251",
+        "readOnlyRoot": true
+      },
+      "runner": "bin/qualification/run-src11.py",
+      "sourceFilesCount": 515,
+      "sourceFilesInventorySHA256": "6a0bc20d76c1bbe9f4f914395ddfd24a54b8f3253386c228f4eb4a8d1464202d"
+    },
+    "generatorCodeCommit": "2b362c4876f80db40e527af5a7b0f1f5bfffbb82",
+    "independentAcceptance": "pending",
+    "planCommit": "21035045c425e453bd8f3007619fc0734861012e",
+    "process": {
+      "arguments": [],
+      "deliveredPayloads": 5,
+      "environment": [
+        "CPA_MANAGER_CONFIG=<task-scratch>/source/config.json",
+        "HTTP_ADDR=<private-listener>",
+        "CPA_UPSTREAM_URL=<private-http-queue>",
+        "CPA_MANAGEMENT_KEY=<qualification-only-secret>",
+        "CPA_MANAGER_ADMIN_KEY=<qualification-only-secret>",
+        "USAGE_COLLECTOR_MODE=http",
+        "USAGE_POLL_INTERVAL_MS=100",
+        "USAGE_QUOTA_COOLDOWN_ENABLED=true",
+        "TZ=UTC"
+      ],
+      "exitCode": 0,
+      "expectedUniqueEvents": 4,
+      "finishedAt": "2026-10-15T07:45:21.767638846Z",
+      "pid": 16,
+      "queueCalls": 304,
+      "reaped": true,
+      "startedAt": "2026-10-15T07:44:51.483795005Z"
+    },
+    "producerArtifact": {
+      "archiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+      "asset": "cpa-manager-plus_v1.14.4_linux_amd64.tar.gz",
+      "immutableRelease": true,
+      "kind": "published-product-asset",
+      "release": "v1.14.4",
+      "releaseInfoSHA256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+      "repository": "seakee/CPA-Manager-Plus",
+      "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+    },
+    "provenanceRole": "case-specific-controlled-generation",
+    "schemaVersion": 1,
+    "sourceBundleDigest": "ce2efcbfea5e225240893cdaccba86f8e31c8b71d42e134a3b304f40adc56a43",
+    "sourceCommit": "166262365d506157b99968105c890f480cc7c07c",
+    "sourceGenerationRecordSHA256": "1f5e0e80cc22ce2e70ad8b94fdeda4efeec2adf6ee5482ac247abeb2c5156a3e",
+    "sourceProducerArchiveSHA256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+    "sourceProducerExecutableSHA256": "0588b7f28010825cde26511dfecafbb4a70f6c26d35f4cc4998b2f90434b3a98",
+    "sourceRecord": "ret-07/source-generation",
+    "sourceRelease": "v1.14.4"
+  },
+  "reason": "Original sample did not exercise the structural context tier. Original bytes preserved; not replaced by equivalent generation.",
+  "reviewResult": "NO-GO",
+  "reviewedHead": "30e48a75d406e1d0d1af55ff2067908aeda0979f",
+  "semanticQualification": false,
+  "sourceArtifact": {
+    "archiveName": "ret-07-ce2efcbfea5e-sealed-evidence.zip",
+    "archiveSHA256": "51cf8ce419ee1c6a144b24afeadea6e10e615e37a8c45ca80fc04b1bb88bbbf5",
+    "archiveSize": 8876106,
+    "assetID": 643174241,
+    "bundleManifestSHA256": "5ce2862b53a2aa002350cae0a2711d2bb914cbc57dd1aae435ab5015d01c75a2",
+    "downloadURL": "https://github.com/seakee/CPA-Manager-Plus/releases/download/qualification-ret07-ce2efcbfea5e-20261015/ret-07-ce2efcbfea5e-sealed-evidence.zip",
+    "generationRecordSHA256": "1f5e0e80cc22ce2e70ad8b94fdeda4efeec2adf6ee5482ac247abeb2c5156a3e",
+    "immutableRelease": true,
+    "inventory": {
+      "generation/build.log": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "generation/generation-execution.log": {
+        "sha256": "0269e7ddd6e7c220d4bfaad5f9c0107ef3d68db1694f854f71739230f2419813",
+        "size": 69979
+      },
+      "generation/runner-evidence.json": {
+        "sha256": "6990c8bf200b35ab8a4e92659c9956d7208c3a38902307acafe5ac7f47404942",
+        "size": 76315
+      },
+      "producer.tar.gz": {
+        "sha256": "eab3a90594cb70e0362b0a37f9737f7b249402c0971ff4c7134a53079de1e033",
+        "size": 8564211
+      },
+      "replay/clean/build.log": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "replay/clean/replay-execution.log": {
+        "sha256": "f0717282b98f3c2ea882542d8583638c9bed91a034ae3df50bc6ef63a5ed579e",
+        "size": 65
+      },
+      "replay/clean/runner-evidence.json": {
+        "sha256": "edf33058a8d8f234cd59741fa173367d63d1074790c998ddbba3479df4ac1598",
+        "size": 74561
+      },
+      "replay/clean/runtime/backup-restore.json": {
+        "sha256": "ca895cdf1fdce5377b4c06ee508c8ac4ca560e1d717357e7c8bb17f822c1bf64",
+        "size": 25467
+      },
+      "replay/clean/runtime/backup-restore/bundle/config": {
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+        "size": 243
+      },
+      "replay/clean/runtime/backup-restore/bundle/data-key": {
+        "sha256": "e5d4ccd10d90f9abf12e1acf72943d0eda00c3cdee69c1fa2395dcfb8d3ece54",
+        "size": 44
+      },
+      "replay/clean/runtime/backup-restore/bundle/database": {
+        "sha256": "bebd9381c68a75f47c2fbd611843447b6286d7724304975f6f4671a11b2410cd",
+        "size": 811008
+      },
+      "replay/clean/runtime/backup-restore/bundle/manifest.json": {
+        "sha256": "55e736a48d43527a4719cbcd2220b05e410a96cb4605507e4a900025d254756b",
+        "size": 1424
+      },
+      "replay/clean/runtime/backup-restore/bundle/usage-archives/266aac4f9372a77c74a137be82d19050/manifest.json": {
+        "sha256": "df5909e74bcf72b7c4ff092cd6d5505b2fa5f7f722a61468e30c7b7c9296f135",
+        "size": 1099
+      },
+      "replay/clean/runtime/backup-restore/bundle/usage-archives/266aac4f9372a77c74a137be82d19050/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "sha256": "b34226fd2ce181e34c5d874233fd095365a04119ad48ccfea61ba99fe8e8c89f",
+        "size": 2063
+      },
+      "replay/clean/runtime/execution-record.json": {
+        "sha256": "47743d27309149c756a9b1e0e5670c666b0dfd726735639e1c5787166ef5f4a9",
+        "size": 1166
+      },
+      "replay/clean/runtime/input-bundle.json": {
+        "sha256": "0892a7dc534d51929a1a76602754b21c092f4dda0dac1ec831604dcbe64cdf1a",
+        "size": 1844
+      },
+      "replay/clean/runtime/raw-event-inventory.json": {
+        "sha256": "65e9d3146aa8741cfd39077082ad7a1664682606770fabe8f0273e7d4a321275",
+        "size": 151
+      },
+      "replay/clean/runtime/result.json": {
+        "sha256": "38d6ed2eec973e17119372f960ff150b4ce8a752b1a4b4c0b2abe6ce3cc48bdc",
+        "size": 6514
+      },
+      "replay/clean/runtime/retained-pricing-source.json": {
+        "sha256": "44cf42dbc8628d952e4aff6ee190f6ea33eaa87d047f77427b986393a006ef0e",
+        "size": 50265
+      },
+      "replay/clean/runtime/semantic-assertions.json": {
+        "sha256": "77fb3b2c95c7c4d915fef2fb998810eaadf2eb40080b8e10b14216a6d32f4643",
+        "size": 29753
+      },
+      "replay/linux/build.log": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "replay/linux/replay-execution.log": {
+        "sha256": "a8c74c3ca22df2f5662af406e0db4aae04e02eea306ad3dbca2b12c9490c1336",
+        "size": 65
+      },
+      "replay/linux/runner-evidence.json": {
+        "sha256": "015d9f2e27884578b3ca0928c738575cab94f12ec316fc68242701739645498a",
+        "size": 76342
+      },
+      "replay/linux/runtime/backup-restore.json": {
+        "sha256": "c3eacc96070a9a064edccf76ec095593718d3f567c0e8ba858403dc292a3cdc1",
+        "size": 25467
+      },
+      "replay/linux/runtime/backup-restore/bundle/config": {
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+        "size": 243
+      },
+      "replay/linux/runtime/backup-restore/bundle/data-key": {
+        "sha256": "e5d4ccd10d90f9abf12e1acf72943d0eda00c3cdee69c1fa2395dcfb8d3ece54",
+        "size": 44
+      },
+      "replay/linux/runtime/backup-restore/bundle/database": {
+        "sha256": "2fb186bb80898c0a7259838149f989beee74de258bcf1f9668f3d57de6a9ef13",
+        "size": 811008
+      },
+      "replay/linux/runtime/backup-restore/bundle/manifest.json": {
+        "sha256": "ee183cb6376d2ff6f3a4c01bc860d410f65445d4c6f1c2abca06ed80114e5ada",
+        "size": 1424
+      },
+      "replay/linux/runtime/backup-restore/bundle/usage-archives/266aac4f9372a77c74a137be82d19050/manifest.json": {
+        "sha256": "df5909e74bcf72b7c4ff092cd6d5505b2fa5f7f722a61468e30c7b7c9296f135",
+        "size": 1099
+      },
+      "replay/linux/runtime/backup-restore/bundle/usage-archives/266aac4f9372a77c74a137be82d19050/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "sha256": "b34226fd2ce181e34c5d874233fd095365a04119ad48ccfea61ba99fe8e8c89f",
+        "size": 2063
+      },
+      "replay/linux/runtime/execution-record.json": {
+        "sha256": "47743d27309149c756a9b1e0e5670c666b0dfd726735639e1c5787166ef5f4a9",
+        "size": 1166
+      },
+      "replay/linux/runtime/input-bundle.json": {
+        "sha256": "0892a7dc534d51929a1a76602754b21c092f4dda0dac1ec831604dcbe64cdf1a",
+        "size": 1844
+      },
+      "replay/linux/runtime/raw-event-inventory.json": {
+        "sha256": "65e9d3146aa8741cfd39077082ad7a1664682606770fabe8f0273e7d4a321275",
+        "size": 151
+      },
+      "replay/linux/runtime/result.json": {
+        "sha256": "59dd86a20a91c196e7e69aa1cfc519dbf0ae4289dd362b713a9d621e98ceea69",
+        "size": 6514
+      },
+      "replay/linux/runtime/retained-pricing-source.json": {
+        "sha256": "25cfba28eb62e271abc7de6de4a5052090c71bac1475ca5a5408c1de44533345",
+        "size": 50265
+      },
+      "replay/linux/runtime/semantic-assertions.json": {
+        "sha256": "b8e52073c5e6b2c3d98992d510b1ca09786434272c922d107e843f1f6081700d",
+        "size": 29753
+      },
+      "replay/macos/build.log": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      "replay/macos/replay-execution.log": {
+        "sha256": "8dbb37a930f4de9cc7f4d927a54b5fadd292b6e54c665a69fe31c2205cbda7bb",
+        "size": 65
+      },
+      "replay/macos/runner-evidence.json": {
+        "sha256": "89bcf737bc7322396a793eef74e2076b2aed340890988c28624bab3d099fb102",
+        "size": 74561
+      },
+      "replay/macos/runtime/backup-restore.json": {
+        "sha256": "715b23a19923579e9e77598bc6477a742f6efc1fa4fff9e709b9f456d09270c2",
+        "size": 25467
+      },
+      "replay/macos/runtime/backup-restore/bundle/config": {
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+        "size": 243
+      },
+      "replay/macos/runtime/backup-restore/bundle/data-key": {
+        "sha256": "e5d4ccd10d90f9abf12e1acf72943d0eda00c3cdee69c1fa2395dcfb8d3ece54",
+        "size": 44
+      },
+      "replay/macos/runtime/backup-restore/bundle/database": {
+        "sha256": "08c23f2a1e2f16fb2442458806f1dfd0592546876c7147958bd59ac7562d16d9",
+        "size": 811008
+      },
+      "replay/macos/runtime/backup-restore/bundle/manifest.json": {
+        "sha256": "34be7ff99908286136526c084d42ef47b09e32b24cf1e62fb84b9b32652cb46c",
+        "size": 1424
+      },
+      "replay/macos/runtime/backup-restore/bundle/usage-archives/266aac4f9372a77c74a137be82d19050/manifest.json": {
+        "sha256": "df5909e74bcf72b7c4ff092cd6d5505b2fa5f7f722a61468e30c7b7c9296f135",
+        "size": 1099
+      },
+      "replay/macos/runtime/backup-restore/bundle/usage-archives/266aac4f9372a77c74a137be82d19050/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "sha256": "b34226fd2ce181e34c5d874233fd095365a04119ad48ccfea61ba99fe8e8c89f",
+        "size": 2063
+      },
+      "replay/macos/runtime/execution-record.json": {
+        "sha256": "47743d27309149c756a9b1e0e5670c666b0dfd726735639e1c5787166ef5f4a9",
+        "size": 1166
+      },
+      "replay/macos/runtime/input-bundle.json": {
+        "sha256": "0892a7dc534d51929a1a76602754b21c092f4dda0dac1ec831604dcbe64cdf1a",
+        "size": 1844
+      },
+      "replay/macos/runtime/raw-event-inventory.json": {
+        "sha256": "65e9d3146aa8741cfd39077082ad7a1664682606770fabe8f0273e7d4a321275",
+        "size": 151
+      },
+      "replay/macos/runtime/result.json": {
+        "sha256": "8e81b176fc4e2d5381ac334269b5139633f3fb83aadaf73fd14751655c390860",
+        "size": 6514
+      },
+      "replay/macos/runtime/retained-pricing-source.json": {
+        "sha256": "558be16b5e82d914be4dd6c41f675eacf633649a928cc6fca305f677924730fd",
+        "size": 50265
+      },
+      "replay/macos/runtime/semantic-assertions.json": {
+        "sha256": "3a2e83d9017e224e887eb4e27992c6777775f937e2625417563616e9ff1cd231",
+        "size": 29753
+      },
+      "ret-07/bundle/config": {
+        "sha256": "2e36bf505dab0923e579d18df039cd95216bf291ce895cb0942998dbf51fc844",
+        "size": 243
+      },
+      "ret-07/bundle/data-key": {
+        "sha256": "e5d4ccd10d90f9abf12e1acf72943d0eda00c3cdee69c1fa2395dcfb8d3ece54",
+        "size": 44
+      },
+      "ret-07/bundle/database": {
+        "sha256": "5d7b35fc1875a17e2b991d2d3c50993c59f9f6c3bd2bd5b33541225423971639",
+        "size": 659456
+      },
+      "ret-07/bundle/manifest.json": {
+        "sha256": "5ce2862b53a2aa002350cae0a2711d2bb914cbc57dd1aae435ab5015d01c75a2",
+        "size": 1424
+      },
+      "ret-07/bundle/usage-archives/266aac4f9372a77c74a137be82d19050/manifest.json": {
+        "sha256": "df5909e74bcf72b7c4ff092cd6d5505b2fa5f7f722a61468e30c7b7c9296f135",
+        "size": 1099
+      },
+      "ret-07/bundle/usage-archives/266aac4f9372a77c74a137be82d19050/segment-000001-00000000000000000001-00000000000000000004.jsonl.gz": {
+        "sha256": "b34226fd2ce181e34c5d874233fd095365a04119ad48ccfea61ba99fe8e8c89f",
+        "size": 2063
+      },
+      "ret-07/generation-index.json": {
+        "sha256": "f6e065c9294c244315dee67704fc2a6819ec6f19166f0c6f4d81548230257801",
+        "size": 266
+      },
+      "ret-07/source-generation/archive-flow.json": {
+        "sha256": "06f645732a7691cb676b98d98e0257809a78e716eabd8b89a074707043792f29",
+        "size": 4527
+      },
+      "ret-07/source-generation/archive-inventory.json": {
+        "sha256": "0a9552a0c72d099e0794b40e8ad8afe9d85826b1cb78d9f41453f739edeb529d",
+        "size": 26163
+      },
+      "ret-07/source-generation/archive-readiness.json": {
+        "sha256": "e5a9f311d3b3e78345055a4d0228e96a61265c1f0a35e4ee8ada1ce45aac3bfa",
+        "size": 1240
+      },
+      "ret-07/source-generation/config-write.json": {
+        "sha256": "ba78df6d1a788441bb503a40d68a1ffc2ea94d04a411dea3cfdd18159caae336",
+        "size": 731
+      },
+      "ret-07/source-generation/controlled-input.json": {
+        "sha256": "7b6c2e7fb50bc9a9916189b67d7df6f7360f22610b5b4dd43d51312a33efae6a",
+        "size": 6105
+      },
+      "ret-07/source-generation/historical-reconciliation.json": {
+        "sha256": "eeaf21f5e92d969f1b386e9ff4e21b630260a36e43d083a65f2bffccd2ccc88d",
+        "size": 874
+      },
+      "ret-07/source-generation/post-delete-snapshot.json": {
+        "sha256": "b30eeb4608e4a892274919063e3884d6df9263e4c36ca960abaffeaecc08b143",
+        "size": 5581
+      },
+      "ret-07/source-generation/pre-archive-snapshot.json": {
+        "sha256": "bdb976a4ff3480143fe3f9132398c2162508a01339a6e1b0bdd5993ed8290cbf",
+        "size": 18701
+      },
+      "ret-07/source-generation/pre-delete-snapshot.json": {
+        "sha256": "bdb976a4ff3480143fe3f9132398c2162508a01339a6e1b0bdd5993ed8290cbf",
+        "size": 18701
+      },
+      "ret-07/source-generation/price-authority-snapshot.json": {
+        "sha256": "ed4e91005984618a8b8ab14be9ad511eda8d6a995177ca173598fea54817d90d",
+        "size": 2848
+      },
+      "ret-07/source-generation/price-write.json": {
+        "sha256": "66cec0553ade3f63b4297a5086627089f2f66f8c5fdb4f0cad5c406f1c238ee9",
+        "size": 644
+      },
+      "ret-07/source-generation/producer-build.json": {
+        "sha256": "cb0bdf9b8b338dba185eca342245e5dfe467972508e774715d0d20787b1dd0e7",
+        "size": 2313
+      },
+      "ret-07/source-generation/producer.log": {
+        "sha256": "75880736dfdd080eb87f29837e4531c00048e0cab1b59226249aaacf1b1c0102",
+        "size": 42965
+      },
+      "ret-07/source-generation/quota-write.json": {
+        "sha256": "26e81023391678fb9c98cf2b691b4e62c80ea8e54c1160b8e53c0b574a8d0717",
+        "size": 217
+      },
+      "ret-07/source-generation/raw-event-inventory.json": {
+        "sha256": "901a299f875f04eb2fd9ae0597770ea64099981d208777466a72e98009f688db",
+        "size": 183
+      },
+      "ret-07/source-generation/record.json": {
+        "sha256": "1f5e0e80cc22ce2e70ad8b94fdeda4efeec2adf6ee5482ac247abeb2c5156a3e",
+        "size": 9100
+      },
+      "ret-07/source-generation/release-info.json": {
+        "sha256": "b8f7b97cd242c11d95b905e2b402275fc5d664025bc829773a260d1da17d18b5",
+        "size": 1562
+      },
+      "ret-07/source-generation/retained-pricing-source.json": {
+        "sha256": "927c3b852bd49cb5673414cbcbb70b28a57cf1492f5c36d61388123399b023c0",
+        "size": 5782
+      },
+      "ret-07/source-generation/source-snapshot.json": {
+        "sha256": "376c7f1731961ec6abfd3a0f0e77ee95131bfa1347e7d6769ba081cd11e1ba2b",
+        "size": 5977
+      },
+      "ret-07/source-generation/structural-price-change.json": {
+        "sha256": "ad632e9e1fbc13c649a301e7e93c2b5f2e835becedb3841166feaed4e00824a2",
+        "size": 1884
+      },
+      "ret-07/source-generation/v1-analytics.json": {
+        "sha256": "aec3b4336b452f37d06b5a6d498546399b13111e3d2246bf56aff85310fd38b0",
+        "size": 3471
+      },
+      "ret-07/source-generation/v1-archived-analytics.json": {
+        "sha256": "7ef35f839e76f0177e0e27c7c51ad0bb2f656777d074ff168a14e4916a15c692",
+        "size": 4725
+      },
+      "ret-07/source-generation/v1-export.jsonl": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      }
+    },
+    "releaseID": 413560696,
+    "releaseTargetCommitish": "30e48a75d406e1d0d1af55ff2067908aeda0979f",
+    "repository": "seakee/CPA-Manager-Plus",
+    "sourceBundleDigest": "ce2efcbfea5e225240893cdaccba86f8e31c8b71d42e134a3b304f40adc56a43",
+    "tag": "qualification-ret07-ce2efcbfea5e-20261015",
+    "tagCommit": "30e48a75d406e1d0d1af55ff2067908aeda0979f"
+  }
+}
