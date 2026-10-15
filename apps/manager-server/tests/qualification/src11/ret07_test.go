@@ -12,6 +12,7 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usagepricing"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usageprojection"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle"
@@ -97,8 +98,12 @@ func generateRET07Archive(t *testing.T, base, live, generation string, p profile
 		changed[name] = price
 	}
 	paid := changed["fixture-paid-ret07"]
+	// Move the historical paid event into an actual context band. The band
+	// preserves its authoritative rates while the new default doubles them.
+	// Ignoring the retained input tokens or falling back to base must now fail.
+	paid.Prompt, paid.Completion = 4, 16
 	paid.ContextTiers = []model.ModelPriceContextTier{{
-		ThresholdTokens: 100000, Prompt: 4, Completion: 16,
+		ThresholdTokens: 50, Prompt: 2, Completion: 8,
 		PromptConfigured: true, CompletionConfigured: true,
 	}}
 	changed["fixture-paid-ret07"] = paid
@@ -128,8 +133,11 @@ func generateRET07Archive(t *testing.T, base, live, generation string, p profile
 		"newContextTiers": changed["fixture-paid-ret07"].ContextTiers,
 		"writer":          "PUT /v0/management/model-prices", "response": json.RawMessage(priceResponse),
 		"beforeRevision": beforeRevision, "afterRevision": afterRevision,
-		"historicalEventsCrossingNewTier": 0,
+		"historicalEventsCrossingNewTier": 1,
+		"matchedHistoricalEventIDs":       []int{2},
+		"baseFallbackUSD":                 0.00056, "historicalTierUSD": p.ExpectedUSD["fixture-paid-ret07"],
 	})
+	tierEvidence := ret07TierEvidence(t, db)
 
 	reconciliation := map[string]any{}
 	for _, name := range sortedModels(p) {
@@ -157,7 +165,8 @@ func generateRET07Archive(t *testing.T, base, live, generation string, p profile
 	}
 	actual = aggregate.Summary.TotalCost
 	assertClose(t, "aggregate", actual, expected)
-	reconciliation["aggregate"] = map[string]any{"expectedHistorical": expected, "actualHistorical": actual, "currentProjection": actual, "reconciled": true}
+	reconciliation["aggregate"] = map[string]any{"expectedHistorical": expected, "actualHistorical": actual, "currentProjection": actual, "reconciled": true, "baseFallbackCounterfactual": expected + 0.00028}
+	reconciliation["tierSelection"] = tierEvidence
 	save(t, generation, "historical-reconciliation.json", reconciliation)
 	save(t, generation, "v1-archived-analytics.json", map[string]any{"beforeStructuralChange": costs, "afterStructuralChange": reconciliation})
 	save(t, generation, "retained-pricing-source.json", retainedPricingEvidence(t, db, afterRevision, priceRows))
@@ -295,6 +304,7 @@ func retainedPricingEvidence(t *testing.T, db *sql.DB, revision string, priceRow
 	}
 	complete := len(expected) > 0 && len(missing) == 0 && len(duplicates) == 0 && len(covered) == len(expected)
 	return map[string]any{
+		"contextTierRows": query(t, db, "select * from model_price_context_tiers order by model,threshold_tokens"),
 		"pricingRevision": revision, "priceRows": priceRows,
 		"expectedHistoricalEvents": expected, "coveredPricingEvents": covered,
 		"missingPricingEvents": missing, "retainedPricingSourceComplete": complete,
@@ -523,7 +533,38 @@ func ret07Queries(t *testing.T, ctx context.Context, st *store.Store, dbPath str
 	if scalar(t, db, "select count(*) from usage_archive_event_refs where raw_deleted_at_ms is not null") != 4 {
 		t.Fatal("RET-07 raw deletion coverage is incomplete")
 	}
-	return map[string]any{"analytics": queries, "pricingSource": retainedPricingEvidence(t, db, scalarString(t, db, "select structure_revision from usage_pricing_rollup_state where rollup_name='pricing_v1'"), query(t, db, "select model,prompt_per_1m,completion_per_1m,cache_per_1m,cache_read_per_1m,cache_creation_per_1m,prompt_configured,completion_configured,cache_read_configured,cache_creation_configured,source,source_model_id from model_prices order by model"))}
+	return map[string]any{"analytics": queries, "tierSelection": ret07TierEvidence(t, db), "pricingSource": retainedPricingEvidence(t, db, scalarString(t, db, "select structure_revision from usage_pricing_rollup_state where rollup_name='pricing_v1'"), query(t, db, "select model,prompt_per_1m,completion_per_1m,cache_per_1m,cache_read_per_1m,cache_creation_per_1m,prompt_configured,completion_configured,cache_read_configured,cache_creation_configured,source,source_model_id from model_prices order by model"))}
+}
+
+// Inspect persisted bands AND re-run production band selection from the
+// retained projection. A base-price fallback cannot satisfy these assertions.
+func ret07TierEvidence(t *testing.T, db *sql.DB) map[string]any {
+	t.Helper()
+	projection := query(t, db, "select event_id,input_tokens,normalized_total_input_tokens,output_tokens from "+usageprojection.EventTable+" where model='fixture-paid-ret07'")
+	tiers := query(t, db, "select * from model_price_context_tiers where model='fixture-paid-ret07' order by threshold_tokens")
+	base := query(t, db, "select prompt_per_1m,completion_per_1m from model_prices where model='fixture-paid-ret07'")
+	bands := query(t, db, "select context_threshold_tokens,input_tokens,output_tokens,calls from usage_pricing_hourly_rollups_v1 where model='fixture-paid-ret07' and structure_revision=(select structure_revision from usage_pricing_rollup_state where rollup_name='pricing_v1')")
+	if len(projection) != 1 || numericValue(projection[0]["event_id"]) != 2 || numericValue(projection[0]["input_tokens"]) != 100 || numericValue(projection[0]["normalized_total_input_tokens"]) != 100 || numericValue(projection[0]["output_tokens"]) != 10 || len(tiers) != 1 || numericValue(tiers[0]["threshold_tokens"]) != 50 || len(bands) != 1 || numericValue(bands[0]["context_threshold_tokens"]) != 50 || numericValue(bands[0]["calls"]) != 1 {
+		t.Fatalf("RET-07 historical event did not enter the new tier: projection=%v tiers=%v bands=%v", projection, tiers, bands)
+	}
+	if len(base) != 1 || numericValue(base[0]["prompt_per_1m"]) != 4 || numericValue(base[0]["completion_per_1m"]) != 16 || numericValue(tiers[0]["prompt_per_1m"]) != 2 || numericValue(tiers[0]["completion_per_1m"]) != 8 || numericValue(tiers[0]["prompt_configured"]) != 1 || numericValue(tiers[0]["completion_configured"]) != 1 {
+		t.Fatalf("RET-07 persisted default/tier rates do not distinguish fallback: base=%v tiers=%v", base, tiers)
+	}
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	must(t, err)
+	rows, err := usagepricing.New(db).LoadHourlyRowsFromEventsTx(ctx, tx, usagepricing.HourlyFilter{FromMS: 1790899200000, ToMS: 1790985600000, Models: []string{"fixture-paid-ret07"}, IncludeFailed: true})
+	must(t, err)
+	must(t, tx.Rollback())
+	if len(rows) != 1 || rows[0].ContextThresholdTokens != 50 || rows[0].InputTokens != 100 || rows[0].OutputTokens != 10 || rows[0].Calls != 1 {
+		t.Fatalf("RET-07 retained-source tier classification failed: %+v", rows)
+	}
+	input, output := numericValue(projection[0]["normalized_total_input_tokens"]), float64(rows[0].OutputTokens)
+	tierUSD := (input*numericValue(tiers[0]["prompt_per_1m"]) + output*numericValue(tiers[0]["completion_per_1m"])) / 1e6
+	baseUSD := (input*numericValue(base[0]["prompt_per_1m"]) + output*numericValue(base[0]["completion_per_1m"])) / 1e6
+	assertClose(t, "retained tier price", tierUSD, 0.00028)
+	assertClose(t, "base fallback counterfactual", baseUSD, 0.00056)
+	return map[string]any{"eventID": projection[0]["event_id"], "normalizedInputTokens": input, "outputTokens": rows[0].OutputTokens, "thresholdTokens": tiers[0]["threshold_tokens"], "predicate": "normalized_input_tokens > threshold_tokens", "selectedContextThreshold": rows[0].ContextThresholdTokens, "persistedBands": bands, "retainedProjection": projection, "contextTiers": tiers, "basePrices": base, "historicalTierUSD": tierUSD, "baseFallbackUSD": baseUSD, "tierWasExercised": true}
 }
 
 func jsonDigest(value any) string {

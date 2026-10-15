@@ -14,9 +14,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 PIN = ROOT / "tests/fixtures/phase4a-evidence/src-11/sealed-artifact.json"
 MAX_BYTES = 128 * 1024 * 1024
-# MIG-02 and RET-07 use committed/generated fixtures plus the exact producer
-# archive, not a sealed ZIP.
-SEALED_ZIP_CASES = ("ret-01", "ret-02", "ret-03", "mig-01", "bak-01")
+# MIG-02 uses a committed fixture plus the exact producer archive, not a sealed ZIP.
+SEALED_ZIP_CASES = ("ret-01", "ret-02", "ret-03", "ret-07", "mig-01", "bak-01")
 
 
 def sha256(data):
@@ -118,7 +117,7 @@ def materialize_ret01(archive, output, pin=None):
 
 def materialize_retention(archive, output, case, pin=None):
     """Authenticate the original ZIP, then reuse the existing safe writer."""
-    if case not in ("ret-01", "ret-02", "ret-03"):
+    if case not in ("ret-01", "ret-02", "ret-03", "ret-07"):
         raise ValueError("unknown retention case")
     return materialize_case(archive, output, case, pin)
 

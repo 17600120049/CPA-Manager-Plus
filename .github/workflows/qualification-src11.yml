@@ -287,7 +287,7 @@ jobs:
           retention-days: 90
 
   ret07-generate:
-    name: RET-07 isolated source generation
+    name: RET-07 equivalent generation smoke (not sealed-source authentication)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -342,7 +342,6 @@ jobs:
 
   ret07:
     name: RET-07 retained pricing replay (${{ matrix.os }})
-    needs: ret07-generate
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -379,15 +378,32 @@ jobs:
           if actual != pin['archiveSHA256']:
               raise SystemExit(f'v1.14.4 producer archive digest mismatch: {actual} != {pin["archiveSHA256"]}')
           PY
-      - name: Download generated RET-07 source bundle
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          name: ret-07-source-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/ret07-generated
-      - name: Extract generated RET-07 source bundle
+      - name: Download and authenticate the original immutable RET-07 source
         shell: bash
-        run: tar -xzf "$RUNNER_TEMP/ret07-generated/ret07-generation.tar.gz" -C "$RUNNER_TEMP/ret07-generated"
-      - name: Replay RET-07 on the generated raw-deleted state
+        run: |
+          python - <<'PY'
+          import importlib.util, json, os, subprocess
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'ret07-sealed'
+          root.mkdir()
+          pin = json.loads(Path('tests/fixtures/phase4a-evidence/ret-07/source-provenance.json').read_text())['sourceArtifact']
+          def api(endpoint):
+              return json.loads(subprocess.check_output(['gh', 'api', 'repos/' + pin['repository'] + endpoint], text=True))
+          spec = importlib.util.spec_from_file_location('materializer', 'bin/qualification/materialize-src11.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          module.validate_retention_release(api('/releases/tags/' + pin['tag']), pin, 'ret-07', api('/git/ref/tags/' + pin['tag']))
+          subprocess.run(['gh', 'release', 'download', pin['tag'], '--repo', pin['repository'], '--pattern', pin['archiveName'], '--dir', str(root)], check=True)
+          archive = root / pin['archiveName']
+          module.materialize_case(archive, root / 'original', 'ret-07')
+          historical = json.loads(Path('tests/fixtures/phase4a-evidence/ret-07/historical-original-source.json').read_text())['sourceArtifact']
+          module.validate_retention_release(api('/releases/tags/' + historical['tag']), historical, 'ret-07', api('/git/ref/tags/' + historical['tag']))
+          subprocess.run(['gh', 'release', 'download', historical['tag'], '--repo', historical['repository'], '--pattern', historical['archiveName'], '--dir', str(root)], check=True)
+          subprocess.run(['python', 'bin/qualification/verify-ret07-evidence.py', '--archive', str(archive), '--historical-archive', str(root / historical['archiveName'])], check=True)
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write('RET07_SEALED_ARCHIVE=' + str(archive) + '\n')
+          PY
+      - name: Replay RET-07 on the original sealed raw-deleted state
         shell: bash
         run: |
           extra=()
@@ -397,7 +413,7 @@ jobs:
           fi
           python bin/qualification/run-src11.py ret07 \
             --archive "$RUNNER_TEMP/ret07-producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
-            --evidence "$RUNNER_TEMP/ret07-generated/ret-07" \
+            --evidence-archive "$RET07_SEALED_ARCHIVE" \
             --output "$RUNNER_TEMP/ret07-replay" "${extra[@]}"
       - name: Replay RET-07 from a clean detached checkout
         shell: bash
@@ -412,7 +428,7 @@ jobs:
           fi
           python "$clean/bin/qualification/run-src11.py" ret07 \
             --archive "$RUNNER_TEMP/ret07-producer/cpa-manager-plus_v1.14.4_linux_amd64.tar.gz" \
-            --evidence "$RUNNER_TEMP/ret07-generated/ret-07" \
+            --evidence-archive "$RET07_SEALED_ARCHIVE" \
             --output "$RUNNER_TEMP/ret07-clean-replay" "${extra[@]}"
       - name: Assert RET-07 runtime and pricing reconciliation are not skipped
         shell: bash
@@ -422,7 +438,7 @@ jobs:
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP'])
           result = json.loads((root / 'ret07-replay/runtime/result.json').read_text())
-          pricing = json.loads((root / 'ret07-generated/ret-07/source-generation/retained-pricing-source.json').read_text())
+          pricing = json.loads((root / 'ret07-sealed/original/ret-07/source-generation/retained-pricing-source.json').read_text())
           sem = json.loads((root / 'ret07-replay/runtime/semantic-assertions.json').read_text())
           if result.get('runtimeEvidence') != 'pass' or result.get('casePass') is not False:
               raise SystemExit(f'RET-07 runtime/authority boundary invalid: {result}')

@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import importlib.util
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -282,8 +284,11 @@ def verify_structural_change(root: Path, pricing: dict[str, Any]) -> None:
             "structural price change revisions are not bound")
     require(change.get("oldContextTiers") != change.get("newContextTiers"),
             "structural price change did not change context tiers")
-    require(change.get("historicalEventsCrossingNewTier") == 0,
-            "historical event crossed the new structural tier")
+    require(change.get("historicalEventsCrossingNewTier") == 1 and
+            change.get("matchedHistoricalEventIDs") == [2],
+            "structural tier change did not exercise a historical event")
+    require(not approximately(change.get("baseFallbackUSD"), change.get("historicalTierUSD")),
+            "base-price fallback is indistinguishable from historical tier pricing")
     require(pricing.get("pricingRevision") == authority.get("afterRevision"),
             "retained pricing source does not use the post-change revision")
 
@@ -292,6 +297,9 @@ def verify_reconciliation(root: Path) -> None:
     reconciliation = read(root, "source-generation/historical-reconciliation.json")
     aggregate = reconciliation.get("aggregate", {})
     require(aggregate.get("reconciled") is True, "historical aggregate was not reconciled")
+    require(not approximately(aggregate.get("baseFallbackCounterfactual"), aggregate.get("expectedHistorical")),
+            "historical aggregate does not distinguish the base-price fallback")
+    verify_tier_selection(reconciliation.get("tierSelection", {}))
     require(approximately(aggregate.get("expectedHistorical"), aggregate.get("actualHistorical")) and
             approximately(aggregate.get("actualHistorical"), aggregate.get("currentProjection")),
             "historical aggregate drifted after structural price change")
@@ -301,6 +309,35 @@ def verify_reconciliation(root: Path) -> None:
         require(approximately(row.get("beforeStructuralChange"), row.get("afterStructuralChangeHistorical")) and
                 approximately(row.get("afterStructuralChangeHistorical"), row.get("currentProjection")),
                 f"historical cost drifted for {model}")
+
+
+def verify_tier_selection(tier: dict[str, Any]) -> None:
+    require(tier.get("eventID") == 2 and tier.get("tierWasExercised") is True,
+            "historical paid event did not exercise context-tier pricing")
+    require(tier.get("normalizedInputTokens") == 100 and tier.get("outputTokens") == 10 and
+            tier.get("thresholdTokens") == 50 and tier.get("selectedContextThreshold") == 50,
+            "retained event token/tier classification mismatch")
+    require(tier["normalizedInputTokens"] > tier["thresholdTokens"],
+            "historical event did not cross the strict context-tier threshold")
+    require(approximately(tier.get("historicalTierUSD"), 0.00028) and
+            approximately(tier.get("baseFallbackUSD"), 0.00056),
+            "tier selection is vacuous against a base-price fallback")
+    bands = tier.get("persistedBands", [])
+    require(len(bands) == 1 and bands[0].get("context_threshold_tokens") == 50 and
+            bands[0].get("input_tokens") == 100 and bands[0].get("output_tokens") == 10 and
+            bands[0].get("calls") == 1, "persisted historical pricing band mismatch")
+    projections = tier.get("retainedProjection", [])
+    require(len(projections) == 1 and projections[0].get("event_id") == 2 and
+            projections[0].get("normalized_total_input_tokens") == 100 and
+            projections[0].get("input_tokens") == 100 and projections[0].get("output_tokens") == 10,
+            "retained tokens needed for tier selection are missing")
+    tiers, base = tier.get("contextTiers", []), tier.get("basePrices", [])
+    require(len(tiers) == 1 and tiers[0].get("threshold_tokens") == 50 and
+            tiers[0].get("prompt_per_1m") == 2 and tiers[0].get("completion_per_1m") == 8 and
+            tiers[0].get("prompt_configured") == 1 and tiers[0].get("completion_configured") == 1,
+            "persisted historical tier rates mismatch")
+    require(len(base) == 1 and base[0].get("prompt_per_1m") == 4 and
+            base[0].get("completion_per_1m") == 16, "new default rates mismatch")
 
 
 def verify_runtime(root: Path, prefix: str, source_bundle: str) -> None:
@@ -347,6 +384,8 @@ def verify_runtime(root: Path, prefix: str, source_bundle: str) -> None:
             f"{prefix} backup/restore evidence is incomplete")
     retained = read(root, f"{prefix}/retained-pricing-source.json")
     require(retained.get("complete") is True, f"{prefix} retained pricing replay is incomplete")
+    for phase in ("replayed", "restored"):
+        verify_tier_selection(retained.get(phase, {}).get("tierSelection", {}))
 
 
 def verify_clean_checkout(root: Path, generator_commit: str, source_bundle: str) -> None:
@@ -360,7 +399,80 @@ def verify_clean_checkout(root: Path, generator_commit: str, source_bundle: str)
             "clean-checkout runtime result is invalid")
 
 
-def verify(root: Path) -> dict[str, Any]:
+def verify_artifact(root: Path, archive: Path | None) -> bool:
+    provenance = read(root, "source-provenance.json")
+    pin = provenance.get("sourceArtifact", {})
+    require(pin.get("immutableRelease") is True and isinstance(pin.get("releaseID"), int) and
+            pin["releaseID"] > 0 and isinstance(pin.get("assetID"), int) and pin["assetID"] > 0,
+            "original source has no immutable artifact identity")
+    require(pin.get("sourceBundleDigest") == provenance.get("sourceBundleDigest") and
+            pin.get("generationRecordSHA256") == digest(root / "source-generation/record.json"),
+            "sealed artifact does not bind the declared generation")
+    inventory = pin.get("inventory", {})
+    for name in ("ret-07/bundle/database", "ret-07/bundle/data-key", "ret-07/bundle/manifest.json",
+                 "ret-07/source-generation/producer.log", "generation/runner-evidence.json",
+                 "generation/generation-execution.log", "producer.tar.gz"):
+        require(name in inventory, f"sealed source inventory missing {name}")
+    generation = read(root, "source-generation/record.json")
+    for name, expected in generation["GenerationEvidenceFiles"].items():
+        require(inventory.get("ret-07/source-generation/" + name, {}).get("sha256") == expected,
+                f"sealed generation member mismatch: {name}")
+    require(inventory["generation/runner-evidence.json"]["sha256"] == digest(root / "generation-runner.json"),
+            "sealed generation runner mismatch")
+    if archive is None:
+        return False
+    module_path = Path(__file__).with_name("materialize-src11.py")
+    spec = importlib.util.spec_from_file_location("ret07_materializer", module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with tempfile.TemporaryDirectory(prefix="ret07-original-auth-") as temp:
+        source = module.materialize_case(archive, Path(temp) / "materialized", "ret-07", pin)
+        for path in (root / "source-generation").iterdir():
+            if path.is_file():
+                require(digest(source / "source-generation" / path.name) == digest(path),
+                        f"original bytes differ from committed evidence: {path.name}")
+        bundle = read(source, "bundle/manifest.json")
+        require(bundle.get("sourceRevision") == provenance["sourceBundleDigest"],
+                "original bundle revision mismatch")
+        for name, entry in bundle["entries"].items():
+            path = source / "bundle" / name
+            if not entry["present"]:
+                require(not path.exists(), f"unexpected original bundle member: {name}")
+            elif not entry.get("directory"):
+                require(path.is_file() and path.stat().st_size == entry["size"] and
+                        digest(path) == entry["sha256"], f"original bundle member mismatch: {name}")
+    return True
+
+
+def verify_historical_source(root: Path, archive: Path | None) -> bool:
+    """Preserve the rejected head's original bytes without granting SEM acceptance."""
+    historical = read(root, "historical-original-source.json")
+    pin = historical["sourceArtifact"]
+    require(historical.get("reviewedHead") == "30e48a75d406e1d0d1af55ff2067908aeda0979f" and
+            historical.get("reviewResult") == "NO-GO" and historical.get("semanticQualification") is False,
+            "historical NO-GO was overwritten")
+    require(pin.get("sourceBundleDigest") == "ce2efcbfea5e225240893cdaccba86f8e31c8b71d42e134a3b304f40adc56a43" and
+            pin.get("generationRecordSHA256") == "1f5e0e80cc22ce2e70ad8b94fdeda4efeec2adf6ee5482ac247abeb2c5156a3e" and
+            pin.get("immutableRelease") is True and pin.get("releaseID") == 413560696 and
+            pin.get("assetID") == 643174241,
+            "historical original source identity changed")
+    if archive is None:
+        return False
+    spec = importlib.util.spec_from_file_location("ret07_historical_materializer", Path(__file__).with_name("materialize-src11.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with tempfile.TemporaryDirectory(prefix="ret07-historical-auth-") as temp:
+        source = module.materialize_case(archive, Path(temp) / "original", "ret-07", pin)
+        record = read(source, "source-generation/record.json")
+        require(record.get("GeneratorCodeCommit") == "2b362c4876f80db40e527af5a7b0f1f5bfffbb82",
+                "original generator identity changed")
+        for name, expected in record["GenerationEvidenceFiles"].items():
+            require(digest(source / "source-generation" / name) == expected,
+                    f"historical original generation file mismatch: {name}")
+    return True
+
+
+def verify(root: Path, archive: Path | None = None, historical_archive: Path | None = None) -> dict[str, Any]:
     manifest = verify_manifest(root)
     profile = verify_profile(root)
     generation, provenance, runner = verify_generation(root, profile)
@@ -372,6 +484,8 @@ def verify(root: Path) -> dict[str, Any]:
     verify_runtime(root, "runtime", source_bundle)
     verify_runtime(root, "platform-replay/linux", source_bundle)
     verify_clean_checkout(root, generation["GeneratorCodeCommit"], source_bundle)
+    original_bytes_verified = verify_artifact(root, archive)
+    historical_bytes_verified = verify_historical_source(root, historical_archive)
     require(manifest.get("authority", {}).get("casePass") is False, "manifest casePass must remain false")
     require(provenance.get("casePass") is False and runner.get("UpgradeAuthorized") is False,
             "provenance/runner authority boundary changed")
@@ -379,6 +493,9 @@ def verify(root: Path) -> dict[str, Any]:
         "caseID": "RET-07",
         "status": "pass",
         "runtimeEvidence": "pass",
+        "originalSourceBytesVerified": original_bytes_verified,
+        "historicalOriginalBytesVerified": historical_bytes_verified,
+        "verificationScope": "original-source-bytes-and-evidence" if original_bytes_verified else "committed-evidence-metadata-only",
         "casePass": False,
         "independentAcceptance": "pending",
         "checked": [
@@ -397,6 +514,8 @@ def verify(root: Path) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--archive", type=Path, help="authenticate original sealed source bytes; absent means metadata verification only")
+    parser.add_argument("--historical-archive", type=Path, help="authenticate the rejected ce2ef original source without qualifying its semantics")
     parser.add_argument(
         "--evidence",
         type=Path,
@@ -404,8 +523,9 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
-        result = verify(args.evidence.resolve())
-    except (EvidenceError, OSError, KeyError, TypeError) as exc:
+        result = verify(args.evidence.resolve(), args.archive.resolve() if args.archive else None,
+                        args.historical_archive.resolve() if args.historical_archive else None)
+    except (EvidenceError, OSError, KeyError, TypeError, ValueError) as exc:
         print(json.dumps({"status": "fail", "error": str(exc)}, sort_keys=True))
         return 1
     print(json.dumps(result, indent=2, sort_keys=True))

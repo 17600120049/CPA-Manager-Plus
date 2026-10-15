@@ -66,8 +66,10 @@ def main():
     profile = ROOT / f"tests/fixtures/phase4a-evidence/{case_profile}/profile.json" if case_profile else PROFILE
     if args.action == "replay" and bool(args.evidence) == bool(args.evidence_archive):
         parser.error("replay requires exactly one of --evidence or --evidence-archive")
-    if args.action in ("ret01", "ret02", "ret03", "ret07") and (not args.evidence or args.evidence_archive):
+    if args.action in ("ret01", "ret02", "ret03") and (not args.evidence or args.evidence_archive):
         parser.error("retention replay requires --evidence pointing to its own complete generated fixture")
+    if args.action == "ret07" and bool(args.evidence) == bool(args.evidence_archive):
+        parser.error("ret07 requires exactly one of --evidence or --evidence-archive")
     if args.action in ("mig01", "mig02") and (not args.evidence or args.evidence_archive or args.release_info):
         parser.error("migration replay requires --evidence pointing to its own complete generated fixture")
     if args.action == "bak01" and (bool(args.evidence) == bool(args.evidence_archive) or args.release_info):
@@ -104,7 +106,9 @@ def main():
         spec = importlib.util.spec_from_file_location("materialize_src11", ROOT / "bin/qualification/materialize-src11.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        if bak01:
+        if ret07:
+            evidence = module.materialize_case(args.evidence_archive, output / "materialized", "ret-07")
+        elif bak01:
             evidence = module.materialize_case(args.evidence_archive, output / "materialized", "bak-01")
         else:
             evidence = module.materialize(args.evidence_archive, output / "materialized")
