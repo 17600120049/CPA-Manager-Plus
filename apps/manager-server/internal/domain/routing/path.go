@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/url"
 	"path"
-	"regexp"
 	"strings"
 	"unicode"
 
@@ -336,16 +335,10 @@ func ValidateNamespaceCollisions(snapshot RoutingSnapshot, retired []RetiredName
 	return nil
 }
 
-// These ASCII path characters are stable under both Go URL.EscapedPath and
-// browser URL.pathname serialization. Browser validation mirrors this grammar;
-// it does not discover or normalize a routing authority.
-var canonicalControlBasePathCharacters = regexp.MustCompile(`^/[A-Za-z0-9._~$&+,/:;=@-]+$`)
-
-// ValidControlBasePath is the canonical grammar shared by snapshots and
-// retired namespaces. Reject paths needing URL escaping at authority validation
-// rather than accepting a mount the strict request classifier cannot serve.
+// ValidControlBasePath delegates to the same grammar as Bootstrap prefix and
+// preview contracts. Routing does not define another canonical prefix grammar.
 func ValidControlBasePath(value string) bool {
-	return canonicalControlBasePathCharacters.MatchString(value) && validDeclaredControlBasePath(value)
+	return bootstrapdomain.ValidControlBasePath(value)
 }
 
 // Preserve Phase4-01's decoded namespace shape for deny-only ownership of an

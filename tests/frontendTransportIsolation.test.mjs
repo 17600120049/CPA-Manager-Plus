@@ -161,7 +161,14 @@ describe('Full Web / Panel Lite runtime dependency isolation', () => {
       'utf8'
     );
     expect(backend).toContain(`PublicAPIV2Suffix = "${ledger.canonicalPublicApiV2Suffix}"`);
-    const grammar = backend.match(
+    const prefix = readFileSync(
+      path.join(root, 'apps/manager-server/internal/domain/bootstrap/prefix.go'),
+      'utf8'
+    );
+    expect(backend).toContain('return bootstrapdomain.ValidControlBasePath(value)');
+    expect(backend).not.toContain('canonicalControlBasePathCharacters');
+    expect(prefix).not.toContain('validControlBasePath(');
+    const grammar = prefix.match(
       /canonicalControlBasePathCharacters = regexp.MustCompile\(`([^`]+)`\)/
     )?.[1];
     expect(grammar).toBeDefined();
