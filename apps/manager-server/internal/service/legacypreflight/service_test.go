@@ -144,8 +144,8 @@ func TestFencedInspectionRejectsCleanWALWithoutCoordinationSidecars(t *testing.T
 	}
 	before := sourceState(t, filepath.Dir(paths.Database))
 	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
-		if err == nil || report.SourceKind != "" {
-			t.Fatalf("clean WAL without coordination unexpectedly classified: kind=%s err=%v", report.SourceKind, err)
+		if err == nil || report.SourceKind != "unknown" || report.UpgradeAuthorized {
+			t.Fatalf("clean WAL without coordination did not fail closed: kind=%s authorized=%v err=%v", report.SourceKind, report.UpgradeAuthorized, err)
 		}
 	})
 	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {

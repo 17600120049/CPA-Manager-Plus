@@ -407,6 +407,16 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 				}
 				process := startManagerServerProcessWithEnvironment(t, env, startupArgs...)
 				discoveryStatus, discoveryBody := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+				if strings.HasPrefix(kind, "legacy") {
+					// Listener binding intentionally precedes admission/evidence gathering,
+					// so unavailable is a valid transient state. Legacy acceptance requires
+					// eventual bounded read-only classification, not first-request success.
+					deadline := time.Now().Add(10 * time.Second)
+					for discoveryStatus == http.StatusServiceUnavailable && time.Now().Before(deadline) {
+						time.Sleep(10 * time.Millisecond)
+						discoveryStatus, discoveryBody = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+					}
+				}
 				if discoveryStatus != http.StatusOK && discoveryStatus != http.StatusServiceUnavailable {
 					t.Fatalf("blocked %s discovery status=%d body=%s", kind, discoveryStatus, discoveryBody)
 				}
