@@ -200,7 +200,8 @@ docker exec "${initializer_name}" sh -ec '
   test -s /data/data.key
   test -e /data/usage.sqlite.manager.lock
 '
-docker rm -f "${initializer_name}" >/dev/null
+docker stop -t 20 "${initializer_name}" >/dev/null
+docker rm "${initializer_name}" >/dev/null
 
 # After explicit initialization, retain the existing Runtime lifecycle checks:
 # Manager desired-state reconciliation must start CPA without a direct
