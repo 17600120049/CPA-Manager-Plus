@@ -41,6 +41,7 @@ import (
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	bootstrapservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
 	collectorservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/collector"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpaauthfiles"
 	cpaupdateservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpaupdate"
@@ -192,16 +193,41 @@ func runServerWithOptions(options legacypreflight.Options) {
 	if err != nil {
 		log.Fatalf("resolve inspection config: %v", err)
 	}
-	inspectionCtx, cancelInspection := context.WithTimeout(context.Background(), inspectionTimeout)
-	databaseLock, err := legacypreflight.AdmitStartup(inspectionCtx, sqliterepo.InspectionPaths{
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	paths := sqliterepo.InspectionPaths{
 		Database: cfg.DBPath, Config: configPath, DataKey: cfg.DataKeyPath, Archives: cfg.UsageArchiveDir,
-	}, options)
+	}
+	// A diagnostic inspection is intentionally performed before writable
+	// admission. It may feed only the fixed discovery response; the normal gate
+	// below remains the sole authority for data-key/store/bootstrap writes.
+	discoveryOptions := options
+	discoveryOptions.SourceStopped = true
+	inspectionCtx, cancelInspection := context.WithTimeout(context.Background(), inspectionTimeout)
+	discoveryReport, discoveryErr := legacypreflight.Inspect(inspectionCtx, paths, discoveryOptions)
+	cancelInspection()
+	discoveryResult := bootstrapdiscovery.Project(bootstrapdiscovery.Input{Report: discoveryReport, InspectionError: discoveryErr})
+	startupHandler := newStartupHTTPHandler(discoveryResult)
+	listener, err := net.Listen("tcp", cfg.HTTPAddr)
+	if err != nil {
+		log.Fatalf("http listen: %v", err)
+	}
+	server := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           startupHandler,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	serverResult := make(chan error, 1)
+	log.Printf("cpa-manager-plus listening on %s", listener.Addr())
+	go serveHTTPServer(server, listener, stop, serverResult)
+
+	inspectionCtx, cancelInspection = context.WithTimeout(context.Background(), inspectionTimeout)
+	databaseLock, err := legacypreflight.AdmitStartup(inspectionCtx, paths, options)
 	cancelInspection()
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			log.Fatalf("Manager startup inspection timed out after %s before data-key creation or writable database open; full database and WAL inspection is required; check storage and retry with a larger CPA_MANAGER_PREFLIGHT_TIMEOUT: %v", inspectionTimeout, err)
-		}
-		log.Fatalf("Manager startup preflight: %v", err)
+		log.Printf("Manager writable startup is not authorized; keeping read-only discovery available: %v", err)
+		waitForReadOnlyStartup(ctx, server, serverResult)
+		return
 	}
 	defer func() {
 		if err := databaseLock.Close(); err != nil {
@@ -271,8 +297,6 @@ func runServerWithOptions(options legacypreflight.Options) {
 	manager := collector.NewManager(cfg, db)
 	collectorService := collectorservice.New(manager)
 	collectorWorker := worker.NewCollectorWorker(cfg, db, collectorService)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	walMaintenance, err := sqliterepo.NewWALMaintenance(cfg.DBPath)
 	if err != nil {
 		log.Printf("configure SQLite WAL maintenance: %v", err)
@@ -370,11 +394,6 @@ func runServerWithOptions(options legacypreflight.Options) {
 		}),
 	))
 
-	server := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           serverApp.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
 	pprofServer, err := newPprofServer(cfg.PprofAddr)
 	if err != nil {
 		log.Fatalf("configure pprof: %v", err)
@@ -388,11 +407,6 @@ func runServerWithOptions(options legacypreflight.Options) {
 		}()
 	}
 
-	listener, err := net.Listen("tcp", cfg.HTTPAddr)
-	if err != nil {
-		log.Fatalf("http listen: %v", err)
-	}
-	log.Printf("cpa-manager-plus listening on %s", listener.Addr())
 	codexInspectionWorker := worker.NewCodexInspectionWorker(serverApp.AppContext().Store, serverApp.AppContext().CodexInspectionService)
 	var identityProcessInstanceID string
 	var mutationSvc *identitymutation.Service
@@ -434,8 +448,10 @@ func runServerWithOptions(options legacypreflight.Options) {
 		}
 		serverApp.AppContext().ProxyService.SetCredentialDeleteService(credentialDeleteSvc)
 	}
-	serverResult := make(chan error, 1)
-	go serveHTTPServer(server, listener, stop, serverResult)
+	// Only after the complete writable Manager graph is assembled do unrelated
+	// routes become reachable. The fixed discovery path remains captured by the
+	// outer handler for its lifecycle terminal behavior.
+	startupHandler.SetReady(serverApp.Handler())
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtimeReconciler := runtimeservice.NewReconciler(
 			runtimeClient,
@@ -593,6 +609,23 @@ func serveHTTPServer(server *http.Server, listener net.Listener, stop context.Ca
 	}
 	result <- err
 	stop()
+}
+
+// waitForReadOnlyStartup keeps a safely bound discovery/liveness listener alive
+// when the source is rejected by the normal writable gate. No Store, worker or
+// mutation handler is constructed on this path.
+func waitForReadOnlyStartup(ctx context.Context, server *http.Server, result <-chan error) {
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = server.Shutdown(shutdownCtx)
+		cancel()
+		return
+	case err := <-result:
+		if err != nil {
+			log.Printf("read-only discovery server stopped: %v", err)
+		}
+	}
 }
 
 type codexInspectionStopper interface {

@@ -7,8 +7,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,8 +21,10 @@ import (
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
+	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usageprojection"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
 )
 
 func TestWriteVersion(t *testing.T) {
@@ -196,6 +200,41 @@ func TestServeHTTPServerCancelsRuntimeOnUnexpectedExit(t *testing.T) {
 	}
 }
 
+func TestStartupHTTPHandlerKeepsDiscoveryBeforeReadyAndDelegatesAfter(t *testing.T) {
+	result := bootstrapdiscovery.Result{
+		Available:              true,
+		Mode:                   bootstrap.Fresh,
+		Reason:                 bootstrapdiscovery.ReasonFreshClaimRequired,
+		AuthenticationRequired: true,
+	}
+	handler := newStartupHTTPHandler(result)
+	request := httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"fresh"`) {
+		t.Fatalf("pre-ready discovery response=%d body=%s", response.Code, response.Body.String())
+	}
+	unrelated := httptest.NewRecorder()
+	handler.ServeHTTP(unrelated, httptest.NewRequest(http.MethodPost, "/usage-service/config", nil))
+	if unrelated.Code != http.StatusNotFound {
+		t.Fatalf("pre-ready mutation path status=%d want 404", unrelated.Code)
+	}
+	delegated := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	handler.SetReady(delegated)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/usage-service/info", nil))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("ready delegated status=%d want 201", response.Code)
+	}
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("fixed discovery lost ownership after ready: status=%d", response.Code)
+	}
+}
+
 func TestDerivedMigrationsStartAfterHTTPListenerIsBound(t *testing.T) {
 	content, err := os.ReadFile("main.go")
 	if err != nil {
@@ -267,6 +306,34 @@ func TestManagerDatabaseProcessLockPrecedesStoreOpen(t *testing.T) {
 	lockCloseAt := strings.Index(source, "databaseLock.Close()")
 	if lockAt < 0 || storeOpenAt < lockAt || lockCloseAt < lockAt {
 		t.Fatalf("database lock ordering invalid: lock=%d open=%d close=%d", lockAt, storeOpenAt, lockCloseAt)
+	}
+}
+
+func TestBootstrapDiscoveryBindsBeforeWritableStartup(t *testing.T) {
+	content, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	source := string(content)
+	positions := []struct {
+		name string
+		at   int
+	}{
+		{name: "listener", at: strings.Index(source, `net.Listen("tcp", cfg.HTTPAddr)`)},
+		{name: "admission", at: strings.Index(source, "legacypreflight.AdmitStartup(")},
+		{name: "data key", at: strings.Index(source, "security.LoadOrCreateDataKey(")},
+		{name: "store open", at: strings.Index(source, "store.Open(cfg.DBPath, protector)")},
+		{name: "legacy bootstrap", at: strings.Index(source, "bootstrapservice.Run(")},
+	}
+	for _, position := range positions {
+		if position.at < 0 {
+			t.Fatalf("startup %s call not found", position.name)
+		}
+	}
+	for i := 1; i < len(positions); i++ {
+		if positions[i-1].at >= positions[i].at {
+			t.Fatalf("startup ordering %s=%d must precede %s=%d", positions[i-1].name, positions[i-1].at, positions[i].name, positions[i].at)
+		}
 	}
 }
 
@@ -477,8 +544,13 @@ func (l *synchronizedLog) String() string {
 
 func startManagerServerProcess(t testing.TB, dataDir, dbPath string, startupArgs ...string) *managerServerProcess {
 	t.Helper()
+	return startManagerServerProcessWithEnvironment(t, managerServerTestEnvironment(dataDir, dbPath), startupArgs...)
+}
+
+func startManagerServerProcessWithEnvironment(t testing.TB, environment []string, startupArgs ...string) *managerServerProcess {
+	t.Helper()
 	cmd := exec.Command(os.Args[0], append([]string{"-test.run=^TestManagerServerHelperProcess$", "--"}, startupArgs...)...)
-	cmd.Env = managerServerTestEnvironment(dataDir, dbPath)
+	cmd.Env = environment
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		t.Fatalf("open manager server stderr: %v", err)
@@ -597,6 +669,32 @@ func assertManagerEndpoint(t testing.TB, addr, path string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("GET %s%s did not become available: %v", addr, path, lastErr)
+}
+
+func waitForManagerResponse(t testing.TB, addr, method, path string) (int, string) {
+	t.Helper()
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(5 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		request, err := http.NewRequest(method, "http://"+addr+path, nil)
+		if err != nil {
+			t.Fatalf("create %s %s request: %v", method, path, err)
+		}
+		response, err := client.Do(request)
+		if err == nil {
+			body, readErr := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if readErr != nil {
+				t.Fatalf("read %s %s response: %v", method, path, readErr)
+			}
+			return response.StatusCode, string(body)
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s %s did not become reachable: %v", method, path, lastErr)
+	return 0, ""
 }
 
 func openMigrationObserver(t testing.TB, dbPath string) *sql.DB {
