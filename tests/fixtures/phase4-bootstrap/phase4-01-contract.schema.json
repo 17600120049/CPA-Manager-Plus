@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CPAMP Phase4-01 bootstrap contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "contractVersion",
+    "productBaseline",
+    "productionUpgradeEnabled",
+    "fixedBootstrapDiscoveryPath",
+    "completedDiscoveryTerminal",
+    "unauthenticatedDiscoveryFields",
+    "forbiddenDiscoveryFields",
+    "admissionCases",
+    "integrationRequirements"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./phase4-01-contract.schema.json"
+    },
+    "contractVersion": {
+      "const": "cpamp.phase4-01.contract.v1"
+    },
+    "productBaseline": {
+      "const": "c0a4418d02a18247630cec03365637cce0eaf639"
+    },
+    "productionUpgradeEnabled": {
+      "const": false
+    },
+    "fixedBootstrapDiscoveryPath": {
+      "const": "/.well-known/cpamp-bootstrap"
+    },
+    "completedDiscoveryTerminal": {
+      "const": "generic_404"
+    },
+    "unauthenticatedDiscoveryFields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "contract_version",
+          "status",
+          "mode",
+          "authentication_required",
+          "auth_entry",
+          "reason"
+        ]
+      }
+    },
+    "forbiddenDiscoveryFields": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "admissionCases": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/admissionCase"
+      }
+    },
+    "integrationRequirements": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "admissionCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "case",
+        "shape",
+        "provenance",
+        "requestedTarget",
+        "observedSourceCommit",
+        "expected"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "case": {
+          "enum": [
+            "unknown_newer_same_schema",
+            "downgrade"
+          ]
+        },
+        "shape": {
+          "enum": [
+            "legacy_schema_a",
+            "legacy_schema_b",
+            "legacy_schema_c",
+            "unknown"
+          ]
+        },
+        "provenance": {
+          "enum": [
+            "unverified",
+            "exact_candidate_verified",
+            "forward_hop_verified",
+            "unknown_or_newer"
+          ]
+        },
+        "requestedTarget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "release",
+            "sourceCommit"
+          ],
+          "properties": {
+            "release": {
+              "const": "v1.14.4"
+            },
+            "sourceCommit": {
+              "const": "166262365d506157b99968105c890f480cc7c07c"
+            }
+          }
+        },
+        "observedSourceCommit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "accepted",
+            "mode",
+            "reason",
+            "qualification",
+            "sourceIdentityPreserved"
+          ],
+          "properties": {
+            "accepted": {
+              "const": false
+            },
+            "mode": {
+              "const": "unsupported_upgrade"
+            },
+            "reason": {
+              "enum": [
+                "unknown_newer_same_schema",
+                "downgrade_forbidden"
+              ]
+            },
+            "qualification": {
+              "const": "pending"
+            },
+            "sourceIdentityPreserved": {
+              "const": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -30,9 +30,10 @@ type Report struct {
 }
 
 type Options struct {
-	SourceStopped bool
-	Initialize    bool
-	ValidatedHop  *legacyartifact.ValidatedHopEvidence
+	SourceStopped    bool
+	Initialize       bool
+	ValidatedHop     *legacyartifact.ValidatedHopEvidence
+	readOnlySnapshot bool
 }
 
 type Admission struct {
@@ -80,6 +81,57 @@ func (a *Admission) Close() error {
 	return a.closeErr
 }
 
+const DiscoveryInspectionTimeout = 2 * time.Second
+
+// WithFencedInspection provides the narrow public discovery observation used by
+// Phase4-01. Missing-database states are inventory-only. Existing databases use
+// only the bounded rollback-mode SQLite read snapshot; WAL/recovery sources
+// fail closed for a later qualified owner. A pre-existing Manager marker may be
+// retained as coordination evidence, but public discovery never enters the
+// general recovery-copy inspection path and never creates a marker.
+func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, options Options, consume func(Report, error)) {
+	ctx, cancel := context.WithTimeout(ctx, DiscoveryInspectionTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		consume(Report{}, err)
+		return
+	}
+	databaseInfo, err := os.Lstat(paths.Database)
+	if os.IsNotExist(err) {
+		report, inspectErr := inspect(ctx, paths, options, nil, false)
+		consume(report, errors.Join(inspectErr, ctx.Err()))
+		return
+	}
+	if err != nil {
+		consume(Report{}, errors.New("source inventory unavailable"))
+		return
+	}
+	if databaseInfo.Size() == 0 {
+		consume(Report{}, errors.New("empty database requires host intervention"))
+		return
+	}
+
+	lock, err := processlock.AcquireExisting(paths.Database)
+	if err != nil && !errors.Is(err, processlock.ErrNoExistingLock) {
+		consume(Report{}, errors.New("source ownership unavailable"))
+		return
+	}
+	if lock != nil {
+		defer lock.Close()
+	}
+
+	// Public discovery has one existing-database path: a bounded rollback-mode
+	// SQLite read transaction. Do not inherit operator assertions or pass the
+	// Manager fence into the broader diagnostic/recovery implementation.
+	options.SourceStopped = false
+	options.readOnlySnapshot = true
+	report, inspectErr := inspect(ctx, paths, options, nil, false)
+	if lock != nil {
+		inspectErr = errors.Join(inspectErr, lock.Validate())
+	}
+	consume(report, errors.Join(inspectErr, ctx.Err()))
+}
+
 func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options) (report Report, err error) {
 	// Diagnostic projection only. Startup admission uses inspect directly and
 	// never consumes the planned target as source identity or authority.
@@ -99,7 +151,11 @@ func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options)
 // createdLock is only set for the fenced recheck after an initially admitted
 // source had no ownership marker. Diagnostic callers never ignore an old lock.
 func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options, lock *processlock.Lock, createdLock bool) (report Report, err error) {
-	observed, err := sqlite.InspectLegacySource(ctx, paths, sqlite.InspectionOptions{SourceStopped: options.SourceStopped, ManagerLock: lock})
+	observed, err := sqlite.InspectLegacySource(ctx, paths, sqlite.InspectionOptions{
+		SourceStopped: options.SourceStopped,
+		ManagerLock: lock,
+		ReadOnlySnapshot: options.readOnlySnapshot,
+	})
 	report = Report{SourceKind: "unknown", Observed: observed, Unknown: []string{
 		"exact-source-release", "compatibility-profile", "verified-backup", "full-database-integrity", "archive-content",
 	}, Blocked: append([]string{}, observed.Issues...)}
@@ -128,6 +184,13 @@ func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options,
 				report.SourceKind = "partial-source"
 				report.Blocked = append(report.Blocked, "database-missing-with-source-artifacts")
 			}
+		}
+		if report.SourceKind == "fresh" {
+			// A Fresh projection carries an explicit no-v1-product witness. The
+			// discovery layer must not infer Fresh from a missing SQLite file
+			// without this bounded administrator-state observation.
+			observed.BootstrapState = sqlite.BootstrapStateInspection{Valid: true, AdminCredential: "uninitialized"}
+			report.Observed = observed
 		}
 		return report, nil
 	}

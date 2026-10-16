@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
+	routingdomain "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
 	accountactioncontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/accountaction"
 	apikeyaliascontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/apikeyalias"
 	automationcontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/automation"
@@ -63,7 +64,7 @@ func New(appCtx *app.Context) http.Handler {
 	mux.HandleFunc("/management.html", panelHandler.ManagementHTML)
 	mux.HandleFunc("/", rootHandler(appCtx, usageHandler, modelPriceHandler, apiKeyAliasHandler, accountActionHandler, codexInspectionHandler, dashboardHandler, monitoringHandler, quotaSnapshotHandler, managerConfigHandler, proxyHandler))
 
-	return middleware.Recovery(middleware.RequestLogger(mux))
+	return middleware.Recovery(middleware.RequestLogger(routingdomain.ProtectFixedDiscovery(mux, routingdomain.DiscoveryHandler{})))
 }
 
 func rootHandler(

@@ -1,0 +1,84 @@
+{
+  "$schema": "./route-owners.schema.json",
+  "schemaVersion": 1,
+  "contractId": "cpamp-v2-phase4-01-routing-ownership-v1",
+  "fixedBootstrapDiscoveryPath": "/.well-known/cpamp-bootstrap",
+  "canonicalPublicApiV2Suffix": "/api/v2",
+  "publicApiActivation": "verified_effective_snapshot_only",
+  "snapshotStates": [
+    "verified_effective",
+    "desired_only",
+    "stale",
+    "unknown",
+    "unavailable"
+  ],
+  "routes": [
+    {
+      "id": "bootstrap_discovery",
+      "match": "exact_fixed_path",
+      "owner": "manager",
+      "activeMethods": ["GET", "OPTIONS"],
+      "unsupportedMethods": "manager_local_rejection",
+      "completedBehavior": "generic_404",
+      "gatewayFallback": "deny"
+    },
+    {
+      "id": "public_api_v2_namespace",
+      "match": "verified_effective_segment_prefix",
+      "owner": "manager",
+      "authority": "verified_effective_snapshot_only",
+      "noAuthorityBehavior": "inactive_fail_closed",
+      "gatewayFallback": "deny"
+    },
+    {
+      "id": "retired_control_namespace",
+      "match": "previous_verified_segment_prefix",
+      "owner": "manager",
+      "behavior": "deny_only",
+      "reuseBehavior": "collision_fail_closed",
+      "gatewayFallback": "deny"
+    },
+    {
+      "id": "legacy_manager_routes",
+      "match": "existing_fixed_or_segment_prefix",
+      "owner": "manager",
+      "compatibility": "preserve_existing_setup_management_health_status",
+      "gatewayFallback": "deny"
+    },
+    {
+      "id": "gateway_model_protocol",
+      "match": "existing_data_plane_protocol",
+      "owner": "gateway",
+      "credentialHeaders": "do_not_classify",
+      "gatewayFallback": "preserve"
+    },
+    {
+      "id": "unknown_non_control_path",
+      "match": "outside_control_namespaces",
+      "owner": "gateway",
+      "credentialHeaders": "do_not_classify",
+      "gatewayFallback": "preserve"
+    }
+  ],
+  "normalization": {
+    "acceptedRequestPath": "decoded_canonical_path_only",
+    "reject": [
+      "encoded_slash",
+      "double_encoded_slash",
+      "encoded_dot",
+      "double_encoded_dot",
+      "backslash",
+      "duplicate_slash",
+      "dot_segment",
+      "trailing_slash_alias",
+      "segment_prefix_confusion"
+    ],
+    "credentialRouting": "route_ownership_precedes_credentials"
+  },
+  "retiredNamespace": {
+    "persistence": "none_in_phase4_01",
+    "history": "bounded_representation_only",
+    "managerCredentials": "never_forward",
+    "modelTraffic": "never_forward"
+  }
+}

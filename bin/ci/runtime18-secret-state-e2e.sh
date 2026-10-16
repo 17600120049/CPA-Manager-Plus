@@ -5,9 +5,11 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 project="${CPAMP_RUNTIME18_PROJECT:-cpamp-runtime18-${RANDOM}-$$}"
 public_port="${CPAMP_RUNTIME18_PORT:-31317}"
 skip_build="${CPAMP_RUNTIME18_SKIP_BUILD:-false}"
+initializer_name="${project}-cpamp-manager-init"
 compose=(docker compose --project-directory "${repo_root}" -p "${project}")
 
 cleanup() {
+  docker rm -f "${initializer_name}" >/dev/null 2>&1 || true
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 }
 trap cleanup EXIT HUP INT TERM
@@ -284,6 +286,12 @@ export CPAMP_PUBLIC_PORT="${public_port}"
 if [ "${skip_build}" != "true" ]; then
   "${compose[@]}" build
 fi
+# This Runtime E2E starts from an initialized Manager volume. Fresh read-only
+# discovery is covered by Runtime12; use the existing explicit initializer here.
+"${compose[@]}" run -d --no-deps --name "${initializer_name}" cpamp-manager initialize >/dev/null
+retry 90 docker exec "${initializer_name}" wget -qO- http://127.0.0.1:18317/health >/dev/null
+docker stop -t 20 "${initializer_name}" >/dev/null
+docker rm "${initializer_name}" >/dev/null
 "${compose[@]}" up -d
 public_origin="http://127.0.0.1:${public_port}"
 retry 120 curl --fail --silent "${public_origin}/health" >/dev/null

@@ -15,7 +15,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 )
 
 // Empty optional locations mean not-inspected, never missing.
@@ -23,6 +25,10 @@ type InspectionPaths struct{ Database, Config, DataKey, Archives string }
 type InspectionOptions struct {
 	// Operator assertion that ALL writers have stopped; stat/hash is no fence.
 	SourceStopped bool
+	// ReadOnlySnapshot permits a bounded rollback-journal SQLite read
+	// transaction for Phase4-01 discovery. It never authorizes writable
+	// startup and deliberately rejects WAL-mode sources as recovery-owned.
+	ReadOnlySnapshot bool
 	// Retained by the caller through native startup, without release/reacquire.
 	// Only cooperating single-Manager writers are fenced; arbitrary writers
 	// must be stopped separately before relying on the inspection.
@@ -58,7 +64,23 @@ type LegacyInspection struct {
 	QuotaSnapshotLifecycleV1 string                                  `json:"quotaSnapshotLifecycleV1"`
 	ConnectionStorageVersion *int                                    `json:"connectionStorageVersion,omitempty"`
 	ConnectionStorage        PersistedCPAConnectionStorageInspection `json:"connectionStorage"`
-	Issues                   []string                                `json:"issues"`
+	// BootstrapState is a bounded read-only witness used by the temporary
+	// discovery surface. It is deliberately not a public BootstrapState
+	// projection and must never be treated as writable startup authority.
+	BootstrapState BootstrapStateInspection `json:"bootstrapState"`
+	Issues         []string                 `json:"issues"`
+}
+
+// BootstrapStateInspection contains only the administrator/product facts
+// needed to keep discovery classification separate from the legacy persisted
+// BootstrapState contract. It never carries the legacy status string.
+type BootstrapStateInspection struct {
+	Present                bool   `json:"present"`
+	Valid                  bool   `json:"valid"`
+	AdminCredentialPresent bool   `json:"adminCredentialPresent"`
+	AdminCredential        string `json:"adminCredential"`
+	ProjectInitialized     bool   `json:"projectInitialized"`
+	HistoricalData         bool   `json:"historicalData"`
 }
 
 // Restrict work to known tables rather than exposing arbitrary source names.
@@ -97,10 +119,12 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		result.Issues = append(result.Issues, "inventory-failed")
 		return result, errors.New("source inventory failed")
 	}
-	// Deferred after db.Close: source comparisons cover both open and closed states.
+	// Deferred after db.Close: every accepted Phase4-01 read snapshot is
+	// rollback-mode, so the complete source inventory must remain stable.
 	defer func() {
 		after, checkErr := inspectFiles(paths)
-		if checkErr != nil || !sameInspectionFiles(result.Files, after) {
+		stable := checkErr == nil && sameInspectionFiles(result.Files, after)
+		if !stable {
 			result.Consistency = "changed"
 			result.Issues = append(result.Issues, "source-changed")
 			err = errors.Join(err, errors.New("source changed during inspection"))
@@ -128,7 +152,8 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 			return result, errors.New("manager ownership fence unavailable")
 		}
 	}
-	if !options.SourceStopped && !locked {
+	readOnlySnapshot := options.ReadOnlySnapshot && !options.SourceStopped && !locked
+	if !options.SourceStopped && !locked && !readOnlySnapshot {
 		result.Issues = append(result.Issues, "source-quiescence-unproven")
 		return result, nil
 	}
@@ -137,8 +162,14 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		result.Issues = append(result.Issues, "journal-recovery-required")
 		return result, nil
 	}
+	if readOnlySnapshot {
+		if err := validateReadOnlySnapshotSource(paths.Database, result.Files); err != nil {
+			result.Issues = append(result.Issues, "sqlite-snapshot-mode-unavailable")
+			return result, err
+		}
+	}
 	databasePath, immutable := paths.Database, true
-	if wal.State != "missing" && wal.Size > 0 {
+	if wal.State != "missing" && wal.Size > 0 && !readOnlySnapshot {
 		if !locked {
 			result.Issues = append(result.Issues, "wal-consistency-unproven")
 			return result, nil
@@ -173,6 +204,11 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		result.Consistency = "manager-fenced-recovery-copy"
 	} else if locked {
 		result.Consistency = "manager-fenced-cold"
+	} else if readOnlySnapshot {
+		// A real SQLite read transaction is the consistency boundary. Do not use
+		// immutable=1 here: WAL readers must participate in normal WAL locking.
+		immutable = false
+		result.Consistency = "sqlite-read-snapshot"
 	} else {
 		result.Consistency = "operator-asserted-cold"
 	}
@@ -187,7 +223,23 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 			err = errors.Join(err, errors.New("SQLite inspection close failed"))
 		}
 	}()
-	if readErr := inspectSchema(ctx, db, &result); readErr != nil {
+	var reader inspectionQueryer = db
+	var readTx *sql.Tx
+	if readOnlySnapshot {
+		// The connection is already mode=ro + query_only; a plain transaction
+		// gives one SQLite snapshot without depending on driver TxOptions support.
+		readTx, err = db.BeginTx(ctx, nil)
+		if err != nil {
+			return result, errors.New("SQLite read transaction unavailable")
+		}
+		reader = readTx
+		defer func() {
+			if readTx != nil {
+				_ = readTx.Rollback()
+			}
+		}()
+	}
+	if readErr := inspectSchema(ctx, reader, &result); readErr != nil {
 		result.SQLite = "failed"
 		result.Issues = append(result.Issues, "sqlite-inspection-failed")
 		if ctx.Err() != nil {
@@ -196,19 +248,25 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		return result, errors.New("SQLite source could not be inspected")
 	}
 	result.SQLite = "observed"
-	storage, storageErr := inspectConnectionStorage(ctx, db, paths.Database)
+	storage, storageErr := inspectConnectionStorage(ctx, reader, paths.Database)
 	if storageErr != nil {
 		result.Issues = append(result.Issues, "connection-storage-inspection-failed")
 		return result, errors.New("persisted connection storage could not be inspected")
 	}
 	result.ConnectionStorage = storage
-	if readErr := inspectHistory(ctx, db, &result); readErr != nil {
+	if readErr := inspectHistory(ctx, reader, &result); readErr != nil {
 		result.Issues = append(result.Issues, "history-inspection-failed")
 		return result, errors.New("source history could not be inspected")
 	}
 	during, checkErr := inspectFiles(paths)
 	if checkErr != nil || !sameInspectionFiles(result.Files, during) {
 		return result, errors.New("source changed while SQLite was open")
+	}
+	if readTx != nil {
+		if commitErr := readTx.Commit(); commitErr != nil {
+			return result, errors.New("SQLite read transaction could not finish")
+		}
+		readTx = nil
 	}
 	if locked {
 		if err := options.ManagerLock.Validate(); err != nil {
@@ -218,7 +276,12 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 	return result, nil
 }
 
-func inspectSchema(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+type inspectionQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func inspectSchema(ctx context.Context, db inspectionQueryer, result *LegacyInspection) error {
 	for _, name := range inspectionTableNames {
 		var exists int
 		if err := db.QueryRowContext(ctx, `select exists(select 1 from sqlite_schema where type = 'table' and name = ?)`, name).Scan(&exists); err != nil {
@@ -282,25 +345,14 @@ func inspectionHasColumns(result *LegacyInspection, name string, columns ...stri
 	return false
 }
 
-func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+func inspectHistory(ctx context.Context, db inspectionQueryer, result *LegacyInspection) error {
 	result.HistoryRowsObserved = make(map[string]int)
 	if err := inspectRequiredLegacyMigrations(ctx, db, result); err != nil {
 		return err
 	}
 	if inspectionHasColumns(result, "settings", "key", "value") {
-		var raw string
-		err := db.QueryRowContext(ctx, `select value from settings where key = 'bootstrap_state_v1'`).Scan(&raw)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if err := inspectBootstrapState(ctx, db, result); err != nil {
 			return err
-		}
-		if err == nil {
-			var state struct {
-				Version int `json:"connectionStorageMigrationVersion"`
-			}
-			if err := json.Unmarshal([]byte(raw), &state); err != nil {
-				return errors.New("invalid bootstrap state")
-			}
-			result.ConnectionStorageVersion = &state.Version
 		}
 	}
 	for _, query := range []struct{ key, table string }{
@@ -362,9 +414,70 @@ func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) e
 	return nil
 }
 
+// inspectBootstrapState intentionally avoids exposing the legacy Status value.
+// The persisted state is only a bounded witness for administrator readiness and
+// historical product evidence; the new domain classifier still decides the
+// public mode and never maps Status directly.
+func inspectBootstrapState(ctx context.Context, db inspectionQueryer, result *LegacyInspection) error {
+	rows, err := db.QueryContext(ctx, `select key, value from settings where key in ('bootstrap_state_v1', 'admin_credential_v1')`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var bootstrapRaw, adminRaw string
+	var bootstrapFound, adminFound bool
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return err
+		}
+		switch key {
+		case "bootstrap_state_v1":
+			bootstrapFound, bootstrapRaw = true, value
+		case "admin_credential_v1":
+			adminFound, adminRaw = true, value
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	result.BootstrapState = BootstrapStateInspection{Present: bootstrapFound, Valid: true, AdminCredentialPresent: adminFound, AdminCredential: "uninitialized"}
+	if bootstrapFound {
+		var state struct {
+			ConnectionStorageMigrationVersion int  `json:"connectionStorageMigrationVersion"`
+			AdminReady                        bool `json:"adminReady"`
+			ProjectInitialized                bool `json:"projectInitialized"`
+			HasHistoricalData                 bool `json:"hasHistoricalData"`
+		}
+		if err := json.Unmarshal([]byte(bootstrapRaw), &state); err != nil {
+			result.BootstrapState.Valid = false
+			return errors.New("invalid bootstrap state")
+		}
+		result.ConnectionStorageVersion = &state.ConnectionStorageMigrationVersion
+		result.BootstrapState.ProjectInitialized = state.ProjectInitialized
+		result.BootstrapState.HistoricalData = state.HasHistoricalData
+		// An existing state that claims administrator readiness without a
+		// verifiable credential is an unsafe observation, not Fresh.
+		if state.AdminReady && !adminFound {
+			result.BootstrapState.AdminCredential = "unverifiable"
+		}
+	}
+	if adminFound {
+		var credential model.AdminCredential
+		if err := json.Unmarshal([]byte(adminRaw), &credential); err != nil || !security.IsValidAdminCredential(credential) {
+			// A stable source with an unusable credential is positive Recovery
+			// evidence, not an unreadable source or an initialized administrator.
+			result.BootstrapState.AdminCredential = "unverifiable"
+			return nil
+		}
+		result.BootstrapState.AdminCredential = "initialized"
+	}
+	return nil
+}
+
 // Observe only exact required migrations' bounded, allowlisted states. A
 // table's existence or an aggregate count cannot prove migration completion.
-func inspectRequiredLegacyMigrations(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+func inspectRequiredLegacyMigrations(ctx context.Context, db inspectionQueryer, result *LegacyInspection) error {
 	var err error
 	result.CacheAccountingV2, err = inspectRequiredLegacyMigration(ctx, db, result, "usage_cache_accounting_v2")
 	if err != nil {
@@ -376,7 +489,7 @@ func inspectRequiredLegacyMigrations(ctx context.Context, db *sql.DB, result *Le
 
 // These two required v1 migrations have separate historical state machines.
 // Missing/ambiguous rows remain unknown; completed is only a row observation.
-func inspectRequiredLegacyMigration(ctx context.Context, db *sql.DB, result *LegacyInspection, name string) (string, error) {
+func inspectRequiredLegacyMigration(ctx context.Context, db inspectionQueryer, result *LegacyInspection, name string) (string, error) {
 	if !inspectionHasColumns(result, "usage_data_migrations", "name", "status") {
 		return "not-inspected", nil
 	}
@@ -474,6 +587,31 @@ func SameInspectionSource(before, after LegacyInspection) bool {
 		return false
 	}
 	return sameInspectionFiles(before.Files[:7], after.Files[:7])
+}
+
+func validateReadOnlySnapshotSource(databasePath string, files []InspectionFile) error {
+	if len(files) < 4 {
+		return errors.New("SQLite source inventory incomplete")
+	}
+	file, err := os.Open(databasePath)
+	if err != nil {
+		return errors.New("SQLite header unavailable")
+	}
+	defer file.Close()
+	header := make([]byte, 20)
+	if _, err := io.ReadFull(file, header); err != nil {
+		return errors.New("SQLite header unavailable")
+	}
+	if string(header[:16]) != "SQLite format 3\x00" {
+		return errors.New("SQLite header invalid")
+	}
+	if header[18] != 1 || header[19] != 1 {
+		return errors.New("WAL or unsupported journal mode requires later recovery ownership")
+	}
+	if files[1].State == "present" && files[1].Size > 0 {
+		return errors.New("rollback source has unexpected WAL content")
+	}
+	return nil
 }
 
 func inspectionDataSourceName(path string, immutable bool) string {
@@ -601,8 +739,6 @@ func copyInspectionFile(ctx context.Context, source, destination string) error {
 	_, copyErr := io.Copy(output, &inspectionContextReader{ctx: ctx, reader: input})
 	closeErr := output.Close()
 	if copyErr != nil || closeErr != nil {
-		// Keep cancellation identifiable without exposing source paths or OS
-		// errors through the inspection report.
 		return errors.Join(errors.New("inspection copy failed"), ctx.Err())
 	}
 	return nil

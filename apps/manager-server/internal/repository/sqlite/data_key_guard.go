@@ -87,7 +87,7 @@ func InspectPersistedCPAConnectionStorage(ctx context.Context, databasePath stri
 	return inspectConnectionStorage(ctx, db, databasePath)
 }
 
-func inspectConnectionStorage(ctx context.Context, db *sql.DB, databasePath string) (PersistedCPAConnectionStorageInspection, error) {
+func inspectConnectionStorage(ctx context.Context, db inspectionQueryer, databasePath string) (PersistedCPAConnectionStorageInspection, error) {
 	inspection := PersistedCPAConnectionStorageInspection{}
 
 	var tableExists int

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 )
 
 func TestAdminCredentialVerifiesOnlyAdminKey(t *testing.T) {
@@ -35,6 +37,49 @@ func TestAdminCredentialStillAcceptsLegacyAdminKeyPrefix(t *testing.T) {
 	}
 	if !VerifyAdminKey(credential, adminKey) {
 		t.Fatal("legacy admin key did not verify")
+	}
+}
+
+func TestAdminCredentialStructureMatchesAuthentication(t *testing.T) {
+	const key = "cpamp_structure_test"
+	current, err := NewAdminCredential(key, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		change func(*model.AdminCredential)
+		valid  bool
+	}{
+		{"current", func(*model.AdminCredential) {}, true},
+		{"legacy zero iterations", func(c *model.AdminCredential) { c.Iterations = 0 }, true},
+		{"legacy negative iterations", func(c *model.AdminCredential) { c.Iterations = -1 }, true},
+		{"legacy PBKDF2", func(c *model.AdminCredential) {
+			c.Iterations = 1000
+			salt, _ := base64.RawStdEncoding.DecodeString(c.Salt)
+			digest, err := hashAdminKey(key, salt, c.Iterations)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.KeyHash = base64.RawStdEncoding.EncodeToString(digest)
+		}, true},
+		{"unsupported version", func(c *model.AdminCredential) { c.Version = 2 }, false},
+		{"missing version", func(c *model.AdminCredential) { c.Version = 0 }, false},
+		{"empty salt", func(c *model.AdminCredential) { c.Salt = "" }, false},
+		{"invalid salt", func(c *model.AdminCredential) { c.Salt = "secret!" }, false},
+		{"whitespace salt", func(c *model.AdminCredential) { c.Salt = " " + c.Salt }, false},
+		{"short digest", func(c *model.AdminCredential) { c.KeyHash = "a2V5" }, false},
+		{"long digest", func(c *model.AdminCredential) { c.KeyHash = base64.RawStdEncoding.EncodeToString(make([]byte, 33)) }, false},
+		{"invalid digest", func(c *model.AdminCredential) { c.KeyHash = "secret!" }, false},
+		{"whitespace digest", func(c *model.AdminCredential) { c.KeyHash += " " }, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			credential := current
+			test.change(&credential)
+			if IsValidAdminCredential(credential) != test.valid || VerifyAdminKey(credential, key) != test.valid {
+				t.Fatalf("structural/real authentication disagreement; want valid=%v", test.valid)
+			}
+		})
 	}
 }
 

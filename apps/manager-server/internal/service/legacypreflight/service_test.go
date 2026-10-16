@@ -48,6 +48,231 @@ func fixturePaths(t *testing.T) sqlite.InspectionPaths {
 	return paths
 }
 
+func TestFencedInspectionRetainsOwnershipThroughConsumerAndReleasesAfterward(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := processlock.Acquire(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := marker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceState(t, filepath.Dir(paths.Database))
+	called := false
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		called = true
+		if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "sqlite-read-snapshot" {
+			t.Fatalf("fenced inspection: kind=%s consistency=%s err=%v", report.SourceKind, report.Observed.Consistency, err)
+		}
+		other, err := processlock.AcquireExisting(paths.Database)
+		if other != nil {
+			_ = other.Close()
+		}
+		if !errors.Is(err, processlock.ErrLocked) {
+			t.Fatalf("consumer lost its fence: %v", err)
+		}
+	})
+	if !called {
+		t.Fatal("observation was not consumed")
+	}
+	other, err := processlock.AcquireExisting(paths.Database)
+	if err != nil {
+		t.Fatalf("consumer retained the fence after returning: %v", err)
+	}
+	if err := other.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+		t.Fatal("request-scoped inspection modified the source")
+	}
+}
+
+func TestFencedInspectionObservesRollbackLegacyWithoutPersistentMarker(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`pragma journal_mode = delete; create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceState(t, filepath.Dir(paths.Database))
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "sqlite-read-snapshot" {
+			t.Fatalf("rollback legacy discovery: kind=%s consistency=%s err=%v", report.SourceKind, report.Observed.Consistency, err)
+		}
+	})
+	if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
+		t.Fatalf("discovery created Manager marker: %v", err)
+	}
+	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+		t.Fatal("rollback read-only discovery modified source")
+	}
+}
+
+func TestFencedInspectionRejectsCleanWALWithoutCoordinationSidecars(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`pragma journal_mode = wal; create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, sidecar := range []string{paths.Database + "-wal", paths.Database + "-shm"} {
+		if err := os.Remove(sidecar); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	before := sourceState(t, filepath.Dir(paths.Database))
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		if err == nil || report.SourceKind != "unknown" || report.UpgradeAuthorized {
+			t.Fatalf("clean WAL without coordination did not fail closed: kind=%s authorized=%v err=%v", report.SourceKind, report.UpgradeAuthorized, err)
+		}
+	})
+	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+		t.Fatal("failed WAL snapshot attempt modified source")
+	}
+}
+
+func TestFencedInspectionRejectsActiveWALAsRecoveryOwned(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+	if _, err := db.Exec(`pragma journal_mode = wal; pragma wal_autocheckpoint = 0; create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	walBefore, err := os.ReadFile(paths.Database + "-wal")
+	if err != nil || len(walBefore) == 0 {
+		t.Fatalf("WAL fixture unavailable: len=%d err=%v", len(walBefore), err)
+	}
+	dbBefore, err := os.ReadFile(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		if err == nil || report.SourceKind != "unknown" || report.UpgradeAuthorized {
+			t.Fatalf("active WAL was not kept recovery-owned: kind=%s authorized=%v err=%v", report.SourceKind, report.UpgradeAuthorized, err)
+		}
+	})
+	if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
+		t.Fatalf("WAL rejection created Manager marker: %v", err)
+	}
+	dbAfter, err := os.ReadFile(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	walAfter, err := os.ReadFile(paths.Database + "-wal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dbBefore, dbAfter) || !reflect.DeepEqual(walBefore, walAfter) {
+		t.Fatal("WAL rejection modified database or WAL content")
+	}
+}
+
+func TestFencedInspectionAllowsFreshInventoryAndRejectsBusyOrCanceledFence(t *testing.T) {
+	freshPaths := fixturePaths(t)
+	WithFencedInspection(context.Background(), freshPaths, Options{}, func(report Report, err error) {
+		if err != nil || report.SourceKind != "fresh" {
+			t.Fatalf("fresh public inspection: kind=%s err=%v", report.SourceKind, err)
+		}
+	})
+	for _, kind := range []string{"busy", "canceled"} {
+		t.Run(kind, func(t *testing.T) {
+			paths := fixturePaths(t)
+			if kind == "busy" {
+				db, err := sql.Open("sqlite", paths.Database)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+				lock, err := processlock.Acquire(paths.Database)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer lock.Close()
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if kind == "canceled" {
+				cancel()
+			}
+			before := sourceState(t, filepath.Dir(paths.Database))
+			calls := 0
+			WithFencedInspection(ctx, paths, Options{SourceStopped: true}, func(report Report, err error) {
+				calls++
+				if err == nil || report.SourceKind != "" {
+					t.Fatalf("unfenced request received evidence: kind=%s err=%v", report.SourceKind, err)
+				}
+			})
+			if calls != 1 || !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+				t.Fatal("unavailable inspection changed the source or skipped its consumer")
+			}
+		})
+	}
+}
+
+func TestFencedInspectionLeavesWALRecoveryToLaterOwner(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.Database+"-wal", []byte("requires-recovery"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := processlock.Acquire(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := marker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceState(t, filepath.Dir(paths.Database))
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		if err == nil || report.SourceKind != "unknown" || report.UpgradeAuthorized {
+			t.Fatalf("public WAL inspection did not fail closed: kind=%s authorized=%v err=%v", report.SourceKind, report.UpgradeAuthorized, err)
+		}
+	})
+	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+		t.Fatal("public WAL rejection modified the source")
+	}
+}
+
 // Cancel only the fenced second inspection, after exclusive marker creation.
 type cancelFencedInspection struct {
 	context.Context

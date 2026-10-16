@@ -304,6 +304,131 @@ func TestHandlerClassifiesDecodedControlPath(t *testing.T) {
 	}
 }
 
+func TestHandlerRetiredAndAmbiguousControlNeverFallThroughToGateway(t *testing.T) {
+	managerRequests := make(chan *http.Request, 16)
+	gatewayRequests := make(chan *http.Request, 16)
+	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		managerRequests <- r
+		if strings.HasPrefix(r.URL.Path, FixedBootstrapDiscoveryPath) {
+			if r.URL.Path != FixedBootstrapDiscoveryPath {
+				http.NotFound(w, r)
+				return
+			}
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer manager.Close()
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gatewayRequests <- r
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer gateway.Close()
+	managerTarget, err := url.Parse(manager.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gatewayTarget, err := url.Parse(gateway.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	classifier := NewOwnershipClassifier(
+		ControlMatcherFunc(func(value string) bool { return value == "/control" || strings.HasPrefix(value, "/control/") }),
+		ControlMatcherFunc(func(value string) bool { return value == "/retired" || strings.HasPrefix(value, "/retired/") }),
+	)
+	proxy := httptest.NewServer(NewHandler(classifier, managerTarget, gatewayTarget, log.New(io.Discard, "", 0)))
+	defer proxy.Close()
+
+	for _, test := range []struct {
+		target string
+		want   int
+	}{
+		{target: "/retired/control", want: http.StatusNotFound},
+		{target: "/retired%2fcontrol", want: http.StatusNotFound},
+		{target: "/control/%252e%252e/control", want: http.StatusNoContent},
+		{target: FixedBootstrapDiscoveryPath, want: http.StatusMethodNotAllowed},
+		{target: FixedBootstrapDiscoveryPath + "/", want: http.StatusNotFound},
+	} {
+		req, err := http.NewRequest(http.MethodPost, proxy.URL+test.target, strings.NewReader("payload"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer manager-secret")
+		req.Header.Set("X-CPA-Management-Key", "cpa-looking-secret")
+		response, err := proxy.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != test.want {
+			t.Fatalf("%s status = %d, want %d", test.target, response.StatusCode, test.want)
+		}
+	}
+
+	for range 3 {
+		request := <-managerRequests
+		if request.Header.Get("Authorization") != "Bearer manager-secret" || request.Header.Get("X-CPA-Management-Key") != "cpa-looking-secret" {
+			t.Fatalf("Manager lost credential headers for owned request: %v", request.Header)
+		}
+	}
+	select {
+	case request := <-gatewayRequests:
+		t.Fatalf("owned request reached Gateway: %s", request.URL.Path)
+	default:
+	}
+}
+
+func TestHandlerKeepsNormalModelTrafficGatewayOwnedWithCredentials(t *testing.T) {
+	managerHits := make(chan struct{}, 1)
+	gatewayHits := make(chan *http.Request, 1)
+	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		managerHits <- struct{}{}
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer manager.Close()
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gatewayHits <- r
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer gateway.Close()
+	managerTarget, _ := url.Parse(manager.URL)
+	gatewayTarget, _ := url.Parse(gateway.URL)
+	classifier := NewOwnershipClassifier(
+		ControlMatcherFunc(func(value string) bool { return value == "/control" || strings.HasPrefix(value, "/control/") }),
+		ControlMatcherFunc(func(value string) bool { return value == "/retired" || strings.HasPrefix(value, "/retired/") }),
+	)
+	proxy := httptest.NewServer(NewHandler(classifier, managerTarget, gatewayTarget, log.New(io.Discard, "", 0)))
+	defer proxy.Close()
+	req, err := http.NewRequest(http.MethodPost, proxy.URL+"/v1/responses", strings.NewReader("model-payload"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer provider-secret")
+	req.Header.Set("X-CPA-Management-Key", "provider-header-looking")
+	response, err := proxy.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("model request status = %d", response.StatusCode)
+	}
+	select {
+	case request := <-gatewayHits:
+		if request.Header.Get("Authorization") != "Bearer provider-secret" {
+			t.Fatalf("Gateway authorization changed: %q", request.Header.Get("Authorization"))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("model request did not reach Gateway")
+	}
+	select {
+	case <-managerHits:
+		t.Fatal("normal model request reached Manager")
+	default:
+	}
+}
+
 func newTestProxy(t *testing.T, gatewayURL string) *httptest.Server {
 	t.Helper()
 	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

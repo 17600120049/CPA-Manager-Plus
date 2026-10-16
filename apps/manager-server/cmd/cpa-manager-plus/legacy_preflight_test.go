@@ -6,7 +6,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,9 +19,11 @@ import (
 	"testing"
 	"time"
 
+	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 )
 
@@ -72,6 +77,132 @@ func writeOwnedProvisioningConfig(t *testing.T, dir string) {
 	}
 }
 
+type fenceCheckingDiscoveryWriter struct {
+	*httptest.ResponseRecorder
+	check func()
+}
+
+func (w fenceCheckingDiscoveryWriter) WriteHeader(status int) {
+	w.check()
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func TestReadOnlyDiscoveryRetainsFenceThroughResponseAndRevokesBeforeWrites(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := processlock.Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := marker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	handler := newStartupHTTPHandler(bootstrapdiscovery.Unavailable())
+	handler.EnableReadOnlyDiscovery(legacypreflight.DefaultPaths(path), legacypreflight.Options{}, time.Second)
+	response := httptest.NewRecorder()
+	checked := false
+	handler.ServeHTTP(fenceCheckingDiscoveryWriter{response, func() {
+		checked = true
+		other, err := processlock.AcquireExisting(path)
+		if other != nil {
+			_ = other.Close()
+		}
+		if !errors.Is(err, processlock.ErrLocked) {
+			t.Fatalf("discovery emitted its response without a fence: %v", err)
+		}
+	}}, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+	if !checked || response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"mode":"recovery"`) {
+		t.Fatalf("fenced response status=%d body=%s", response.Code, response.Body.String())
+	}
+	operatorLock, err := processlock.AcquireExisting(path)
+	if err != nil {
+		t.Fatalf("response retained its fence: %v", err)
+	}
+	if err := operatorLock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil).WithContext(canceled))
+	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) {
+		t.Fatalf("canceled request reused evidence: status=%d body=%s", response.Code, response.Body.String())
+	}
+	handler.BeginWritableStartup()
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) {
+		t.Fatalf("writable startup retained read-only authority: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestFreshNoConfigNormalStartup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	environment := ownedPreflightEnvironment(dir, path)
+	for i, entry := range environment {
+		if strings.HasPrefix(entry, "CPA_MANAGER_CONFIG=") {
+			environment[i] = "CPA_MANAGER_CONFIG="
+		}
+	}
+	for range 2 {
+		func() {
+			process := startManagerServerProcessWithEnvironment(t, environment)
+			defer process.stop(t)
+			deadline := time.Now().Add(5 * time.Second)
+			status, body := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+			for status == http.StatusServiceUnavailable && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+				status, body = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+			}
+			if status != http.StatusOK || !strings.Contains(body, `"mode":"fresh"`) || !strings.Contains(body, `"status":"fresh_claim_required"`) {
+				t.Fatalf("real Fresh startup did not expose claim entry: %d %s", status, body)
+			}
+			before := managerSourceSnapshot(t, dir)
+			for range 8 {
+				status, body = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+				if status != http.StatusOK || !strings.Contains(body, `"mode":"fresh"`) {
+					t.Fatalf("Fresh discovery was only transient: %d %s", status, body)
+				}
+			}
+			for _, endpoint := range []struct {
+				method, path string
+				status       int
+			}{
+				{http.MethodGet, "/health", http.StatusServiceUnavailable},
+				{http.MethodPost, "/usage-service/config", http.StatusNotFound},
+				{http.MethodPost, bootstrapdiscovery.Path, http.StatusMethodNotAllowed},
+			} {
+				status, _ := waitForManagerResponse(t, process.addr, endpoint.method, endpoint.path)
+				if status != endpoint.status {
+					t.Fatalf("Fresh %s %s = %d", endpoint.method, endpoint.path, status)
+				}
+			}
+			if !reflect.DeepEqual(before, managerSourceSnapshot(t, dir)) {
+				t.Fatal("Fresh HTTP requests changed the source")
+			}
+			for _, file := range []string{path, filepath.Join(dir, "data.key"), filepath.Join(dir, "config.json"), path + ".manager.lock"} {
+				if _, err := os.Lstat(file); !os.IsNotExist(err) {
+					t.Fatalf("Fresh startup created product or coordination state: %s err=%v", file, err)
+				}
+			}
+		}()
+		if _, err := os.Lstat(path + ".manager.lock"); !os.IsNotExist(err) {
+			t.Fatalf("Fresh shutdown retained a process marker: %v", err)
+		}
+	}
+}
+
 func writeHistoricalProfileSource(t *testing.T, path, ref string) {
 	t.Helper()
 	data, err := os.ReadFile("../../internal/service/legacypreflight/testdata/legacy-profiles/schema-fixtures.json")
@@ -110,7 +241,7 @@ func writeHistoricalProfileSource(t *testing.T, path, ref string) {
 }
 
 func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
-	for _, kind := range []string{"legacy", "legacy-profile-A", "legacy-profile-B", "legacy-profile-C", "legacy-profile-partial", "unknown", "corrupt", "orphan-wal", "old-lock-only", "old-lock-initialize", "symlink-config", "old-config-only", "plain-config-only", "admin-key-config-only", "external-data-key-config-only", "recognized-config-only", "inspection-timeout", "invalid-timeout"} {
+	for _, kind := range []string{"legacy", "legacy-profile-A", "legacy-profile-B", "legacy-profile-C", "legacy-profile-partial", "unknown", "corrupt", "empty-database", "orphan-wal", "old-lock-only", "old-lock-initialize", "symlink-config", "old-config-only", "plain-config-only", "admin-key-config-only", "external-data-key-config-only", "recognized-config-only", "inspection-timeout", "invalid-timeout"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "usage.sqlite")
@@ -188,6 +319,10 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 				if err := os.WriteFile(path, []byte("owned-bad-db"), 0600); err != nil {
 					t.Fatal(err)
 				}
+			case "empty-database":
+				if err := os.WriteFile(path, nil, 0600); err != nil {
+					t.Fatal(err)
+				}
 			case "orphan-wal":
 				if err := os.WriteFile(path+"-wal", []byte("owned-orphan"), 0600); err != nil {
 					t.Fatal(err)
@@ -240,39 +375,252 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 					t.Fatal("legacy startup regression did not inspect the planned target")
 				}
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestManagerServerHelperProcess$")
-			cmd.Env = ownedPreflightEnvironment(dir, path)
+			env := ownedPreflightEnvironment(dir, path)
 			if kind == "old-lock-only" {
-				cmd.Env = append(cmd.Env, "CPA_MANAGER_CONFIG=")
-			}
-			if kind == "old-lock-initialize" {
-				cmd.Args = append(cmd.Args, "--", "initialize")
+				env = append(env, "CPA_MANAGER_CONFIG=")
 			}
 			if kind == "inspection-timeout" {
-				cmd.Env = append(cmd.Env, "CPA_MANAGER_PREFLIGHT_TIMEOUT=1ns")
+				env = append(env, "CPA_MANAGER_PREFLIGHT_TIMEOUT=1ns")
 			}
 			if kind == "invalid-timeout" {
-				cmd.Env = append(cmd.Env, "CPA_MANAGER_PREFLIGHT_TIMEOUT=0")
+				env = append(env, "CPA_MANAGER_PREFLIGHT_TIMEOUT=0")
 			}
-			output, err := cmd.CombinedOutput()
-			if err == nil || ctx.Err() != nil || strings.Contains(string(output), "listening on") {
-				t.Fatalf("unsafe startup: err=%v output=%s", err, output)
-			}
-			if kind == "symlink-config" && !strings.Contains(string(output), "config is not a regular file") {
-				t.Fatalf("config link was read before rejection: %s", output)
-			}
-			if (kind == "old-lock-only" || kind == "old-lock-initialize") && !strings.Contains(string(output), "Manager source is not proven fresh or native v2") {
-				t.Fatalf("old ownership marker did not fail at startup admission: %s", output)
-			}
-			if (kind == "inspection-timeout" || kind == "invalid-timeout") && !strings.Contains(string(output), "CPA_MANAGER_PREFLIGHT_TIMEOUT") {
-				t.Fatalf("timeout feedback missing: %s", output)
+			if kind == "invalid-timeout" || kind == "symlink-config" {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestManagerServerHelperProcess$")
+				cmd.Env = env
+				output, err := cmd.CombinedOutput()
+				if err == nil || ctx.Err() != nil || strings.Contains(string(output), "listening on") {
+					t.Fatalf("unsafe startup: err=%v output=%s", err, output)
+				}
+				if kind == "symlink-config" && !strings.Contains(string(output), "config is not a regular file") {
+					t.Fatalf("config link was read before rejection: %s", output)
+				}
+				if kind == "invalid-timeout" && !strings.Contains(string(output), "CPA_MANAGER_PREFLIGHT_TIMEOUT") {
+					t.Fatalf("timeout feedback missing: %s", output)
+				}
+			} else {
+				startupArgs := []string(nil)
+				if kind == "old-lock-initialize" {
+					startupArgs = []string{"initialize"}
+				}
+				process := startManagerServerProcessWithEnvironment(t, env, startupArgs...)
+				discoveryStatus, discoveryBody := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+				if strings.HasPrefix(kind, "legacy") {
+					// Listener binding intentionally precedes admission/evidence gathering,
+					// so unavailable is a valid transient state. Legacy acceptance requires
+					// eventual bounded read-only classification, not first-request success.
+					deadline := time.Now().Add(10 * time.Second)
+					for discoveryStatus == http.StatusServiceUnavailable && time.Now().Before(deadline) {
+						time.Sleep(10 * time.Millisecond)
+						discoveryStatus, discoveryBody = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+					}
+				}
+				if discoveryStatus != http.StatusOK && discoveryStatus != http.StatusServiceUnavailable {
+					t.Fatalf("blocked %s discovery status=%d body=%s", kind, discoveryStatus, discoveryBody)
+				}
+				if strings.HasPrefix(kind, "legacy") {
+					allowedMode := strings.Contains(discoveryBody, `"mode":"recovery"`) ||
+						strings.Contains(discoveryBody, `"mode":"unsupported_upgrade"`)
+					forbiddenMode := strings.Contains(discoveryBody, `"mode":"fresh"`) ||
+						strings.Contains(discoveryBody, `"mode":"upgrade"`) ||
+						strings.Contains(discoveryBody, `"mode":"completed"`)
+					if discoveryStatus != http.StatusOK || !allowedMode || forbiddenMode {
+						t.Fatalf("unmarked legacy %s discovery status=%d body=%s", kind, discoveryStatus, discoveryBody)
+					}
+				}
+				if kind == "empty-database" && (discoveryStatus != http.StatusServiceUnavailable || strings.Contains(discoveryBody, `"mode"`)) {
+					t.Fatalf("unfenced empty source manufactured a mode: status=%d body=%s", discoveryStatus, discoveryBody)
+				}
+				if kind == "corrupt" && (discoveryStatus != http.StatusServiceUnavailable || strings.Contains(discoveryBody, `"mode"`)) {
+					t.Fatalf("unsafe damaged source manufactured a mode: status=%d body=%s", discoveryStatus, discoveryBody)
+				}
+				healthStatus, _ := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.HealthPath)
+				if healthStatus != http.StatusServiceUnavailable {
+					t.Fatalf("blocked %s health status=%d", kind, healthStatus)
+				}
+				mutationStatus, _ := waitForManagerResponse(t, process.addr, http.MethodPost, "/usage-service/config")
+				if mutationStatus != http.StatusNotFound {
+					t.Fatalf("blocked %s exposed mutation path with status=%d", kind, mutationStatus)
+				}
+				process.stop(t)
 			}
 			if !reflect.DeepEqual(before, managerSourceSnapshot(t, dir)) {
 				t.Fatal("blocked startup changed source/config/key/lock")
 			}
 		})
+	}
+}
+
+func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	writeOwnedProvisioningConfig(t, dir)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`create table settings(key text primary key,value text); create table usage_events(id integer primary key)`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	credential, err := security.NewAdminCredential("cpamp_real_fixture_key", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`insert into settings(key,value) values('admin_credential_v1',?)`, string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// A real legacy source predates the v2 Manager marker. Discovery must use
+	// no-migrate read-only evidence without creating source-adjacent ownership.
+	if _, err := os.Lstat(path + ".manager.lock"); !os.IsNotExist(err) {
+		t.Fatalf("legacy fixture unexpectedly has Manager marker: %v", err)
+	}
+	before := managerSourceSnapshot(t, dir)
+	process := startManagerServerProcessWithEnvironment(t, ownedPreflightEnvironment(dir, path))
+	defer process.stop(t)
+
+	status, body := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+	// Listener binding deliberately precedes admission and evidence gathering.
+	deadline := time.Now().Add(10 * time.Second)
+	for status == http.StatusServiceUnavailable && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		status, body = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+	}
+	if status != http.StatusOK || !strings.Contains(body, `"mode":"unsupported_upgrade"`) || !strings.Contains(body, `"qualification_unavailable"`) {
+		t.Fatalf("legacy discovery status=%d body=%s", status, body)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "data.key")); !os.IsNotExist(err) {
+		t.Fatalf("discovery created data.key: %v", err)
+	}
+	if after := managerSourceSnapshot(t, dir); !reflect.DeepEqual(before, after) {
+		t.Fatal("discovery changed source/config/bootstrap state before writable startup")
+	}
+	healthStatus, _ := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.HealthPath)
+	if healthStatus != http.StatusServiceUnavailable {
+		t.Fatalf("pre-write health status=%d", healthStatus)
+	}
+	mutationStatus, _ := waitForManagerResponse(t, process.addr, http.MethodPost, "/usage-service/config")
+	if mutationStatus != http.StatusNotFound {
+		t.Fatalf("pre-write mutation route status=%d want 404", mutationStatus)
+	}
+	if after := managerSourceSnapshot(t, dir); !reflect.DeepEqual(before, after) {
+		t.Fatal("discovery/blocked startup changed source/config/bootstrap state")
+	}
+
+	assertDiscovery := func(wantStatus int, wantMode string) {
+		t.Helper()
+		before := managerSourceSnapshot(t, dir)
+		status, body := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+		if status != wantStatus || (wantMode == "" && strings.Contains(body, `"mode"`)) ||
+			(wantMode != "" && !strings.Contains(body, `"mode":"`+wantMode+`"`)) {
+			t.Fatalf("current source discovery status=%d body=%s, want %d mode=%q", status, body, wantStatus, wantMode)
+		}
+		if !reflect.DeepEqual(before, managerSourceSnapshot(t, dir)) {
+			t.Fatal("refresh changed source/config/key/lock state")
+		}
+	}
+	changeSource := func(replace bool, credential string) {
+		t.Helper()
+		if replace {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if replace {
+			if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := db.Exec(`insert or replace into settings(key,value) values('admin_credential_v1',?)`, credential); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The same process re-inspects current evidence on every permitted request.
+	changeSource(false, `{"version":1,"salt":"broken"}`)
+	assertDiscovery(http.StatusOK, "recovery")
+	changeSource(true, string(raw))
+	assertDiscovery(http.StatusOK, "unsupported_upgrade")
+	marker, err := processlock.Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := marker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	operatorLock, err := processlock.AcquireExisting(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDiscovery(http.StatusServiceUnavailable, "")
+	if err := operatorLock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertDiscovery(http.StatusOK, "unsupported_upgrade")
+	if err := os.Remove(path + ".manager.lock"); err != nil {
+		t.Fatal(err)
+	}
+	assertDiscovery(http.StatusOK, "unsupported_upgrade")
+}
+
+func TestFreshReadOnlyDiscoveryDoesNotCreateArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	paths := legacypreflight.DefaultPaths(path)
+	paths.Config = filepath.Join(dir, "config.json")
+	before := managerSourceSnapshot(t, dir)
+	report, err := legacypreflight.Inspect(context.Background(), paths, legacypreflight.Options{SourceStopped: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := bootstrapdiscovery.Project(bootstrapdiscovery.Input{Report: report})
+	if result.Status != bootstrap.PublicFreshClaimRequired || result.Mode == nil || *result.Mode != bootstrap.Fresh ||
+		result.Reason != bootstrap.ReasonFreshClaimRequired || !result.AuthenticationRequired {
+		t.Fatalf("fresh read-only discovery=%#v report=%+v", result, report)
+	}
+	response := httptest.NewRecorder()
+	bootstrapdiscovery.Handler{Discovery: result}.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"mode":"fresh"`) {
+		t.Fatalf("fresh discovery HTTP response=%d body=%s", response.Code, response.Body.String())
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "data.key")); !os.IsNotExist(err) {
+		t.Fatalf("fresh discovery created data.key: %v", err)
+	}
+	if after := managerSourceSnapshot(t, dir); !reflect.DeepEqual(before, after) {
+		t.Fatal("fresh read-only discovery changed source-adjacent state")
+	}
+}
+
+func TestNativeSourceDiscoveryDoesNotInferCompleted(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	writeOwnedProvisioningConfig(t, dir)
+	first := startManagerServerProcess(t, dir, path, "initialize")
+	assertManagerEndpoint(t, first.addr, "/health")
+	status, body := waitForManagerResponse(t, first.addr, http.MethodGet, bootstrapdiscovery.Path)
+	if status != http.StatusServiceUnavailable || strings.Contains(body, `"mode"`) {
+		t.Fatalf("fresh graph readiness completed Bootstrap or reused Fresh evidence: status=%d body=%s", status, body)
+	}
+	first.stop(t)
+	second := startManagerServerProcess(t, dir, path)
+	defer second.stop(t)
+	assertManagerEndpoint(t, second.addr, "/health")
+	status, body = waitForManagerResponse(t, second.addr, http.MethodGet, bootstrapdiscovery.Path)
+	if status != http.StatusServiceUnavailable || strings.Contains(body, `"mode"`) {
+		t.Fatalf("native graph readiness inferred completion or reused pre-write evidence: status=%d body=%s", status, body)
 	}
 }
 
@@ -496,7 +844,7 @@ func TestFreshInitializationFailureAllowsRetry(t *testing.T) {
 	assertManagerEndpoint(t, retry.addr, "/usage-service/info")
 }
 
-func TestFreshNoConfigNormalStartup(t *testing.T) {
+func TestExplicitInitializeWithoutConfigRetainsWritableStartup(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "usage.sqlite")
 	t.Setenv("CPA_MANAGER_CONFIG", "")
@@ -507,9 +855,9 @@ func TestFreshNoConfigNormalStartup(t *testing.T) {
 	t.Setenv("CPA_MANAGER_DATA_KEY_FILE", filepath.Join(dir, "no-key-secret"))
 	t.Setenv("CPAMP_RUNTIME_URL", "")
 	t.Setenv("CPAMP_RUNTIME_TOKEN_FILE", "")
-	server := startManagerServerProcess(t, dir, path)
+	server := startManagerServerProcess(t, dir, path, "initialize")
+	defer server.stop(t)
 	assertManagerEndpoint(t, server.addr, "/usage-service/info")
-	server.stop(t)
 }
 
 func TestNativeV2CrashWALStartupReadsCommittedUsage(t *testing.T) {

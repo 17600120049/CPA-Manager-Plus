@@ -6,9 +6,11 @@ project="${CPAMP_SMOKE_PROJECT:-cpamp-runtime13-${RANDOM}-$$}"
 public_port="${CPAMP_SMOKE_PORT:-28317}"
 skip_build="${CPAMP_SMOKE_SKIP_BUILD:-false}"
 snapshot_root="$(mktemp -d "${TMPDIR:-/tmp}/cpamp-runtime13-smoke.XXXXXX")"
+initializer_name="${project}-cpamp-manager-init"
 compose=(docker compose --project-directory "${repo_root}" -p "${project}")
 
 cleanup() {
+  docker rm -f "${initializer_name}" >/dev/null 2>&1 || true
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
   rm -rf "${snapshot_root}"
 }
@@ -167,13 +169,43 @@ docker run --rm \
   seakee/cpamp-runtime:latest \
   sh -ec 'test "$(cat /run/cpamp/runtime-secret/token)" = "$CPAMP_RUNTIME_TOKEN"'
 
-# Start Manager before Runtime creates the token. Manager health and its HTTP
-# listener must remain independent from this expected Compose startup race.
+# Phase4-01 ordinary Fresh startup is deliberately read-only. Prove the
+# Manager listener exposes fixed discovery without manufacturing readiness or
+# product state before an explicit initializer is selected.
 "${compose[@]}" up -d cpamp-manager
-retry 60 "${compose[@]}" exec -T cpamp-manager wget -qO- http://127.0.0.1:18317/health >/dev/null
+retry 60 "${compose[@]}" exec -T cpamp-manager sh -ec '
+  body="$(wget -qO- http://127.0.0.1:18317/.well-known/cpamp-bootstrap)"
+  printf "%s" "$body" | grep -q "\"status\":\"fresh_claim_required\""
+  printf "%s" "$body" | grep -q "\"mode\":\"fresh\""
+'
+if "${compose[@]}" exec -T cpamp-manager wget -qO- http://127.0.0.1:18317/health >/dev/null 2>&1; then
+  echo "Ordinary Fresh startup became ready before explicit initialization" >&2
+  exit 1
+fi
+"${compose[@]}" exec -T cpamp-manager sh -ec '
+  test ! -e /data/usage.sqlite
+  test ! -e /data/data.key
+  test ! -e /data/usage.sqlite.manager.lock
+'
+"${compose[@]}" stop cpamp-manager >/dev/null
 
-# This is the ordinary fresh Embedded stack path. The test never submits a
-# Supervisor mutation; Manager desired-state reconciliation must start CPA.
+# The existing initialize command is the deliberate Fresh write boundary. Run
+# it once against the same Manager data volume, wait until the initialized
+# Manager is ready, then stop the one-off container and resume the normal
+# Compose service for the Runtime lifecycle smoke.
+"${compose[@]}" run -d --no-deps --name "${initializer_name}" cpamp-manager initialize >/dev/null
+retry 90 docker exec "${initializer_name}" wget -qO- http://127.0.0.1:18317/health >/dev/null
+docker exec "${initializer_name}" sh -ec '
+  test -s /data/usage.sqlite
+  test -s /data/data.key
+  test -e /data/usage.sqlite.manager.lock
+'
+docker stop -t 20 "${initializer_name}" >/dev/null
+docker rm "${initializer_name}" >/dev/null
+
+# After explicit initialization, retain the existing Runtime lifecycle checks:
+# Manager desired-state reconciliation must start CPA without a direct
+# Supervisor mutation from the smoke test.
 "${compose[@]}" up -d
 public_origin="http://127.0.0.1:${public_port}"
 retry 90 curl --fail --silent "${public_origin}/health" >/dev/null
@@ -297,4 +329,4 @@ curl --fail --silent --show-error "${public_origin}/health" >/dev/null
 copy_container_file cpamp-runtime /runtime/supervisor/operations.sqlite "${snapshot_root}/operations-after.sqlite"
 assert_reconcile_start_journal "${snapshot_root}/operations-after.sqlite" 2
 
-echo "Runtime 13 Docker smoke passed: fresh Manager-owned Start, persistent desired state, stable healthy child across Manager lifecycle, generation-scoped Runtime recovery, single public ingress, and isolated health"
+echo "Runtime 13 Docker smoke passed: read-only Fresh discovery, explicit initialization, persistent desired state, stable healthy child across Manager lifecycle, generation-scoped Runtime recovery, single public ingress, and isolated health"

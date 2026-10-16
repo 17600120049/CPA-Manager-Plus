@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CPAMP Phase4-01 route ownership contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "contractId",
+    "fixedBootstrapDiscoveryPath",
+    "canonicalPublicApiV2Suffix",
+    "publicApiActivation",
+    "snapshotStates",
+    "routes",
+    "normalization",
+    "retiredNamespace"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./route-owners.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "contractId": {
+      "const": "cpamp-v2-phase4-01-routing-ownership-v1"
+    },
+    "fixedBootstrapDiscoveryPath": {
+      "const": "/.well-known/cpamp-bootstrap"
+    },
+    "canonicalPublicApiV2Suffix": {
+      "const": "/api/v2"
+    },
+    "publicApiActivation": {
+      "const": "verified_effective_snapshot_only"
+    },
+    "snapshotStates": {
+      "type": "array",
+      "const": [
+        "verified_effective",
+        "desired_only",
+        "stale",
+        "unknown",
+        "unavailable"
+      ]
+    },
+    "routes": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "match",
+          "owner",
+          "gatewayFallback"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "bootstrap_discovery",
+              "public_api_v2_namespace",
+              "retired_control_namespace",
+              "legacy_manager_routes",
+              "gateway_model_protocol",
+              "unknown_non_control_path"
+            ]
+          },
+          "match": {
+            "enum": [
+              "exact_fixed_path",
+              "verified_effective_segment_prefix",
+              "previous_verified_segment_prefix",
+              "existing_fixed_or_segment_prefix",
+              "existing_data_plane_protocol",
+              "outside_control_namespaces"
+            ]
+          },
+          "owner": {
+            "enum": [
+              "manager",
+              "gateway"
+            ]
+          },
+          "activeMethods": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "GET",
+                "OPTIONS"
+              ]
+            }
+          },
+          "unsupportedMethods": {
+            "enum": [
+              "manager_local_rejection"
+            ]
+          },
+          "completedBehavior": {
+            "enum": [
+              "generic_404"
+            ]
+          },
+          "authority": {
+            "enum": [
+              "verified_effective_snapshot_only"
+            ]
+          },
+          "noAuthorityBehavior": {
+            "enum": [
+              "inactive_fail_closed"
+            ]
+          },
+          "behavior": {
+            "enum": [
+              "deny_only"
+            ]
+          },
+          "reuseBehavior": {
+            "enum": [
+              "collision_fail_closed"
+            ]
+          },
+          "compatibility": {
+            "enum": [
+              "preserve_existing_setup_management_health_status"
+            ]
+          },
+          "credentialHeaders": {
+            "enum": [
+              "do_not_classify"
+            ]
+          },
+          "gatewayFallback": {
+            "enum": [
+              "deny",
+              "preserve"
+            ]
+          }
+        }
+      },
+      "maxItems": 6,
+      "uniqueItems": true
+    },
+    "normalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptedRequestPath",
+        "reject",
+        "credentialRouting"
+      ],
+      "properties": {
+        "acceptedRequestPath": {
+          "const": "decoded_canonical_path_only"
+        },
+        "reject": {
+          "type": "array",
+          "minItems": 9,
+          "items": {
+            "type": "string"
+          }
+        },
+        "credentialRouting": {
+          "const": "route_ownership_precedes_credentials"
+        }
+      }
+    },
+    "retiredNamespace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "persistence",
+        "history",
+        "managerCredentials",
+        "modelTraffic"
+      ],
+      "properties": {
+        "persistence": {
+          "const": "none_in_phase4_01"
+        },
+        "history": {
+          "const": "bounded_representation_only"
+        },
+        "managerCredentials": {
+          "const": "never_forward"
+        },
+        "modelTraffic": {
+          "const": "never_forward"
+        }
+      }
+    }
+  }
+}

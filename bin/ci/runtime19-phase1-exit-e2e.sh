@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 project="${CPAMP_RUNTIME19_PROJECT:-cpamp-runtime19-${RANDOM}-$$}"
 public_port="${CPAMP_RUNTIME19_PORT:-32317}"
 skip_build="${CPAMP_RUNTIME19_SKIP_BUILD:-false}"
+initializer_name="${project}-cpamp-manager-init"
 snapshot_root="$(mktemp -d "${TMPDIR:-/tmp}/cpamp-runtime19-exit.XXXXXX")"
 compose=(docker compose --project-directory "${repo_root}" -p "${project}")
 
@@ -12,6 +13,7 @@ paused_manager=""
 
 cleanup() {
   set +e
+  docker rm -f "${initializer_name}" >/dev/null 2>&1 || true
   if [ -n "${paused_manager}" ]; then
     docker unpause "${paused_manager}" >/dev/null 2>&1 || true
   fi
@@ -557,7 +559,13 @@ if [ "${skip_build}" != true ]; then
   "${compose[@]}" build
 fi
 
-scenario 'A — fresh install / default bootstrap'
+scenario 'A — fresh install via explicit initializer / default bootstrap'
+# Runtime19's fresh-install boundary now uses the existing explicit writable
+# initializer before exercising persisted Runtime/Manager lifecycle semantics.
+"${compose[@]}" run -d --no-deps --name "${initializer_name}" cpamp-manager initialize >/dev/null
+retry 90 docker exec "${initializer_name}" wget -qO- http://127.0.0.1:18317/health >/dev/null
+docker stop -t 20 "${initializer_name}" >/dev/null
+docker rm "${initializer_name}" >/dev/null
 "${compose[@]}" up -d
 wait_public_health 120
 status_a="$(wait_runtime_observation ready armed - manager 120)"

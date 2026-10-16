@@ -49,6 +49,31 @@ func TestAuthorizePanelSanitizesVerifierErrors(t *testing.T) {
 	}
 }
 
+func TestAuthorizationFailuresDoNotExposeSensitiveVerifierDetails(t *testing.T) {
+	for _, detail := range []string{
+		"sqlite internal error: database is locked",
+		"/private/manager/data/manager.sqlite",
+		"https://cpa.example.test:8317/v0/management",
+		"CPA Management Key=secret-management-key",
+		"Admin Key=secret-admin-key",
+		"credential plaintext=secret-credential",
+		"unexpected internal object String() value",
+	} {
+		t.Run(detail, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/phase4/discovery", nil)
+			if AuthorizeAdmin(recorder, request, failingAdminVerifier{err: errors.New(detail)}) {
+				t.Fatal("failed authorization unexpectedly succeeded")
+			}
+			body := recorder.Body.String()
+			if strings.Contains(body, detail) || !strings.Contains(body, `"error":"authorization failed"`) ||
+				!strings.Contains(body, `"code":"request_failed"`) {
+				t.Fatalf("authorization response leaked detail: %s", body)
+			}
+		})
+	}
+}
+
 type failingAdminVerifier struct {
 	err error
 }

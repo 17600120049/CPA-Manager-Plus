@@ -28,15 +28,16 @@ func NewHandler(classifier Classifier, managerURL, gatewayURL *url.URL, logger *
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-	if path == "" {
-		path = "/"
-	}
-	if h.classifier.Classify(path) == RouteManager {
+	switch h.classifier.ClassifyRequest(r) {
+	case RouteManager:
 		h.manager.ServeHTTP(w, r)
-		return
+	case RouteDeny:
+		// Retired/ambiguous Control ownership is denied at the transport edge;
+		// do not forward Manager/Admin-looking credentials to either upstream.
+		http.NotFound(w, r)
+	default:
+		h.gateway.ServeHTTP(w, r)
 	}
-	h.gateway.ServeHTTP(w, r)
 }
 
 func newReverseProxy(target *url.URL, logger *log.Logger) *httputil.ReverseProxy {

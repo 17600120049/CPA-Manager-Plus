@@ -1,0 +1,79 @@
+{
+  "$schema": "./phase4-01-contract.schema.json",
+  "contractVersion": "cpamp.phase4-01.contract.v1",
+  "productBaseline": "c0a4418d02a18247630cec03365637cce0eaf639",
+  "productionUpgradeEnabled": false,
+  "fixedBootstrapDiscoveryPath": "/.well-known/cpamp-bootstrap",
+  "completedDiscoveryTerminal": "generic_404",
+  "unauthenticatedDiscoveryFields": [
+    "contract_version",
+    "status",
+    "mode",
+    "authentication_required",
+    "auth_entry",
+    "reason"
+  ],
+  "forbiddenDiscoveryFields": [
+    "controlBasePath",
+    "sourceCPAUrl",
+    "cpaManagementKey",
+    "adminKey",
+    "dbPath",
+    "archivePath",
+    "backupReceipt",
+    "resourceRefs",
+    "mutations",
+    "preservedResources",
+    "unsupportedSourceInternals",
+    "internalPorts",
+    "filesystemPaths",
+    "rawVerifierError",
+    "operationId"
+  ],
+  "admissionCases": [
+    {
+      "id": "AUT-09-unknown-newer-same-schema",
+      "case": "unknown_newer_same_schema",
+      "shape": "legacy_schema_c",
+      "provenance": "unknown_or_newer",
+      "requestedTarget": {
+        "release": "v1.14.4",
+        "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+      },
+      "observedSourceCommit": "unknown-newer-source",
+      "expected": {
+        "accepted": false,
+        "mode": "unsupported_upgrade",
+        "reason": "unknown_newer_same_schema",
+        "qualification": "pending",
+        "sourceIdentityPreserved": true
+      }
+    },
+    {
+      "id": "AUT-10-downgrade-forbidden",
+      "case": "downgrade",
+      "shape": "unknown",
+      "provenance": "unknown_or_newer",
+      "requestedTarget": {
+        "release": "v1.14.4",
+        "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+      },
+      "observedSourceCommit": "v1.15-or-newer-source",
+      "expected": {
+        "accepted": false,
+        "mode": "unsupported_upgrade",
+        "reason": "downgrade_forbidden",
+        "qualification": "pending",
+        "sourceIdentityPreserved": true
+      }
+    }
+  ],
+  "integrationRequirements": [
+    "Fixed discovery must be reachable before product/data mutation from safe read-only evidence.",
+    "Fixed discovery must not broaden writable startup authorization.",
+    "Ingress must capture the fixed discovery path for every method and prevent Gateway fallthrough.",
+    "Completed discovery remains generic 404 for every method.",
+    "Retired Control namespaces remain deny-only and never forward Manager credentials.",
+    "Phase4-04 owns AUT-09 and AUT-10 runtime qualification; Phase4-01 keeps both pending."
+  ]
+}
