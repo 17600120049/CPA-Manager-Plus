@@ -98,37 +98,57 @@ func TestFencedInspectionRetainsOwnershipThroughConsumerAndReleasesAfterward(t *
 }
 
 func TestFencedInspectionObservesLegacyWithoutPersistentMarker(t *testing.T) {
-	paths := fixturePaths(t)
-	db, err := sql.Open("sqlite", paths.Database)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
-		_ = db.Close()
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
-		t.Fatalf("fixture unexpectedly has Manager marker: %v", err)
-	}
-	before := sourceState(t, filepath.Dir(paths.Database))
-	calls := 0
-	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
-		calls++
-		if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "sqlite-read-transaction" {
-			t.Fatalf("unmarked legacy discovery: kind=%s consistency=%s err=%v", report.SourceKind, report.Observed.Consistency, err)
-		}
-	})
-	if calls != 1 {
-		t.Fatalf("consumer calls=%d", calls)
-	}
-	if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
-		t.Fatalf("discovery created Manager marker: %v", err)
-	}
-	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
-		t.Fatal("read-only legacy discovery modified source")
+	for _, journalMode := range []string{"delete", "wal"} {
+		t.Run(journalMode, func(t *testing.T) {
+			paths := fixturePaths(t)
+			db, err := sql.Open("sqlite", paths.Database)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec("pragma journal_mode = " + journalMode); err != nil {
+				_ = db.Close()
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+				_ = db.Close()
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			// A clean close may leave empty sidecars on some SQLite/platform
+			// combinations. Remove only empty files so the fixture represents the
+			// supported no-recovery case.
+			for _, sidecar := range []string{paths.Database + "-wal", paths.Database + "-shm"} {
+				if info, err := os.Stat(sidecar); err == nil && info.Size() == 0 {
+					if err := os.Remove(sidecar); err != nil {
+						t.Fatal(err)
+					}
+			}
+			if info, err := os.Stat(paths.Database + "-wal"); err == nil && info.Size() > 0 {
+				t.Skip("SQLite retained WAL recovery content after clean close")
+			}
+			if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
+				t.Fatalf("fixture unexpectedly has Manager marker: %v", err)
+			}
+			before := sourceState(t, filepath.Dir(paths.Database))
+			calls := 0
+			WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+				calls++
+				if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "sqlite-read-snapshot" {
+					t.Fatalf("unmarked legacy discovery: kind=%s consistency=%s err=%v", report.SourceKind, report.Observed.Consistency, err)
+				}
+			})
+			if calls != 1 {
+				t.Fatalf("consumer calls=%d", calls)
+			}
+			if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
+				t.Fatalf("discovery created Manager marker: %v", err)
+			}
+			if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+				t.Fatal("read-only legacy discovery modified source")
+			}
+		})
 	}
 }
 

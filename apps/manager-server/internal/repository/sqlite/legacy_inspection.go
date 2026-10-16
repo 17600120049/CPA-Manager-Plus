@@ -197,10 +197,16 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 	} else if locked {
 		result.Consistency = "manager-fenced-cold"
 	} else if readOnlySnapshot {
-		// Do not use immutable=1 here: the SQLite read transaction is the
-		// consistency boundary and must participate in SQLite's normal locking.
-		immutable = false
-		result.Consistency = "sqlite-read-transaction"
+		// Rollback-mode databases can use SQLite's normal read lock without
+		// source-adjacent writes. A clean WAL-mode database is opened immutable
+		// so discovery cannot create SHM/WAL files; the existing before/during/
+		// after inventory checks invalidate the result if source state changes.
+		immutable, err = readOnlySnapshotUsesImmutable(paths.Database)
+		if err != nil {
+			result.Issues = append(result.Issues, "sqlite-snapshot-mode-unavailable")
+			return result, err
+		}
+		result.Consistency = "sqlite-read-snapshot"
 	} else {
 		result.Consistency = "operator-asserted-cold"
 	}
@@ -577,6 +583,29 @@ func SameInspectionSource(before, after LegacyInspection) bool {
 		return false
 	}
 	return sameInspectionFiles(before.Files[:7], after.Files[:7])
+}
+
+func readOnlySnapshotUsesImmutable(databasePath string) (bool, error) {
+	file, err := os.Open(databasePath)
+	if err != nil {
+		return false, errors.New("SQLite header unavailable")
+	}
+	defer file.Close()
+	header := make([]byte, 20)
+	if _, err := io.ReadFull(file, header); err != nil {
+		return false, errors.New("SQLite header unavailable")
+	}
+	if string(header[:16]) != "SQLite format 3\x00" {
+		return false, errors.New("SQLite header invalid")
+	}
+	switch {
+	case header[18] == 1 && header[19] == 1:
+		return false, nil
+	case header[18] == 2 && header[19] == 2:
+		return true, nil
+	default:
+		return false, errors.New("SQLite journal mode is unsupported for public discovery")
+	}
 }
 
 func inspectionDataSourceName(path string, immutable bool) string {
