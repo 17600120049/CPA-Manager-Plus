@@ -26,8 +26,9 @@ type InspectionOptions struct {
 	// Operator assertion that ALL writers have stopped; stat/hash is no fence.
 	SourceStopped bool
 	// ReadOnlySnapshot permits a bounded SQLite read transaction when no
-	// Manager marker exists. It never authorizes writable startup and is only
-	// used by Phase4-01 public discovery for no-WAL/no-journal sources.
+	// Manager marker exists. It never authorizes writable startup. WAL-mode
+	// sources must already have readable WAL/SHM coordination files so the
+	// read-only connection participates in SQLite's normal snapshot locking.
 	ReadOnlySnapshot bool
 	// Retained by the caller through native startup, without release/reacquire.
 	// Only cooperating single-Manager writers are fenced; arbitrary writers
@@ -119,10 +120,19 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		result.Issues = append(result.Issues, "inventory-failed")
 		return result, errors.New("source inventory failed")
 	}
-	// Deferred after db.Close: source comparisons cover both open and closed states.
+	// Deferred after db.Close: ordinary diagnostic/fenced reads still require
+	// whole-source metadata stability. Read-only SQLite snapshots deliberately
+	// allow database/WAL/SHM movement under SQLite's own transaction locks while
+	// keeping config/key/journal/ownership evidence stable.
 	defer func() {
 		after, checkErr := inspectFiles(paths)
-		if checkErr != nil || !sameInspectionFiles(result.Files, after) {
+		stable := checkErr == nil
+		if stable && options.ReadOnlySnapshot {
+			stable = sameInspectionFiles(result.Files[3:], after[3:])
+		} else if stable {
+			stable = sameInspectionFiles(result.Files, after)
+		}
+		if !stable {
 			result.Consistency = "changed"
 			result.Issues = append(result.Issues, "source-changed")
 			err = errors.Join(err, errors.New("source changed during inspection"))
@@ -160,8 +170,14 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		result.Issues = append(result.Issues, "journal-recovery-required")
 		return result, nil
 	}
+	if readOnlySnapshot {
+		if err := validateReadOnlySnapshotSource(paths.Database, result.Files); err != nil {
+			result.Issues = append(result.Issues, "sqlite-snapshot-mode-unavailable")
+			return result, err
+		}
+	}
 	databasePath, immutable := paths.Database, true
-	if wal.State != "missing" && wal.Size > 0 {
+	if wal.State != "missing" && wal.Size > 0 && !readOnlySnapshot {
 		if !locked {
 			result.Issues = append(result.Issues, "wal-consistency-unproven")
 			return result, nil
@@ -197,15 +213,9 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 	} else if locked {
 		result.Consistency = "manager-fenced-cold"
 	} else if readOnlySnapshot {
-		// Rollback-mode databases can use SQLite's normal read lock without
-		// source-adjacent writes. A clean WAL-mode database is opened immutable
-		// so discovery cannot create SHM/WAL files; the existing before/during/
-		// after inventory checks invalidate the result if source state changes.
-		immutable, err = readOnlySnapshotUsesImmutable(paths.Database)
-		if err != nil {
-			result.Issues = append(result.Issues, "sqlite-snapshot-mode-unavailable")
-			return result, err
-		}
+		// A real SQLite read transaction is the consistency boundary. Do not use
+		// immutable=1 here: WAL readers must participate in normal WAL locking.
+		immutable = false
 		result.Consistency = "sqlite-read-snapshot"
 	} else {
 		result.Consistency = "operator-asserted-cold"
@@ -257,7 +267,13 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		return result, errors.New("source history could not be inspected")
 	}
 	during, checkErr := inspectFiles(paths)
-	if checkErr != nil || !sameInspectionFiles(result.Files, during) {
+	stableDuring := checkErr == nil
+	if stableDuring && readOnlySnapshot {
+		stableDuring = sameInspectionFiles(result.Files[3:], during[3:])
+	} else if stableDuring {
+		stableDuring = sameInspectionFiles(result.Files, during)
+	}
+	if !stableDuring {
 		return result, errors.New("source changed while SQLite was open")
 	}
 	if readTx != nil {
@@ -587,26 +603,51 @@ func SameInspectionSource(before, after LegacyInspection) bool {
 	return sameInspectionFiles(before.Files[:7], after.Files[:7])
 }
 
-func readOnlySnapshotUsesImmutable(databasePath string) (bool, error) {
+func validateReadOnlySnapshotSource(databasePath string, files []InspectionFile) error {
+	if len(files) < 4 {
+		return errors.New("SQLite source inventory incomplete")
+	}
 	file, err := os.Open(databasePath)
 	if err != nil {
-		return false, errors.New("SQLite header unavailable")
+		return errors.New("SQLite header unavailable")
 	}
 	defer file.Close()
 	header := make([]byte, 20)
 	if _, err := io.ReadFull(file, header); err != nil {
-		return false, errors.New("SQLite header unavailable")
+		return errors.New("SQLite header unavailable")
 	}
 	if string(header[:16]) != "SQLite format 3\x00" {
-		return false, errors.New("SQLite header invalid")
+		return errors.New("SQLite header invalid")
 	}
 	switch {
 	case header[18] == 1 && header[19] == 1:
-		return false, nil
+		if files[1].State == "present" && files[1].Size > 0 {
+			return errors.New("rollback source has unexpected WAL content")
+		}
+		return nil
 	case header[18] == 2 && header[19] == 2:
-		return true, nil
+		// Read-only WAL connections need the real WAL-index coordination files
+		// already present unless the database is declared immutable. Phase4-01
+		// must not make that immutable assertion and must not create sidecars.
+		for _, sidecar := range []struct {
+			path string
+			file InspectionFile
+		}{
+			{databasePath + "-wal", files[1]},
+			{databasePath + "-shm", files[2]},
+		} {
+			if sidecar.file.State != "present" {
+				return errors.New("WAL read coordination unavailable")
+			}
+			f, err := os.Open(sidecar.path)
+			if err != nil {
+				return errors.New("WAL read coordination unavailable")
+			}
+			_ = f.Close()
+		}
+		return nil
 	default:
-		return false, errors.New("SQLite journal mode is unsupported for public discovery")
+		return errors.New("SQLite journal mode is unsupported for public discovery")
 	}
 }
 

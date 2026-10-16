@@ -109,15 +109,25 @@ func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, opt
 		consume(Report{}, errors.New("empty database requires host intervention"))
 		return
 	}
-	for _, sidecar := range []string{paths.Database + "-wal", paths.Database + "-journal"} {
-		info, err := os.Lstat(sidecar)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil || !info.Mode().IsRegular() || info.Size() > 0 {
+	walHasContent := false
+	if info, err := os.Lstat(paths.Database + "-wal"); err == nil {
+		if !info.Mode().IsRegular() {
 			consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
 			return
 		}
+		walHasContent = info.Size() > 0
+	} else if !os.IsNotExist(err) {
+		consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
+		return
+	}
+	if info, err := os.Lstat(paths.Database + "-journal"); err == nil {
+		if !info.Mode().IsRegular() || info.Size() > 0 {
+			consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
+			return
+		}
+	} else if !os.IsNotExist(err) {
+		consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
+		return
 	}
 	lock, err := processlock.AcquireExisting(paths.Database)
 	if errors.Is(err, processlock.ErrNoExistingLock) {
@@ -134,6 +144,10 @@ func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, opt
 		return
 	}
 	defer lock.Close()
+	if walHasContent {
+		consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
+		return
+	}
 	report, err := inspect(ctx, paths, options, lock, false)
 	err = errors.Join(err, ctx.Err(), lock.Validate())
 	consume(report, err)

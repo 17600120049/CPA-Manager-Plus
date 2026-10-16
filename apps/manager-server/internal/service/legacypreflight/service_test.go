@@ -97,59 +97,102 @@ func TestFencedInspectionRetainsOwnershipThroughConsumerAndReleasesAfterward(t *
 	}
 }
 
-func TestFencedInspectionObservesLegacyWithoutPersistentMarker(t *testing.T) {
-	for _, journalMode := range []string{"delete", "wal"} {
-		t.Run(journalMode, func(t *testing.T) {
-			paths := fixturePaths(t)
-			db, err := sql.Open("sqlite", paths.Database)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := db.Exec("pragma journal_mode = " + journalMode); err != nil {
-				_ = db.Close()
-				t.Fatal(err)
-			}
-			if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
-				_ = db.Close()
-				t.Fatal(err)
-			}
-			if err := db.Close(); err != nil {
-				t.Fatal(err)
-			}
-			// A clean close may leave empty sidecars on some SQLite/platform
-			// combinations. Remove only empty files so the fixture represents the
-			// supported no-recovery case.
-			for _, sidecar := range []string{paths.Database + "-wal", paths.Database + "-shm"} {
-				if info, err := os.Stat(sidecar); err == nil && info.Size() == 0 {
-					if err := os.Remove(sidecar); err != nil {
-						t.Fatal(err)
-					}
-				}
-			}
-			if info, err := os.Stat(paths.Database + "-wal"); err == nil && info.Size() > 0 {
-				t.Skip("SQLite retained WAL recovery content after clean close")
-			}
-			if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
-				t.Fatalf("fixture unexpectedly has Manager marker: %v", err)
-			}
-			before := sourceState(t, filepath.Dir(paths.Database))
-			calls := 0
-			WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
-				calls++
-				if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "sqlite-read-snapshot" {
-					t.Fatalf("unmarked legacy discovery: kind=%s consistency=%s err=%v", report.SourceKind, report.Observed.Consistency, err)
-				}
-			})
-			if calls != 1 {
-				t.Fatalf("consumer calls=%d", calls)
-			}
-			if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
-				t.Fatalf("discovery created Manager marker: %v", err)
-			}
-			if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
-				t.Fatal("read-only legacy discovery modified source")
-			}
-		})
+func TestFencedInspectionObservesRollbackLegacyWithoutPersistentMarker(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`pragma journal_mode = delete; create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceState(t, filepath.Dir(paths.Database))
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "sqlite-read-snapshot" {
+			t.Fatalf("rollback legacy discovery: kind=%s consistency=%s err=%v", report.SourceKind, report.Observed.Consistency, err)
+		}
+	})
+	if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
+		t.Fatalf("discovery created Manager marker: %v", err)
+	}
+	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+		t.Fatal("rollback read-only discovery modified source")
+	}
+}
+
+func TestFencedInspectionRejectsCleanWALWithoutCoordinationSidecars(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`pragma journal_mode = wal; create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, sidecar := range []string{paths.Database + "-wal", paths.Database + "-shm"} {
+		if err := os.Remove(sidecar); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	before := sourceState(t, filepath.Dir(paths.Database))
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		if err == nil || report.SourceKind != "" {
+			t.Fatalf("clean WAL without coordination unexpectedly classified: kind=%s err=%v", report.SourceKind, err)
+		}
+	})
+	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+		t.Fatal("failed WAL snapshot attempt modified source")
+	}
+}
+
+func TestFencedInspectionReadsActiveWALThroughSQLiteSnapshot(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+	if _, err := db.Exec(`pragma journal_mode = wal; pragma wal_autocheckpoint = 0; create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	walBefore, err := os.ReadFile(paths.Database + "-wal")
+	if err != nil || len(walBefore) == 0 {
+		t.Fatalf("WAL fixture unavailable: len=%d err=%v", len(walBefore), err)
+	}
+	if _, err := os.Stat(paths.Database + "-shm"); err != nil {
+		t.Fatalf("WAL-index fixture unavailable: %v", err)
+	}
+	dbBefore, err := os.ReadFile(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "sqlite-read-snapshot" {
+			t.Fatalf("active WAL discovery: kind=%s consistency=%s err=%v report=%+v", report.SourceKind, report.Observed.Consistency, err, report)
+		}
+	})
+	if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
+		t.Fatalf("WAL discovery created Manager marker: %v", err)
+	}
+	dbAfter, err := os.ReadFile(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	walAfter, err := os.ReadFile(paths.Database + "-wal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dbBefore, dbAfter) || !reflect.DeepEqual(walBefore, walAfter) {
+		t.Fatal("WAL read-only discovery modified database or WAL content")
 	}
 }
 
