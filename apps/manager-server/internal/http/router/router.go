@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
+	routingdomain "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
 	accountactioncontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/accountaction"
 	apikeyaliascontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/apikeyalias"
 	automationcontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/automation"
@@ -28,6 +29,22 @@ import (
 )
 
 func New(appCtx *app.Context) http.Handler {
+	return newRouter(appCtx, routingdomain.DiscoveryHandler{})
+}
+
+// NewWithBootstrapDiscovery keeps lifecycle/classification ownership outside
+// the router. Lane A may provide its read-only lifecycle projection and active
+// GET handler through this seam; this package still enforces fixed-path
+// ownership, method handling, and completed fail-closed behavior.
+func NewWithBootstrapDiscovery(
+	appCtx *app.Context,
+	lifecycle routingdomain.DiscoveryLifecycleFunc,
+	active http.Handler,
+) http.Handler {
+	return newRouter(appCtx, routingdomain.DiscoveryHandler{Lifecycle: lifecycle, Active: active})
+}
+
+func newRouter(appCtx *app.Context, discovery routingdomain.DiscoveryHandler) http.Handler {
 	healthHandler := &healthcontroller.Handler{ServiceID: appCtx.ServiceID}
 	systemHandler := &systemcontroller.Handler{App: appCtx}
 	setupHandler := &setupcontroller.Handler{App: appCtx}
@@ -63,7 +80,7 @@ func New(appCtx *app.Context) http.Handler {
 	mux.HandleFunc("/management.html", panelHandler.ManagementHTML)
 	mux.HandleFunc("/", rootHandler(appCtx, usageHandler, modelPriceHandler, apiKeyAliasHandler, accountActionHandler, codexInspectionHandler, dashboardHandler, monitoringHandler, quotaSnapshotHandler, managerConfigHandler, proxyHandler))
 
-	return middleware.Recovery(middleware.RequestLogger(mux))
+	return middleware.Recovery(middleware.RequestLogger(routingdomain.ProtectFixedDiscovery(mux, discovery)))
 }
 
 func rootHandler(

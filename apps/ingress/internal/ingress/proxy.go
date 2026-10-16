@@ -28,11 +28,7 @@ func NewHandler(classifier Classifier, managerURL, gatewayURL *url.URL, logger *
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-	if path == "" {
-		path = "/"
-	}
-	if h.classifier.Classify(path) == RouteManager {
+	if h.classifier.ClassifyRequest(r) == RouteManager {
 		h.manager.ServeHTTP(w, r)
 		return
 	}
