@@ -71,7 +71,7 @@ func TestFencedInspectionRetainsOwnershipThroughConsumerAndReleasesAfterward(t *
 	called := false
 	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
 		called = true
-		if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "manager-fenced-cold" {
+		if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "sqlite-read-snapshot" {
 			t.Fatalf("fenced inspection: kind=%s consistency=%s err=%v", report.SourceKind, report.Observed.Consistency, err)
 		}
 		other, err := processlock.AcquireExisting(paths.Database)
