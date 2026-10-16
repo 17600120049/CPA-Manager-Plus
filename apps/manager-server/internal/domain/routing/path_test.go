@@ -1,6 +1,31 @@
 package routing
 
-import "testing"
+import (
+	"net/url"
+	"testing"
+)
+
+func TestControlBasePathRequiresStableURLSerialization(t *testing.T) {
+	for _, value := range []string{"/控制", "/café", "/😀", "/control[admin]", "/control!", "/control%", "/control\"", "/control`", "/control{admin}"} {
+		snapshot := RoutingSnapshot{State: SnapshotVerifiedEffective, VerifiedEffectiveControlBasePath: value, Revision: 1}
+		if ValidControlBasePath(value) || snapshot.Validate() == nil || snapshot.PublicAPIActive() {
+			t.Fatalf("non-serializable routing authority accepted: %q", value)
+		}
+		for _, owner := range []NamespaceOwner{
+			{Snapshot: snapshot},
+			{Snapshot: RoutingSnapshot{State: SnapshotUnknown}, Retired: []RetiredNamespace{{ControlBasePath: value, Revision: 1}}},
+		} {
+			if owner.Owner(value+"/api/v2/probe") != OwnerAmbiguousControl || owner.Owner("/v1/models") != OwnerGateway {
+				t.Fatalf("invalid declared authority lost deny-only ownership: %q", value)
+			}
+		}
+	}
+	for _, value := range []string{"/phase4-test", "/control/sub-path", "/AZaz09-._~$&+,/:;=@"} {
+		if !ValidControlBasePath(value) || (&url.URL{Path: value}).EscapedPath() != value {
+			t.Fatalf("canonical prefix changed during URL serialization: %q", value)
+		}
+	}
+}
 
 func verifiedSnapshot() RoutingSnapshot {
 	return RoutingSnapshot{

@@ -108,6 +108,11 @@ does not create a generic public static namespace.
 
 The canonical contract MUST reject ambiguous forms, including root `/`, dot-segment traversal, encoded path bypasses, duplicate-slash ambiguity, and trailing-slash multi-meaning. It MUST detect collisions with fixed transport paths and Gateway protocol ownership.
 
+Phase4-02 limits canonical prefix characters to ASCII letters, digits and
+`-._~$&+,/:;=@`, which remain unchanged in both Go and browser URL path
+serialization. Prefixes requiring escaping (including Unicode literals) are
+rejected during authority validation, not normalized into a second mount.
+
 ### 4. Two Browser Applications, not one mode-switched application
 
 The `apps/web` source workspace may remain shared, but CPAMP 2.0 has two browser applications:

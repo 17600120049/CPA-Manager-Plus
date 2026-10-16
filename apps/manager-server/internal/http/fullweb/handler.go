@@ -33,14 +33,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	requestPath := r.URL.Path
-	// Only the mount root has a slash form; deep-link aliases remain strict.
-	canonical := requestPath
-	if canonical == prefix+"/" {
-		canonical = prefix
-	}
-	if !routing.CanonicalRequestPath(canonical) || r.URL.EscapedPath() != requestPath ||
+	if !routing.CanonicalRequestPath(requestPath) || r.URL.EscapedPath() != requestPath ||
 		(r.RequestURI != "" && strings.SplitN(r.RequestURI, "?", 2)[0] != requestPath) ||
-		(canonical != prefix && !strings.HasPrefix(canonical, prefix+"/")) {
+		(requestPath != prefix && !strings.HasPrefix(requestPath, prefix+"/")) {
 		http.NotFound(w, r)
 		return
 	}

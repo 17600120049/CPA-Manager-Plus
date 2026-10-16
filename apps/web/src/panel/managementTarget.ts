@@ -8,7 +8,7 @@ export function assertPanelManagementTarget(base: string, resource: string): voi
     !path.startsWith('/') ||
     path.startsWith('//') ||
     /[\\#]/.test(resource) ||
-    /%(?:2e|2f|5c)/i.test(path) ||
+    /%(?:2e|5c)/i.test(path) ||
     path.split('/').some((segment) => segment === '.' || segment === '..') ||
     path === '/api/v2' ||
     path.startsWith('/api/v2/')

@@ -32,7 +32,7 @@ func TestNonRootPathnameStaticAPIAndFailureOwnership(t *testing.T) {
 		{"/phase4-test/technical-route", "text/html", "no-cache", 200},
 		{"/phase4-test/technical-route", "text/html", "no-cache", 200}, // direct refresh
 		{"/phase4-test", "text/html", "no-cache", 200},
-		{"/phase4-test/", "text/html", "no-cache", 200},
+		{"/phase4-test/", "text/plain", "no-cache", 404},
 		{"/phase4-test/assets/index-AbCd1234.js", "javascript", "immutable", 200},
 		{"/phase4-test/assets/index-AbCd1234.css", "text/css", "immutable", 200},
 		{apiPath, "application/json", "no-cache", 200},
@@ -88,6 +88,51 @@ func TestStaticMountRequiresVerifiedAuthority(t *testing.T) {
 		h.ServeHTTP(w, r)
 		if w.Code != 404 {
 			t.Fatalf("state %s activated static", state)
+		}
+	}
+}
+
+func TestStaticAndAPIRejectUnserializableAuthority(t *testing.T) {
+	h := Handler{
+		Snapshot: routing.RoutingSnapshot{State: routing.SnapshotVerifiedEffective, VerifiedEffectiveControlBasePath: "/控制", Revision: 1},
+		Dist:     fstest.MapFS{"index.html": {Data: []byte("<html>must not serve</html>")}},
+		API:      http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("invalid authority reached API") }),
+	}
+	for _, target := range []string{"/控制/technical-route", "/%E6%8E%A7%E5%88%B6/technical-route", "/%E6%8E%A7%E5%88%B6/api/v2/technical-probe"} {
+		r := httptest.NewRequest(http.MethodGet, target, nil)
+		r.Header.Set("Accept", "text/html")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 404 || strings.Contains(w.Body.String(), "<html>") || w.Header().Get("Location") != "" {
+			t.Fatalf("invalid authority activated or redirected: %s: %d %v", target, w.Code, w.Header())
+		}
+	}
+}
+
+func TestStablePrefixAcrossHTMLAssetsAndAPI(t *testing.T) {
+	const prefix = "/AZaz09-._~$&+,/:;=@"
+	h := Handler{
+		Snapshot: routing.RoutingSnapshot{State: routing.SnapshotVerifiedEffective, VerifiedEffectiveControlBasePath: prefix, Revision: 1},
+		Dist: fstest.MapFS{
+			"index.html":               {Data: []byte(`<html><script src="./assets/index-AbCd1234.js"></script></html>`)},
+			"assets/index-AbCd1234.js": {Data: []byte("// carrier")},
+		},
+		API: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }),
+	}
+	for _, item := range []struct {
+		suffix string
+		status int
+	}{
+		{"", 200}, {"/technical-route", 200}, {"/technical-route", 200},
+		{"/assets/index-AbCd1234.js", 200}, {"/api/v2/probe", 204},
+		{"/", 404}, {"/api/v2/probe/", 404},
+	} {
+		r := httptest.NewRequest(http.MethodGet, prefix+item.suffix, nil)
+		r.Header.Set("Accept", "text/html")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != item.status || w.Header().Get("Location") != "" {
+			t.Fatalf("stable prefix %s: %d %v", item.suffix, w.Code, w.Header())
 		}
 	}
 }

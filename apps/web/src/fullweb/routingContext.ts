@@ -26,6 +26,8 @@ export interface RoutingContext {
 
 const canonicalBasePath = (value: unknown): value is string =>
   typeof value === 'string' &&
+  // Same URL-serialization-stable grammar as Manager ValidControlBasePath.
+  /^\/[A-Za-z0-9._~$&+,/:;=@-]+$/.test(value) &&
   value.startsWith('/') &&
   value !== '/' &&
   !/[\s\p{Cc}?#\\]/u.test(value) &&

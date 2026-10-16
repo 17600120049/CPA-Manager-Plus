@@ -41,9 +41,34 @@ describe('Full Web consumes the verified Manager routing projection', () => {
     '/phase4 x',
     '/phase4\u0000x',
     '/phase4\u0085x',
+    '/控制',
+    '/café',
+    '/😀',
+    '/control[admin]',
+    '/control!',
+    '/control%',
+    '/control"',
+    '/control`',
+    '/control{admin}',
   ])('rejects non-canonical control base %j', (verifiedEffectiveControlBasePath) => {
     expect(resolveRoutingContext({ ...snapshot, verifiedEffectiveControlBasePath })).toBeNull();
   });
+
+  it.each(['/phase4-test', '/control/sub-path', '/AZaz09-._~$&+,/:;=@'])(
+    'keeps canonical router, static and API paths unchanged by URL serialization: %s',
+    (basePath) => {
+      const context = resolveRoutingContext({
+        ...snapshot,
+        verifiedEffectiveControlBasePath: basePath,
+      });
+      expect(context?.basePath).toBe(basePath);
+      for (const suffix of ['', '/technical-route', '/assets/index-AbCd1234.js', '/api/v2/probe']) {
+        expect(new URL(basePath + suffix, 'https://manager.example').pathname).toBe(
+          basePath + suffix
+        );
+      }
+    }
+  );
 
   it.each([0, -1, 1.5, '1', Number.MAX_SAFE_INTEGER + 1, null])(
     'requires a positive safe snapshot revision %j',

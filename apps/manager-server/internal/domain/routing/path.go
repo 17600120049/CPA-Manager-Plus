@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -268,17 +269,19 @@ func (o NamespaceOwner) Owner(requestPath string) PathOwner {
 }
 
 func (o NamespaceOwner) matchesDeclaredControlNamespace(requestPath string) bool {
+	// Invalid authority cannot activate, but its literally claimed namespace
+	// remains deny-only even if it no longer meets the activation grammar.
 	for _, candidate := range []string{
 		o.Snapshot.DesiredControlBasePath,
 		o.Snapshot.VerifiedEffectiveControlBasePath,
 		o.Snapshot.PreviousVerifiedControlBasePath,
 	} {
-		if candidate != "" && ValidControlBasePath(candidate) && isSegmentPath(requestPath, candidate) {
+		if candidate != "" && validDeclaredControlBasePath(candidate) && isSegmentPath(requestPath, candidate) {
 			return true
 		}
 	}
 	for _, retired := range o.Retired {
-		if retired.ControlBasePath != "" && ValidControlBasePath(retired.ControlBasePath) &&
+		if retired.ControlBasePath != "" && validDeclaredControlBasePath(retired.ControlBasePath) &&
 			isSegmentPath(requestPath, retired.ControlBasePath) {
 			return true
 		}
@@ -333,10 +336,21 @@ func ValidateNamespaceCollisions(snapshot RoutingSnapshot, retired []RetiredName
 	return nil
 }
 
+// These ASCII path characters are stable under both Go URL.EscapedPath and
+// browser URL.pathname serialization. Browser validation mirrors this grammar;
+// it does not discover or normalize a routing authority.
+var canonicalControlBasePathCharacters = regexp.MustCompile(`^/[A-Za-z0-9._~$&+,/:;=@-]+$`)
+
 // ValidControlBasePath is the canonical grammar shared by snapshots and
-// retired namespaces. Percent-encoded separators/dot segments are rejected so
-// a later HTTP layer cannot give the same path two meanings.
+// retired namespaces. Reject paths needing URL escaping at authority validation
+// rather than accepting a mount the strict request classifier cannot serve.
 func ValidControlBasePath(value string) bool {
+	return canonicalControlBasePathCharacters.MatchString(value) && validDeclaredControlBasePath(value)
+}
+
+// Preserve Phase4-01's decoded namespace shape for deny-only ownership of an
+// invalid snapshot; narrowing activation must not release old claimed routes.
+func validDeclaredControlBasePath(value string) bool {
 	if value == "" || value == "/" || !strings.HasPrefix(value, "/") ||
 		strings.TrimSpace(value) != value || strings.Contains(value, "//") ||
 		strings.ContainsAny(value, "?#\\") || containsPercentEncoding(value) {

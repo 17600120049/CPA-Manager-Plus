@@ -8,14 +8,16 @@ import {
 } from './unsupportedManagerApi';
 
 describe('Panel Lite CPA transport boundary', () => {
-  it.each(['/config', '/auth-files/a.json', '/request-log-by-id/log%201?download=true'])(
-    'preserves CPA Management resources %s',
-    (resource) => {
-      expect(() =>
-        assertPanelManagementTarget('http://cpa:8317/v0/management', resource)
-      ).not.toThrow();
-    }
-  );
+  it.each([
+    '/config',
+    '/auth-files/a.json',
+    '/request-log-by-id/log%201?download=true',
+    '/plugin-store/demo%2Fplugin/install',
+  ])('preserves CPA Management resources %s', (resource) => {
+    expect(() =>
+      assertPanelManagementTarget('http://cpa:8317/v0/management', resource)
+    ).not.toThrow();
+  });
 
   it.each([
     '/api/v2',
@@ -24,6 +26,8 @@ describe('Panel Lite CPA transport boundary', () => {
     '//manager.example/control/api/v2/status',
     '/../../control/api/v2/status',
     '/%2e%2e/control/api/v2/status',
+    '/.%2e/control/api/v2/status',
+    '/%5cmanager.example/path',
     '/\\manager.example/path',
   ])('rejects CPAMP or escaping destinations %s', (resource) => {
     expect(() => assertPanelManagementTarget('http://cpa:8317/v0/management', resource)).toThrow();

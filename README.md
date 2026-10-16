@@ -232,7 +232,7 @@ docker compose -f docker-compose.manager.yml up --build
 
 ## Release
 
-- `npm run build` creates a single-file `apps/web/dist/index.html`.
+- `npm run build` creates single-file Panel Lite `apps/web/dist/panel/management.html` and multi-resource Full Web `apps/web/dist/fullweb/index.html` with hashed assets.
 - `bin/release/package-native.sh` embeds the panel into native packages.
 - Create release notes through `release/<version> -> dev -> main`, then push a
   strict `vX.Y.Z` or prerelease tag from the verified `main` promotion merge.

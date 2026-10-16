@@ -45,6 +45,21 @@ describe('canonical Full Web Public API transport', () => {
     expect(transport.mock.calls[0][1]?.headers).toEqual({ Accept: 'application/json' });
   });
 
+  it('serves the full serialization-stable prefix grammar without a second base model', async () => {
+    browserOrigin();
+    const basePath = '/AZaz09-._~$&+,/:;=@';
+    const stableContext = resolveRoutingContext({
+      state: 'verified_effective',
+      verifiedEffectiveControlBasePath: basePath,
+      revision: 1,
+    });
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({}));
+    await createPublicApiClient(() => stableContext, transport).get('technical', credential);
+    expect(transport.mock.calls[0][0]).toBe(
+      `https://manager.example:18317${basePath}/api/v2/technical`
+    );
+  });
+
   it.each([
     '',
     '/',
@@ -78,6 +93,8 @@ describe('canonical Full Web Public API transport', () => {
     { ...context, apiBase: 'https://evil/api/v2' },
     { ...context, basePath: '//external.example' },
     { ...context, revision: 0 },
+    { ...context, basePath: '/控制', apiBase: '/控制/api/v2' },
+    { ...context, basePath: '/control[admin]', apiBase: '/control[admin]/api/v2' },
   ])('fails closed for unavailable or inconsistent context %j', async (value) => {
     browserOrigin();
     const transport = vi.fn<typeof fetch>();

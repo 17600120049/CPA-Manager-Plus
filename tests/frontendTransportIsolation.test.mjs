@@ -161,6 +161,11 @@ describe('Full Web / Panel Lite runtime dependency isolation', () => {
       'utf8'
     );
     expect(backend).toContain(`PublicAPIV2Suffix = "${ledger.canonicalPublicApiV2Suffix}"`);
+    const grammar = backend.match(
+      /canonicalControlBasePathCharacters = regexp.MustCompile\(`([^`]+)`\)/
+    )?.[1];
+    expect(grammar).toBeDefined();
+    expect(browser).toContain(`/${grammar.replace('^/', '^\\/')}/.test(value)`);
     const reserved = backend.match(
       /func reservedNamespaceCollision[\s\S]*?\[\]string\{([\s\S]*?)\}/
     )?.[1];
