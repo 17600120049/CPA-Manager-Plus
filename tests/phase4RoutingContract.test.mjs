@@ -38,6 +38,27 @@ describe('Phase4-01 routing ownership contract', () => {
     expect(fixture.routes.filter((route) => route.id === 'retired_control_namespace')).toHaveLength(1);
   });
 
+  it('keeps the route-owner ledger strict and non-overlapping', () => {
+    const fixture = readJSON(fixturePath);
+    const expected = {
+      bootstrap_discovery: ['exact_fixed_path', 'manager', 'deny'],
+      public_api_v2_namespace: ['verified_effective_segment_prefix', 'manager', 'deny'],
+      retired_control_namespace: ['previous_verified_segment_prefix', 'manager', 'deny'],
+      legacy_manager_routes: ['existing_fixed_or_segment_prefix', 'manager', 'deny'],
+      gateway_model_protocol: ['existing_data_plane_protocol', 'gateway', 'preserve'],
+      unknown_non_control_path: ['outside_control_namespaces', 'gateway', 'preserve'],
+    };
+
+    expect(fixture.routes).toHaveLength(Object.keys(expected).length);
+    expect(new Set(fixture.routes.map((route) => route.id)).size).toBe(fixture.routes.length);
+    expect(new Set(fixture.routes.map((route) => route.match)).size).toBe(fixture.routes.length);
+    expect([...fixture.routes.map((route) => route.id)].sort()).toEqual(Object.keys(expected).sort());
+
+    for (const route of fixture.routes) {
+      expect([route.match, route.owner, route.gatewayFallback]).toEqual(expected[route.id]);
+    }
+  });
+
   it('keeps routing authority and credential decisions separate', () => {
     const fixture = readJSON(fixturePath);
     const discovery = fixture.routes.find((route) => route.id === 'bootstrap_discovery');

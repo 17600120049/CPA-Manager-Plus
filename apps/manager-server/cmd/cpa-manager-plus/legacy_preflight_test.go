@@ -550,11 +550,11 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertDiscovery(http.StatusOK, "unsupported_upgrade")
+	assertDiscovery(http.StatusServiceUnavailable, "")
 	if err := operatorLock.Close(); err != nil {
 		t.Fatal(err)
 	}
-	assertDiscovery(http.StatusServiceUnavailable, "")
+	assertDiscovery(http.StatusOK, "unsupported_upgrade")
 	if err := os.Remove(path + ".manager.lock"); err != nil {
 		t.Fatal(err)
 	}

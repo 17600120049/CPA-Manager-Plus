@@ -82,6 +82,9 @@ type PublicDiscovery struct {
 const (
 	PublicDiscoveryContractVersion = "cpamp.phase4-01.discovery.v1"
 	FixedBootstrapDiscoveryPath    = "/.well-known/cpamp-bootstrap"
+	// FixedLivenessPath preserves the existing Manager readiness carrier. It is
+	// transport compatibility, not a Bootstrap lifecycle or route-ledger model.
+	FixedLivenessPath = "/health"
 )
 
 func (d PublicDiscovery) Validate() error {
