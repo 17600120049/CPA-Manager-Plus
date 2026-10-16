@@ -124,6 +124,7 @@ func TestFencedInspectionObservesLegacyWithoutPersistentMarker(t *testing.T) {
 					if err := os.Remove(sidecar); err != nil {
 						t.Fatal(err)
 					}
+				}
 			}
 			if info, err := os.Stat(paths.Database + "-wal"); err == nil && info.Size() > 0 {
 				t.Skip("SQLite retained WAL recovery content after clean close")

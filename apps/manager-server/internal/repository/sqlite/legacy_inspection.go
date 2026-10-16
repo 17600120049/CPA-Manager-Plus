@@ -224,7 +224,9 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 	var reader inspectionQueryer = db
 	var readTx *sql.Tx
 	if readOnlySnapshot {
-		readTx, err = db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		// The connection is already mode=ro + query_only; a plain transaction
+		// gives one SQLite snapshot without depending on driver TxOptions support.
+		readTx, err = db.BeginTx(ctx, nil)
 		if err != nil {
 			return result, errors.New("SQLite read transaction unavailable")
 		}
