@@ -1,15 +1,22 @@
 package bootstrapdiscovery
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 )
 
@@ -86,6 +93,98 @@ func TestProjectEvidenceBoundedModes(t *testing.T) {
 			}
 			if err := test.want.Validate(); err != nil {
 				t.Fatalf("expected discovery is invalid: %v", err)
+			}
+		})
+	}
+}
+
+func TestInspectedCredentialSelectsRecoveryOrAdminSessionWithoutWrites(t *testing.T) {
+	const adminKey = "cpamp_owned_credential_secret"
+	credential, err := security.NewAdminCredential(adminKey, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		change func(*model.AdminCredential)
+		raw    string
+		valid  bool
+	}{
+		{name: "real credential", valid: true},
+		{name: "legacy iterations", change: func(c *model.AdminCredential) { c.Iterations = 0 }, valid: true},
+		{name: "short digest", change: func(c *model.AdminCredential) { c.KeyHash = "a2V5" }},
+		{name: "unsupported version", change: func(c *model.AdminCredential) { c.Version = 2 }},
+		{name: "whitespace encoding", change: func(c *model.AdminCredential) { c.Salt = " " + c.Salt }},
+		{name: "invalid JSON", raw: `{"salt":"OWNED_SECRET`},
+		{name: "wrong field type", raw: `{"version":1,"salt":123,"keyHash":"OWNED_SECRET"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			paths := legacypreflight.DefaultPaths(filepath.Join(dir, "source.sqlite"))
+			current := credential
+			if test.change != nil {
+				test.change(&current)
+			}
+			raw, err := json.Marshal(current)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.raw != "" {
+				raw = []byte(test.raw)
+			}
+			db, err := sql.Open("sqlite", paths.Database)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`create table settings(key text primary key,value text); create table usage_events(id integer primary key)`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`insert into settings values('admin_credential_v1',?)`, string(raw)); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(paths.Database)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, err := legacypreflight.Inspect(context.Background(), paths, legacypreflight.Options{SourceStopped: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := Project(Input{Report: report})
+			wantMode, wantAuth := bootstrap.Recovery, bootstrap.AuthEntryHostIntervention
+			if test.valid {
+				wantMode, wantAuth = bootstrap.UnsupportedUpgrade, bootstrap.AuthEntryAdminSession
+			}
+			if result.Mode == nil || *result.Mode != wantMode || result.AuthEntry != wantAuth {
+				t.Fatalf("credential classification=%+v want %s/%s", result, wantMode, wantAuth)
+			}
+			if security.VerifyAdminKey(current, adminKey) != test.valid && test.raw == "" {
+				t.Fatal("fixture disagrees with real authentication")
+			}
+			response := httptest.NewRecorder()
+			Handler{Discovery: result}.ServeHTTP(response, httptest.NewRequest(http.MethodGet, Path, nil))
+			if response.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			encoded, err := json.Marshal(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, secret := range []string{adminKey, credential.Salt, credential.KeyHash, "OWNED_SECRET"} {
+				if strings.Contains(string(encoded), secret) || strings.Contains(response.Body.String(), secret) {
+					t.Fatal("credential leaked into observation/discovery")
+				}
+			}
+			after, err := os.ReadFile(paths.Database)
+			if err != nil || !reflect.DeepEqual(before, after) {
+				t.Fatalf("inspection changed source: %v", err)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("inspection created source-adjacent artifacts: entries=%v err=%v", entries, err)
 			}
 		})
 	}

@@ -60,8 +60,9 @@ describe('Phase4-01 routing ownership contract', () => {
 
   it('keeps the discovery carrier connected to the Manager-owned read-only path', () => {
     const startup = readFileSync(managerStartupPath, 'utf8');
-    expect(startup).toContain('Active:    bootstrapdiscovery.Handler{Discovery: result}');
-    expect(startup).toContain('discovery routingdomain.DiscoveryHandler');
+    expect(startup).toContain('http.HandlerFunc(h.serveDiscovery)');
+    expect(startup).toContain('bootstrapdiscovery.Handler{Discovery: h.projection}');
+    expect(startup).toMatch(/discovery\s+routingdomain\.DiscoveryHandler/);
     expect(startup).toContain('h.lifecycle.Store(routingdomain.DiscoveryActive)');
     expect(startup).toContain('h.lifecycle.Store(routingdomain.DiscoveryCompleted)');
   });

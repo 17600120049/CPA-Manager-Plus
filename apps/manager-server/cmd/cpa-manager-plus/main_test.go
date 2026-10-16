@@ -240,7 +240,106 @@ func TestStartupHTTPHandlerKeepsDiscoveryBeforeReadyAndDelegatesAfter(t *testing
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
 	if response.Code != http.StatusNotFound || strings.Contains(response.Body.String(), "completed") || strings.Contains(response.Body.String(), "controlBasePath") {
-		t.Fatalf("completed discovery was exposed after writable graph became ready: status=%d body=%q", response.Code, response.Body.String())
+		t.Fatalf("explicit completed lifecycle disclosed discovery: status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func TestWritableStartupInvalidatesFreshWithoutCompletingBootstrap(t *testing.T) {
+	mode := bootstrap.Fresh
+	handler := newStartupHTTPHandler(bootstrap.PublicDiscovery{
+		ContractVersion: bootstrap.PublicDiscoveryContractVersion,
+		Status:          bootstrap.PublicFreshClaimRequired, Mode: &mode,
+		AuthenticationRequired: true, AuthEntry: bootstrap.AuthEntryFreshClaim,
+		Reason: bootstrap.ReasonFreshClaimRequired,
+	})
+	handler.BeginWritableStartup()
+	for _, ready := range []bool{false, true} {
+		if ready {
+			handler.SetReady(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+		if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) ||
+			!strings.Contains(response.Body.String(), `"status":"unavailable"`) {
+			t.Fatalf("ready=%v reused a stale mode or completed Bootstrap: status=%d body=%s", ready, response.Code, response.Body.String())
+		}
+		if handler.discoveryLifecycle() != "active" {
+			t.Fatalf("ready=%v changed Bootstrap lifecycle: %s", ready, handler.discoveryLifecycle())
+		}
+	}
+}
+
+func TestStartupHealthRemainsUnreadyUntilGraphReady(t *testing.T) {
+	handler := newStartupHTTPHandler(bootstrapdiscovery.Unavailable())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), `"ok":false`) {
+		t.Fatalf("pre-ready health succeeded: status=%d body=%s", response.Code, response.Body.String())
+	}
+	handler.SetReady(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true,"service":"existing-manager"}`))
+	}))
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "existing-manager") {
+		t.Fatalf("ready health did not delegate: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestConcurrentDiscoveryDoesNotFallThroughDuringWritableStartup(t *testing.T) {
+	mode := bootstrap.Fresh
+	handler := newStartupHTTPHandler(bootstrap.PublicDiscovery{
+		ContractVersion: bootstrap.PublicDiscoveryContractVersion,
+		Status:          bootstrap.PublicFreshClaimRequired, Mode: &mode,
+		AuthenticationRequired: true, AuthEntry: bootstrap.AuthEntryFreshClaim,
+		Reason: bootstrap.ReasonFreshClaimRequired,
+	})
+	var requests sync.WaitGroup
+	start := make(chan struct{})
+	for range 8 {
+		requests.Add(1)
+		go func() {
+			defer requests.Done()
+			<-start
+			for range 50 {
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+				if response.Code != http.StatusOK && response.Code != http.StatusServiceUnavailable {
+					t.Errorf("discovery lost ownership during transition: %d", response.Code)
+				}
+			}
+		}()
+	}
+	close(start)
+	handler.BeginWritableStartup()
+	handler.SetReady(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	requests.Wait()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) {
+		t.Fatalf("pre-write projection survived invalidation: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestStartupDiscoveryDoesNotInventAuthorityAndExpiresBeforeWrites(t *testing.T) {
+	content, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(content)
+	if strings.Contains(source, "SourceStopped = true") || strings.Contains(source, "startupHandler.SetCompleted()") {
+		t.Fatal("normal startup manufactured source quiescence or Bootstrap completion")
+	}
+	admitAt := strings.Index(source, "legacypreflight.AdmitStartup(")
+	expireAt := strings.Index(source, "startupHandler.BeginWritableStartup()")
+	writeAt := strings.Index(source, "config.Load()")
+	if admitAt < 0 || expireAt < admitAt || writeAt < expireAt {
+		t.Fatalf("discovery invalidation does not precede writable initialization: admit=%d expire=%d write=%d", admitAt, expireAt, writeAt)
 	}
 }
 

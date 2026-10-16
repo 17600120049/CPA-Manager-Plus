@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -16,7 +15,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 )
 
 // Empty optional locations mean not-inspected, never missing.
@@ -417,24 +418,12 @@ func inspectBootstrapState(ctx context.Context, db *sql.DB, result *LegacyInspec
 		}
 	}
 	if adminFound {
-		var credential struct {
-			Version    int    `json:"version"`
-			Salt       string `json:"salt"`
-			KeyHash    string `json:"keyHash"`
-			Iterations int    `json:"iterations"`
-		}
-		if err := json.Unmarshal([]byte(adminRaw), &credential); err != nil {
-			result.BootstrapState.Valid = false
+		var credential model.AdminCredential
+		if err := json.Unmarshal([]byte(adminRaw), &credential); err != nil || !security.IsValidAdminCredential(credential) {
+			// A stable source with an unusable credential is positive Recovery
+			// evidence, not an unreadable source or an initialized administrator.
 			result.BootstrapState.AdminCredential = "unverifiable"
-			return errors.New("invalid admin credential")
-		}
-		salt, saltErr := base64.RawStdEncoding.DecodeString(strings.TrimSpace(credential.Salt))
-		keyHash, keyHashErr := base64.RawStdEncoding.DecodeString(strings.TrimSpace(credential.KeyHash))
-		if credential.Version <= 0 || saltErr != nil || len(salt) == 0 ||
-			keyHashErr != nil || len(keyHash) == 0 || credential.Iterations <= 0 {
-			result.BootstrapState.Valid = false
-			result.BootstrapState.AdminCredential = "unverifiable"
-			return errors.New("invalid admin credential")
+			return nil
 		}
 		result.BootstrapState.AdminCredential = "initialized"
 	}

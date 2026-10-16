@@ -201,10 +201,8 @@ func runServerWithOptions(options legacypreflight.Options) {
 	// A diagnostic inspection is intentionally performed before writable
 	// admission. It may feed only the fixed discovery response; the normal gate
 	// below remains the sole authority for data-key/store/bootstrap writes.
-	discoveryOptions := options
-	discoveryOptions.SourceStopped = true
 	inspectionCtx, cancelInspection := context.WithTimeout(context.Background(), inspectionTimeout)
-	discoveryReport, discoveryErr := legacypreflight.Inspect(inspectionCtx, paths, discoveryOptions)
+	discoveryReport, discoveryErr := legacypreflight.Inspect(inspectionCtx, paths, options)
 	cancelInspection()
 	discoveryResult := bootstrapdiscovery.Project(bootstrapdiscovery.Input{Report: discoveryReport, InspectionError: discoveryErr})
 	startupHandler := newStartupHTTPHandler(discoveryResult)
@@ -234,6 +232,10 @@ func runServerWithOptions(options legacypreflight.Options) {
 			log.Printf("close manager database process lock: %v", err)
 		}
 	}()
+	// Admission permits writes, not a Bootstrap Completed transition. Revoke
+	// the pre-write observation before config/key/store initialization can make
+	// it stale. Phase4-01 has no qualified post-write discovery authority.
+	startupHandler.BeginWritableStartup()
 	// Defaults are created only after the source has passed fenced admission.
 	// Fatalf exits without running defers; release/rollback admission explicitly
 	// on initialization errors before a database has been opened successfully.
@@ -450,10 +452,8 @@ func runServerWithOptions(options legacypreflight.Options) {
 	}
 	// Only after the complete writable Manager graph is assembled do unrelated
 	// routes become reachable. The fixed discovery path remains captured by the
-	// outer handler for its lifecycle terminal behavior. A successfully admitted
-	// and assembled native process is completed from the unauthenticated
-	// discovery contract's perspective; completed is never serialized there.
-	startupHandler.SetCompleted()
+	// outer handler for its independent Bootstrap lifecycle. Graph readiness
+	// grants no Completed authority; the invalidated projection stays unavailable.
 	startupHandler.SetReady(serverApp.Handler())
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtimeReconciler := runtimeservice.NewReconciler(

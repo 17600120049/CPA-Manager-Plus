@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -15,12 +16,13 @@ import (
 // delegated to. The fixed path remains captured for the lifetime of the
 // process, including the future completed terminal behavior.
 type startupHTTPHandler struct {
-	discovery routingdomain.DiscoveryHandler
-	liveness  http.Handler
-	protected http.Handler
-	next      atomic.Value // *startupHandlerTarget
-	lifecycle atomic.Value // routingdomain.DiscoveryLifecycle
-	ready     atomic.Bool
+	discovery    routingdomain.DiscoveryHandler
+	protected    http.Handler
+	projectionMu sync.RWMutex
+	projection   bootstrap.PublicDiscovery
+	next         atomic.Value // *startupHandlerTarget
+	lifecycle    atomic.Value // routingdomain.DiscoveryLifecycle
+	ready        atomic.Bool
 }
 
 type startupHandlerTarget struct {
@@ -28,15 +30,29 @@ type startupHandlerTarget struct {
 }
 
 func newStartupHTTPHandler(result bootstrap.PublicDiscovery) *startupHTTPHandler {
-	h := &startupHTTPHandler{liveness: bootstrapdiscovery.LivenessHandler{}}
+	h := &startupHTTPHandler{projection: result}
 	h.lifecycle.Store(routingdomain.DiscoveryActive)
 	h.discovery = routingdomain.DiscoveryHandler{
 		Lifecycle: h.discoveryLifecycle,
-		Active:    bootstrapdiscovery.Handler{Discovery: result},
+		Active:    http.HandlerFunc(h.serveDiscovery),
 	}
 	h.protected = routingdomain.ProtectFixedDiscovery(http.HandlerFunc(h.serveNonDiscovery), h.discovery)
 	h.next.Store(&startupHandlerTarget{handler: http.NotFoundHandler()})
 	return h
+}
+
+func (h *startupHTTPHandler) serveDiscovery(w http.ResponseWriter, r *http.Request) {
+	h.projectionMu.RLock()
+	defer h.projectionMu.RUnlock()
+	bootstrapdiscovery.Handler{Discovery: h.projection}.ServeHTTP(w, r)
+}
+
+// BeginWritableStartup drains pre-write projections before their evidence can
+// become stale. It neither completes Bootstrap nor grants a new classification.
+func (h *startupHTTPHandler) BeginWritableStartup() {
+	h.projectionMu.Lock()
+	defer h.projectionMu.Unlock()
+	h.projection = bootstrapdiscovery.Unavailable()
 }
 
 func (h *startupHTTPHandler) discoveryLifecycle() routingdomain.DiscoveryLifecycle {
@@ -64,8 +80,12 @@ func (h *startupHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *startupHTTPHandler) serveNonDiscovery(w http.ResponseWriter, r *http.Request) {
-	if !h.ready.Load() && r != nil && r.URL != nil && r.URL.Path == bootstrapdiscovery.HealthPath {
-		h.liveness.ServeHTTP(w, r)
+	if !h.ready.Load() {
+		if r != nil && r.URL != nil && r.URL.Path == bootstrapdiscovery.HealthPath {
+			bootstrapdiscovery.NotReadyHandler{}.ServeHTTP(w, r)
+		} else {
+			http.NotFound(w, r)
+		}
 		return
 	}
 	target, _ := h.next.Load().(*startupHandlerTarget)

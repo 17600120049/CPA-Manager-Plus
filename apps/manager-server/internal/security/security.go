@@ -59,17 +59,33 @@ func NewAdminCredential(adminKey string, source string) (model.AdminCredential, 
 	}, nil
 }
 
-func VerifyAdminKey(credential model.AdminCredential, adminKey string) bool {
-	adminKey = strings.TrimSpace(adminKey)
-	if adminKey == "" || credential.Salt == "" || credential.KeyHash == "" {
-		return false
+// IsValidAdminCredential checks supported stored credential structure without
+// deriving a key or claiming possession. Legacy salt sizes and the verifier's
+// non-positive iteration fallback remain supported.
+func IsValidAdminCredential(credential model.AdminCredential) bool {
+	_, _, ok := decodeAdminCredential(credential)
+	return ok
+}
+
+func decodeAdminCredential(credential model.AdminCredential) ([]byte, []byte, bool) {
+	if credential.Version != 1 {
+		return nil, nil, false
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(credential.Salt)
-	if err != nil {
-		return false
+	if err != nil || len(salt) == 0 {
+		return nil, nil, false
 	}
 	want, err := base64.RawStdEncoding.DecodeString(credential.KeyHash)
-	if err != nil {
+	if err != nil || len(want) != sha256.Size {
+		return nil, nil, false
+	}
+	return salt, want, true
+}
+
+func VerifyAdminKey(credential model.AdminCredential, adminKey string) bool {
+	adminKey = strings.TrimSpace(adminKey)
+	salt, want, ok := decodeAdminCredential(credential)
+	if adminKey == "" || !ok {
 		return false
 	}
 	iterations := credential.Iterations

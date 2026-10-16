@@ -17,8 +17,8 @@ const (
 	// Path aliases the single domain-owned fixed discovery path. The HTTP
 	// routing package and the checked-in route ledger use the same value.
 	Path = bootstrap.FixedBootstrapDiscoveryPath
-	// HealthPath is the existing fixed liveness transport. During pre-write
-	// startup it reports process liveness only and never product readiness.
+	// HealthPath preserves the existing readiness consumer contract. It must
+	// not succeed until the full Manager graph is ready.
 	HealthPath = bootstrap.FixedLivenessPath
 )
 
@@ -184,12 +184,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, dto)
 }
 
-// LivenessHandler is the pre-ready projection of the existing Manager health
-// transport. It reports only process liveness and has no product readiness or
-// writable-startup authority.
-type LivenessHandler struct{}
+// NotReadyHandler keeps installer and Docker readiness probes unsuccessful
+// while only read-only discovery is available.
+type NotReadyHandler struct{}
 
-func (LivenessHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (NotReadyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r == nil || r.URL == nil || r.URL.Path != HealthPath {
 		http.NotFound(w, r)
 		return
@@ -202,7 +201,7 @@ func (LivenessHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "phase": "bootstrap"})
+	writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

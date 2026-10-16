@@ -283,8 +283,8 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 				if discoveryStatus != http.StatusOK && discoveryStatus != http.StatusServiceUnavailable {
 					t.Fatalf("blocked %s discovery status=%d body=%s", kind, discoveryStatus, discoveryBody)
 				}
-				if strings.HasPrefix(kind, "legacy") && (discoveryStatus != http.StatusOK || !strings.Contains(discoveryBody, `"mode":"recovery"`)) {
-					t.Fatalf("legacy %s did not expose bounded recovery classification: status=%d body=%s", kind, discoveryStatus, discoveryBody)
+				if strings.HasPrefix(kind, "legacy") && (discoveryStatus != http.StatusServiceUnavailable || strings.Contains(discoveryBody, `"mode"`)) {
+					t.Fatalf("unfenced legacy %s manufactured a mode: status=%d body=%s", kind, discoveryStatus, discoveryBody)
 				}
 				if kind == "empty-database" && (discoveryStatus != http.StatusOK || !strings.Contains(discoveryBody, `"mode":"recovery"`)) {
 					t.Fatalf("stable empty source did not expose recovery classification: status=%d body=%s", discoveryStatus, discoveryBody)
@@ -293,7 +293,7 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 					t.Fatalf("unsafe damaged source manufactured a mode: status=%d body=%s", discoveryStatus, discoveryBody)
 				}
 				healthStatus, _ := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.HealthPath)
-				if healthStatus != http.StatusOK {
+				if healthStatus != http.StatusServiceUnavailable {
 					t.Fatalf("blocked %s health status=%d", kind, healthStatus)
 				}
 				mutationStatus, _ := waitForManagerResponse(t, process.addr, http.MethodPost, "/usage-service/config")
@@ -317,11 +317,31 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`create table settings(key text primary key,value text); create table usage_events(id integer primary key); insert into settings(key,value) values('admin_credential_v1','{"version":1,"salt":"c2FsdA","keyHash":"a2V5","iterations":1}')`); err != nil {
+	if _, err := db.Exec(`create table settings(key text primary key,value text); create table usage_events(id integer primary key)`); err != nil {
 		_ = db.Close()
 		t.Fatal(err)
 	}
+	credential, err := security.NewAdminCredential("cpamp_real_fixture_key", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`insert into settings(key,value) values('admin_credential_v1',?)`, string(raw)); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// A real existing cooperative ownership fence permits bounded discovery;
+	// ordinary startup must not manufacture an operator stop assertion.
+	lock, err := processlock.Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lock.Close(); err != nil {
 		t.Fatal(err)
 	}
 	before := managerSourceSnapshot(t, dir)
@@ -339,7 +359,7 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 		t.Fatal("discovery changed source/config/bootstrap state before writable startup")
 	}
 	healthStatus, _ := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.HealthPath)
-	if healthStatus != http.StatusOK {
+	if healthStatus != http.StatusServiceUnavailable {
 		t.Fatalf("pre-write health status=%d", healthStatus)
 	}
 	mutationStatus, _ := waitForManagerResponse(t, process.addr, http.MethodPost, "/usage-service/config")
@@ -384,12 +404,18 @@ func TestNativeSourceDiscoveryDoesNotInferCompleted(t *testing.T) {
 	path := filepath.Join(dir, "usage.sqlite")
 	writeOwnedProvisioningConfig(t, dir)
 	first := startManagerServerProcess(t, dir, path, "initialize")
+	assertManagerEndpoint(t, first.addr, "/health")
+	status, body := waitForManagerResponse(t, first.addr, http.MethodGet, bootstrapdiscovery.Path)
+	if status != http.StatusServiceUnavailable || strings.Contains(body, `"mode"`) {
+		t.Fatalf("fresh graph readiness completed Bootstrap or reused Fresh evidence: status=%d body=%s", status, body)
+	}
 	first.stop(t)
 	second := startManagerServerProcess(t, dir, path)
 	defer second.stop(t)
-	status, body := waitForManagerResponse(t, second.addr, http.MethodGet, bootstrapdiscovery.Path)
-	if status != http.StatusOK || !strings.Contains(body, `"mode":"unsupported_upgrade"`) || strings.Contains(body, `"mode":"completed"`) {
-		t.Fatalf("native discovery inferred an invalid terminal mode: status=%d body=%s", status, body)
+	assertManagerEndpoint(t, second.addr, "/health")
+	status, body = waitForManagerResponse(t, second.addr, http.MethodGet, bootstrapdiscovery.Path)
+	if status != http.StatusServiceUnavailable || strings.Contains(body, `"mode"`) {
+		t.Fatalf("native graph readiness inferred completion or reused pre-write evidence: status=%d body=%s", status, body)
 	}
 }
 
