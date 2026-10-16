@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CPAMP Phase4-01 contract/security contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "contractVersion",
+    "productBaseline",
+    "productionUpgradeEnabled",
+    "fixedBootstrapDiscoveryPath",
+    "routeOwnerLedger",
+    "completedDiscoveryTerminal",
+    "unauthenticatedDiscoveryFields",
+    "forbiddenDiscoveryFields",
+    "admissionCases",
+    "integrationRequirements"
+  ],
+  "properties": {
+    "$schema": { "const": "./phase4-01-contract.schema.json" },
+    "contractVersion": { "const": "cpamp.phase4-01.contract.v1" },
+    "productBaseline": {
+      "const": "c0a4418d02a18247630cec03365637cce0eaf639"
+    },
+    "productionUpgradeEnabled": { "const": false },
+    "fixedBootstrapDiscoveryPath": { "const": "/.well-known/cpamp-bootstrap" },
+    "routeOwnerLedger": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/routeOwner" }
+    },
+    "completedDiscoveryTerminal": { "const": "generic_404" },
+    "unauthenticatedDiscoveryFields": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string" }
+    },
+    "forbiddenDiscoveryFields": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string" }
+    },
+    "admissionCases": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/admissionCase" }
+    },
+    "integrationRequirements": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "routeOwner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "contractVersion",
+        "methodClass",
+        "path",
+        "pathBinding",
+        "namespace",
+        "lifecycle",
+        "publicOwner",
+        "internalOwner",
+        "authClass",
+        "credentialAuthority",
+        "fallbackPolicy",
+        "terminalBehavior",
+        "collisionClass"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "contractVersion": { "const": "cpamp.phase4-01.route-owner.v1" },
+        "methodClass": {
+          "enum": ["all", "get_options", "namespace", "liveness", "static"]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "pathBinding": {
+          "const": "exact"
+        },
+        "namespace": { "type": "string", "minLength": 1 },
+        "lifecycle": { "enum": ["active", "terminal", "retired"] },
+        "publicOwner": {
+          "enum": [
+            "fixed_bootstrap_discovery",
+            "canonical_public_api_v2",
+            "manager_control",
+            "gateway_data_plane",
+            "full_web_static_spa",
+            "panel_lite",
+            "fixed_transport_liveness",
+            "retired_control_deny_only"
+          ]
+        },
+        "internalOwner": {
+          "enum": [
+            "fixed_bootstrap_discovery",
+            "canonical_public_api_v2",
+            "manager_control",
+            "gateway_data_plane",
+            "full_web_static_spa",
+            "panel_lite",
+            "fixed_transport_liveness",
+            "retired_control_deny_only"
+          ]
+        },
+        "authClass": {
+          "enum": [
+            "unauthenticated",
+            "manager_session",
+            "manager_control_auth",
+            "cpa_management_key",
+            "data_plane_auth",
+            "retired_deny"
+          ]
+        },
+        "credentialAuthority": {
+          "enum": [
+            "none",
+            "manager_session",
+            "manager_admin_or_session",
+            "cpa_management_key",
+            "data_plane_client",
+            "never_forward"
+          ]
+        },
+        "fallbackPolicy": {
+          "enum": ["manager_reject", "gateway", "no_gateway_fallback", "panel_reject"]
+        },
+        "terminalBehavior": {
+          "enum": ["active", "generic_404", "manager_method_policy", "deny", "gateway_forward"]
+        },
+        "collisionClass": {
+          "enum": ["fixed_transport", "canonical_namespace", "gateway_protocol", "nested_specificity", "retired_namespace"]
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release", "sourceCommit"],
+      "properties": {
+        "release": { "const": "v1.14.4" },
+        "sourceCommit": { "const": "166262365d506157b99968105c890f480cc7c07c" }
+      }
+    },
+    "admissionCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "case",
+        "shape",
+        "provenance",
+        "requestedTarget",
+        "observedSourceCommit",
+        "expected"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "case": { "enum": ["unknown_newer_same_schema", "downgrade"] },
+        "shape": { "enum": ["legacy_schema_a", "legacy_schema_b", "legacy_schema_c", "unknown"] },
+        "provenance": { "const": "unknown_or_newer" },
+        "requestedTarget": { "$ref": "#/$defs/candidate" },
+        "observedSourceCommit": { "type": "string", "minLength": 1 },
+        "expected": { "$ref": "#/$defs/admissionDecision" }
+      }
+    },
+    "admissionDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted", "mode", "reason", "qualification", "sourceIdentityPreserved"],
+      "properties": {
+        "accepted": { "const": false },
+        "mode": { "const": "unsupported_upgrade" },
+        "reason": { "enum": ["unknown_newer_same_schema", "downgrade_forbidden"] },
+        "qualification": { "const": "pending" },
+        "sourceIdentityPreserved": { "const": true }
+      }
+    }
+  }
+}

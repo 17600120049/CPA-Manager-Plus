@@ -1,0 +1,209 @@
+{
+  "$schema": "./phase4-01-contract.schema.json",
+  "contractVersion": "cpamp.phase4-01.contract.v1",
+  "productBaseline": "c0a4418d02a18247630cec03365637cce0eaf639",
+  "productionUpgradeEnabled": false,
+  "fixedBootstrapDiscoveryPath": "/.well-known/cpamp-bootstrap",
+  "routeOwnerLedger": [
+    {
+      "id": "fixed-bootstrap-discovery",
+      "contractVersion": "cpamp.phase4-01.route-owner.v1",
+      "methodClass": "all",
+      "path": "/.well-known/cpamp-bootstrap",
+      "pathBinding": "exact",
+      "namespace": "fixed-bootstrap-discovery",
+      "lifecycle": "active",
+      "publicOwner": "fixed_bootstrap_discovery",
+      "internalOwner": "fixed_bootstrap_discovery",
+      "authClass": "unauthenticated",
+      "credentialAuthority": "none",
+      "fallbackPolicy": "manager_reject",
+      "terminalBehavior": "manager_method_policy",
+      "collisionClass": "fixed_transport"
+    },
+    {
+      "id": "canonical-public-api-v2",
+      "contractVersion": "cpamp.phase4-01.route-owner.v1",
+      "methodClass": "namespace",
+      "path": "<controlBasePath>/api/v2/*",
+      "pathBinding": "exact",
+      "namespace": "<controlBasePath>/api/v2/*",
+      "lifecycle": "active",
+      "publicOwner": "canonical_public_api_v2",
+      "internalOwner": "canonical_public_api_v2",
+      "authClass": "manager_session",
+      "credentialAuthority": "manager_session",
+      "fallbackPolicy": "no_gateway_fallback",
+      "terminalBehavior": "active",
+      "collisionClass": "canonical_namespace"
+    },
+    {
+      "id": "manager-control-namespace",
+      "contractVersion": "cpamp.phase4-01.route-owner.v1",
+      "methodClass": "namespace",
+      "path": "<controlBasePath>/control-plane",
+      "pathBinding": "exact",
+      "namespace": "<controlBasePath>/control-plane",
+      "lifecycle": "active",
+      "publicOwner": "manager_control",
+      "internalOwner": "manager_control",
+      "authClass": "manager_control_auth",
+      "credentialAuthority": "manager_admin_or_session",
+      "fallbackPolicy": "no_gateway_fallback",
+      "terminalBehavior": "active",
+      "collisionClass": "canonical_namespace"
+    },
+    {
+      "id": "gateway-data-plane",
+      "contractVersion": "cpamp.phase4-01.route-owner.v1",
+      "methodClass": "namespace",
+      "path": "outside-control-namespaces",
+      "pathBinding": "exact",
+      "namespace": "outside-control-namespaces",
+      "lifecycle": "active",
+      "publicOwner": "gateway_data_plane",
+      "internalOwner": "gateway_data_plane",
+      "authClass": "data_plane_auth",
+      "credentialAuthority": "data_plane_client",
+      "fallbackPolicy": "gateway",
+      "terminalBehavior": "gateway_forward",
+      "collisionClass": "gateway_protocol"
+    },
+    {
+      "id": "full-web-static-spa",
+      "contractVersion": "cpamp.phase4-01.route-owner.v1",
+      "methodClass": "static",
+      "path": "<controlBasePath>/*",
+      "pathBinding": "exact",
+      "namespace": "<controlBasePath>/*",
+      "lifecycle": "active",
+      "publicOwner": "full_web_static_spa",
+      "internalOwner": "full_web_static_spa",
+      "authClass": "unauthenticated",
+      "credentialAuthority": "none",
+      "fallbackPolicy": "manager_reject",
+      "terminalBehavior": "active",
+      "collisionClass": "nested_specificity"
+    },
+    {
+      "id": "panel-lite",
+      "contractVersion": "cpamp.phase4-01.route-owner.v1",
+      "methodClass": "static",
+      "path": "cpa-panel:/management.html",
+      "pathBinding": "exact",
+      "namespace": "cpa-panel:/management.html",
+      "lifecycle": "active",
+      "publicOwner": "panel_lite",
+      "internalOwner": "panel_lite",
+      "authClass": "cpa_management_key",
+      "credentialAuthority": "cpa_management_key",
+      "fallbackPolicy": "panel_reject",
+      "terminalBehavior": "active",
+      "collisionClass": "fixed_transport"
+    },
+    {
+      "id": "fixed-transport-liveness",
+      "contractVersion": "cpamp.phase4-01.route-owner.v1",
+      "methodClass": "liveness",
+      "path": "/healthz",
+      "pathBinding": "exact",
+      "namespace": "fixed-transport-liveness",
+      "lifecycle": "active",
+      "publicOwner": "fixed_transport_liveness",
+      "internalOwner": "fixed_transport_liveness",
+      "authClass": "unauthenticated",
+      "credentialAuthority": "none",
+      "fallbackPolicy": "manager_reject",
+      "terminalBehavior": "active",
+      "collisionClass": "fixed_transport"
+    },
+    {
+      "id": "retired-control-deny-only",
+      "contractVersion": "cpamp.phase4-01.route-owner.v1",
+      "methodClass": "namespace",
+      "path": "<retired verified control namespace>/*",
+      "pathBinding": "exact",
+      "namespace": "retired-verified-control-namespace",
+      "lifecycle": "retired",
+      "publicOwner": "retired_control_deny_only",
+      "internalOwner": "retired_control_deny_only",
+      "authClass": "retired_deny",
+      "credentialAuthority": "never_forward",
+      "fallbackPolicy": "no_gateway_fallback",
+      "terminalBehavior": "deny",
+      "collisionClass": "retired_namespace"
+    }
+  ],
+  "completedDiscoveryTerminal": "generic_404",
+  "unauthenticatedDiscoveryFields": [
+    "contract_version",
+    "status",
+    "mode",
+    "authentication_required",
+    "auth_entry",
+    "reason"
+  ],
+  "forbiddenDiscoveryFields": [
+    "controlBasePath",
+    "sourceCPAUrl",
+    "cpaManagementKey",
+    "adminKey",
+    "dbPath",
+    "archivePath",
+    "backupReceipt",
+    "resourceRefs",
+    "mutations",
+    "preservedResources",
+    "unsupportedSourceInternals",
+    "internalPorts",
+    "filesystemPaths",
+    "rawVerifierError",
+    "operationId"
+  ],
+  "admissionCases": [
+    {
+      "id": "AUT-09-unknown-newer-same-schema",
+      "case": "unknown_newer_same_schema",
+      "shape": "legacy_schema_c",
+      "provenance": "unknown_or_newer",
+      "requestedTarget": {
+        "release": "v1.14.4",
+        "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+      },
+      "observedSourceCommit": "unknown-newer-source",
+      "expected": {
+        "accepted": false,
+        "mode": "unsupported_upgrade",
+        "reason": "unknown_newer_same_schema",
+        "qualification": "pending",
+        "sourceIdentityPreserved": true
+      }
+    },
+    {
+      "id": "AUT-10-downgrade-forbidden",
+      "case": "downgrade",
+      "shape": "unknown",
+      "provenance": "unknown_or_newer",
+      "requestedTarget": {
+        "release": "v1.14.4",
+        "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+      },
+      "observedSourceCommit": "v1.15-or-newer-source",
+      "expected": {
+        "accepted": false,
+        "mode": "unsupported_upgrade",
+        "reason": "downgrade_forbidden",
+        "qualification": "pending",
+        "sourceIdentityPreserved": true
+      }
+    }
+  ],
+  "integrationRequirements": [
+    "Lane A must bind the exact fixed discovery path /.well-known/cpamp-bootstrap without widening its ownership boundary.",
+    "Lane A must prove read-only discovery before data-key, writable SQLite, legacy bootstrap, credential or source mutation.",
+    "Lane B must capture the fixed discovery path for every method and prevent Gateway fallthrough.",
+    "Lane B must implement active GET/OPTIONS handling and completed generic 404 for every method.",
+    "Lane B must preserve retired Control deny-only ownership and never forward Manager credentials.",
+    "Phase4-04 must perform AUT-09 and AUT-10 runtime qualification; this contract remains pending."
+  ]
+}
