@@ -246,9 +246,15 @@ type RuntimeMutationRequest struct {
 	OperationID               string
 	ExpectedRuntimeIdentity   RuntimeIdentity
 	ExpectedRuntimeGeneration RuntimeGeneration
+	// Optional for legacy Start callers; Fresh Start always fences the exact
+	// previously staged executable. Stop/Restart do not accept this payload.
+	ExpectedActiveArtifactID RuntimeArtifactID
 }
 
 func (r RuntimeMutationRequest) Validate() error {
+	if r.ExpectedActiveArtifactID != "" && !r.ExpectedActiveArtifactID.IsValid() {
+		return errors.New("expected active artifact ID must be canonical SHA-256")
+	}
 	return validateRuntimeOperationIdentity(r.OperationID, r.ExpectedRuntimeIdentity, r.ExpectedRuntimeGeneration)
 }
 

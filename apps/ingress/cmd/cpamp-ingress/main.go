@@ -23,9 +23,11 @@ const (
 )
 
 type config struct {
-	addr       string
-	managerURL *url.URL
-	gatewayURL *url.URL
+	addr        string
+	managerURL  *url.URL
+	gatewayURL  *url.URL
+	controlAddr string
+	tokenFile   string
 }
 
 func main() {
@@ -34,7 +36,15 @@ func main() {
 		log.Fatalf("configure CPAMP Ingress: %v", err)
 	}
 	logger := log.New(os.Stderr, "cpamp-ingress: ", log.LstdFlags)
-	handler := ingress.NewHandler(ingress.NewTransitionalClassifier(), cfg.managerURL, cfg.gatewayURL, logger)
+	fresh := &ingress.FreshRoutes{}
+	handler := ingress.NewFreshHandler(fresh, cfg.managerURL, cfg.gatewayURL, logger)
+	var control *http.Server
+	if cfg.tokenFile != "" {
+		control = &http.Server{Addr: cfg.controlAddr, Handler: fresh.ControlHandler(func() (string, error) {
+			data, err := os.ReadFile(cfg.tokenFile)
+			return strings.TrimSpace(string(data)), err
+		}), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 16}
+	}
 	server := &http.Server{
 		Addr:              cfg.addr,
 		Handler:           handler,
@@ -45,7 +55,10 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	result := make(chan error, 1)
+	result := make(chan error, 2)
+	if control != nil {
+		go func() { result <- control.ListenAndServe() }()
+	}
 	go func() {
 		logger.Printf("listening on %s", cfg.addr)
 		result <- server.ListenAndServe()
@@ -61,6 +74,9 @@ func main() {
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.Fatalf("shutdown: %v", err)
+		}
+		if control != nil {
+			_ = control.Shutdown(shutdownCtx)
 		}
 	}
 }
@@ -78,7 +94,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if err != nil {
 		return config{}, err
 	}
-	return config{addr: addr, managerURL: managerURL, gatewayURL: gatewayURL}, nil
+	controlAddr := strings.TrimSpace(getenv("CPAMP_INGRESS_CONTROL_ADDR"))
+	if controlAddr == "" {
+		controlAddr = "0.0.0.0:9082"
+	}
+	return config{addr: addr, managerURL: managerURL, gatewayURL: gatewayURL, controlAddr: controlAddr, tokenFile: strings.TrimSpace(getenv("CPAMP_RUNTIME_TOKEN_FILE"))}, nil
 }
 
 func parseUpstream(name, value, fallback string) (*url.URL, error) {

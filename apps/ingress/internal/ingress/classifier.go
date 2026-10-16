@@ -170,7 +170,7 @@ func routeCandidates(value string) []string {
 }
 
 func fixedDiscoveryCandidate(value string) bool {
-	if value == FixedBootstrapDiscoveryPath || strings.HasPrefix(value, FixedBootstrapDiscoveryPath+"/") {
+	if value == FixedBootstrapDiscoveryPath || strings.HasPrefix(value, FixedBootstrapDiscoveryPath+"/") || strings.HasPrefix(value, FixedBootstrapDiscoveryPath+"%") {
 		return true
 	}
 	normalized := path.Clean(strings.ReplaceAll(value, "\\", "/"))

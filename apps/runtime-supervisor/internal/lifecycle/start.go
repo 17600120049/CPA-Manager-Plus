@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
+	"github.com/seakee/cpa-manager-plus/apps/runtime-supervisor/internal/artifact"
 	"github.com/seakee/cpa-manager-plus/apps/runtime-supervisor/internal/cpaprocess"
 	"github.com/seakee/cpa-manager-plus/apps/runtime-supervisor/internal/journal"
 	"github.com/seakee/cpa-manager-plus/apps/runtime-supervisor/internal/selection"
@@ -22,15 +23,19 @@ var (
 	ErrExecutionFailed        = errors.New("lifecycle execution failed")
 )
 
-// StartRequest has an empty typed payload. Execution inputs belong exclusively
-// to Supervisor-local configuration, never to the HTTP caller.
+// StartRequest optionally fences the selected executable identity. Execution
+// paths and arguments still belong exclusively to Supervisor-local configuration.
 type StartRequest struct {
-	OperationID               string `json:"operationId"`
-	ExpectedRuntimeIdentity   string `json:"expectedRuntimeIdentity"`
-	ExpectedRuntimeGeneration uint64 `json:"expectedRuntimeGeneration"`
+	OperationID               string      `json:"operationId"`
+	ExpectedRuntimeIdentity   string      `json:"expectedRuntimeIdentity"`
+	ExpectedRuntimeGeneration uint64      `json:"expectedRuntimeGeneration"`
+	ExpectedActiveArtifactID  artifact.ID `json:"expectedActiveArtifactId,omitempty"`
 }
 
 func (r StartRequest) Validate() error {
+	if r.ExpectedActiveArtifactID != "" && !r.ExpectedActiveArtifactID.IsValid() {
+		return ErrInvalidRequest
+	}
 	return validateRequest(r.OperationID, r.ExpectedRuntimeIdentity, r.ExpectedRuntimeGeneration)
 }
 
@@ -149,12 +154,16 @@ func (e *Executor) Start(ctx context.Context, request StartRequest) (journal.Ope
 	if e.closed.Load() {
 		return journal.Operation{}, ErrPersistenceUnavailable
 	}
+	fingerprint := sha256.Sum256([]byte("runtime.start/v1:{}"))
+	if request.ExpectedActiveArtifactID != "" {
+		fingerprint = sha256.Sum256([]byte(`runtime.start/v1:{"expectedActiveArtifactId":"` + string(request.ExpectedActiveArtifactID) + `"}`))
+	}
 	intent := journal.Intent{
 		OperationID:               request.OperationID,
 		OperationType:             "start",
 		ExpectedRuntimeIdentity:   request.ExpectedRuntimeIdentity,
 		ExpectedRuntimeGeneration: request.ExpectedRuntimeGeneration,
-		RequestFingerprint:        sha256.Sum256([]byte("runtime.start/v1:{}")),
+		RequestFingerprint:        fingerprint,
 	}
 	operation, found, err := e.journal.Resolve(ctx, e.authority, intent)
 	if err != nil {
@@ -167,6 +176,18 @@ func (e *Executor) Start(ctx context.Context, request StartRequest) (journal.Ope
 	}
 	if e.activeSelectionAmbiguous {
 		return journal.Operation{}, journal.ErrOperationStateConflict
+	}
+	// This check shares the lifecycle lock with activation and the eventual
+	// spawn. A same-generation A -> B selection change must not turn a Fresh
+	// intent for A into permission to start B. Resolve remains first so retained
+	// evidence replays without another spawn or a new artifact owner.
+	if request.ExpectedActiveArtifactID != "" {
+		if e.artifact == nil {
+			return journal.Operation{}, ErrActiveArtifactUnavailable
+		}
+		if err := refreshExpectedActiveArtifact(e.artifact, e.currentDescriptorLocked(), request.ExpectedActiveArtifactID); err != nil {
+			return journal.Operation{}, err
+		}
 	}
 	switch e.process.Observe().State {
 	case cpaprocess.StateNotStarted, cpaprocess.StateExited:
