@@ -148,10 +148,21 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 
 func (s *Service) existing(ctx context.Context, op bootstrap.FreshOperation, request Request) (Result, error) {
 	result := Result{GatewayPending: true, SourcePreserved: true}
-	if request.Strategy == bootstrap.ConnectExternal {
-		result.RuntimeMode = model.RuntimeModeExternal
-	} else {
+	if request.Strategy == bootstrap.AdoptExisting {
 		result.RuntimeMode = model.RuntimeModeEmbedded
+		if s.options.Qualification.ValidateForStrategy(bootstrap.AdoptExisting, request.AdoptSourceClass) != nil {
+			return result, &Blocker{Code: "adoption_source_qualification_required"}
+		}
+		// Runtime has no accepted destination-stage/replay/verify operation.
+		// Block before probing the user-owned source; missing destination
+		// staging is not permission to inspect or partially replay it.
+		unsupported := []string{"cpa_native_destination_staging_required", "credentials_require_reauthentication", "provider_runtime_state_not_migrated", "historical_usage_excluded"}
+		return result, &Blocker{Code: "adoption_destination_staging_required", Unsupported: unsupported}
+	}
+
+	result.RuntimeMode = model.RuntimeModeExternal
+	if s.options.Qualification.ValidateForStrategy(bootstrap.ConnectExternal, bootstrap.AdoptSourceNone) != nil {
+		return result, &Blocker{Code: "required_v8_profile_qualification_required"}
 	}
 	observation, err := cpa.ReadV8Config(ctx, request.BaseURL, request.ManagementKey)
 	if err != nil {
@@ -167,21 +178,6 @@ func (s *Service) existing(ctx context.Context, op bootstrap.FreshOperation, req
 		return result, &Blocker{Code: "fresh_strategy_owner_conflict"}
 	}
 	result.Checkpoint = bootstrap.FreshStrategyCheckpoint{Strategy: request.Strategy, TargetIdentity: targetID, TargetGeneration: 1, Stage: "validated"}
-	if request.Strategy == bootstrap.AdoptExisting {
-		// Runtime has no accepted destination-stage/replay/verify operation. Never
-		// substitute source Management access for lifecycle ownership, nor replay
-		// partial config and call it complete adoption. Source remains untouched.
-		result.Checkpoint.Unsupported = []string{"cpa_native_destination_staging_required", "credentials_require_reauthentication", "provider_runtime_state_not_migrated", "historical_usage_excluded"}
-		for _, section := range observation.ResourceSections {
-			if section == "unknown_cpa_native_resource" {
-				result.Checkpoint.Unsupported = append(result.Checkpoint.Unsupported, section)
-			}
-		}
-		return result, &Blocker{Code: "adoption_destination_staging_required", Unsupported: result.Checkpoint.Unsupported}
-	}
-	if s.options.Qualification.ValidateForStrategy(bootstrap.ConnectExternal, bootstrap.AdoptSourceNone) != nil {
-		return result, &Blocker{Code: "required_v8_profile_qualification_required"}
-	}
 	if s.options.Protector == nil {
 		return result, &Blocker{Code: "management_secret_storage_unavailable"}
 	}

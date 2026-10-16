@@ -47,7 +47,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	default:
 		w.Header().Set("X-CPAMP-Route-Owner", "gateway")
-		if h.fresh != nil {
+		// The Fresh route projection is the only Ingress-owned evidence that
+		// this installation is in the bounded Fresh flow. Without it, preserve
+		// the pre-existing Gateway fallback contract for non-Fresh installs.
+		if h.fresh != nil && h.fresh.Active() {
 			http.Error(w, "gateway pending configuration", http.StatusServiceUnavailable)
 			return
 		}

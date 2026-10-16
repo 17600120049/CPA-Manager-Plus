@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -51,14 +52,18 @@ func (l *Lock) BeginFreshAdmission() (FreshReceipt, error) {
 	if err := l.writeReceipt(r); err != nil {
 		return FreshReceipt{}, err
 	}
-	// Persist the directory entry as well as the contents before source creation.
-	dir, err := os.Open(filepath.Dir(l.Path()))
-	if err != nil {
-		return FreshReceipt{}, err
-	}
-	defer dir.Close()
-	if err = dir.Sync(); err != nil {
-		return FreshReceipt{}, err
+	// Persist the directory entry as well as the contents before source creation
+	// where the platform supports directory fsync. Windows rejects Sync on an
+	// opened directory; writeReceipt already fsyncs the marker file itself.
+	if runtime.GOOS != "windows" {
+		dir, err := os.Open(filepath.Dir(l.Path()))
+		if err != nil {
+			return FreshReceipt{}, err
+		}
+		defer dir.Close()
+		if err = dir.Sync(); err != nil {
+			return FreshReceipt{}, err
+		}
 	}
 	return r, nil
 }

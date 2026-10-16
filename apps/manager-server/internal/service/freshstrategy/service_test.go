@@ -124,6 +124,9 @@ func TestExternalStoresOnlyEncryptedManagementSecretAndKeepsGatewayPending(t *te
 	if _, err := New(Options{Protector: protector}).Execute(context.Background(), operation(), request); err == nil {
 		t.Fatal("safe read elevated to qualified profile")
 	}
+	if calls.Load() != 2 {
+		t.Fatal("unqualified External touched source")
+	}
 }
 
 func TestAdoptionPreservesSourceAndExplicitlyBlocksUnsupportedReplay(t *testing.T) {
@@ -139,11 +142,14 @@ func TestAdoptionPreservesSourceAndExplicitlyBlocksUnsupportedReplay(t *testing.
 	defer server.Close()
 	result, err := New(Options{Qualification: qualified()}).Execute(context.Background(), operation(), Request{Strategy: bootstrap.AdoptExisting, BaseURL: server.URL, ManagementKey: "private", AdoptSourceClass: bootstrap.AdoptNetworkExisting})
 	var blocker *Blocker
-	if !errors.As(err, &blocker) || blocker.Code != "adoption_destination_staging_required" || !result.SourcePreserved || result.Checkpoint.Stage == "committed" || calls.Load() != 1 {
+	if !errors.As(err, &blocker) || blocker.Code != "adoption_destination_staging_required" || !result.SourcePreserved || result.Checkpoint.Stage == "committed" || calls.Load() != 0 {
 		t.Fatalf("adoption: %+v %v", result, err)
 	}
-	if !strings.Contains(strings.Join(result.Checkpoint.Unsupported, ","), "unknown_cpa_native_resource") {
-		t.Fatal("unknown resources silently dropped")
+	if !strings.Contains(strings.Join(blocker.Unsupported, ","), "cpa_native_destination_staging_required") {
+		t.Fatal("adoption blocker lost the accepted staging prerequisite")
+	}
+	if _, err := New(Options{}).Execute(context.Background(), operation(), Request{Strategy: bootstrap.AdoptExisting, BaseURL: server.URL, ManagementKey: "private", AdoptSourceClass: bootstrap.AdoptNetworkExisting}); err == nil || calls.Load() != 0 {
+		t.Fatal("unqualified adoption touched source")
 	}
 	public, _ := json.Marshal(result)
 	if strings.Contains(string(public), "never-return") {

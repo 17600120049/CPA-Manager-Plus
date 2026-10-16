@@ -67,7 +67,7 @@ func TestFreshPrivateProjectionFencesForeignOwnerAndRetainsCommit(t *testing.T) 
 	}
 }
 
-func TestFreshPublicGatewayAlwaysClosedAndFixedNamespaceCaptured(t *testing.T) {
+func TestFreshPublicGatewayPreservesDefaultUntilFreshProjectionAndFixedNamespaceCaptured(t *testing.T) {
 	var managerHits, gatewayHits int
 	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { managerHits++; w.WriteHeader(404) }))
 	defer manager.Close()
@@ -89,16 +89,17 @@ func TestFreshPublicGatewayAlwaysClosedAndFixedNamespaceCaptured(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer admin-or-management-secret")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
-	if w.Code != 503 || w.Header().Get("X-CPAMP-Route-Owner") != "gateway" || gatewayHits != 0 {
-		t.Fatal("Gateway opened before configuration")
+	if w.Code != 200 || w.Header().Get("X-CPAMP-Route-Owner") != "gateway" || gatewayHits != 1 {
+		t.Fatal("default Gateway fallback regressed without Fresh routing ownership")
 	}
-	// Even after a routing projection is committed, product initialization
-	// and a running CPA do not prove data-plane client authentication.
+	// Once the Fresh operation publishes its routing projection, product
+	// initialization and a running CPA still do not prove data-plane client
+	// authentication. Keep Gateway closed until a later qualified consumer.
 	routes.state = FreshRouteState{InstallationID: "i", Generation: "g", OperationID: "op", Revision: 1, Target: "/private", Committed: true}
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)
-	if w.Code != 503 || gatewayHits != 0 {
-		t.Fatal("route commit activated Gateway")
+	if w.Code != 503 || gatewayHits != 1 {
+		t.Fatal("Fresh routing ownership activated Gateway")
 	}
 	if managerHits != 7 {
 		t.Fatal(managerHits)
