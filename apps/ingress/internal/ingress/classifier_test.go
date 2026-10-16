@@ -95,6 +95,37 @@ func TestClassifierRequestDeniesRetiredCandidates(t *testing.T) {
 	}
 }
 
+func TestOwnershipClassifierDeniesActiveRetiredOverlap(t *testing.T) {
+	matcher := ControlMatcherFunc(func(value string) bool {
+		return value == "/overlap" || strings.HasPrefix(value, "/overlap/")
+	})
+	classifier := NewOwnershipClassifier(matcher, matcher)
+	for _, target := range []string{"/overlap", "/overlap/settings", "/overlap%2fsettings"} {
+		request := httptest.NewRequest(http.MethodPost, "http://example.test"+target, nil)
+		if got := classifier.ClassifyRequest(request); got != RouteDeny {
+			t.Fatalf("ClassifyRequest(%q) = %v, want local deny", target, got)
+		}
+	}
+	if got := classifier.Classify("/overlap/settings"); got != RouteDeny {
+		t.Fatalf("Classify overlap = %v, want local deny", got)
+	}
+}
+
+func TestFixedDiscoveryOwnershipWinsOverDynamicMatcherOverlap(t *testing.T) {
+	matchEverything := ControlMatcherFunc(func(string) bool { return true })
+	classifier := NewOwnershipClassifier(matchEverything, matchEverything)
+	for _, target := range []string{
+		FixedBootstrapDiscoveryPath,
+		FixedBootstrapDiscoveryPath + "/extra",
+		"/.well-known%2Fcpamp-bootstrap",
+	} {
+		request := httptest.NewRequest(http.MethodPost, "http://example.test"+target, nil)
+		if got := classifier.ClassifyRequest(request); got != RouteManager {
+			t.Fatalf("ClassifyRequest(%q) = %v, want fixed Manager ownership", target, got)
+		}
+	}
+}
+
 func TestClassifierRequestPreservesNormalGatewayOwnership(t *testing.T) {
 	classifier := NewOwnershipClassifier(
 		ControlMatcherFunc(func(value string) bool { return value == "/control" || strings.HasPrefix(value, "/control/") }),

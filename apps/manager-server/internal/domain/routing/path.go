@@ -218,14 +218,25 @@ func (o NamespaceOwner) Validate() error {
 // Owner classifies already-normalized paths. It returns a Control owner for
 // the fixed discovery carrier even when no effective prefix authority exists.
 func (o NamespaceOwner) Owner(requestPath string) PathOwner {
-	if o.Validate() != nil || !CanonicalRequestPath(requestPath) {
+	if !CanonicalRequestPath(requestPath) {
 		return OwnerAmbiguousControl
 	}
+	// The fixed discovery carrier has an owner independent of dynamic routing
+	// authority and must not be hidden by an unrelated snapshot conflict.
 	if requestPath == BootstrapDiscoveryPath {
 		return OwnerManager
 	}
 	if strings.HasPrefix(requestPath, BootstrapDiscoveryPath+"/") {
 		return OwnerAmbiguousControl
+	}
+	if o.Validate() != nil {
+		// Invalid/conflicting routing authority fails closed only inside the
+		// namespaces it actually claims. Explicitly unrelated Data Plane paths
+		// keep the existing Gateway catch-all.
+		if o.matchesDeclaredControlNamespace(requestPath) {
+			return OwnerAmbiguousControl
+		}
+		return OwnerGateway
 	}
 	if o.Snapshot.VerifiedEffectiveControlBasePath != "" &&
 		isSegmentPath(requestPath, o.Snapshot.VerifiedEffectiveControlBasePath) {
@@ -254,6 +265,25 @@ func (o NamespaceOwner) Owner(requestPath string) PathOwner {
 		}
 	}
 	return OwnerGateway
+}
+
+func (o NamespaceOwner) matchesDeclaredControlNamespace(requestPath string) bool {
+	for _, candidate := range []string{
+		o.Snapshot.DesiredControlBasePath,
+		o.Snapshot.VerifiedEffectiveControlBasePath,
+		o.Snapshot.PreviousVerifiedControlBasePath,
+	} {
+		if candidate != "" && ValidControlBasePath(candidate) && isSegmentPath(requestPath, candidate) {
+			return true
+		}
+	}
+	for _, retired := range o.Retired {
+		if retired.ControlBasePath != "" && ValidControlBasePath(retired.ControlBasePath) &&
+			isSegmentPath(requestPath, retired.ControlBasePath) {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidateNamespaceCollisions rejects reuse or prefix nesting between the

@@ -208,6 +208,57 @@ func TestPreviousVerifiedNamespaceCollisionFailsClosedWithoutRetiredEntry(t *tes
 	}
 }
 
+func TestInvalidRoutingAuthorityDoesNotCaptureUnrelatedPaths(t *testing.T) {
+	owner := NamespaceOwner{
+		Snapshot: RoutingSnapshot{
+			DesiredControlBasePath:           "/control",
+			VerifiedEffectiveControlBasePath: "/control/child",
+			Revision:                         9,
+			State:                            SnapshotVerifiedEffective,
+		},
+		Retired: []RetiredNamespace{{ControlBasePath: "/retired", Revision: 0}},
+	}
+	if owner.Validate() == nil {
+		t.Fatal("invalid routing authority unexpectedly validated")
+	}
+	for _, item := range []struct {
+		path string
+		want PathOwner
+	}{
+		{BootstrapDiscoveryPath, OwnerManager},
+		{"/control", OwnerAmbiguousControl},
+		{"/control/child/api/v2", OwnerAmbiguousControl},
+		{"/retired/settings", OwnerAmbiguousControl},
+		{"/v1/responses", OwnerGateway},
+		{"/models", OwnerGateway},
+	} {
+		if got := owner.Owner(item.path); got != item.want {
+			t.Errorf("Owner(%q) = %q, want %q", item.path, got, item.want)
+		}
+	}
+}
+
+func TestReservedControlCollisionFailsClosedOnlyForClaimedNamespace(t *testing.T) {
+	owner := NamespaceOwner{Snapshot: RoutingSnapshot{
+		DesiredControlBasePath:           "/v1",
+		VerifiedEffectiveControlBasePath: "/v1",
+		Revision:                         1,
+		State:                            SnapshotVerifiedEffective,
+	}}
+	if owner.Validate() == nil {
+		t.Fatal("reserved control namespace unexpectedly validated")
+	}
+	if got := owner.Owner("/v1/responses"); got != OwnerAmbiguousControl {
+		t.Fatalf("reserved claimed namespace owner = %q, want ambiguous control", got)
+	}
+	if got := owner.Owner("/models"); got != OwnerGateway {
+		t.Fatalf("unrelated Data Plane owner = %q, want gateway", got)
+	}
+	if got := owner.Owner(BootstrapDiscoveryPath); got != OwnerManager {
+		t.Fatalf("fixed discovery owner = %q, want manager", got)
+	}
+}
+
 func TestCanonicalPathRejectsAmbiguousForms(t *testing.T) {
 	for _, value := range []string{
 		"",

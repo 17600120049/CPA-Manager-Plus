@@ -59,15 +59,8 @@ func NewOwnershipClassifier(control ControlMatcher, retired ControlMatcher) Clas
 }
 
 func (c Classifier) Classify(path string) Route {
-	for _, candidate := range routeCandidates(path) {
-		if fixedDiscoveryCandidate(candidate) || c.control.Matches(candidate) {
-			return RouteManager
-		}
-		if c.retired != nil && c.retired.Matches(candidate) {
-			return RouteDeny
-		}
-	}
-	return RouteGateway
+	fixed, active, retired := c.candidateOwnership(routeCandidates(path))
+	return resolveOwnership(fixed, active, retired)
 }
 
 // ClassifyRequest inspects URL.Path, RawPath/EscapedPath, and RequestURI
@@ -84,6 +77,7 @@ func (c Classifier) ClassifyRequest(r *http.Request) Route {
 		pathValue = "/"
 	}
 	values := []string{pathValue, r.URL.RawPath, r.URL.EscapedPath(), r.RequestURI}
+	fixed, active, retired := false, false, false
 	for _, value := range values {
 		if value == "" {
 			continue
@@ -91,14 +85,32 @@ func (c Classifier) ClassifyRequest(r *http.Request) Route {
 		if index := strings.IndexByte(value, '?'); index >= 0 {
 			value = value[:index]
 		}
-		for _, candidate := range routeCandidates(value) {
-			if fixedDiscoveryCandidate(candidate) || c.control.Matches(candidate) {
-				return RouteManager
-			}
-			if c.retired != nil && c.retired.Matches(candidate) {
-				return RouteDeny
-			}
-		}
+		candidateFixed, candidateActive, candidateRetired := c.candidateOwnership(routeCandidates(value))
+		fixed = fixed || candidateFixed
+		active = active || candidateActive
+		retired = retired || candidateRetired
+	}
+	return resolveOwnership(fixed, active, retired)
+}
+
+func (c Classifier) candidateOwnership(candidates []string) (fixed, active, retired bool) {
+	for _, candidate := range candidates {
+		fixed = fixed || fixedDiscoveryCandidate(candidate)
+		active = active || c.control.Matches(candidate)
+		retired = retired || c.retired != nil && c.retired.Matches(candidate)
+	}
+	return fixed, active, retired
+}
+
+func resolveOwnership(fixed, active, retired bool) Route {
+	if fixed {
+		return RouteManager
+	}
+	if retired {
+		return RouteDeny
+	}
+	if active {
+		return RouteManager
 	}
 	return RouteGateway
 }
