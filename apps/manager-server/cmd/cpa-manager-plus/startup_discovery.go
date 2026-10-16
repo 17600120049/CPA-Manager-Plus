@@ -9,6 +9,7 @@ import (
 
 	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	routingdomain "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
@@ -41,7 +42,7 @@ func newStartupHTTPHandler(result bootstrap.PublicDiscovery) *startupHTTPHandler
 		Lifecycle: h.discoveryLifecycle,
 		Active:    http.HandlerFunc(h.serveDiscovery),
 	}
-	h.protected = routingdomain.ProtectFixedDiscovery(http.HandlerFunc(h.serveNonDiscovery), h.discovery)
+	h.protected = httpapi.ProtectBrandResources(routingdomain.ProtectFixedDiscovery(http.HandlerFunc(h.serveNonDiscovery), h.discovery))
 	h.next.Store(&startupHandlerTarget{handler: http.NotFoundHandler()})
 	return h
 }

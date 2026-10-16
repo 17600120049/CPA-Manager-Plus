@@ -4,7 +4,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 version="${VERSION:-dev}"
 out_dir="${OUT_DIR:-"${repo_root}/dist/native"}"
-web_html="${WEB_HTML:-"${repo_root}/apps/web/dist/index.html"}"
+web_html="${WEB_HTML:-"${repo_root}/apps/web/dist/panel/management.html"}"
+full_web_dist="${repo_root}/apps/web/dist/fullweb"
 binary_name="cpa-manager-plus"
 server_src="${repo_root}/apps/manager-server"
 native_script_src="${repo_root}/bin/native"
@@ -23,6 +24,10 @@ mkdir -p "${out_dir}"
 
 cp -R "${server_src}" "${work_dir}/manager-server"
 cp "${web_html}" "${work_dir}/manager-server/internal/httpapi/web/management.html"
+# Shared embed compatibility only; Native Full Web qualification is deferred.
+if [ -d "${full_web_dist}" ]; then
+  cp -R "${full_web_dist}/." "${work_dir}/manager-server/internal/httpapi/web/fullweb/"
+fi
 
 targets=(
   "linux amd64"

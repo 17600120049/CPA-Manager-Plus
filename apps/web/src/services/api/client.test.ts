@@ -88,6 +88,15 @@ describe('ApiClient request scoping', () => {
     });
   });
 
+  it('blocks absolute CPAMP targets before adding the Panel CPA key', () => {
+    const request = { url: 'https://manager.example/control/api/v2/status', headers: {} };
+    expect(() => applyRequestInterceptor(request)).toThrow('CPA Management target');
+    expect(request.headers).not.toHaveProperty('Authorization');
+    expect(() => applyRequestInterceptor({ url: '/api/v2/status', headers: {} })).toThrow(
+      'CPA Management target'
+    );
+  });
+
   it('does not let a stale scoped 401 log out the current connection', async () => {
     const staleConfig = applyRequestInterceptor({
       ...(createScopedApiRequestConfig({

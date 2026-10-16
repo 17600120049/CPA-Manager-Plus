@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const bundlePath = path.resolve(repoRoot, process.argv[2] || 'apps/web/dist/index.html');
+const bundlePath = path.resolve(repoRoot, process.argv[2] || 'apps/web/dist/panel/management.html');
 
 const forbiddenMarkers = [
   '#/demo',

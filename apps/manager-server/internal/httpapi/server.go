@@ -12,7 +12,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
 )
 
-//go:embed web/management.html
+//go:embed all:web
 var embeddedPanel embed.FS
 
 const serviceID = "cpa-manager-plus"
@@ -41,7 +41,7 @@ func New(cfg config.Config, store *store.Store, collector *collector.Manager, au
 		automationRuntimeService...,
 	)
 	return &Server{
-		handler: router.New(appCtx),
+		handler: ProtectBrandResources(router.New(appCtx)),
 		appCtx:  appCtx,
 	}
 }

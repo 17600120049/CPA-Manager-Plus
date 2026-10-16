@@ -87,6 +87,15 @@ otherwise                         -> Gateway
 
 A very small number of fixed transport/liveness paths may exist when they do not disclose product-sensitive state, but Full Web route growth MUST NOT require an ever-growing Ingress allowlist.
 
+Phase4-02 adds exactly two fixed immutable brand-resource exceptions: exact
+`/favicon.ico` and `/apple-touch-icon.png`, GET/HEAD only, are Manager-owned
+independently of Control activation. Missing/disabled assets return a local
+404, never SPA HTML or a Control-prefix redirect. Other methods, encoded
+variants, subpaths and lookalikes receive no exception and retain normal
+classification. Control-prefix collision validation reserves these two paths.
+The single Phase4 route-owner fixture records this successor contract; this
+does not create a generic public static namespace.
+
 `controlBasePath` is an attack-surface and scan-noise reduction measure. It is NOT authentication or authorization and MUST NOT weaken normal security controls.
 
 ### 3. Authority and configuration ownership

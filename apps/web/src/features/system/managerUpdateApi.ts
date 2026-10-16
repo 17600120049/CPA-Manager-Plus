@@ -41,6 +41,7 @@ export async function managerUpdateRequest<T>(
   method = 'GET',
   data?: unknown
 ): Promise<T> {
+  if (__PANEL_LITE__) throw new Error('Manager API is unavailable in Panel Lite');
   const response = await axios.request<T>({
     url: `${normalizeUsageServiceBase(base).replace(/\/+$/, '')}/usage-service/updates${suffix}`,
     method,

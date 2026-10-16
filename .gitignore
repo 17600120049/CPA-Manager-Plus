@@ -47,5 +47,9 @@ TODO.md
 /run/*.pid
 /run/*.log
 
+# Generated Full Web embed (keep the unbuilt fail-closed directory).
+/apps/manager-server/internal/httpapi/web/fullweb/*
+!/apps/manager-server/internal/httpapi/web/fullweb/.gitkeep
+
 # Local temp scratch files
 .tmp-*

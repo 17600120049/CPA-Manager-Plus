@@ -398,6 +398,8 @@ func sameOrNestedPrefix(left, right string) bool {
 func reservedNamespaceCollision(candidate string) bool {
 	for _, reserved := range []string{
 		BootstrapDiscoveryPath,
+		"/favicon.ico",
+		"/apple-touch-icon.png",
 		"/health",
 		"/management.html",
 		"/models",
