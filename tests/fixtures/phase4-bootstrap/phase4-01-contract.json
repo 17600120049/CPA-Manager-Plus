@@ -105,7 +105,7 @@
       "id": "fixed-transport-liveness",
       "contractVersion": "cpamp.phase4-01.route-owner.v1",
       "methodClass": "liveness",
-      "path": "/healthz",
+      "path": "/health",
       "pathBinding": "exact",
       "namespace": "fixed-transport-liveness",
       "lifecycle": "active",

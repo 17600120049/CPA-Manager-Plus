@@ -201,10 +201,14 @@ func TestServeHTTPServerCancelsRuntimeOnUnexpectedExit(t *testing.T) {
 }
 
 func TestStartupHTTPHandlerKeepsDiscoveryBeforeReadyAndDelegatesAfter(t *testing.T) {
-	result := bootstrapdiscovery.Result{
-		Available: true,
-		Mode:      bootstrap.Fresh,
-		Reason:    bootstrapdiscovery.ReasonFreshClaimRequired,
+	mode := bootstrap.Fresh
+	result := bootstrap.PublicDiscovery{
+		ContractVersion:        bootstrap.PublicDiscoveryContractVersion,
+		Status:                 bootstrap.PublicFreshClaimRequired,
+		Mode:                   &mode,
+		AuthenticationRequired: true,
+		AuthEntry:              bootstrap.AuthEntryFreshClaim,
+		Reason:                 bootstrap.ReasonFreshClaimRequired,
 	}
 	handler := newStartupHTTPHandler(result)
 	request := httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil)
@@ -231,6 +235,12 @@ func TestStartupHTTPHandlerKeepsDiscoveryBeforeReadyAndDelegatesAfter(t *testing
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
 	if response.Code != http.StatusOK {
 		t.Fatalf("fixed discovery lost ownership after ready: status=%d", response.Code)
+	}
+	handler.SetCompleted()
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+	if response.Code != http.StatusNotFound || strings.Contains(response.Body.String(), "completed") || strings.Contains(response.Body.String(), "controlBasePath") {
+		t.Fatalf("completed discovery was exposed after writable graph became ready: status=%d body=%q", response.Code, response.Body.String())
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 
 	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -43,30 +45,47 @@ func TestProjectEvidenceBoundedModes(t *testing.T) {
 	tests := []struct {
 		name  string
 		input Input
-		want  Result
+		want  bootstrap.PublicDiscovery
 	}{
-		{name: "fresh", input: Input{Report: freshReport()}, want: Result{
-			Available: true, Mode: bootstrap.Fresh, Reason: ReasonFreshClaimRequired,
+		{name: "fresh", input: Input{Report: freshReport()}, want: bootstrap.PublicDiscovery{
+			ContractVersion: bootstrap.PublicDiscoveryContractVersion,
+			Status:          bootstrap.PublicFreshClaimRequired,
+			Mode:            modePtr(bootstrap.Fresh), AuthenticationRequired: true,
+			AuthEntry: bootstrap.AuthEntryFreshClaim, Reason: bootstrap.ReasonFreshClaimRequired,
 		}},
-		{name: "unqualified legacy", input: Input{Report: legacyReport("initialized")}, want: Result{
-			Available: true, Mode: bootstrap.UnsupportedUpgrade, Reason: ReasonQualificationUnavailable, AuthenticationRequired: true,
+		{name: "unqualified legacy", input: Input{Report: legacyReport("initialized")}, want: bootstrap.PublicDiscovery{
+			ContractVersion: bootstrap.PublicDiscoveryContractVersion,
+			Status:          bootstrap.PublicUnsupportedUpgrade,
+			Mode:            modePtr(bootstrap.UnsupportedUpgrade), AuthenticationRequired: true,
+			AuthEntry: bootstrap.AuthEntryAdminSession, Reason: bootstrap.ReasonQualificationUnavailable,
 		}},
-		{name: "unverifiable legacy recovery", input: Input{Report: legacyReport("unverifiable")}, want: Result{
-			Available: true, Mode: bootstrap.Recovery, Reason: ReasonHostInterventionRequired, RecoveryRequired: true,
+		{name: "unverifiable legacy recovery", input: Input{Report: legacyReport("unverifiable")}, want: bootstrap.PublicDiscovery{
+			ContractVersion: bootstrap.PublicDiscoveryContractVersion,
+			Status:          bootstrap.PublicRecoveryRequired,
+			Mode:            modePtr(bootstrap.Recovery), AuthEntry: bootstrap.AuthEntryHostIntervention,
+			Reason: bootstrap.ReasonRecoveryHostIntervention,
 		}},
-		{name: "unsafe observation", input: Input{Report: legacyReport("initialized"), InspectionError: errors.New("source changed")}, want: Result{
-			Reason: ReasonUnavailable,
+		{name: "unsafe observation", input: Input{Report: legacyReport("initialized"), InspectionError: errors.New("source changed")}, want: bootstrap.PublicDiscovery{
+			ContractVersion: bootstrap.PublicDiscoveryContractVersion,
+			Status:          bootstrap.PublicUnavailable,
+			AuthEntry:       bootstrap.AuthEntryUnavailable, Reason: bootstrap.ReasonObservationUnavailable,
 		}},
 		{name: "native schema is not completed", input: Input{Report: legacypreflight.Report{
 			SourceKind: "native-v2", Observed: sqlite.LegacyInspection{SQLite: "observed", Consistency: "operator-asserted-cold", Files: []sqlite.InspectionFile{{Role: "database", State: "present"}}, BootstrapState: sqlite.BootstrapStateInspection{Valid: true, AdminCredentialPresent: true, AdminCredential: "initialized"}},
-		}}, want: Result{
-			Available: true, Mode: bootstrap.UnsupportedUpgrade, Reason: ReasonQualificationUnavailable, AuthenticationRequired: true,
+		}}, want: bootstrap.PublicDiscovery{
+			ContractVersion: bootstrap.PublicDiscoveryContractVersion,
+			Status:          bootstrap.PublicUnsupportedUpgrade,
+			Mode:            modePtr(bootstrap.UnsupportedUpgrade), AuthenticationRequired: true,
+			AuthEntry: bootstrap.AuthEntryAdminSession, Reason: bootstrap.ReasonQualificationUnavailable,
 		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := Project(test.input); got != test.want {
+			if got := Project(test.input); !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("Project() = %#v, want %#v", got, test.want)
+			}
+			if err := test.want.Validate(); err != nil {
+				t.Fatalf("expected discovery is invalid: %v", err)
 			}
 		})
 	}
@@ -78,7 +97,8 @@ func TestLegacyBootstrapStateDoesNotMapToCompletedOrFresh(t *testing.T) {
 	report.Observed.BootstrapState.ProjectInitialized = true
 	report.Observed.BootstrapState.HistoricalData = true
 	got := Project(Input{Report: report})
-	if got.Mode != bootstrap.UnsupportedUpgrade || got.Reason != ReasonQualificationUnavailable || !got.Available {
+	if got.Mode == nil || *got.Mode != bootstrap.UnsupportedUpgrade || got.Reason != bootstrap.ReasonQualificationUnavailable ||
+		got.Status != bootstrap.PublicUnsupportedUpgrade || !got.AuthenticationRequired {
 		t.Fatalf("legacy state was mapped to a new terminal/fresh mode: %#v", got)
 	}
 }
@@ -87,7 +107,7 @@ func TestFreshRequiresExplicitNoV1Witness(t *testing.T) {
 	report := freshReport()
 	report.Observed.BootstrapState = sqlite.BootstrapStateInspection{}
 	got := Project(Input{Report: report})
-	if got.Available || got.Mode != "" || got.Reason != ReasonQualificationUnknown {
+	if got.Status != bootstrap.PublicUnavailable || got.Mode != nil || got.Reason != bootstrap.ReasonObservationUnavailable {
 		t.Fatalf("missing fresh witness was treated as authoritative: %#v", got)
 	}
 }
@@ -96,13 +116,13 @@ func TestInvalidBootstrapWitnessFailsClosed(t *testing.T) {
 	report := legacyReport("initialized")
 	report.Observed.BootstrapState.Valid = false
 	got := Project(Input{Report: report})
-	if got.Available || got.Mode != "" || got.Reason != ReasonQualificationUnknown {
+	if got.Status != bootstrap.PublicUnavailable || got.Mode != nil || got.Reason != bootstrap.ReasonObservationUnavailable {
 		t.Fatalf("invalid bootstrap witness was exposed: %#v", got)
 	}
 }
 
 func TestHandlerCapturesMethodsAndCompletedTerminal(t *testing.T) {
-	active := Handler{Result: Project(Input{Report: freshReport()})}
+	active := Handler{Discovery: Project(Input{Report: freshReport()})}
 	for _, method := range []string{http.MethodGet, http.MethodOptions} {
 		req := httptest.NewRequest(method, Path, nil)
 		res := httptest.NewRecorder()
@@ -122,7 +142,8 @@ func TestHandlerCapturesMethodsAndCompletedTerminal(t *testing.T) {
 			t.Fatalf("%s status=%d want 405", method, res.Code)
 		}
 	}
-	completed := Handler{Result: Result{Available: true, Mode: bootstrap.Completed}}
+	completedMode := bootstrap.Completed
+	completed := Handler{Discovery: bootstrap.PublicDiscovery{Mode: &completedMode}}
 	for _, method := range []string{http.MethodGet, http.MethodOptions, http.MethodPost} {
 		res := httptest.NewRecorder()
 		completed.ServeHTTP(res, httptest.NewRequest(method, Path, nil))
@@ -133,7 +154,7 @@ func TestHandlerCapturesMethodsAndCompletedTerminal(t *testing.T) {
 }
 
 func TestUnavailableDoesNotManufactureMode(t *testing.T) {
-	res := Handler{Result: Unavailable(ReasonQualificationUnknown)}
+	res := Handler{Discovery: Unavailable()}
 	recorder := httptest.NewRecorder()
 	res.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path, nil))
 	if recorder.Code != http.StatusServiceUnavailable {
@@ -142,6 +163,28 @@ func TestUnavailableDoesNotManufactureMode(t *testing.T) {
 	if recorder.Body.String() == "" || containsMode(recorder.Body.String()) {
 		t.Fatalf("unavailable response disclosed mode: %s", recorder.Body.String())
 	}
+}
+
+func TestHandlerRedactsInspectionDetails(t *testing.T) {
+	result := Project(Input{
+		Report:          legacyReport("initialized"),
+		InspectionError: errors.New("sqlite /private/manager.sqlite cpa=https://cpa.invalid key=admin-secret archive=/private/archive backup=receipt port=:18317 resource=internal-ref"),
+	})
+	recorder := httptest.NewRecorder()
+	(Handler{Discovery: result}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path, nil))
+	body := recorder.Body.String()
+	for _, forbidden := range []string{
+		"controlBasePath", "cpa.invalid", "admin-secret", "/private/manager.sqlite",
+		"/private/archive", "receipt", ":18317", "sqlite", "internal-ref",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("discovery leaked %q: %s", forbidden, body)
+		}
+	}
+}
+
+func modePtr(value bootstrap.Mode) *bootstrap.Mode {
+	return &value
 }
 
 func containsMode(body string) bool {

@@ -450,7 +450,10 @@ func runServerWithOptions(options legacypreflight.Options) {
 	}
 	// Only after the complete writable Manager graph is assembled do unrelated
 	// routes become reachable. The fixed discovery path remains captured by the
-	// outer handler for its lifecycle terminal behavior.
+	// outer handler for its lifecycle terminal behavior. A successfully admitted
+	// and assembled native process is completed from the unauthenticated
+	// discovery contract's perspective; completed is never serialized there.
+	startupHandler.SetCompleted()
 	startupHandler.SetReady(serverApp.Handler())
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtimeReconciler := runtimeservice.NewReconciler(

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	routingdomain "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
 )
 
@@ -13,8 +15,11 @@ import (
 // delegated to. The fixed path remains captured for the lifetime of the
 // process, including the future completed terminal behavior.
 type startupHTTPHandler struct {
-	discovery bootstrapdiscovery.Handler
+	discovery routingdomain.DiscoveryHandler
+	liveness  http.Handler
+	protected http.Handler
 	next      atomic.Value // *startupHandlerTarget
+	lifecycle atomic.Value // routingdomain.DiscoveryLifecycle
 	ready     atomic.Bool
 }
 
@@ -22,10 +27,24 @@ type startupHandlerTarget struct {
 	handler http.Handler
 }
 
-func newStartupHTTPHandler(result bootstrapdiscovery.Result) *startupHTTPHandler {
-	h := &startupHTTPHandler{discovery: bootstrapdiscovery.Handler{Result: result}}
+func newStartupHTTPHandler(result bootstrap.PublicDiscovery) *startupHTTPHandler {
+	h := &startupHTTPHandler{liveness: bootstrapdiscovery.LivenessHandler{}}
+	h.lifecycle.Store(routingdomain.DiscoveryActive)
+	h.discovery = routingdomain.DiscoveryHandler{
+		Lifecycle: h.discoveryLifecycle,
+		Active:    bootstrapdiscovery.Handler{Discovery: result},
+	}
+	h.protected = routingdomain.ProtectFixedDiscovery(http.HandlerFunc(h.serveNonDiscovery), h.discovery)
 	h.next.Store(&startupHandlerTarget{handler: http.NotFoundHandler()})
 	return h
+}
+
+func (h *startupHTTPHandler) discoveryLifecycle() routingdomain.DiscoveryLifecycle {
+	lifecycle, _ := h.lifecycle.Load().(routingdomain.DiscoveryLifecycle)
+	if lifecycle == "" {
+		return routingdomain.DiscoveryUnavailable
+	}
+	return lifecycle
 }
 
 func (h *startupHTTPHandler) SetReady(next http.Handler) {
@@ -36,9 +55,17 @@ func (h *startupHTTPHandler) SetReady(next http.Handler) {
 	h.ready.Store(true)
 }
 
+func (h *startupHTTPHandler) SetCompleted() {
+	h.lifecycle.Store(routingdomain.DiscoveryCompleted)
+}
+
 func (h *startupHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == bootstrapdiscovery.Path || (!h.ready.Load() && r.URL.Path == bootstrapdiscovery.HealthPath) {
-		h.discovery.ServeHTTP(w, r)
+	h.protected.ServeHTTP(w, r)
+}
+
+func (h *startupHTTPHandler) serveNonDiscovery(w http.ResponseWriter, r *http.Request) {
+	if !h.ready.Load() && r != nil && r.URL != nil && r.URL.Path == bootstrapdiscovery.HealthPath {
+		h.liveness.ServeHTTP(w, r)
 		return
 	}
 	target, _ := h.next.Load().(*startupHandlerTarget)

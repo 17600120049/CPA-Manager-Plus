@@ -109,6 +109,7 @@ const (
 	RouteContractVersion        = "cpamp.phase4-01.route-owner.v1"
 	PathBindingExact            = "exact"
 	FixedBootstrapDiscoveryPath = "/.well-known/cpamp-bootstrap"
+	FixedLivenessPath           = "/health"
 	NamespaceFixedDiscovery     = "fixed-bootstrap-discovery"
 	NamespacePublicAPIV2        = "<controlBasePath>/api/v2/*"
 	NamespaceManagerControl     = "<controlBasePath>/control-plane"

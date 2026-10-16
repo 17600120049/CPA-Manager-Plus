@@ -10,12 +10,14 @@ import (
 	"path"
 	"strings"
 	"unicode"
+
+	bootstrapdomain "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 )
 
 // BootstrapDiscoveryPath is the only fixed unauthenticated Bootstrap
 // discovery carrier. Keep this value in sync with the stdlib-only Ingress
 // contract and the checked-in route-owner fixture.
-const BootstrapDiscoveryPath = "/.well-known/cpamp-bootstrap"
+const BootstrapDiscoveryPath = bootstrapdomain.FixedBootstrapDiscoveryPath
 
 // PublicAPIV2Suffix is the only permanent CPAMP Public API namespace. It is a
 // child of a verified effective controlBasePath; it is never mounted at root.
@@ -54,14 +56,6 @@ type RoutingSnapshot struct {
 	PreviousVerifiedControlBasePath  string
 	Revision                         uint64
 	State                            SnapshotState
-}
-
-// SnapshotReader is the only authority seam this slice gives later
-// consumers. Implementations may read an existing Manager-owned source, but
-// this interface has no apply, persistence, reload, distribution, or rollback
-// operation.
-type SnapshotReader interface {
-	ReadRoutingSnapshot() RoutingSnapshot
 }
 
 // Validate checks the shape and authority state without consulting any

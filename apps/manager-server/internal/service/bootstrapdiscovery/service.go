@@ -9,37 +9,18 @@ import (
 	"strings"
 
 	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	bootstrapcontract "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/contract/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 )
 
 const (
-	// Path is the sole temporary unauthenticated Bootstrap discovery path.
-	Path = "/bootstrap/discovery"
+	// Path aliases the single domain-owned fixed discovery path. The HTTP
+	// routing package and the checked-in route ledger use the same value.
+	Path = bootstrap.FixedBootstrapDiscoveryPath
 	// HealthPath is the existing fixed liveness transport. During pre-write
 	// startup it reports process liveness only and never product readiness.
-	HealthPath = "/health"
+	HealthPath = bootstrap.FixedLivenessPath
 )
-
-type Reason string
-
-const (
-	ReasonFreshClaimRequired          Reason = "fresh_claim_required"
-	ReasonAdminAuthenticationRequired Reason = "admin_authentication_required"
-	ReasonUnsupportedUpgrade          Reason = "unsupported_upgrade"
-	ReasonRecoveryRequired            Reason = "recovery_required"
-	ReasonHostInterventionRequired    Reason = "host_intervention_required"
-	ReasonQualificationUnavailable    Reason = "qualification_unavailable"
-	ReasonQualificationUnknown        Reason = "qualification_unknown"
-	ReasonUnavailable                 Reason = "unavailable"
-)
-
-type Result struct {
-	Available              bool           `json:"available"`
-	Mode                   bootstrap.Mode `json:"mode,omitempty"`
-	Reason                 Reason         `json:"reason"`
-	AuthenticationRequired bool           `json:"authenticationRequired"`
-	RecoveryRequired       bool           `json:"recoveryRequired"`
-}
 
 // Input keeps transport projection explicit. InspectionError is intentionally
 // retained: an unstable/unsafe observation cannot be converted into Recovery.
@@ -48,19 +29,21 @@ type Input struct {
 	InspectionError error
 }
 
-func Unavailable(reason Reason) Result {
-	if reason == "" {
-		reason = ReasonUnavailable
+func Unavailable() bootstrap.PublicDiscovery {
+	return bootstrap.PublicDiscovery{
+		ContractVersion: bootstrap.PublicDiscoveryContractVersion,
+		Status:          bootstrap.PublicUnavailable,
+		AuthEntry:       bootstrap.AuthEntryUnavailable,
+		Reason:          bootstrap.ReasonObservationUnavailable,
 	}
-	return Result{Reason: reason}
 }
 
-func Project(input Input) Result {
+func Project(input Input) bootstrap.PublicDiscovery {
 	if input.InspectionError != nil {
-		return Unavailable(ReasonUnavailable)
+		return Unavailable()
 	}
 	if !safeObservation(input.Report) {
-		return Unavailable(ReasonQualificationUnknown)
+		return Unavailable()
 	}
 
 	admin := bootstrap.AdminCredentialUninitialized
@@ -76,12 +59,12 @@ func Project(input Input) Result {
 		// may be writable under the existing native gate, but that gate is not
 		// a Bootstrap discovery qualification grant and cannot imply completed.
 		if admin != bootstrap.AdminCredentialInitialized {
-			return Result{Available: true, Mode: bootstrap.Recovery, Reason: ReasonHostInterventionRequired, RecoveryRequired: true}
+			return publicDiscovery(bootstrap.PublicRecoveryRequired, bootstrap.Recovery, false, bootstrap.AuthEntryHostIntervention, bootstrap.ReasonRecoveryHostIntervention)
 		}
-		return Result{Available: true, Mode: bootstrap.UnsupportedUpgrade, Reason: ReasonQualificationUnavailable, AuthenticationRequired: true}
+		return publicDiscovery(bootstrap.PublicUnsupportedUpgrade, bootstrap.UnsupportedUpgrade, true, bootstrap.AuthEntryAdminSession, bootstrap.ReasonQualificationUnavailable)
 	}
 	if sourceKind == "empty-database" || sourceKind == "partial-source" {
-		return Result{Available: true, Mode: bootstrap.Recovery, Reason: ReasonHostInterventionRequired, RecoveryRequired: true}
+		return publicDiscovery(bootstrap.PublicRecoveryRequired, bootstrap.Recovery, false, bootstrap.AuthEntryHostIntervention, bootstrap.ReasonRecoveryHostIntervention)
 	}
 
 	evidence := bootstrap.ClassificationEvidence{
@@ -95,22 +78,31 @@ func Project(input Input) Result {
 	}
 	mode, err := bootstrap.Classify(evidence)
 	if err != nil {
-		return Unavailable(ReasonQualificationUnknown)
+		return Unavailable()
 	}
 	switch mode {
 	case bootstrap.Fresh:
-		return Result{Available: true, Mode: mode, Reason: ReasonFreshClaimRequired}
+		return publicDiscovery(bootstrap.PublicFreshClaimRequired, mode, true, bootstrap.AuthEntryFreshClaim, bootstrap.ReasonFreshClaimRequired)
 	case bootstrap.UnsupportedUpgrade:
-		return Result{Available: true, Mode: mode, Reason: ReasonQualificationUnavailable, AuthenticationRequired: true}
+		return publicDiscovery(bootstrap.PublicUnsupportedUpgrade, mode, true, bootstrap.AuthEntryAdminSession, bootstrap.ReasonQualificationUnavailable)
 	case bootstrap.Recovery:
-		return Result{Available: true, Mode: mode, Reason: ReasonHostInterventionRequired, RecoveryRequired: true}
-	case bootstrap.Completed:
-		// Completed is a fixed-route terminal state, but this lane never
-		// infers it from legacy state. Keep the explicit behavior for callers
-		// that provide a future authoritative result.
-		return Result{Available: true, Mode: mode}
+		return publicDiscovery(bootstrap.PublicRecoveryRequired, mode, false, bootstrap.AuthEntryHostIntervention, bootstrap.ReasonRecoveryHostIntervention)
 	default:
-		return Unavailable(ReasonQualificationUnavailable)
+		// Upgrade and Completed are intentionally not public discovery outputs
+		// in Phase4-01. They require later source/routing authority.
+		return Unavailable()
+	}
+}
+
+func publicDiscovery(status bootstrap.PublicStatus, mode bootstrap.Mode, authenticationRequired bool, authEntry bootstrap.AuthEntry, reason bootstrap.PublicReason) bootstrap.PublicDiscovery {
+	modeCopy := mode
+	return bootstrap.PublicDiscovery{
+		ContractVersion:        bootstrap.PublicDiscoveryContractVersion,
+		Status:                 status,
+		Mode:                   &modeCopy,
+		AuthenticationRequired: authenticationRequired,
+		AuthEntry:              authEntry,
+		Reason:                 reason,
 	}
 }
 
@@ -155,38 +147,19 @@ func stableConsistency(value string) bool {
 	}
 }
 
-// Handler serves only the fixed discovery/liveness transport. It deliberately
-// does not expose configured paths, source details, or legacy state.
+// Handler serializes the unified versioned discovery DTO. Fixed-path ownership,
+// lifecycle and method capture belong to the routing package; this handler has
+// no writable dependency and deliberately exposes no source details.
 type Handler struct {
-	Result Result
+	Discovery bootstrap.PublicDiscovery
 }
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.URL.Path {
-	case HealthPath:
-		h.handleHealth(w, r)
-	case Path:
-		h.handleDiscovery(w, r)
-	default:
+	if r == nil || r.URL == nil || r.URL.Path != Path {
 		http.NotFound(w, r)
-	}
-}
-
-func (h Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "phase": "bootstrap"})
-}
-
-func (h Handler) handleDiscovery(w http.ResponseWriter, r *http.Request) {
-	if h.Result.Mode == bootstrap.Completed {
-		// Ownership remains captured, but completed never discloses state.
+	if h.Discovery.Mode != nil && *h.Discovery.Mode == bootstrap.Completed {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -198,11 +171,38 @@ func (h Handler) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if !h.Result.Available {
-		writeJSON(w, http.StatusServiceUnavailable, Result{Reason: h.Result.Reason})
+	dto, err := bootstrapcontract.DiscoveryFromDomain(h.Discovery)
+	if err != nil {
+		dto, _ = bootstrapcontract.DiscoveryFromDomain(Unavailable())
+		writeJSON(w, http.StatusServiceUnavailable, dto)
 		return
 	}
-	writeJSON(w, http.StatusOK, h.Result)
+	status := http.StatusOK
+	if dto.Status == bootstrap.PublicUnavailable {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, dto)
+}
+
+// LivenessHandler is the pre-ready projection of the existing Manager health
+// transport. It reports only process liveness and has no product readiness or
+// writable-startup authority.
+type LivenessHandler struct{}
+
+func (LivenessHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r == nil || r.URL == nil || r.URL.Path != HealthPath {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "phase": "bootstrap"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

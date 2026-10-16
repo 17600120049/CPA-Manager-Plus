@@ -32,7 +32,7 @@ type DiscoveryHandler struct {
 }
 
 func (h DiscoveryHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL == nil || r.URL.Path != BootstrapDiscoveryPath || !canonicalDiscoveryRequest(r) {
+	if r == nil || r.URL == nil || r.URL.Path != BootstrapDiscoveryPath || !canonicalDiscoveryRequest(r) {
 		writeGenericNotFound(w)
 		return
 	}
@@ -67,6 +67,10 @@ func (h DiscoveryHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // trailing-slash aliases from reaching a different owner.
 func ProtectFixedDiscovery(next http.Handler, discovery http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r == nil || r.URL == nil {
+			writeGenericNotFound(w)
+			return
+		}
 		if discoveryCandidate(r) {
 			if canonicalDiscoveryRequest(r) {
 				discovery.ServeHTTP(w, r)

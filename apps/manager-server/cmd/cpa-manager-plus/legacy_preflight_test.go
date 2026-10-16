@@ -362,11 +362,12 @@ func TestFreshReadOnlyDiscoveryDoesNotCreateArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := bootstrapdiscovery.Project(bootstrapdiscovery.Input{Report: report})
-	if !result.Available || result.Mode != bootstrap.Fresh || result.Reason != bootstrapdiscovery.ReasonFreshClaimRequired {
+	if result.Status != bootstrap.PublicFreshClaimRequired || result.Mode == nil || *result.Mode != bootstrap.Fresh ||
+		result.Reason != bootstrap.ReasonFreshClaimRequired || !result.AuthenticationRequired {
 		t.Fatalf("fresh read-only discovery=%#v report=%+v", result, report)
 	}
 	response := httptest.NewRecorder()
-	bootstrapdiscovery.Handler{Result: result}.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+	bootstrapdiscovery.Handler{Discovery: result}.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"mode":"fresh"`) {
 		t.Fatalf("fresh discovery HTTP response=%d body=%s", response.Code, response.Body.String())
 	}
