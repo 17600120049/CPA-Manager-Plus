@@ -8,7 +8,6 @@ const fixturePath = path.join(repoRoot, 'tests/fixtures/phase4-routing/route-own
 const schemaPath = path.join(repoRoot, 'tests/fixtures/phase4-routing/route-owners.schema.json');
 const ingressClassifierPath = path.join(repoRoot, 'apps/ingress/internal/ingress/classifier.go');
 const managerRoutingPath = path.join(repoRoot, 'apps/manager-server/internal/domain/routing/path.go');
-const managerBootstrapRoutesPath = path.join(repoRoot, 'apps/manager-server/internal/domain/bootstrap/routes.go');
 const managerStartupPath = path.join(repoRoot, 'apps/manager-server/cmd/cpa-manager-plus/startup_discovery.go');
 const managerDiscoveryContractPath = path.join(repoRoot, 'apps/manager-server/internal/domain/bootstrap/public_contract.go');
 
@@ -20,7 +19,6 @@ describe('Phase4-01 routing ownership contract', () => {
     const schema = readJSON(schemaPath);
     const ingress = readFileSync(ingressClassifierPath, 'utf8');
     const manager = readFileSync(managerRoutingPath, 'utf8');
-    const managerBootstrapRoutes = readFileSync(managerBootstrapRoutesPath, 'utf8');
     const startup = readFileSync(managerStartupPath, 'utf8');
     const discoveryContract = readFileSync(managerDiscoveryContractPath, 'utf8');
 
@@ -29,11 +27,11 @@ describe('Phase4-01 routing ownership contract', () => {
     expect(schema.properties.fixedBootstrapDiscoveryPath.const).toBe(fixture.fixedBootstrapDiscoveryPath);
     expect(schema.properties.canonicalPublicApiV2Suffix.const).toBe(fixture.canonicalPublicApiV2Suffix);
     expect(ingress).toContain(`FixedBootstrapDiscoveryPath = "${fixture.fixedBootstrapDiscoveryPath}"`);
-    expect(managerBootstrapRoutes).toContain(`FixedBootstrapDiscoveryPath = "${fixture.fixedBootstrapDiscoveryPath}"`);
     expect(manager).toContain('BootstrapDiscoveryPath = bootstrapdomain.FixedBootstrapDiscoveryPath');
     expect(manager).toContain(`PublicAPIV2Suffix = "${fixture.canonicalPublicApiV2Suffix}"`);
     expect(startup).toContain('routingdomain.ProtectFixedDiscovery(');
     expect(discoveryContract).toContain('PublicDiscoveryContractVersion = "cpamp.phase4-01.discovery.v1"');
+    expect(discoveryContract).toContain(`FixedBootstrapDiscoveryPath    = "${fixture.fixedBootstrapDiscoveryPath}"`);
     expect(fixture.routes.filter((route) => route.id === 'bootstrap_discovery')).toHaveLength(1);
     expect(fixture.routes.filter((route) => route.id === 'public_api_v2_namespace')).toHaveLength(1);
     expect(fixture.routes.filter((route) => route.id === 'retired_control_namespace')).toHaveLength(1);

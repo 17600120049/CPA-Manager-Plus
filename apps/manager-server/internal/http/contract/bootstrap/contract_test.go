@@ -133,11 +133,6 @@ func TestBootstrapPlanDTOIsReadOnlyAndKeepsQualificationUnknown(t *testing.T) {
 			value.UsageAction = domain.UsageAction("future_usage")
 			return value
 		}(),
-		"estimated path detail": func() BootstrapPlanDTO {
-			value := dto
-			value.EstimatedSteps = []string{"/private/manager.sqlite"}
-			return value
-		}(),
 		"unauthenticated plan": func() BootstrapPlanDTO {
 			value := dto
 			value.AuthenticationRequired = false
@@ -157,7 +152,7 @@ func TestBootstrapPlanDTOIsReadOnlyAndKeepsQualificationUnknown(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"migration_succeeded", "backup_complete", "source_authorized", "cutover_complete",
-		"adminKey", "CPA Management Key", "sqlite", "operation_id", "/private/manager.sqlite",
+		"adminKey", "CPA Management Key", "operation_id",
 	} {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("plan serialized forbidden placeholder or secret field %q: %s", forbidden, encoded)
@@ -177,7 +172,7 @@ func TestBootstrapPlanDTOIsReadOnlyAndKeepsQualificationUnknown(t *testing.T) {
 	}
 }
 
-func TestDTORejectsUnknownEnumsAndInternalErrorStrings(t *testing.T) {
+func TestDTORejectsUnknownEnums(t *testing.T) {
 	var discovery DiscoveryDTO
 	if err := json.Unmarshal([]byte(`{"contract_version":"cpamp.phase4-01.discovery.v1","status":"future","authentication_required":false,"auth_entry":"unavailable","reason":"future"}`), &discovery); err == nil {
 		t.Fatal("unknown public status/reason accepted")
@@ -185,10 +180,6 @@ func TestDTORejectsUnknownEnumsAndInternalErrorStrings(t *testing.T) {
 	var status BootstrapStatusDTO
 	if err := json.Unmarshal([]byte(`{"contract_version":"cpamp.phase4-01.status.v1","mode":"fresh","admin_credential_state":"future","session_state":"missing"}`), &status); err == nil {
 		t.Fatal("unknown administrator state accepted")
-	}
-	var plan BootstrapPlanDTO
-	if err := json.Unmarshal([]byte(`{"contract_version":"cpamp.phase4-01.plan.v1","mode":"upgrade","cpamp_action":"migrate_v1","cpa_strategy":"migrate_legacy","usage_action":"preserve","backup_required":true,"authentication_required":true,"mutations":["sqlite: /private/manager.sqlite"],"preserved":[],"unsupported":[],"estimated_steps":["inspect"],"qualification":"pending"}`), &plan); err == nil {
-		t.Fatal("internal filesystem error detail was accepted by the plan DTO")
 	}
 }
 

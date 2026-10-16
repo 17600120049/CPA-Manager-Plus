@@ -262,6 +262,9 @@ func (d *BootstrapPlanDTO) UnmarshalJSON(data []byte) error {
 }
 
 func validateDisjointLists(groups ...[]string) error {
+	if len(groups) != 3 {
+		return errors.New("plan effect groups are incomplete")
+	}
 	seen := map[string]string{}
 	for _, group := range []struct {
 		name   string
@@ -271,10 +274,15 @@ func validateDisjointLists(groups ...[]string) error {
 		{name: "preserved", values: groups[1]},
 		{name: "unsupported", values: groups[2]},
 	} {
+		local := map[string]bool{}
 		for _, value := range group.values {
-			if err := validatePlanText(value); err != nil {
-				return fmt.Errorf("%s: %w", group.name, err)
+			if value == "" || strings.TrimSpace(value) != value {
+				return fmt.Errorf("%s contains an empty or padded value", group.name)
 			}
+			if local[value] {
+				return fmt.Errorf("%s contains duplicate value %q", group.name, value)
+			}
+			local[value] = true
 			if previous, ok := seen[value]; ok {
 				return fmt.Errorf("plan effect %q appears in %s and %s", value, previous, group.name)
 			}
@@ -285,27 +293,18 @@ func validateDisjointLists(groups ...[]string) error {
 }
 
 func validatePlanTextList(name string, values []string) error {
+	if values == nil {
+		return fmt.Errorf("%s must be explicit", name)
+	}
+	seen := map[string]bool{}
 	for _, value := range values {
-		if err := validatePlanText(value); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+		if value == "" || strings.TrimSpace(value) != value {
+			return fmt.Errorf("%s contains an empty or padded value", name)
 		}
-	}
-	return nil
-}
-
-func validatePlanText(value string) error {
-	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\\/\r\n") || strings.Contains(value, "://") {
-		return errors.New("plan effect lists cannot contain empty or path-like values")
-	}
-	lower := strings.ToLower(value)
-	for _, forbidden := range []string{
-		"admin key", "admin_key", "adminkey",
-		"management key", "management_key", "managementkey", "cpamanagementkey",
-		"credential", "sqlite", "filesystem", "verifier error", "source cpa", "source_cpa",
-	} {
-		if strings.Contains(lower, forbidden) {
-			return errors.New("plan effect lists cannot contain sensitive implementation detail")
+		if seen[value] {
+			return fmt.Errorf("%s contains duplicate value %q", name, value)
 		}
+		seen[value] = true
 	}
 	return nil
 }

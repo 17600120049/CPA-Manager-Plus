@@ -79,7 +79,10 @@ type PublicDiscovery struct {
 	Reason                 PublicReason
 }
 
-const PublicDiscoveryContractVersion = "cpamp.phase4-01.discovery.v1"
+const (
+	PublicDiscoveryContractVersion = "cpamp.phase4-01.discovery.v1"
+	FixedBootstrapDiscoveryPath    = "/.well-known/cpamp-bootstrap"
+)
 
 func (d PublicDiscovery) Validate() error {
 	if d.ContractVersion != PublicDiscoveryContractVersion {
