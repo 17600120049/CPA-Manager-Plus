@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	routingdomain "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
+	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 )
 
 // startupHTTPHandler owns the fixed discovery path while the normal Manager
@@ -16,13 +20,14 @@ import (
 // delegated to. The fixed path remains captured for the lifetime of the
 // process, including the future completed terminal behavior.
 type startupHTTPHandler struct {
-	discovery    routingdomain.DiscoveryHandler
-	protected    http.Handler
-	projectionMu sync.RWMutex
-	projection   bootstrap.PublicDiscovery
-	next         atomic.Value // *startupHandlerTarget
-	lifecycle    atomic.Value // routingdomain.DiscoveryLifecycle
-	ready        atomic.Bool
+	discovery         routingdomain.DiscoveryHandler
+	protected         http.Handler
+	projectionMu      sync.RWMutex
+	projection        bootstrap.PublicDiscovery
+	readOnlyDiscovery http.Handler
+	next              atomic.Value // *startupHandlerTarget
+	lifecycle         atomic.Value // routingdomain.DiscoveryLifecycle
+	ready             atomic.Bool
 }
 
 type startupHandlerTarget struct {
@@ -44,7 +49,27 @@ func newStartupHTTPHandler(result bootstrap.PublicDiscovery) *startupHTTPHandler
 func (h *startupHTTPHandler) serveDiscovery(w http.ResponseWriter, r *http.Request) {
 	h.projectionMu.RLock()
 	defer h.projectionMu.RUnlock()
+	if h.readOnlyDiscovery != nil {
+		h.readOnlyDiscovery.ServeHTTP(w, r)
+		return
+	}
 	bootstrapdiscovery.Handler{Discovery: h.projection}.ServeHTTP(w, r)
+}
+
+// EnableReadOnlyDiscovery is called only after rejected admission has released
+// its lock. Every GET obtains current evidence under an existing fence; no
+// result survives a request or creates a source ownership marker.
+func (h *startupHTTPHandler) EnableReadOnlyDiscovery(paths sqliterepo.InspectionPaths, options legacypreflight.Options, timeout time.Duration) {
+	h.projectionMu.Lock()
+	defer h.projectionMu.Unlock()
+	h.readOnlyDiscovery = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		legacypreflight.WithFencedInspection(ctx, paths, options, func(report legacypreflight.Report, err error) {
+			result := bootstrapdiscovery.Project(bootstrapdiscovery.Input{Report: report, InspectionError: err})
+			bootstrapdiscovery.Handler{Discovery: result}.ServeHTTP(w, r)
+		})
+	})
 }
 
 // BeginWritableStartup drains pre-write projections before their evidence can
@@ -53,6 +78,7 @@ func (h *startupHTTPHandler) BeginWritableStartup() {
 	h.projectionMu.Lock()
 	defer h.projectionMu.Unlock()
 	h.projection = bootstrapdiscovery.Unavailable()
+	h.readOnlyDiscovery = nil
 }
 
 func (h *startupHTTPHandler) discoveryLifecycle() routingdomain.DiscoveryLifecycle {

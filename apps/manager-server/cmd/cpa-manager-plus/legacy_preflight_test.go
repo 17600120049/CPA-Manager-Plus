@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -73,6 +74,75 @@ func writeOwnedProvisioningConfig(t *testing.T, dir string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"dataDir":"."}`), 0600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type fenceCheckingDiscoveryWriter struct {
+	*httptest.ResponseRecorder
+	check func()
+}
+
+func (w fenceCheckingDiscoveryWriter) WriteHeader(status int) {
+	w.check()
+	w.ResponseRecorder.WriteHeader(status)
+}
+
+func TestReadOnlyDiscoveryRetainsFenceThroughResponseAndRevokesBeforeWrites(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := processlock.Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := marker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	handler := newStartupHTTPHandler(bootstrapdiscovery.Unavailable())
+	handler.EnableReadOnlyDiscovery(legacypreflight.DefaultPaths(path), legacypreflight.Options{}, time.Second)
+	response := httptest.NewRecorder()
+	checked := false
+	handler.ServeHTTP(fenceCheckingDiscoveryWriter{response, func() {
+		checked = true
+		other, err := processlock.AcquireExisting(path)
+		if other != nil {
+			_ = other.Close()
+		}
+		if !errors.Is(err, processlock.ErrLocked) {
+			t.Fatalf("discovery emitted its response without a fence: %v", err)
+		}
+	}}, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+	if !checked || response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"mode":"recovery"`) {
+		t.Fatalf("fenced response status=%d body=%s", response.Code, response.Body.String())
+	}
+	operatorLock, err := processlock.AcquireExisting(path)
+	if err != nil {
+		t.Fatalf("response retained its fence: %v", err)
+	}
+	if err := operatorLock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil).WithContext(canceled))
+	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) {
+		t.Fatalf("canceled request reused evidence: status=%d body=%s", response.Code, response.Body.String())
+	}
+	handler.BeginWritableStartup()
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
+	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) {
+		t.Fatalf("writable startup retained read-only authority: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -286,8 +356,8 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 				if strings.HasPrefix(kind, "legacy") && (discoveryStatus != http.StatusServiceUnavailable || strings.Contains(discoveryBody, `"mode"`)) {
 					t.Fatalf("unfenced legacy %s manufactured a mode: status=%d body=%s", kind, discoveryStatus, discoveryBody)
 				}
-				if kind == "empty-database" && (discoveryStatus != http.StatusOK || !strings.Contains(discoveryBody, `"mode":"recovery"`)) {
-					t.Fatalf("stable empty source did not expose recovery classification: status=%d body=%s", discoveryStatus, discoveryBody)
+				if kind == "empty-database" && (discoveryStatus != http.StatusServiceUnavailable || strings.Contains(discoveryBody, `"mode"`)) {
+					t.Fatalf("unfenced empty source manufactured a mode: status=%d body=%s", discoveryStatus, discoveryBody)
 				}
 				if kind == "corrupt" && (discoveryStatus != http.StatusServiceUnavailable || strings.Contains(discoveryBody, `"mode"`)) {
 					t.Fatalf("unsafe damaged source manufactured a mode: status=%d body=%s", discoveryStatus, discoveryBody)
@@ -349,6 +419,12 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 	defer process.stop(t)
 
 	status, body := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+	// Listener binding deliberately precedes admission and evidence gathering.
+	deadline := time.Now().Add(10 * time.Second)
+	for status == http.StatusServiceUnavailable && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		status, body = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+	}
 	if status != http.StatusOK || !strings.Contains(body, `"mode":"unsupported_upgrade"`) || !strings.Contains(body, `"qualification_unavailable"`) {
 		t.Fatalf("legacy discovery status=%d body=%s", status, body)
 	}
@@ -369,6 +445,64 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 	if after := managerSourceSnapshot(t, dir); !reflect.DeepEqual(before, after) {
 		t.Fatal("discovery/blocked startup changed source/config/bootstrap state")
 	}
+
+	assertDiscovery := func(wantStatus int, wantMode string) {
+		t.Helper()
+		before := managerSourceSnapshot(t, dir)
+		status, body := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+		if status != wantStatus || (wantMode == "" && strings.Contains(body, `"mode"`)) ||
+			(wantMode != "" && !strings.Contains(body, `"mode":"`+wantMode+`"`)) {
+			t.Fatalf("current source discovery status=%d body=%s, want %d mode=%q", status, body, wantStatus, wantMode)
+		}
+		if !reflect.DeepEqual(before, managerSourceSnapshot(t, dir)) {
+			t.Fatal("refresh changed source/config/key/lock state")
+		}
+	}
+	changeSource := func(replace bool, credential string) {
+		t.Helper()
+		lock, err := processlock.AcquireExisting(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lock.Close()
+		if replace {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if replace {
+			if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := db.Exec(`insert or replace into settings(key,value) values('admin_credential_v1',?)`, credential); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The same process must stop reporting the old mode after operator repair,
+	// replacement or loss of ownership evidence. No restart or TTL is involved.
+	changeSource(false, `{"version":1,"salt":"broken"}`)
+	assertDiscovery(http.StatusOK, "recovery")
+	changeSource(true, string(raw))
+	assertDiscovery(http.StatusOK, "unsupported_upgrade")
+	operatorLock, err := processlock.AcquireExisting(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDiscovery(http.StatusServiceUnavailable, "")
+	if err := operatorLock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertDiscovery(http.StatusOK, "unsupported_upgrade")
+	if err := os.Remove(path + ".manager.lock"); err != nil {
+		t.Fatal(err)
+	}
+	assertDiscovery(http.StatusServiceUnavailable, "")
 }
 
 func TestFreshReadOnlyDiscoveryDoesNotCreateArtifacts(t *testing.T) {

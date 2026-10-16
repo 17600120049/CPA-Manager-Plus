@@ -80,6 +80,27 @@ func (a *Admission) Close() error {
 	return a.closeErr
 }
 
+// WithFencedInspection consumes one current read-only observation while its
+// existing cooperative ownership fence is still held. Unlike diagnostic
+// Inspect, it never returns usable evidence after releasing that fence and
+// never falls back to a past operator assertion when no fence exists. The
+// consumer must finish projecting the observation before returning.
+func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, options Options, consume func(Report, error)) {
+	if err := ctx.Err(); err != nil {
+		consume(Report{}, err)
+		return
+	}
+	lock, err := processlock.AcquireExisting(paths.Database)
+	if err != nil {
+		consume(Report{}, errors.New("source ownership unavailable"))
+		return
+	}
+	defer lock.Close()
+	report, err := inspect(ctx, paths, options, lock, false)
+	err = errors.Join(err, ctx.Err(), lock.Validate())
+	consume(report, err)
+}
+
 func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options) (report Report, err error) {
 	// Diagnostic projection only. Startup admission uses inspect directly and
 	// never consumes the planned target as source identity or authority.

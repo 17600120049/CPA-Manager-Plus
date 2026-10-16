@@ -198,14 +198,10 @@ func runServerWithOptions(options legacypreflight.Options) {
 	paths := sqliterepo.InspectionPaths{
 		Database: cfg.DBPath, Config: configPath, DataKey: cfg.DataKeyPath, Archives: cfg.UsageArchiveDir,
 	}
-	// A diagnostic inspection is intentionally performed before writable
-	// admission. It may feed only the fixed discovery response; the normal gate
-	// below remains the sole authority for data-key/store/bootstrap writes.
-	inspectionCtx, cancelInspection := context.WithTimeout(context.Background(), inspectionTimeout)
-	discoveryReport, discoveryErr := legacypreflight.Inspect(inspectionCtx, paths, options)
-	cancelInspection()
-	discoveryResult := bootstrapdiscovery.Project(bootstrapdiscovery.Input{Report: discoveryReport, InspectionError: discoveryErr})
-	startupHandler := newStartupHTTPHandler(discoveryResult)
+	// No released diagnostic snapshot is public authority. Until admission has
+	// finished, discovery stays unavailable; blocked startup enables bounded,
+	// request-scoped inspection with its fence retained through projection.
+	startupHandler := newStartupHTTPHandler(bootstrapdiscovery.Unavailable())
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		log.Fatalf("http listen: %v", err)
@@ -219,11 +215,12 @@ func runServerWithOptions(options legacypreflight.Options) {
 	log.Printf("cpa-manager-plus listening on %s", listener.Addr())
 	go serveHTTPServer(server, listener, stop, serverResult)
 
-	inspectionCtx, cancelInspection = context.WithTimeout(context.Background(), inspectionTimeout)
+	inspectionCtx, cancelInspection := context.WithTimeout(ctx, inspectionTimeout)
 	databaseLock, err := legacypreflight.AdmitStartup(inspectionCtx, paths, options)
 	cancelInspection()
 	if err != nil {
 		log.Printf("Manager writable startup is not authorized; keeping read-only discovery available: %v", err)
+		startupHandler.EnableReadOnlyDiscovery(paths, options, inspectionTimeout)
 		waitForReadOnlyStartup(ctx, server, serverResult)
 		return
 	}

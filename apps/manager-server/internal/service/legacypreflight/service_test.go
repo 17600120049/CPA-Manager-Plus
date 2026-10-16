@@ -48,6 +48,86 @@ func fixturePaths(t *testing.T) sqlite.InspectionPaths {
 	return paths
 }
 
+func TestFencedInspectionRetainsOwnershipThroughConsumerAndReleasesAfterward(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := processlock.Acquire(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := marker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceState(t, filepath.Dir(paths.Database))
+	called := false
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		called = true
+		if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "manager-fenced-cold" {
+			t.Fatalf("fenced inspection: kind=%s consistency=%s err=%v", report.SourceKind, report.Observed.Consistency, err)
+		}
+		other, err := processlock.AcquireExisting(paths.Database)
+		if other != nil {
+			_ = other.Close()
+		}
+		if !errors.Is(err, processlock.ErrLocked) {
+			t.Fatalf("consumer lost its fence: %v", err)
+		}
+	})
+	if !called {
+		t.Fatal("observation was not consumed")
+	}
+	other, err := processlock.AcquireExisting(paths.Database)
+	if err != nil {
+		t.Fatalf("consumer retained the fence after returning: %v", err)
+	}
+	if err := other.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+		t.Fatal("request-scoped inspection modified the source")
+	}
+}
+
+func TestFencedInspectionRejectsMissingBusyOrCanceledFence(t *testing.T) {
+	for _, kind := range []string{"missing", "busy", "canceled"} {
+		t.Run(kind, func(t *testing.T) {
+			paths := fixturePaths(t)
+			if kind == "busy" {
+				lock, err := processlock.Acquire(paths.Database)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer lock.Close()
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if kind == "canceled" {
+				cancel()
+			}
+			before := sourceState(t, filepath.Dir(paths.Database))
+			calls := 0
+			WithFencedInspection(ctx, paths, Options{SourceStopped: true}, func(report Report, err error) {
+				calls++
+				if err == nil || report.SourceKind != "" {
+					t.Fatalf("unfenced request received evidence: kind=%s err=%v", report.SourceKind, err)
+				}
+			})
+			if calls != 1 || !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+				t.Fatal("unavailable inspection changed the source or skipped its consumer")
+			}
+		})
+	}
+}
+
 // Cancel only the fenced second inspection, after exclusive marker creation.
 type cancelFencedInspection struct {
 	context.Context
