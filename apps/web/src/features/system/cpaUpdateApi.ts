@@ -212,7 +212,7 @@ async function request<T>(
   acceptsTerminalFailure = false
 ): Promise<T> {
   // Guard the transport as well as the UI, including direct calls in demo mode.
-  if (!connection.base || !connection.key || (__DEMO_SITE__ && isDemoMode())) {
+  if (__PANEL_LITE__ || !connection.base || !connection.key || (__DEMO_SITE__ && isDemoMode())) {
     throw new CPAUpdateAPIError('unavailable', 'update_unavailable');
   }
   try {

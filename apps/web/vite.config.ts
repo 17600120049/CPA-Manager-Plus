@@ -14,7 +14,10 @@ function getVersion(): string {
 
   // 2. Try git tag
   try {
-    const gitTag = execSync('git describe --tags --exact-match 2>/dev/null || git describe --tags 2>/dev/null || echo ""', { encoding: 'utf8' }).trim();
+    const gitTag = execSync(
+      'git describe --tags --exact-match 2>/dev/null || git describe --tags 2>/dev/null || echo ""',
+      { encoding: 'utf8' }
+    ).trim();
     if (gitTag) {
       return gitTag;
     }
@@ -42,20 +45,44 @@ const isDemoSiteBuild = (mode: string) =>
 export default defineConfig(({ mode }) => {
   const demoSite = isDemoSiteBuild(mode);
   const useRealDemoFixtures = demoSite || mode === 'test';
+  const panelBuild = !demoSite && mode !== 'test';
 
   return {
     plugins: [
       react(),
       viteSingleFile({
-        removeViteModuleLoader: true
-      })
+        removeViteModuleLoader: true,
+      }),
+      ...(panelBuild
+        ? [
+            {
+              name: 'panel-lite-artifact',
+              apply: 'build' as const,
+              closeBundle() {
+                fs.renameSync(
+                  path.resolve(__dirname, 'dist/panel/index.html'),
+                  path.resolve(__dirname, 'dist/panel/management.html')
+                );
+              },
+            },
+          ]
+        : []),
     ],
     define: {
+      __PANEL_LITE__: JSON.stringify(panelBuild),
       __APP_VERSION__: JSON.stringify(getVersion()),
-      __DEMO_SITE__: JSON.stringify(demoSite || mode === 'test')
+      __DEMO_SITE__: JSON.stringify(demoSite || mode === 'test'),
     },
     resolve: {
       alias: [
+        ...(panelBuild
+          ? [
+              {
+                find: /^(?:@\/services\/api\/usageService|\.\/usageService|.*\/services\/api\/usageService(?:\.ts)?)$/,
+                replacement: path.resolve(__dirname, './src/panel/unsupportedManagerApi.ts'),
+              },
+            ]
+          : []),
         {
           find: /^@\/features\/demo\/demoFixtures$/,
           replacement: path.resolve(
@@ -63,36 +90,36 @@ export default defineConfig(({ mode }) => {
             useRealDemoFixtures
               ? './src/features/demo/demoFixtures.ts'
               : './src/features/demo/demoFixtures.empty.ts'
-          )
+          ),
         },
         {
           find: '@',
-          replacement: path.resolve(__dirname, './src')
-        }
-      ]
+          replacement: path.resolve(__dirname, './src'),
+        },
+      ],
     },
     css: {
       modules: {
         localsConvention: 'camelCase',
-        generateScopedName: '[name]__[local]___[hash:base64:5]'
+        generateScopedName: '[name]__[local]___[hash:base64:5]',
       },
       preprocessorOptions: {
         scss: {
-          additionalData: `@use "@/styles/variables" as *;\n@use "@/styles/mixins" as *;\n`
-        }
-      }
+          additionalData: `@use "@/styles/variables" as *;\n@use "@/styles/mixins" as *;\n`,
+        },
+      },
     },
     build: {
       target: 'es2020',
-      outDir: demoSite ? 'dist-demo' : 'dist',
+      outDir: demoSite ? 'dist-demo' : 'dist/panel',
       assetsInlineLimit: 100000000,
       chunkSizeWarningLimit: 100000000,
       cssCodeSplit: false,
       rolldownOptions: {
         output: {
-          codeSplitting: false
-        }
-      }
-    }
+          codeSplitting: false,
+        },
+      },
+    },
   };
 });

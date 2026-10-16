@@ -230,7 +230,7 @@ docker compose -f docker-compose.manager.yml up --build
 
 ## 发布
 
-- `npm run build` 生成单文件 `apps/web/dist/index.html`。
+- `npm run build` 生成单文件 Panel Lite `apps/web/dist/panel/management.html`，以及多资源 Full Web `apps/web/dist/fullweb/index.html` 和 hashed assets。
 - `bin/release/package-native.sh` 将面板内置到原生包。
 - 发布说明按 `release/<version> -> dev -> main` 流程合入，并从已验证的
   `main` promotion merge 推送严格的 `vX.Y.Z` 或预发布 tag。

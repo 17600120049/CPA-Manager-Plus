@@ -87,6 +87,15 @@ otherwise                         -> Gateway
 
 A very small number of fixed transport/liveness paths may exist when they do not disclose product-sensitive state, but Full Web route growth MUST NOT require an ever-growing Ingress allowlist.
 
+Phase4-02 adds exactly two fixed immutable brand-resource exceptions: exact
+`/favicon.ico` and `/apple-touch-icon.png`, GET/HEAD only, are Manager-owned
+independently of Control activation. Missing/disabled assets return a local
+404, never SPA HTML or a Control-prefix redirect. Other methods, encoded
+variants, subpaths and lookalikes receive no exception and retain normal
+classification. Control-prefix collision validation reserves these two paths.
+The single Phase4 route-owner fixture records this successor contract; this
+does not create a generic public static namespace.
+
 `controlBasePath` is an attack-surface and scan-noise reduction measure. It is NOT authentication or authorization and MUST NOT weaken normal security controls.
 
 ### 3. Authority and configuration ownership
@@ -98,6 +107,11 @@ A very small number of fixed transport/liveness paths may exist when they do not
 - Changing the prefix requires a validated configuration operation with collision checking and eventual apply/health/commit-or-rollback semantics. The exact reload/distribution mechanism is deferred to the appropriate Foundation/Setup implementation slice.
 
 The canonical contract MUST reject ambiguous forms, including root `/`, dot-segment traversal, encoded path bypasses, duplicate-slash ambiguity, and trailing-slash multi-meaning. It MUST detect collisions with fixed transport paths and Gateway protocol ownership.
+
+Phase4-02 limits canonical prefix characters to ASCII letters, digits and
+`-._~$&+,/:;=@`, which remain unchanged in both Go and browser URL path
+serialization. Prefixes requiring escaping (including Unicode literals) are
+rejected during authority validation, not normalized into a second mount.
 
 ### 4. Two Browser Applications, not one mode-switched application
 

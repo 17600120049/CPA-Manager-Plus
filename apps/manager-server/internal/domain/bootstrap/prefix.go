@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -53,8 +54,14 @@ func containsPercentEncoding(value string) bool {
 	return false
 }
 
-func validControlBasePath(value string) bool {
-	if value == "" || !strings.HasPrefix(value, "/") || value == "/" ||
+var canonicalControlBasePathCharacters = regexp.MustCompile(`^/[A-Za-z0-9._~$&+,/:;=@-]+$`)
+
+// ValidControlBasePath is the shared canonical grammar for Bootstrap prefix,
+// preview and routing snapshot contracts. Paths must serialize unchanged in
+// both Go and browser URLs; this validates shape, not routing activation.
+func ValidControlBasePath(value string) bool {
+	if !canonicalControlBasePathCharacters.MatchString(value) ||
+		value == "" || !strings.HasPrefix(value, "/") || value == "/" ||
 		strings.ContainsAny(value, "?#\\") || strings.Contains(value, "//") ||
 		containsPercentEncoding(value) || strings.TrimSpace(value) != value {
 		return false
@@ -105,13 +112,13 @@ func (p PrefixOperation) Validate() error {
 	if p.ExpectedRoutingRevision == 0 || p.CurrentRoutingRevision == 0 {
 		return errors.New("prefix operation requires routing revision authority")
 	}
-	if !validControlBasePath(p.DesiredControlBasePath) {
+	if !ValidControlBasePath(p.DesiredControlBasePath) {
 		return errors.New("desired controlBasePath is not canonical")
 	}
-	if p.PreviousVerifiedEffectivePath != "" && !validControlBasePath(p.PreviousVerifiedEffectivePath) {
+	if p.PreviousVerifiedEffectivePath != "" && !ValidControlBasePath(p.PreviousVerifiedEffectivePath) {
 		return errors.New("previous verified effective controlBasePath is not canonical")
 	}
-	if p.VerifiedEffectivePath != "" && !validControlBasePath(p.VerifiedEffectivePath) {
+	if p.VerifiedEffectivePath != "" && !ValidControlBasePath(p.VerifiedEffectivePath) {
 		return errors.New("verified effective controlBasePath is not canonical")
 	}
 	if p.Impact != PrefixControlRouteOnly {
@@ -178,11 +185,11 @@ type PrefixRecoveryObservation struct {
 
 func (o PrefixRecoveryObservation) valid() bool {
 	if o.CurrentInstallationID == "" || o.CurrentRoutingRevision == 0 ||
-		!validControlBasePath(o.CurrentEffectivePath) {
+		!ValidControlBasePath(o.CurrentEffectivePath) {
 		return false
 	}
 	if o.PreviousSnapshotQualified {
-		return validControlBasePath(o.PreviousSnapshotEffectivePath)
+		return ValidControlBasePath(o.PreviousSnapshotEffectivePath)
 	}
 	return o.PreviousSnapshotEffectivePath == ""
 }

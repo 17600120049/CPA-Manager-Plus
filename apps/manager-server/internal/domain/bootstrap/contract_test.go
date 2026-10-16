@@ -1179,6 +1179,22 @@ func TestUpgradePlanCannotReinitializeAdminOrReplaceHistory(t *testing.T) {
 	}
 }
 
+func TestPreviewPlansUseCanonicalControlBasePath(t *testing.T) {
+	for _, path := range readFixture(t).Paths {
+		base := path.domain()
+		if err := base.Validate(); err != nil {
+			t.Fatalf("invalid baseline plan %s: %v", path.ID, err)
+		}
+		for _, target := range []string{"/control/sub-path", "/AZaz09-._~$&+,/:;=@", "/控制", "/control!", "/control/"} {
+			plan := base
+			plan.ControlBasePath = target
+			if got, want := plan.Validate() == nil, bootstrap.ValidControlBasePath(target); got != want {
+				t.Errorf("plan %s path %q: valid=%v, canonical=%v", path.ID, target, got, want)
+			}
+		}
+	}
+}
+
 func TestPlanEffectSetsAreDisjoint(t *testing.T) {
 	f := readFixture(t)
 	find := func(id string) bootstrap.Plan {

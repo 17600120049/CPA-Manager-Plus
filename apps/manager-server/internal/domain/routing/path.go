@@ -268,17 +268,19 @@ func (o NamespaceOwner) Owner(requestPath string) PathOwner {
 }
 
 func (o NamespaceOwner) matchesDeclaredControlNamespace(requestPath string) bool {
+	// Invalid authority cannot activate, but its literally claimed namespace
+	// remains deny-only even if it no longer meets the activation grammar.
 	for _, candidate := range []string{
 		o.Snapshot.DesiredControlBasePath,
 		o.Snapshot.VerifiedEffectiveControlBasePath,
 		o.Snapshot.PreviousVerifiedControlBasePath,
 	} {
-		if candidate != "" && ValidControlBasePath(candidate) && isSegmentPath(requestPath, candidate) {
+		if candidate != "" && validDeclaredControlBasePath(candidate) && isSegmentPath(requestPath, candidate) {
 			return true
 		}
 	}
 	for _, retired := range o.Retired {
-		if retired.ControlBasePath != "" && ValidControlBasePath(retired.ControlBasePath) &&
+		if retired.ControlBasePath != "" && validDeclaredControlBasePath(retired.ControlBasePath) &&
 			isSegmentPath(requestPath, retired.ControlBasePath) {
 			return true
 		}
@@ -333,10 +335,15 @@ func ValidateNamespaceCollisions(snapshot RoutingSnapshot, retired []RetiredName
 	return nil
 }
 
-// ValidControlBasePath is the canonical grammar shared by snapshots and
-// retired namespaces. Percent-encoded separators/dot segments are rejected so
-// a later HTTP layer cannot give the same path two meanings.
+// ValidControlBasePath delegates to the same grammar as Bootstrap prefix and
+// preview contracts. Routing does not define another canonical prefix grammar.
 func ValidControlBasePath(value string) bool {
+	return bootstrapdomain.ValidControlBasePath(value)
+}
+
+// Preserve Phase4-01's decoded namespace shape for deny-only ownership of an
+// invalid snapshot; narrowing activation must not release old claimed routes.
+func validDeclaredControlBasePath(value string) bool {
 	if value == "" || value == "/" || !strings.HasPrefix(value, "/") ||
 		strings.TrimSpace(value) != value || strings.Contains(value, "//") ||
 		strings.ContainsAny(value, "?#\\") || containsPercentEncoding(value) {
@@ -398,6 +405,8 @@ func sameOrNestedPrefix(left, right string) bool {
 func reservedNamespaceCollision(candidate string) bool {
 	for _, reserved := range []string{
 		BootstrapDiscoveryPath,
+		"/favicon.ico",
+		"/apple-touch-icon.png",
 		"/health",
 		"/management.html",
 		"/models",

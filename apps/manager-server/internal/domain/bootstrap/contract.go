@@ -491,7 +491,7 @@ func (p Plan) Validate() error {
 	if p.SourceCPA != expectedSource {
 		return errors.New("source CPA conflicts with strategy")
 	}
-	if !validControlBasePath(p.ControlBasePath) || len(p.EstimatedSteps) == 0 || len(p.Mutations) == 0 {
+	if !ValidControlBasePath(p.ControlBasePath) || len(p.EstimatedSteps) == 0 || len(p.Mutations) == 0 {
 		return errors.New("plan requires canonical controlBasePath, mutations and estimated steps")
 	}
 	if err := validateLists(p.Mutations, p.Preserved, p.Unsupported, p.EstimatedSteps); err != nil {

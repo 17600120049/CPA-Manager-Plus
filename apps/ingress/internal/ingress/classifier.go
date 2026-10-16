@@ -72,6 +72,9 @@ func (c Classifier) ClassifyRequest(r *http.Request) Route {
 	if r == nil || r.URL == nil {
 		return RouteGateway
 	}
+	if exactBrandResource(r) {
+		return RouteManager
+	}
 	pathValue := r.URL.Path
 	if pathValue == "" {
 		pathValue = "/"
@@ -91,6 +94,22 @@ func (c Classifier) ClassifyRequest(r *http.Request) Route {
 		retired = retired || candidateRetired
 	}
 	return resolveOwnership(fixed, active, retired)
+}
+
+// The two brand exceptions are method-aware and intentionally do not use
+// routeCandidates: encoded/subpath/lookalike requests keep normal ownership.
+// Manager and fixture parity is checked across the stdlib module boundary.
+func exactBrandResource(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if r.URL.Path != "/favicon.ico" && r.URL.Path != "/apple-touch-icon.png" {
+		return false
+	}
+	if r.URL.EscapedPath() != r.URL.Path {
+		return false
+	}
+	return r.RequestURI == "" || strings.SplitN(r.RequestURI, "?", 2)[0] == r.URL.Path
 }
 
 func (c Classifier) candidateOwnership(candidates []string) (fixed, active, retired bool) {

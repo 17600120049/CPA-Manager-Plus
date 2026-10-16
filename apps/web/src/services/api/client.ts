@@ -19,6 +19,7 @@ import {
   handleDemoRawRequest,
 } from '@/features/demo/demoApi';
 import { isDemoMode } from '@/features/demo/demoMode';
+import { assertPanelManagementTarget } from '@/panel/managementTarget';
 
 export type ApiClientRequestScope = Pick<ApiClientConfig, 'apiBase' | 'managementKey'>;
 
@@ -150,6 +151,8 @@ class ApiClient {
           // Normalize deprecated Gemini endpoint to the current path.
           config.url = config.url.replace(/\/generative-language-api-key\b/g, '/gemini-api-key');
         }
+
+        assertPanelManagementTarget(config.baseURL ?? '', config.url ?? '');
 
         // 添加认证头
         if (!scopedRequest && this.managementKey) {
