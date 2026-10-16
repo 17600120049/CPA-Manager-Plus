@@ -83,6 +83,15 @@ func TestLegacyBootstrapStateDoesNotMapToCompletedOrFresh(t *testing.T) {
 	}
 }
 
+func TestFreshRequiresExplicitNoV1Witness(t *testing.T) {
+	report := freshReport()
+	report.Observed.BootstrapState = sqlite.BootstrapStateInspection{}
+	got := Project(Input{Report: report})
+	if got.Available || got.Mode != "" || got.Reason != ReasonQualificationUnknown {
+		t.Fatalf("missing fresh witness was treated as authoritative: %#v", got)
+	}
+}
+
 func TestInvalidBootstrapWitnessFailsClosed(t *testing.T) {
 	report := legacyReport("initialized")
 	report.Observed.BootstrapState.Valid = false

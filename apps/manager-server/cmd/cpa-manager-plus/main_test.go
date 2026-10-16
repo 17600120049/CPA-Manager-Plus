@@ -202,10 +202,9 @@ func TestServeHTTPServerCancelsRuntimeOnUnexpectedExit(t *testing.T) {
 
 func TestStartupHTTPHandlerKeepsDiscoveryBeforeReadyAndDelegatesAfter(t *testing.T) {
 	result := bootstrapdiscovery.Result{
-		Available:              true,
-		Mode:                   bootstrap.Fresh,
-		Reason:                 bootstrapdiscovery.ReasonFreshClaimRequired,
-		AuthenticationRequired: true,
+		Available: true,
+		Mode:      bootstrap.Fresh,
+		Reason:    bootstrapdiscovery.ReasonFreshClaimRequired,
 	}
 	handler := newStartupHTTPHandler(result)
 	request := httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil)
