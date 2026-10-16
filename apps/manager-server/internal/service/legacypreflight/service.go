@@ -129,6 +129,13 @@ func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options,
 				report.Blocked = append(report.Blocked, "database-missing-with-source-artifacts")
 			}
 		}
+		if report.SourceKind == "fresh" {
+			// A Fresh projection carries an explicit no-v1-product witness. The
+			// discovery layer must not infer Fresh from a missing SQLite file
+			// without this bounded administrator-state observation.
+			observed.BootstrapState = sqlite.BootstrapStateInspection{Valid: true, AdminCredential: "uninitialized"}
+			report.Observed = observed
+		}
 		return report, nil
 	}
 	if observed.Files[0].Size == 0 {

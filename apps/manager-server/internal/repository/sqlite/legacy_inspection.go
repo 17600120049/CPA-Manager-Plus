@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -58,7 +59,23 @@ type LegacyInspection struct {
 	QuotaSnapshotLifecycleV1 string                                  `json:"quotaSnapshotLifecycleV1"`
 	ConnectionStorageVersion *int                                    `json:"connectionStorageVersion,omitempty"`
 	ConnectionStorage        PersistedCPAConnectionStorageInspection `json:"connectionStorage"`
-	Issues                   []string                                `json:"issues"`
+	// BootstrapState is a bounded read-only witness used by the temporary
+	// discovery surface. It is deliberately not a public BootstrapState
+	// projection and must never be treated as writable startup authority.
+	BootstrapState BootstrapStateInspection `json:"bootstrapState"`
+	Issues         []string                 `json:"issues"`
+}
+
+// BootstrapStateInspection contains only the administrator/product facts
+// needed to keep discovery classification separate from the legacy persisted
+// BootstrapState contract. It never carries the legacy status string.
+type BootstrapStateInspection struct {
+	Present                bool   `json:"present"`
+	Valid                  bool   `json:"valid"`
+	AdminCredentialPresent bool   `json:"adminCredentialPresent"`
+	AdminCredential        string `json:"adminCredential"`
+	ProjectInitialized     bool   `json:"projectInitialized"`
+	HistoricalData         bool   `json:"historicalData"`
 }
 
 // Restrict work to known tables rather than exposing arbitrary source names.
@@ -288,19 +305,8 @@ func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) e
 		return err
 	}
 	if inspectionHasColumns(result, "settings", "key", "value") {
-		var raw string
-		err := db.QueryRowContext(ctx, `select value from settings where key = 'bootstrap_state_v1'`).Scan(&raw)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if err := inspectBootstrapState(ctx, db, result); err != nil {
 			return err
-		}
-		if err == nil {
-			var state struct {
-				Version int `json:"connectionStorageMigrationVersion"`
-			}
-			if err := json.Unmarshal([]byte(raw), &state); err != nil {
-				return errors.New("invalid bootstrap state")
-			}
-			result.ConnectionStorageVersion = &state.Version
 		}
 	}
 	for _, query := range []struct{ key, table string }{
@@ -358,6 +364,79 @@ func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) e
 		if exists {
 			result.History[query.key] = "present-observed"
 		}
+	}
+	return nil
+}
+
+// inspectBootstrapState intentionally avoids exposing the legacy Status value.
+// The persisted state is only a bounded witness for administrator readiness and
+// historical product evidence; the new domain classifier still decides the
+// public mode and never maps Status directly.
+func inspectBootstrapState(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+	rows, err := db.QueryContext(ctx, `select key, value from settings where key in ('bootstrap_state_v1', 'admin_credential_v1')`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var bootstrapRaw, adminRaw string
+	var bootstrapFound, adminFound bool
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return err
+		}
+		switch key {
+		case "bootstrap_state_v1":
+			bootstrapFound, bootstrapRaw = true, value
+		case "admin_credential_v1":
+			adminFound, adminRaw = true, value
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	result.BootstrapState = BootstrapStateInspection{Present: bootstrapFound, Valid: true, AdminCredentialPresent: adminFound, AdminCredential: "uninitialized"}
+	if bootstrapFound {
+		var state struct {
+			ConnectionStorageMigrationVersion int  `json:"connectionStorageMigrationVersion"`
+			AdminReady                        bool `json:"adminReady"`
+			ProjectInitialized                bool `json:"projectInitialized"`
+			HasHistoricalData                 bool `json:"hasHistoricalData"`
+		}
+		if err := json.Unmarshal([]byte(bootstrapRaw), &state); err != nil {
+			result.BootstrapState.Valid = false
+			return errors.New("invalid bootstrap state")
+		}
+		result.ConnectionStorageVersion = &state.ConnectionStorageMigrationVersion
+		result.BootstrapState.ProjectInitialized = state.ProjectInitialized
+		result.BootstrapState.HistoricalData = state.HasHistoricalData
+		// An existing state that claims administrator readiness without a
+		// verifiable credential is an unsafe observation, not Fresh.
+		if state.AdminReady && !adminFound {
+			result.BootstrapState.AdminCredential = "unverifiable"
+		}
+	}
+	if adminFound {
+		var credential struct {
+			Version    int    `json:"version"`
+			Salt       string `json:"salt"`
+			KeyHash    string `json:"keyHash"`
+			Iterations int    `json:"iterations"`
+		}
+		if err := json.Unmarshal([]byte(adminRaw), &credential); err != nil {
+			result.BootstrapState.Valid = false
+			result.BootstrapState.AdminCredential = "unverifiable"
+			return errors.New("invalid admin credential")
+		}
+		salt, saltErr := base64.RawStdEncoding.DecodeString(strings.TrimSpace(credential.Salt))
+		keyHash, keyHashErr := base64.RawStdEncoding.DecodeString(strings.TrimSpace(credential.KeyHash))
+		if credential.Version <= 0 || saltErr != nil || len(salt) == 0 ||
+			keyHashErr != nil || len(keyHash) == 0 || credential.Iterations <= 0 {
+			result.BootstrapState.Valid = false
+			result.BootstrapState.AdminCredential = "unverifiable"
+			return errors.New("invalid admin credential")
+		}
+		result.BootstrapState.AdminCredential = "initialized"
 	}
 	return nil
 }
