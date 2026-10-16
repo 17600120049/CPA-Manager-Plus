@@ -45,6 +45,31 @@ type Admission struct {
 	closeOnce         sync.Once
 	closeErr          error
 	markerPermanent   atomic.Bool
+	freshRevoked      atomic.Bool
+}
+
+func (a *Admission) IsFresh() bool {
+	return a != nil && a.fresh && !a.markerPermanent.Load()
+}
+
+// FreshEvidence reuses the admitted no-v1 witness only while this process
+// retains its original fence and the fixed source inventory is unchanged.
+// It never opens a newly appeared database or grants initialization authority.
+func (a *Admission) FreshEvidence(ctx context.Context) (Report, error) {
+	if !a.IsFresh() || a.freshRevoked.Load() {
+		return Report{}, errors.New("fresh admission unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return Report{}, err
+	}
+	if err := errors.Join(sqlite.ValidateInspectionSource(a.paths, a.initial), a.Lock.Validate()); err != nil {
+		a.freshRevoked.Store(true)
+		return Report{}, errors.New("fresh admission evidence changed")
+	}
+	if err := ctx.Err(); err != nil {
+		return Report{}, err
+	}
+	return Report{SourceKind: "fresh", Observed: a.initial}, nil
 }
 
 // RetainMarker makes the ownership marker permanent after writable DB open.
@@ -80,12 +105,17 @@ func (a *Admission) Close() error {
 	return a.closeErr
 }
 
-// WithFencedInspection consumes one current read-only observation while its
+const DiscoveryMaxSourceBytes int64 = 16 << 20
+const DiscoveryInspectionTimeout = 2 * time.Second
+
+// WithFencedInspection consumes one current, resource-bounded observation while its
 // existing cooperative ownership fence is still held. Unlike diagnostic
 // Inspect, it never returns usable evidence after releasing that fence and
 // never falls back to a past operator assertion when no fence exists. The
 // consumer must finish projecting the observation before returning.
 func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, options Options, consume func(Report, error)) {
+	ctx, cancel := context.WithTimeout(ctx, DiscoveryInspectionTimeout)
+	defer cancel()
 	if err := ctx.Err(); err != nil {
 		consume(Report{}, err)
 		return
@@ -96,7 +126,7 @@ func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, opt
 		return
 	}
 	defer lock.Close()
-	report, err := inspect(ctx, paths, options, lock, false)
+	report, err := inspectWithBudget(ctx, paths, options, lock, false, DiscoveryMaxSourceBytes)
 	err = errors.Join(err, ctx.Err(), lock.Validate())
 	consume(report, err)
 }
@@ -120,7 +150,11 @@ func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options)
 // createdLock is only set for the fenced recheck after an initially admitted
 // source had no ownership marker. Diagnostic callers never ignore an old lock.
 func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options, lock *processlock.Lock, createdLock bool) (report Report, err error) {
-	observed, err := sqlite.InspectLegacySource(ctx, paths, sqlite.InspectionOptions{SourceStopped: options.SourceStopped, ManagerLock: lock})
+	return inspectWithBudget(ctx, paths, options, lock, createdLock, 0)
+}
+
+func inspectWithBudget(ctx context.Context, paths sqlite.InspectionPaths, options Options, lock *processlock.Lock, createdLock bool, maxSourceBytes int64) (report Report, err error) {
+	observed, err := sqlite.InspectLegacySource(ctx, paths, sqlite.InspectionOptions{SourceStopped: options.SourceStopped, ManagerLock: lock, MaxSourceBytes: maxSourceBytes})
 	report = Report{SourceKind: "unknown", Observed: observed, Unknown: []string{
 		"exact-source-release", "compatibility-profile", "verified-backup", "full-database-integrity", "archive-content",
 	}, Blocked: append([]string{}, observed.Issues...)}

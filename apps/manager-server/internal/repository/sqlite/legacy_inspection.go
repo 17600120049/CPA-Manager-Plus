@@ -29,6 +29,9 @@ type InspectionOptions struct {
 	// Only cooperating single-Manager writers are fenced; arbitrary writers
 	// must be stopped separately before relying on the inspection.
 	ManagerLock *processlock.Lock
+	// Zero preserves offline/startup inspection semantics. Public discovery
+	// supplies a hard combined DB/WAL size and staging-copy budget.
+	MaxSourceBytes int64
 }
 type InspectionFile struct {
 	Role  string `json:"role"`
@@ -133,6 +136,15 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 			return result, nil
 		}
 	}
+	if options.MaxSourceBytes > 0 {
+		remaining := options.MaxSourceBytes
+		for _, file := range result.Files[:2] {
+			if file.Size > remaining {
+				return result, errors.New("inspection source budget exceeded")
+			}
+			remaining -= file.Size
+		}
+	}
 	if result.Files[0].State == "missing" {
 		return result, nil
 	}
@@ -177,10 +189,15 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		}
 		defer os.RemoveAll(staging)
 		databasePath = filepath.Join(staging, "source.sqlite")
-		if err := copyInspectionFile(ctx, paths.Database, databasePath); err != nil {
+		var remaining *int64
+		if options.MaxSourceBytes > 0 {
+			budget := options.MaxSourceBytes
+			remaining = &budget
+		}
+		if err := copyInspectionFileWithBudget(ctx, paths.Database, databasePath, remaining); err != nil {
 			return result, err
 		}
-		if err := copyInspectionFile(ctx, paths.Database+"-wal", databasePath+"-wal"); err != nil {
+		if err := copyInspectionFileWithBudget(ctx, paths.Database+"-wal", databasePath+"-wal", remaining); err != nil {
 			return result, err
 		}
 		copied, copyErr := inspectFiles(paths)
@@ -544,6 +561,18 @@ func SameInspectionSource(before, after LegacyInspection) bool {
 	return sameInspectionFiles(before.Files[:7], after.Files[:7])
 }
 
+// ValidateInspectionSource checks a fixed inventory without opening SQLite or
+// copying a source that may have appeared since a Fresh admission. It is only
+// a change detector; callers must also retain and validate the ownership fence.
+func ValidateInspectionSource(paths InspectionPaths, before LegacyInspection) error {
+	after, err := inspectFiles(paths)
+	if err != nil || len(before.Files) != len(after) || len(after) < 7 ||
+		!sameInspectionFiles(before.Files[:7], after[:7]) {
+		return errors.New("inspection source changed")
+	}
+	return nil
+}
+
 func inspectionDataSourceName(path string, immutable bool) string {
 	uriPath := filepath.ToSlash(path)
 	if !strings.HasPrefix(uriPath, "/") {
@@ -657,6 +686,10 @@ func inspectionTempDirectory(paths InspectionPaths) (string, error) {
 }
 
 func copyInspectionFile(ctx context.Context, source, destination string) error {
+	return copyInspectionFileWithBudget(ctx, source, destination, nil)
+}
+
+func copyInspectionFileWithBudget(ctx context.Context, source, destination string, remaining *int64) error {
 	input, err := os.Open(source)
 	if err != nil {
 		return errors.New("inspection copy source unavailable")
@@ -666,7 +699,26 @@ func copyInspectionFile(ctx context.Context, source, destination string) error {
 	if err != nil {
 		return errors.New("inspection copy destination unavailable")
 	}
-	_, copyErr := io.Copy(output, &inspectionContextReader{ctx: ctx, reader: input})
+	reader := &inspectionContextReader{ctx: ctx, reader: input}
+	var copyErr error
+	if remaining == nil {
+		_, copyErr = io.Copy(output, reader)
+	} else {
+		var written int64
+		written, copyErr = io.Copy(output, io.LimitReader(reader, *remaining))
+		*remaining -= written
+		if copyErr == nil {
+			// Detect growth beyond the preflight inventory without writing a
+			// byte beyond the shared DB/WAL staging allowance.
+			var probe [1]byte
+			n, err := reader.Read(probe[:])
+			if n != 0 {
+				copyErr = errors.New("inspection copy budget exceeded")
+			} else if err != io.EOF {
+				copyErr = err
+			}
+		}
+	}
 	closeErr := output.Close()
 	if copyErr != nil || closeErr != nil {
 		// Keep cancellation identifiable without exposing source paths or OS

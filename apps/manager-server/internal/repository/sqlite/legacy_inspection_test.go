@@ -140,6 +140,100 @@ func TestInspectionCopyPreservesCancellationCauseAndSource(t *testing.T) {
 	}
 }
 
+func TestInspectionBudgetRejectsCombinedSourceBeforeStaging(t *testing.T) {
+	paths := coldInspectionFixture(t)
+	info, err := os.Stat(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A cold source exactly at the allowance still works.
+	if result, err := InspectLegacySource(context.Background(), paths, InspectionOptions{SourceStopped: true, MaxSourceBytes: info.Size()}); err != nil || result.SQLite != "observed" {
+		t.Fatalf("exact budget rejected: sqlite=%s err=%v", result.SQLite, err)
+	}
+	if err := os.WriteFile(paths.Database+"-wal", make([]byte, 32), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := inspectionSnapshot(t, filepath.Dir(paths.Database))
+	result, err := InspectLegacySource(context.Background(), paths, InspectionOptions{SourceStopped: true, MaxSourceBytes: info.Size() + 31})
+	if err == nil || !strings.Contains(err.Error(), "budget") || result.SQLite != "not-inspected" {
+		t.Fatalf("combined DB/WAL limit was not enforced first: sqlite=%s err=%v", result.SQLite, err)
+	}
+	if !reflect.DeepEqual(before, inspectionSnapshot(t, filepath.Dir(paths.Database))) {
+		t.Fatal("over-budget rejection changed source files")
+	}
+}
+
+func TestInspectionCopyBudgetBoundsCombinedWritesEvenWhenSourceExceedsInventory(t *testing.T) {
+	sourceDir, destinationDir := t.TempDir(), t.TempDir()
+	first, second := filepath.Join(sourceDir, "db"), filepath.Join(sourceDir, "wal")
+	if err := os.WriteFile(first, []byte("123456"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte("abcdef"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := inspectionSnapshot(t, sourceDir)
+	remaining := int64(10)
+	if err := copyInspectionFileWithBudget(context.Background(), first, filepath.Join(destinationDir, "db"), &remaining); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyInspectionFileWithBudget(context.Background(), second, filepath.Join(destinationDir, "wal"), &remaining); err == nil {
+		t.Fatal("copy accepted more bytes than its inventory allowance")
+	}
+	var total int64
+	for _, name := range []string{"db", "wal"} {
+		info, err := os.Stat(filepath.Join(destinationDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += info.Size()
+	}
+	if remaining != 0 || total != 10 || !reflect.DeepEqual(before, inspectionSnapshot(t, sourceDir)) {
+		t.Fatalf("copy exceeded allowance or modified source: total=%d remaining=%d", total, remaining)
+	}
+}
+
+func TestInspectionWALGrowthCannotExceedStagingBudget(t *testing.T) {
+	dir, stagingDir := t.TempDir(), t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestLegacyInspectionCrashFixtureProcess$")
+	cmd.Env = append(os.Environ(), "CPAMP_INSPECTION_CRASH_PATH="+path)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("create WAL fixture: %v %s", err, output)
+	}
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, stagingDir)
+	}
+	lock, err := processlock.AcquireExisting(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	dbInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	walInfo, err := os.Stat(path + "-wal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget := dbInfo.Size() + walInfo.Size() + 4096
+	ctx := &replacingInspectionContext{Context: context.Background(), replace: func() {
+		// Runs after the initial inventory but before any source copying.
+		if err := os.Truncate(path+"-wal", budget+1); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	result, err := InspectLegacySource(ctx, InspectionPaths{Database: path}, InspectionOptions{ManagerLock: lock, MaxSourceBytes: budget})
+	if err == nil || result.SQLite != "not-inspected" {
+		t.Fatalf("growing WAL reached SQLite: sqlite=%s err=%v", result.SQLite, err)
+	}
+	entries, err := os.ReadDir(stagingDir)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("failed bounded inspection leaked staging: count=%d err=%v", len(entries), err)
+	}
+}
+
 func TestLegacyInspectionWALReadsCommittedRowOnlyUnderOwnershipFence(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "usage.sqlite")

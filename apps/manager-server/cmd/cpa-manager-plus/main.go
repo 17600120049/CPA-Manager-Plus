@@ -229,6 +229,14 @@ func runServerWithOptions(options legacypreflight.Options) {
 			log.Printf("close manager database process lock: %v", err)
 		}
 	}()
+	if databaseLock.IsFresh() && !options.Initialize {
+		// Phase4-01 only publishes the Fresh claim entry. A GET is never an
+		// initialization trigger, and no claim consumer exists in this slice.
+		startupHandler.EnableFreshDiscovery(databaseLock)
+		log.Printf("Fresh source awaiting Bootstrap initialization; serving read-only discovery")
+		waitForReadOnlyStartup(ctx, server, serverResult)
+		return
+	}
 	// Admission permits writes, not a Bootstrap Completed transition. Revoke
 	// the pre-write observation before config/key/store initialization can make
 	// it stale. Phase4-01 has no qualified post-write discovery authority.
