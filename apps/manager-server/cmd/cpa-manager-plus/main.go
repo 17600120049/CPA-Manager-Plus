@@ -200,8 +200,8 @@ func runServerWithOptions(options legacypreflight.Options) {
 	}
 	// The listener comes up before product/data mutation. Discovery starts
 	// unavailable, then switches only to current read-only evidence: missing-DB
-	// inventory for Fresh/partial sources, or an already-established Manager
-	// fence for an existing database.
+	// inventory for Fresh/partial sources, or a bounded rollback-mode SQLite
+	// read snapshot for an existing database.
 	startupHandler := newStartupHTTPHandler(bootstrapdiscovery.Unavailable())
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
