@@ -410,8 +410,15 @@ func TestBlockedLegacyNormalStartupHasNoSourceSideEffects(t *testing.T) {
 				if discoveryStatus != http.StatusOK && discoveryStatus != http.StatusServiceUnavailable {
 					t.Fatalf("blocked %s discovery status=%d body=%s", kind, discoveryStatus, discoveryBody)
 				}
-				if strings.HasPrefix(kind, "legacy") && (discoveryStatus != http.StatusServiceUnavailable || strings.Contains(discoveryBody, `"mode"`)) {
-					t.Fatalf("unfenced legacy %s manufactured a mode: status=%d body=%s", kind, discoveryStatus, discoveryBody)
+				if strings.HasPrefix(kind, "legacy") {
+					allowedMode := strings.Contains(discoveryBody, `"mode":"recovery"`) ||
+						strings.Contains(discoveryBody, `"mode":"unsupported_upgrade"`)
+					forbiddenMode := strings.Contains(discoveryBody, `"mode":"fresh"`) ||
+						strings.Contains(discoveryBody, `"mode":"upgrade"`) ||
+						strings.Contains(discoveryBody, `"mode":"completed"`)
+					if discoveryStatus != http.StatusOK || !allowedMode || forbiddenMode {
+						t.Fatalf("unmarked legacy %s discovery status=%d body=%s", kind, discoveryStatus, discoveryBody)
+					}
 				}
 				if kind == "empty-database" && (discoveryStatus != http.StatusServiceUnavailable || strings.Contains(discoveryBody, `"mode"`)) {
 					t.Fatalf("unfenced empty source manufactured a mode: status=%d body=%s", discoveryStatus, discoveryBody)
