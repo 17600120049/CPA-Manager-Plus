@@ -198,9 +198,10 @@ func runServerWithOptions(options legacypreflight.Options) {
 	paths := sqliterepo.InspectionPaths{
 		Database: cfg.DBPath, Config: configPath, DataKey: cfg.DataKeyPath, Archives: cfg.UsageArchiveDir,
 	}
-	// No released diagnostic snapshot is public authority. Until admission has
-	// finished, discovery stays unavailable; blocked startup enables bounded,
-	// request-scoped inspection with its fence retained through projection.
+	// The listener comes up before product/data mutation. Discovery starts
+	// unavailable, then switches only to current read-only evidence: missing-DB
+	// inventory for Fresh/partial sources, or an already-established Manager
+	// fence for an existing database.
 	startupHandler := newStartupHTTPHandler(bootstrapdiscovery.Unavailable())
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {

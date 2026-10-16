@@ -31,7 +31,8 @@ describe('Phase4-01 routing ownership contract', () => {
     expect(manager).toContain(`PublicAPIV2Suffix = "${fixture.canonicalPublicApiV2Suffix}"`);
     expect(startup).toContain('routingdomain.ProtectFixedDiscovery(');
     expect(discoveryContract).toContain('PublicDiscoveryContractVersion = "cpamp.phase4-01.discovery.v1"');
-    expect(discoveryContract).toContain(`FixedBootstrapDiscoveryPath    = "${fixture.fixedBootstrapDiscoveryPath}"`);
+    expect(discoveryContract).toContain('FixedBootstrapDiscoveryPath');
+    expect(discoveryContract).toContain(fixture.fixedBootstrapDiscoveryPath);
     expect(fixture.routes.filter((route) => route.id === 'bootstrap_discovery')).toHaveLength(1);
     expect(fixture.routes.filter((route) => route.id === 'public_api_v2_namespace')).toHaveLength(1);
     expect(fixture.routes.filter((route) => route.id === 'retired_control_namespace')).toHaveLength(1);

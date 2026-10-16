@@ -44,7 +44,7 @@ type Admission struct {
 	initial           sqlite.LegacyInspection
 	closeOnce         sync.Once
 	closeErr          error
-	markerPermanent atomic.Bool
+	markerPermanent   atomic.Bool
 }
 
 // RetainMarker makes the ownership marker permanent after writable DB open.
