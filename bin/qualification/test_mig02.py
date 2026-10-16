@@ -108,11 +108,20 @@ class Mig02EvidenceTests(unittest.TestCase):
         self.assertEqual(digest(EVIDENCE / "bundle/database"), bundle["entries"]["database"]["sha256"])
         scope = read(EVIDENCE / "product-scope.json")
         self.assertEqual(scope["baselineCommit"], "72653d68327146ed46c423e3b5849e769c5f6999")
+        self.assertEqual(scope["verificationCommit"], self.generation["GeneratorCodeCommit"])
         self.assertFalse(scope["productCodeChanged"])
         self.assertTrue(scope["harnessOnly"])
+        # Full-history checkout is required by the qualification workflow. Bind every
+        # recorded product-scope tree to both historical qualification boundaries so
+        # an unrelated Git tree object cannot satisfy the frozen evidence contract.
         for path, expected in scope["baselineTrees"].items():
-            actual = subprocess.check_output(["git", "rev-parse", "HEAD:" + path], cwd=ROOT, text=True).strip()
-            self.assertEqual(actual, expected, path)
+            for commit in (scope["baselineCommit"], scope["verificationCommit"]):
+                actual = subprocess.check_output(
+                    ["git", "rev-parse", f"{commit}:{path}"],
+                    cwd=ROOT,
+                    text=True,
+                ).strip()
+                self.assertEqual(actual, expected, f"{commit}:{path}")
 
     def _assert_runtime(self, prefix):
         root = EVIDENCE / prefix

@@ -1,0 +1,1020 @@
+{
+  "$schema": "./contract.schema.json",
+  "schemaVersion": 2,
+  "contractId": "cpamp-v2-phase4-00-bootstrap-contract-v2",
+  "executionBaseline": "4d2e2ec72b6b65d84fd1d24ed0022ea65a8dcea0",
+  "plannedCandidate": {
+    "release": "v1.14.4",
+    "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+  },
+  "cpaCore": {
+    "managementGeneration": "v8",
+    "coreV0FallbackAllowed": false,
+    "externalManagementOwner": "cpamp_manager",
+    "externalLifecycleOwner": "operator"
+  },
+  "ownership": {
+    "databaseOwner": "manager_server",
+    "dataKeyOwner": "manager_server",
+    "migrationOwner": "manager_server",
+    "productCheckpointOwner": "manager_server",
+    "managedCPALifecycleOwner": "runtime_supervisor"
+  },
+  "upgradeOrdering": [
+    "read_only_classification",
+    "complete_verified_backup",
+    "source_revalidation",
+    "writable_migration"
+  ],
+  "bootstrapModes": [
+    "fresh",
+    "upgrade",
+    "unsupported_upgrade",
+    "recovery",
+    "completed"
+  ],
+  "cpaStrategies": [
+    "new_managed",
+    "adopt_existing",
+    "connect_external",
+    "migrate_legacy"
+  ],
+  "paths": [
+    {
+      "id": "P4-BOOT-01",
+      "mode": "fresh",
+      "cpampAction": "initialize",
+      "cpaStrategy": "new_managed",
+      "sourceAdmission": null,
+      "sourceCPA": "",
+      "usageAction": "none",
+      "backupRequired": false,
+      "runtimeMode": "embedded",
+      "initializeAdminCredential": true,
+      "preserveExistingAdminCredential": false,
+      "authenticationRequired": false,
+      "mutations": [
+        "cpamp_state",
+        "managed_cpa",
+        "control_base_path"
+      ],
+      "preserved": [],
+      "unsupported": [],
+      "discoveredResourceRefs": [],
+      "adoptionDecisions": [],
+      "controlBasePath": "/phase4-fixture-control",
+      "estimatedSteps": [
+        "choose_strategy",
+        "choose_control_base_path",
+        "initialize_cpamp",
+        "verify_runtime"
+      ],
+      "migrationOrdering": [],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": true,
+        "requiredProfileQualified": false,
+        "stagingV8TransitionQualified": false
+      },
+      "historicalEvidence": null,
+      "adoptSourceClass": ""
+    },
+    {
+      "id": "P4-BOOT-02",
+      "mode": "fresh",
+      "cpampAction": "initialize",
+      "cpaStrategy": "adopt_existing",
+      "sourceAdmission": null,
+      "sourceCPA": "existing",
+      "usageAction": "none",
+      "backupRequired": false,
+      "runtimeMode": "embedded",
+      "initializeAdminCredential": true,
+      "preserveExistingAdminCredential": false,
+      "authenticationRequired": false,
+      "mutations": [
+        "cpamp_state",
+        "managed_cpa",
+        "control_base_path",
+        "adoption:migrate:api-key-primary",
+        "adoption:migrate:credential-a"
+      ],
+      "preserved": [
+        "source_cpa_recoverable_until_success",
+        "source_cpa_available_until_commit"
+      ],
+      "unsupported": [
+        "historical_usage_import",
+        "request_history_import",
+        "cpa_log_import",
+        "historical_analytics_import",
+        "plugin_runtime_implicit_import",
+        "source_cpa_stop",
+        "source_cpa_delete",
+        "source_cpa_overwrite",
+        "adoption:manual_action:credential-b"
+      ],
+      "discoveredResourceRefs": [
+        "api-key-primary",
+        "credential-a",
+        "credential-b"
+      ],
+      "adoptionDecisions": [
+        {
+          "resourceRef": "api-key-primary",
+          "kind": "api_keys",
+          "scope": "client_api_keys",
+          "readEvidenceRef": "preflight:read-api-key-primary",
+          "replayEvidenceRef": "preflight:replay-api-key-primary",
+          "verifyEvidenceRef": "preflight:verify-api-key-primary",
+          "manualAction": "",
+          "disposition": "migrate",
+          "qualification": "qualified"
+        },
+        {
+          "resourceRef": "credential-a",
+          "kind": "credentials",
+          "scope": "cpa_auth_files",
+          "readEvidenceRef": "preflight:read-credential-a",
+          "replayEvidenceRef": "preflight:replay-credential-a",
+          "verifyEvidenceRef": "preflight:verify-credential-a",
+          "manualAction": "",
+          "disposition": "migrate",
+          "qualification": "qualified"
+        },
+        {
+          "resourceRef": "credential-b",
+          "kind": "credentials",
+          "scope": "cpa_auth_files",
+          "readEvidenceRef": "preflight:read-credential-b",
+          "replayEvidenceRef": "",
+          "verifyEvidenceRef": "",
+          "manualAction": "reauthenticate_after_adoption",
+          "disposition": "manual_action",
+          "qualification": "pending"
+        }
+      ],
+      "controlBasePath": "/phase4-fixture-control",
+      "estimatedSteps": [
+        "choose_strategy",
+        "inspect_source_cpa",
+        "choose_control_base_path",
+        "initialize_cpamp",
+        "verify_adoption"
+      ],
+      "migrationOrdering": [],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": false,
+        "requiredProfileQualified": true,
+        "stagingV8TransitionQualified": false
+      },
+      "historicalEvidence": null,
+      "adoptSourceClass": "network_existing"
+    },
+    {
+      "id": "P4-BOOT-03",
+      "mode": "fresh",
+      "cpampAction": "initialize",
+      "cpaStrategy": "connect_external",
+      "sourceAdmission": null,
+      "sourceCPA": "external",
+      "usageAction": "none",
+      "backupRequired": false,
+      "runtimeMode": "external",
+      "initializeAdminCredential": true,
+      "preserveExistingAdminCredential": false,
+      "authenticationRequired": false,
+      "mutations": [
+        "cpamp_state",
+        "control_base_path",
+        "external_connection"
+      ],
+      "preserved": [
+        "source_cpa_user_owned"
+      ],
+      "unsupported": [
+        "historical_usage_import",
+        "source_cpa_stop",
+        "source_cpa_delete",
+        "source_cpa_takeover"
+      ],
+      "discoveredResourceRefs": [],
+      "adoptionDecisions": [],
+      "controlBasePath": "/phase4-fixture-control",
+      "estimatedSteps": [
+        "choose_strategy",
+        "inspect_source_cpa",
+        "choose_control_base_path",
+        "initialize_cpamp",
+        "verify_connection"
+      ],
+      "migrationOrdering": [],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": false,
+        "requiredProfileQualified": true,
+        "stagingV8TransitionQualified": false
+      },
+      "historicalEvidence": null,
+      "adoptSourceClass": ""
+    },
+    {
+      "id": "P4-BOOT-04",
+      "mode": "upgrade",
+      "cpampAction": "migrate_v1",
+      "cpaStrategy": "migrate_legacy",
+      "sourceAdmission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:contract-fixture-artifact",
+        "sourceProvenanceRef": "evidence:contract-fixture-source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "ready"
+      },
+      "sourceCPA": "legacy",
+      "usageAction": "preserve",
+      "backupRequired": true,
+      "runtimeMode": "embedded",
+      "initializeAdminCredential": false,
+      "preserveExistingAdminCredential": true,
+      "authenticationRequired": true,
+      "mutations": [
+        "cpamp_state",
+        "managed_cpa",
+        "control_base_path"
+      ],
+      "preserved": [
+        "authoritative_usage_history",
+        "archive_retained_evidence_when_required"
+      ],
+      "unsupported": [
+        "full_history_export_transform_reimport"
+      ],
+      "discoveredResourceRefs": [],
+      "adoptionDecisions": [],
+      "controlBasePath": "/phase4-fixture-control",
+      "estimatedSteps": [
+        "authenticate_existing_admin",
+        "verify_source",
+        "backup",
+        "revalidate_source",
+        "migrate_cpamp",
+        "verify_runtime"
+      ],
+      "migrationOrdering": [
+        "read_only_classification",
+        "complete_verified_backup",
+        "source_revalidation",
+        "writable_migration"
+      ],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": false,
+        "requiredProfileQualified": false,
+        "stagingV8TransitionQualified": true
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      },
+      "adoptSourceClass": ""
+    },
+    {
+      "id": "P4-BOOT-05",
+      "mode": "upgrade",
+      "cpampAction": "migrate_v1",
+      "cpaStrategy": "connect_external",
+      "sourceAdmission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:contract-fixture-artifact",
+        "sourceProvenanceRef": "evidence:contract-fixture-source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "ready"
+      },
+      "sourceCPA": "external",
+      "usageAction": "preserve",
+      "backupRequired": true,
+      "runtimeMode": "external",
+      "initializeAdminCredential": false,
+      "preserveExistingAdminCredential": true,
+      "authenticationRequired": true,
+      "mutations": [
+        "cpamp_state",
+        "control_base_path",
+        "external_connection"
+      ],
+      "preserved": [
+        "authoritative_usage_history",
+        "archive_retained_evidence_when_required",
+        "source_cpa_user_owned"
+      ],
+      "unsupported": [
+        "full_history_export_transform_reimport",
+        "source_cpa_stop",
+        "source_cpa_delete",
+        "source_cpa_takeover"
+      ],
+      "discoveredResourceRefs": [],
+      "adoptionDecisions": [],
+      "controlBasePath": "/phase4-fixture-control",
+      "estimatedSteps": [
+        "authenticate_existing_admin",
+        "verify_source",
+        "backup",
+        "revalidate_source",
+        "migrate_cpamp",
+        "verify_connection"
+      ],
+      "migrationOrdering": [
+        "read_only_classification",
+        "complete_verified_backup",
+        "source_revalidation",
+        "writable_migration"
+      ],
+      "cpaQualification": {
+        "managementGeneration": "v8",
+        "artifactQualified": false,
+        "requiredProfileQualified": true,
+        "stagingV8TransitionQualified": false
+      },
+      "historicalEvidence": {
+        "sourceState": "raw_deleted",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": true
+      },
+      "adoptSourceClass": ""
+    }
+  ],
+  "classificationAssertions": [
+    {
+      "id": "no_v1_is_fresh",
+      "hasV1ProductState": false,
+      "admission": null,
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "uninitialized",
+      "session": "missing",
+      "expectedMode": "fresh",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null
+    },
+    {
+      "id": "schema_c_without_authority_is_unsupported",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "",
+        "sourceProvenanceRef": "",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "unverified",
+        "readiness": "unknown"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "missing",
+      "expectedMode": "unsupported_upgrade",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null
+    },
+    {
+      "id": "verified_exact_ready_is_upgrade",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "ready"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "expired",
+      "expectedMode": "upgrade",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      }
+    },
+    {
+      "id": "verified_hop_ready_is_upgrade",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:older-source",
+        "forwardHopEvidenceRef": "evidence:hop",
+        "evidenceStatus": "forward_hop_verified",
+        "readiness": "ready"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "authenticated",
+      "expectedMode": "upgrade",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      }
+    },
+    {
+      "id": "verified_but_blocked_is_recovery",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "blocked"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "missing",
+      "expectedMode": "recovery",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      }
+    },
+    {
+      "id": "offline_required_is_recovery",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "offline_required"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "missing",
+      "expectedMode": "recovery",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      }
+    },
+    {
+      "id": "unknown_newer_same_shape_is_unsupported",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "",
+        "sourceProvenanceRef": "",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "unknown_or_newer",
+        "readiness": "ready"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "authenticated",
+      "expectedMode": "unsupported_upgrade",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null
+    },
+    {
+      "id": "damaged_state_overrides",
+      "hasV1ProductState": true,
+      "admission": null,
+      "recoveryReason": "damaged_state",
+      "bootstrapComplete": false,
+      "adminCredential": "unverifiable",
+      "session": "missing",
+      "expectedMode": "recovery",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null
+    },
+    {
+      "id": "completed_is_terminal",
+      "hasV1ProductState": true,
+      "admission": null,
+      "recoveryReason": "",
+      "bootstrapComplete": true,
+      "adminCredential": "initialized",
+      "session": "expired",
+      "expectedMode": "completed",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": null
+    },
+    {
+      "id": "checkpoint_incomplete_is_recovery",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "ready"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "missing",
+      "requiredCheckpoints": {
+        "cacheAccounting": "applying",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      },
+      "expectedMode": "recovery"
+    },
+    {
+      "id": "historical_authority_incomplete_is_recovery",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "ready"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "initialized",
+      "session": "authenticated",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "incomplete",
+        "authorityStatus": "indeterminate",
+        "retainedEvidenceComplete": false
+      },
+      "expectedMode": "recovery"
+    },
+    {
+      "id": "administrator_unverifiable_is_recovery",
+      "hasV1ProductState": true,
+      "admission": {
+        "shape": "legacy_schema_c",
+        "plannedCandidate": {
+          "release": "v1.14.4",
+          "sourceCommit": "166262365d506157b99968105c890f480cc7c07c"
+        },
+        "artifactEvidenceRef": "evidence:artifact",
+        "sourceProvenanceRef": "evidence:source",
+        "forwardHopEvidenceRef": "",
+        "evidenceStatus": "exact_candidate_verified",
+        "readiness": "ready"
+      },
+      "recoveryReason": "",
+      "bootstrapComplete": false,
+      "adminCredential": "unverifiable",
+      "session": "expired",
+      "requiredCheckpoints": {
+        "cacheAccounting": "complete",
+        "quotaSnapshot": "complete"
+      },
+      "historicalEvidence": {
+        "sourceState": "full_raw",
+        "authorityStatus": "available",
+        "retainedEvidenceComplete": false
+      },
+      "expectedMode": "recovery"
+    },
+    {
+      "id": "completed_with_uninitialized_admin_is_recovery",
+      "hasV1ProductState": false,
+      "admission": null,
+      "recoveryReason": "",
+      "bootstrapComplete": true,
+      "adminCredential": "uninitialized",
+      "session": "missing",
+      "requiredCheckpoints": {
+        "cacheAccounting": "pending",
+        "quotaSnapshot": "pending"
+      },
+      "historicalEvidence": null,
+      "expectedMode": "recovery"
+    }
+  ],
+  "globalAssertions": [
+    "shape_not_release_identity",
+    "planned_candidate_not_artifact_authority",
+    "artifact_not_source_or_hop_authority",
+    "source_or_hop_evidence_not_readiness",
+    "readiness_not_writable_grant",
+    "read_only_classification_before_backup",
+    "complete_verified_backup_before_write",
+    "source_revalidation_before_write",
+    "bootstrap_mode_admin_session_orthogonal",
+    "fresh_mode_not_admin_initialization_authority",
+    "upgrade_preserves_existing_admin_credential",
+    "authoritative_history_includes_archive_retained_evidence",
+    "cpa_core_v8_only_no_v0_fallback",
+    "external_management_not_lifecycle_authority",
+    "contract_fixture_never_grants_production_authority",
+    "deferred_qualification_remains_pending",
+    "required_migration_checkpoints_before_grant",
+    "forward_hop_requires_trusted_receipt",
+    "trusted_receipt_requires_manager_authenticity",
+    "trusted_receipt_binds_operation_target_input_output_archive_executable",
+    "trusted_receipt_requires_zero_exit_released_handles_and_reap",
+    "actual_operation_record_persisted_with_stage_identity",
+    "receipt_replay_or_revocation_rejected",
+    "manager_supervisor_ownership_separated",
+    "admin_unverifiable_routes_recovery",
+    "checkpoints_incomplete_route_recovery",
+    "historical_source_state_explicit_fail_closed",
+    "cpa_strategy_requires_v8_qualification",
+    "adoption_references_not_authority",
+    "unauthenticated_discovery_is_minimal",
+    "fresh_claim_bound_consume_once",
+    "fresh_claim_expire_revoke_restart_csrf_fail_closed",
+    "gateway_activation_separate_from_product_initialized",
+    "journal_unknown_result_inspect_first_same_id_replay",
+    "prefix_cas_desired_effective_lost_result_inspect_first",
+    "adopt_network_source_requires_v8_profile",
+    "adopt_legacy_managed_requires_staging_v8",
+    "journal_retry_requires_accepted_replay",
+    "cpa_journal_generation_change_reobserve",
+    "operation_conflicts_are_explicit",
+    "collector_pause_queue_gap_explicit",
+    "completed_requires_initialized_admin",
+    "journal_domain_specific_authority_fence",
+    "fresh_claim_revision_cas_single_winner",
+    "operation_conflict_scoped_not_global",
+    "fixture_required_case_ids_locked",
+    "control_base_path_rejects_encoded_backslash_bypass",
+    "conflict_scope_server_classified",
+    "writable_grant_requires_historical_authority",
+    "prefix_conditional_recovery_fail_closed",
+    "classification_fixture_ids_locked",
+    "prefix_recovery_reobserves_current_authority_snapshot",
+    "plan_effect_sets_are_disjoint"
+  ],
+  "operationConflictAssertions": [
+    {
+      "id": "install_vs_restore",
+      "active": "install",
+      "requested": "restore",
+      "sameOperationID": false,
+      "expectedDecision": "blocked",
+      "scope": "routing_deployment"
+    },
+    {
+      "id": "migration_vs_maintenance",
+      "active": "migration",
+      "requested": "maintenance",
+      "sameOperationID": false,
+      "expectedDecision": "blocked",
+      "scope": "manager_store"
+    },
+    {
+      "id": "cpa_update_vs_cutover",
+      "active": "cpa_update",
+      "requested": "cutover",
+      "sameOperationID": false,
+      "expectedDecision": "blocked",
+      "scope": "runtime_target"
+    },
+    {
+      "id": "cutover_vs_prefix_apply",
+      "active": "cutover",
+      "requested": "prefix_apply",
+      "sameOperationID": false,
+      "expectedDecision": "blocked",
+      "scope": "routing_deployment"
+    },
+    {
+      "id": "same_migration_operation_reobserve",
+      "active": "migration",
+      "requested": "migration",
+      "sameOperationID": true,
+      "expectedDecision": "inspect_existing",
+      "scope": "manager_store"
+    }
+  ],
+  "collectorAssertions": [
+    {
+      "id": "backup_quiescence_pauses_collector",
+      "condition": "backup_quiescence",
+      "expectedOutcome": "paused"
+    },
+    {
+      "id": "verified_retention_is_queue_window",
+      "condition": "verified_queue_window",
+      "expectedOutcome": "queue_window"
+    },
+    {
+      "id": "unproven_or_outside_window_is_gap_unknown",
+      "condition": "coverage_unproven_or_outside_window",
+      "expectedOutcome": "gap_or_unknown"
+    }
+  ],
+  "prefixAssertions": [
+    {
+      "id": "lost_result_healthy_target_can_complete",
+      "operationID": "operation-prefix-0001",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 7,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": true,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": true,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": false,
+        "previousSnapshotEffectivePath": ""
+      },
+      "expectedCompleteAfterObservation": true,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "lost_result_unhealthy_target_can_restore",
+      "operationID": "operation-prefix-0002",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 7,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": false,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": true,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": true,
+        "previousSnapshotEffectivePath": "/old-control"
+      },
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": true
+    },
+    {
+      "id": "stale_revision_refuses_prefix_recovery",
+      "operationID": "operation-prefix-0003",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 8,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": false,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": true,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": true,
+        "previousSnapshotEffectivePath": "/old-control"
+      },
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "authority_reobservation_refuses_recovery",
+      "operationID": "operation-prefix-0006",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 7,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": true,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": false,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": false,
+        "previousSnapshotEffectivePath": ""
+      },
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "restore_snapshot_unqualified_refuses_recovery",
+      "operationID": "operation-prefix-0007",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "",
+      "impact": "control_route_only",
+      "stage": "route_activated",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": false,
+      "staticAssetsHealthy": false,
+      "apiAuthenticationHealthy": false,
+      "result": "unknown",
+      "expectedAction": "inspect_first",
+      "observation": {
+        "currentInstallationID": "install-a",
+        "currentRoutingRevision": 7,
+        "currentEffectivePath": "/new-control",
+        "publicIdentityHealthy": false,
+        "staticAssetsHealthy": true,
+        "apiAuthenticationHealthy": true,
+        "currentOperationOwnerQualified": true,
+        "currentCollisionFree": true,
+        "currentSourceQualified": true,
+        "previousSnapshotQualified": false,
+        "previousSnapshotEffectivePath": ""
+      },
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "committed_applied_prefix_is_complete",
+      "operationID": "operation-prefix-0004",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 8,
+      "currentRoutingRevision": 8,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "/new-control",
+      "impact": "control_route_only",
+      "stage": "committed",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": true,
+      "staticAssetsHealthy": true,
+      "apiAuthenticationHealthy": true,
+      "result": "applied",
+      "expectedAction": "complete",
+      "observation": null,
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
+    },
+    {
+      "id": "effective_mismatch_requires_resolution",
+      "operationID": "operation-prefix-0005",
+      "installationID": "install-a",
+      "currentInstallationID": "install-a",
+      "expectedRoutingRevision": 7,
+      "currentRoutingRevision": 7,
+      "previousVerifiedEffectivePath": "/old-control",
+      "desiredControlBasePath": "/new-control",
+      "verifiedEffectivePath": "/old-control",
+      "impact": "control_route_only",
+      "stage": "health_verified",
+      "authorityQualified": true,
+      "collisionFree": true,
+      "publicIdentityHealthy": true,
+      "staticAssetsHealthy": true,
+      "apiAuthenticationHealthy": true,
+      "result": "applied",
+      "expectedAction": "resolve_conflict",
+      "observation": null,
+      "expectedCompleteAfterObservation": false,
+      "expectedConditionalRestore": false
+    }
+  ]
+}
