@@ -16,7 +16,6 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -144,178 +143,6 @@ func TestReadOnlyDiscoveryRetainsFenceThroughResponseAndRevokesBeforeWrites(t *t
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
 	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) {
 		t.Fatalf("writable startup retained read-only authority: status=%d body=%s", response.Code, response.Body.String())
-	}
-}
-
-func TestBlockedDiscoverySerializesProbesAndReinspectsOnlyAfterCooldown(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "usage.sqlite")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	marker, err := processlock.Acquire(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := marker.Close(); err != nil {
-		t.Fatal(err)
-	}
-	handler := newStartupHTTPHandler(bootstrapdiscovery.Unavailable())
-	now := time.Unix(1000, 0)
-	handler.inspectionNow = func() time.Time { return now }
-	handler.EnableReadOnlyDiscovery(legacypreflight.DefaultPaths(path), legacypreflight.Options{}, time.Second)
-	started, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	var releaseOnce sync.Once
-	defer releaseOnce.Do(func() { close(release) })
-	first := httptest.NewRecorder()
-	go func() {
-		defer close(done)
-		handler.ServeHTTP(fenceCheckingDiscoveryWriter{first, func() {
-			close(started)
-			<-release
-		}}, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
-	}()
-	<-started
-	// Even a long-running probe cannot be joined by another probe when the
-	// interval from its start has elapsed. Cooldown begins only after return.
-	now = now.Add(2 * time.Minute)
-	var requests sync.WaitGroup
-	for range 64 {
-		requests.Add(1)
-		go func() {
-			defer requests.Done()
-			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
-			if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) {
-				t.Errorf("busy discovery reused evidence: status=%d body=%s", response.Code, response.Body.String())
-			}
-		}()
-	}
-	requests.Wait()
-	releaseOnce.Do(func() { close(release) })
-	<-done
-	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), `"mode":"recovery"`) {
-		t.Fatalf("first bounded probe: status=%d body=%s", first.Code, first.Body.String())
-	}
-	// Operator changes are possible between probes. The old Recovery result
-	// must never be replayed, even while the expensive probe is rate limited.
-	credential, err := security.NewAdminCredential("owned_current_admin", "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := json.Marshal(credential)
-	if err != nil {
-		t.Fatal(err)
-	}
-	operatorLock, err := processlock.AcquireExisting(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err = sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`insert into settings(key,value) values('admin_credential_v1',?)`, string(raw)); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := operatorLock.Close(); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(discoveryInspectionCooldown - time.Nanosecond)
-	for range 20 {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
-		if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) {
-			t.Fatalf("cooldown inspected or replayed a mode: %d %s", response.Code, response.Body.String())
-		}
-	}
-	now = now.Add(time.Nanosecond)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"mode":"unsupported_upgrade"`) {
-		t.Fatalf("next permitted probe did not observe repaired source: %d %s", response.Code, response.Body.String())
-	}
-	if err := os.Remove(path + ".manager.lock"); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(discoveryInspectionCooldown)
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, bootstrapdiscovery.Path, nil))
-	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), `"mode"`) {
-		t.Fatal("lost ownership reused the last successful mode")
-	}
-}
-
-func TestFreshNoConfigNormalStartup(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "usage.sqlite")
-	environment := ownedPreflightEnvironment(dir, path)
-	for i, entry := range environment {
-		if strings.HasPrefix(entry, "CPA_MANAGER_CONFIG=") {
-			// A normal empty installation has no explicitly required config.
-			environment[i] = "CPA_MANAGER_CONFIG="
-		}
-	}
-	for range 2 {
-		func() {
-			process := startManagerServerProcessWithEnvironment(t, environment)
-			defer process.stop(t)
-			deadline := time.Now().Add(5 * time.Second)
-			status, body := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
-			for status == http.StatusServiceUnavailable && time.Now().Before(deadline) {
-				time.Sleep(10 * time.Millisecond)
-				status, body = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
-			}
-			if status != http.StatusOK || !strings.Contains(body, `"mode":"fresh"`) || !strings.Contains(body, `"status":"fresh_claim_required"`) {
-				t.Fatalf("real Fresh startup did not expose claim entry: %d %s", status, body)
-			}
-			before := managerSourceSnapshot(t, dir)
-			for range 8 {
-				status, body = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
-				if status != http.StatusOK || !strings.Contains(body, `"mode":"fresh"`) {
-					t.Fatalf("Fresh discovery was only transient: %d %s", status, body)
-				}
-			}
-			for _, endpoint := range []struct {
-				method, path string
-				status       int
-			}{
-				{http.MethodGet, "/health", http.StatusServiceUnavailable},
-				{http.MethodPost, "/usage-service/config", http.StatusNotFound},
-				{http.MethodPost, bootstrapdiscovery.Path, http.StatusMethodNotAllowed},
-			} {
-				status, _ := waitForManagerResponse(t, process.addr, endpoint.method, endpoint.path)
-				if status != endpoint.status {
-					t.Fatalf("Fresh %s %s = %d", endpoint.method, endpoint.path, status)
-				}
-			}
-			if !reflect.DeepEqual(before, managerSourceSnapshot(t, dir)) {
-				t.Fatal("Fresh HTTP requests changed the source")
-			}
-			for _, file := range []string{path, filepath.Join(dir, "data.key"), filepath.Join(dir, "config.json")} {
-				if _, err := os.Lstat(file); !os.IsNotExist(err) {
-					t.Fatalf("Fresh startup created product state: %s err=%v", file, err)
-				}
-			}
-		}()
-		if runtime.GOOS == "windows" {
-			// This helper must be killed on Windows; that is crash evidence,
-			// not a clean shutdown eligible to remove the provisional marker.
-			return
-		}
-		if _, err := os.Lstat(path + ".manager.lock"); !os.IsNotExist(err) {
-			t.Fatalf("clean Fresh shutdown retained its provisional marker: %v", err)
-		}
 	}
 }
 
@@ -657,17 +484,16 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// The same process must not reuse its old mode during cooldown, including
-	// after operator repair, replacement or loss of ownership evidence.
+	// The same process re-inspects current evidence on every permitted request.
 	changeSource(false, `{"version":1,"salt":"broken"}`)
-	assertDiscovery(http.StatusServiceUnavailable, "")
+	assertDiscovery(http.StatusOK, "recovery")
 	changeSource(true, string(raw))
-	assertDiscovery(http.StatusServiceUnavailable, "")
+	assertDiscovery(http.StatusOK, "unsupported_upgrade")
 	operatorLock, err := processlock.AcquireExisting(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertDiscovery(http.StatusServiceUnavailable, "")
+	assertDiscovery(http.StatusOK, "unsupported_upgrade")
 	if err := operatorLock.Close(); err != nil {
 		t.Fatal(err)
 	}

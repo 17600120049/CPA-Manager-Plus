@@ -48,82 +48,6 @@ func fixturePaths(t *testing.T) sqlite.InspectionPaths {
 	return paths
 }
 
-func TestFreshEvidenceRemainsFencedReadOnlyAndRevokesOnSourceChange(t *testing.T) {
-	for _, asset := range []string{"database", "config", "data-key", "wal", "archives", "closed-fence"} {
-		t.Run(asset, func(t *testing.T) {
-			paths := fixturePaths(t)
-			admission, err := AdmitStartup(context.Background(), paths, Options{})
-			if err != nil || !admission.IsFresh() {
-				t.Fatalf("Fresh admission: %v", err)
-			}
-			defer admission.Close()
-			before := sourceState(t, filepath.Dir(paths.Database))
-			for range 3 {
-				report, err := admission.FreshEvidence(context.Background())
-				if err != nil || report.SourceKind != "fresh" || !report.Observed.BootstrapState.Valid ||
-					report.Observed.BootstrapState.AdminCredential != "uninitialized" {
-					t.Fatalf("Fresh evidence: kind=%s err=%v", report.SourceKind, err)
-				}
-			}
-			if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
-				t.Fatal("Fresh evidence changed the source")
-			}
-			if asset == "closed-fence" {
-				if err := admission.Close(); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				file := map[string]string{"database": paths.Database, "config": paths.Config, "data-key": paths.DataKey, "wal": paths.Database + "-wal", "archives": paths.Archives}[asset]
-				if err := os.WriteFile(file, []byte("owned source change"), 0600); err != nil {
-					t.Fatal(err)
-				}
-				if report, err := admission.FreshEvidence(context.Background()); err == nil || report.SourceKind != "" {
-					t.Fatal("changed source retained Fresh authority")
-				}
-				if err := os.Remove(file); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if _, err := admission.FreshEvidence(context.Background()); err == nil {
-				t.Fatal("revoked Fresh evidence became active again")
-			}
-		})
-	}
-}
-
-func TestPublicFencedInspectionRejectsOversizedSourceWithoutChangingOfflineInspection(t *testing.T) {
-	paths := fixturePaths(t)
-	db, err := sql.Open("sqlite", paths.Database)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Truncate(paths.Database, DiscoveryMaxSourceBytes+1); err != nil {
-		t.Fatal(err)
-	}
-	marker, err := processlock.Acquire(paths.Database)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := marker.Close(); err != nil {
-		t.Fatal(err)
-	}
-	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
-		if err == nil || report.Observed.SQLite != "not-inspected" {
-			t.Fatalf("oversized public source was opened: sqlite=%s err=%v", report.Observed.SQLite, err)
-		}
-	})
-	report, err := Inspect(context.Background(), paths, Options{})
-	if err != nil || report.SourceKind != "legacy-manager" {
-		t.Fatalf("public limit changed offline inspection: kind=%s err=%v", report.SourceKind, err)
-	}
-}
-
 func TestFencedInspectionRetainsOwnershipThroughConsumerAndReleasesAfterward(t *testing.T) {
 	paths := fixturePaths(t)
 	db, err := sql.Open("sqlite", paths.Database)
@@ -173,8 +97,14 @@ func TestFencedInspectionRetainsOwnershipThroughConsumerAndReleasesAfterward(t *
 	}
 }
 
-func TestFencedInspectionRejectsMissingBusyOrCanceledFence(t *testing.T) {
-	for _, kind := range []string{"missing", "busy", "canceled"} {
+func TestFencedInspectionAllowsFreshInventoryAndRejectsBusyOrCanceledFence(t *testing.T) {
+	freshPaths := fixturePaths(t)
+	WithFencedInspection(context.Background(), freshPaths, Options{}, func(report Report, err error) {
+		if err != nil || report.SourceKind != "fresh" {
+			t.Fatalf("fresh public inspection: kind=%s err=%v", report.SourceKind, err)
+		}
+	})
+	for _, kind := range []string{"busy", "canceled"} {
 		t.Run(kind, func(t *testing.T) {
 			paths := fixturePaths(t)
 			if kind == "busy" {

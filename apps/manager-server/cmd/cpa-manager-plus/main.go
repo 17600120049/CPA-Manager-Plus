@@ -215,6 +215,15 @@ func runServerWithOptions(options legacypreflight.Options) {
 	log.Printf("cpa-manager-plus listening on %s", listener.Addr())
 	go serveHTTPServer(server, listener, stop, serverResult)
 
+	if !options.Initialize {
+		if _, statErr := os.Lstat(paths.Database); os.IsNotExist(statErr) {
+			startupHandler.EnableReadOnlyDiscovery(paths, options, inspectionTimeout)
+			log.Printf("Manager source has no database; serving read-only Bootstrap discovery pending a later authorized initializer")
+			waitForReadOnlyStartup(ctx, server, serverResult)
+			return
+		}
+	}
+
 	inspectionCtx, cancelInspection := context.WithTimeout(ctx, inspectionTimeout)
 	databaseLock, err := legacypreflight.AdmitStartup(inspectionCtx, paths, options)
 	cancelInspection()
@@ -229,14 +238,6 @@ func runServerWithOptions(options legacypreflight.Options) {
 			log.Printf("close manager database process lock: %v", err)
 		}
 	}()
-	if databaseLock.IsFresh() && !options.Initialize {
-		// Phase4-01 only publishes the Fresh claim entry. A GET is never an
-		// initialization trigger, and no claim consumer exists in this slice.
-		startupHandler.EnableFreshDiscovery(databaseLock)
-		log.Printf("Fresh source awaiting Bootstrap initialization; serving read-only discovery")
-		waitForReadOnlyStartup(ctx, server, serverResult)
-		return
-	}
 	// Admission permits writes, not a Bootstrap Completed transition. Revoke
 	// the pre-write observation before config/key/store initialization can make
 	// it stale. Phase4-01 has no qualified post-write discovery authority.

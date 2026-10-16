@@ -28,10 +28,6 @@ type startupHTTPHandler struct {
 	next              atomic.Value // *startupHandlerTarget
 	lifecycle         atomic.Value // routingdomain.DiscoveryLifecycle
 	ready             atomic.Bool
-	inspectionMu      sync.Mutex
-	inspectionBusy    bool
-	inspectionNext    time.Time
-	inspectionNow     func() time.Time
 }
 
 type startupHandlerTarget struct {
@@ -39,7 +35,7 @@ type startupHandlerTarget struct {
 }
 
 func newStartupHTTPHandler(result bootstrap.PublicDiscovery) *startupHTTPHandler {
-	h := &startupHTTPHandler{projection: result, inspectionNow: time.Now}
+	h := &startupHTTPHandler{projection: result}
 	h.lifecycle.Store(routingdomain.DiscoveryActive)
 	h.discovery = routingdomain.DiscoveryHandler{
 		Lifecycle: h.discoveryLifecycle,
@@ -60,53 +56,21 @@ func (h *startupHTTPHandler) serveDiscovery(w http.ResponseWriter, r *http.Reque
 	bootstrapdiscovery.Handler{Discovery: h.projection}.ServeHTTP(w, r)
 }
 
-// EnableReadOnlyDiscovery is called only after rejected admission has released
-// its lock. Only a bounded probe may obtain current evidence; busy/cooldown
-// requests stay unavailable rather than reusing a result from a released fence.
+// EnableReadOnlyDiscovery projects only current, read-only evidence. Fresh or
+// partial sources with no database are inventory-only observations; existing
+// databases require an already-established Manager fence. Complex WAL/journal
+// recovery remains unavailable in Phase4-01 rather than being implemented by
+// this unauthenticated endpoint.
 func (h *startupHTTPHandler) EnableReadOnlyDiscovery(paths sqliterepo.InspectionPaths, options legacypreflight.Options, timeout time.Duration) {
 	h.projectionMu.Lock()
 	defer h.projectionMu.Unlock()
 	h.readOnlyDiscovery = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Context().Err() != nil || !h.beginInspection() {
-			bootstrapdiscovery.Handler{Discovery: bootstrapdiscovery.Unavailable()}.ServeHTTP(w, r)
-			return
-		}
-		defer h.endInspection()
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 		legacypreflight.WithFencedInspection(ctx, paths, options, func(report legacypreflight.Report, err error) {
 			result := bootstrapdiscovery.Project(bootstrapdiscovery.Input{Report: report, InspectionError: err})
 			bootstrapdiscovery.Handler{Discovery: result}.ServeHTTP(w, r)
 		})
-	})
-}
-
-const discoveryInspectionCooldown = 30 * time.Second
-
-func (h *startupHTTPHandler) beginInspection() bool {
-	h.inspectionMu.Lock()
-	defer h.inspectionMu.Unlock()
-	if h.inspectionBusy || h.inspectionNow().Before(h.inspectionNext) {
-		return false
-	}
-	h.inspectionBusy = true
-	return true
-}
-
-func (h *startupHTTPHandler) endInspection() {
-	h.inspectionMu.Lock()
-	defer h.inspectionMu.Unlock()
-	h.inspectionNext = h.inspectionNow().Add(discoveryInspectionCooldown)
-	h.inspectionBusy = false
-}
-
-func (h *startupHTTPHandler) EnableFreshDiscovery(admission *legacypreflight.Admission) {
-	h.projectionMu.Lock()
-	defer h.projectionMu.Unlock()
-	h.readOnlyDiscovery = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		report, err := admission.FreshEvidence(r.Context())
-		result := bootstrapdiscovery.Project(bootstrapdiscovery.Input{Report: report, InspectionError: err})
-		bootstrapdiscovery.Handler{Discovery: result}.ServeHTTP(w, r)
 	})
 }
 
