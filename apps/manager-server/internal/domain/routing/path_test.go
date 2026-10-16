@@ -159,6 +159,55 @@ func TestPreviousVerifiedPathMayBecomeOneRetiredNamespace(t *testing.T) {
 	}
 }
 
+func TestPreviousVerifiedNamespaceIsDenyOnlyWithoutRetiredEntry(t *testing.T) {
+	for _, state := range []SnapshotState{SnapshotVerifiedEffective, SnapshotDesiredOnly, SnapshotStale, SnapshotUnknown, SnapshotUnavailable} {
+		t.Run(string(state), func(t *testing.T) {
+			snapshot := RoutingSnapshot{State: state, PreviousVerifiedControlBasePath: "/previous", Revision: 8}
+			switch state {
+			case SnapshotVerifiedEffective, SnapshotStale:
+				snapshot.VerifiedEffectiveControlBasePath = "/current"
+			case SnapshotDesiredOnly:
+				snapshot.DesiredControlBasePath = "/desired"
+			}
+			owner := NamespaceOwner{Snapshot: snapshot}
+			if err := owner.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range []struct {
+				path string
+				want PathOwner
+			}{
+				{"/previous", OwnerRetiredControl},
+				{"/previous/api/v2/models", OwnerRetiredControl},
+				{"/previous/control-plane", OwnerRetiredControl},
+				{"/previousish/api/v2/models", OwnerGateway},
+				{"/v1/responses", OwnerGateway},
+				{"/previous%2fapi", OwnerAmbiguousControl},
+				{"/previous/../v1/responses", OwnerAmbiguousControl},
+			} {
+				if got := owner.Owner(item.path); got != item.want {
+					t.Errorf("Owner(%q) = %q, want %q", item.path, got, item.want)
+				}
+			}
+			if state != SnapshotVerifiedEffective && snapshot.PublicAPIActive() {
+				t.Fatal("previous namespace granted public API activation")
+			}
+		})
+	}
+}
+
+func TestPreviousVerifiedNamespaceCollisionFailsClosedWithoutRetiredEntry(t *testing.T) {
+	for _, previous := range []string{"/current", "/current/child", "/current%2fchild"} {
+		owner := NamespaceOwner{Snapshot: RoutingSnapshot{
+			State: SnapshotVerifiedEffective, Revision: 8,
+			VerifiedEffectiveControlBasePath: "/current", PreviousVerifiedControlBasePath: previous,
+		}}
+		if owner.Validate() == nil || owner.Owner(previous) != OwnerAmbiguousControl || owner.Snapshot.PublicAPIActive() {
+			t.Errorf("invalid previous namespace %q did not fail closed", previous)
+		}
+	}
+}
+
 func TestCanonicalPathRejectsAmbiguousForms(t *testing.T) {
 	for _, value := range []string{
 		"",

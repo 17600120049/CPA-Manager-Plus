@@ -242,6 +242,12 @@ func (o NamespaceOwner) Owner(requestPath string) PathOwner {
 		// request from falling into the Gateway while an apply is pending.
 		return OwnerAmbiguousControl
 	}
+	if o.Snapshot.PreviousVerifiedControlBasePath != "" &&
+		isSegmentPath(requestPath, o.Snapshot.PreviousVerifiedControlBasePath) {
+		// Previous verified authority is inherently deny-only. Callers need not
+		// duplicate it in Retired to keep its namespace out of the Gateway.
+		return OwnerRetiredControl
+	}
 	for _, retired := range o.Retired {
 		if retired.IsRetiredPath(requestPath) {
 			return OwnerRetiredControl
