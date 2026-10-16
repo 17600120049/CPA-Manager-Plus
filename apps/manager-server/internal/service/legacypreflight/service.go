@@ -84,10 +84,11 @@ func (a *Admission) Close() error {
 const DiscoveryInspectionTimeout = 2 * time.Second
 
 // WithFencedInspection provides the narrow public discovery observation used by
-// Phase4-01. Missing-database states are inventory-only and need no source
-// marker. Existing databases require an already-established Manager fence.
-// WAL/journal recovery is deliberately not performed by the unauthenticated
-// discovery path; those sources fail closed for a later qualified owner.
+// Phase4-01. Missing-database states are inventory-only. Existing databases use
+// only the bounded rollback-mode SQLite read snapshot; WAL/recovery sources
+// fail closed for a later qualified owner. A pre-existing Manager marker may be
+// retained as coordination evidence, but public discovery never enters the
+// general recovery-copy inspection path and never creates a marker.
 func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, options Options, consume func(Report, error)) {
 	ctx, cancel := context.WithTimeout(ctx, DiscoveryInspectionTimeout)
 	defer cancel()
@@ -109,48 +110,26 @@ func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, opt
 		consume(Report{}, errors.New("empty database requires host intervention"))
 		return
 	}
-	walHasContent := false
-	if info, err := os.Lstat(paths.Database + "-wal"); err == nil {
-		if !info.Mode().IsRegular() {
-			consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
-			return
-		}
-		walHasContent = info.Size() > 0
-	} else if !os.IsNotExist(err) {
-		consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
-		return
-	}
-	if info, err := os.Lstat(paths.Database + "-journal"); err == nil {
-		if !info.Mode().IsRegular() || info.Size() > 0 {
-			consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
-			return
-		}
-	} else if !os.IsNotExist(err) {
-		consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
-		return
-	}
+
 	lock, err := processlock.AcquireExisting(paths.Database)
-	if errors.Is(err, processlock.ErrNoExistingLock) {
-		// A legacy source may predate the v2 Manager marker. Use a bounded
-		// SQLite read transaction instead of creating source-adjacent ownership
-		// state solely for discovery.
-		options.readOnlySnapshot = true
-		report, inspectErr := inspect(ctx, paths, options, nil, false)
-		consume(report, errors.Join(inspectErr, ctx.Err()))
-		return
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, processlock.ErrNoExistingLock) {
 		consume(Report{}, errors.New("source ownership unavailable"))
 		return
 	}
-	defer lock.Close()
-	if walHasContent {
-		consume(Report{}, errors.New("public discovery recovery evidence unavailable"))
-		return
+	if lock != nil {
+		defer lock.Close()
 	}
-	report, err := inspect(ctx, paths, options, lock, false)
-	err = errors.Join(err, ctx.Err(), lock.Validate())
-	consume(report, err)
+
+	// Public discovery has one existing-database path: a bounded rollback-mode
+	// SQLite read transaction. Do not inherit operator assertions or pass the
+	// Manager fence into the broader diagnostic/recovery implementation.
+	options.SourceStopped = false
+	options.readOnlySnapshot = true
+	report, inspectErr := inspect(ctx, paths, options, nil, false)
+	if lock != nil {
+		inspectErr = errors.Join(inspectErr, lock.Validate())
+	}
+	consume(report, errors.Join(inspectErr, ctx.Err()))
 }
 
 func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options) (report Report, err error) {

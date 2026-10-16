@@ -98,6 +98,15 @@ func TestProjectEvidenceBoundedModes(t *testing.T) {
 	}
 }
 
+func TestProjectRejectsRecoveryCopyEvidence(t *testing.T) {
+	report := legacyReport("initialized")
+	report.Observed.Consistency = "manager-fenced-recovery-copy"
+	got := Project(Input{Report: report})
+	if got.Status != bootstrap.PublicUnavailable || got.Mode != nil || got.Reason != bootstrap.ReasonObservationUnavailable {
+		t.Fatalf("recovery-copy evidence escaped Phase4-01 public boundary: %#v", got)
+	}
+}
+
 func TestInspectedCredentialSelectsRecoveryOrAdminSessionWithoutWrites(t *testing.T) {
 	const adminKey = "cpamp_owned_credential_secret"
 	credential, err := security.NewAdminCredential(adminKey, "test")

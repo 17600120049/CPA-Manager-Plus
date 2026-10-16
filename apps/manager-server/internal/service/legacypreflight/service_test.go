@@ -153,7 +153,7 @@ func TestFencedInspectionRejectsCleanWALWithoutCoordinationSidecars(t *testing.T
 	}
 }
 
-func TestFencedInspectionReadsActiveWALThroughSQLiteSnapshot(t *testing.T) {
+func TestFencedInspectionRejectsActiveWALAsRecoveryOwned(t *testing.T) {
 	paths := fixturePaths(t)
 	db, err := sql.Open("sqlite", paths.Database)
 	if err != nil {
@@ -168,20 +168,17 @@ func TestFencedInspectionReadsActiveWALThroughSQLiteSnapshot(t *testing.T) {
 	if err != nil || len(walBefore) == 0 {
 		t.Fatalf("WAL fixture unavailable: len=%d err=%v", len(walBefore), err)
 	}
-	if _, err := os.Stat(paths.Database + "-shm"); err != nil {
-		t.Fatalf("WAL-index fixture unavailable: %v", err)
-	}
 	dbBefore, err := os.ReadFile(paths.Database)
 	if err != nil {
 		t.Fatal(err)
 	}
 	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
-		if err != nil || report.SourceKind != "legacy-manager" || report.Observed.Consistency != "sqlite-read-snapshot" {
-			t.Fatalf("active WAL discovery: kind=%s consistency=%s err=%v report=%+v", report.SourceKind, report.Observed.Consistency, err, report)
+		if err == nil || report.SourceKind != "unknown" || report.UpgradeAuthorized {
+			t.Fatalf("active WAL was not kept recovery-owned: kind=%s authorized=%v err=%v", report.SourceKind, report.UpgradeAuthorized, err)
 		}
 	})
 	if _, err := os.Lstat(paths.Database + ".manager.lock"); !os.IsNotExist(err) {
-		t.Fatalf("WAL discovery created Manager marker: %v", err)
+		t.Fatalf("WAL rejection created Manager marker: %v", err)
 	}
 	dbAfter, err := os.ReadFile(paths.Database)
 	if err != nil {
@@ -192,7 +189,7 @@ func TestFencedInspectionReadsActiveWALThroughSQLiteSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(dbBefore, dbAfter) || !reflect.DeepEqual(walBefore, walAfter) {
-		t.Fatal("WAL read-only discovery modified database or WAL content")
+		t.Fatal("WAL rejection modified database or WAL content")
 	}
 }
 
@@ -267,8 +264,8 @@ func TestFencedInspectionLeavesWALRecoveryToLaterOwner(t *testing.T) {
 	}
 	before := sourceState(t, filepath.Dir(paths.Database))
 	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
-		if err == nil || report.SourceKind != "" {
-			t.Fatalf("public WAL inspection unexpectedly classified source: kind=%s err=%v", report.SourceKind, err)
+		if err == nil || report.SourceKind != "unknown" || report.UpgradeAuthorized {
+			t.Fatalf("public WAL inspection did not fail closed: kind=%s authorized=%v err=%v", report.SourceKind, report.UpgradeAuthorized, err)
 		}
 	})
 	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {

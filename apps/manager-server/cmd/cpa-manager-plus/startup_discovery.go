@@ -58,9 +58,8 @@ func (h *startupHTTPHandler) serveDiscovery(w http.ResponseWriter, r *http.Reque
 
 // EnableReadOnlyDiscovery projects only current, read-only evidence. Fresh or
 // partial sources with no database are inventory-only observations. Existing
-// databases use either an already-established Manager fence or, when safe, a
-// bounded SQLite read snapshot without creating a Manager marker. Sources that
-// require unsupported WAL/journal recovery remain unavailable in Phase4-01.
+// databases may use a bounded rollback-mode SQLite read snapshot without
+// creating a Manager marker; WAL/journal recovery remains unavailable here.
 func (h *startupHTTPHandler) EnableReadOnlyDiscovery(paths sqliterepo.InspectionPaths, options legacypreflight.Options, timeout time.Duration) {
 	h.projectionMu.Lock()
 	defer h.projectionMu.Unlock()

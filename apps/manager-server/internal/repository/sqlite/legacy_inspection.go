@@ -25,10 +25,9 @@ type InspectionPaths struct{ Database, Config, DataKey, Archives string }
 type InspectionOptions struct {
 	// Operator assertion that ALL writers have stopped; stat/hash is no fence.
 	SourceStopped bool
-	// ReadOnlySnapshot permits a bounded SQLite read transaction when no
-	// Manager marker exists. It never authorizes writable startup. WAL-mode
-	// sources must already have readable WAL/SHM coordination files so the
-	// read-only connection participates in SQLite's normal snapshot locking.
+	// ReadOnlySnapshot permits a bounded rollback-journal SQLite read
+	// transaction for Phase4-01 discovery. It never authorizes writable
+	// startup and deliberately rejects WAL-mode sources as recovery-owned.
 	ReadOnlySnapshot bool
 	// Retained by the caller through native startup, without release/reacquire.
 	// Only cooperating single-Manager writers are fenced; arbitrary writers
@@ -120,18 +119,11 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		result.Issues = append(result.Issues, "inventory-failed")
 		return result, errors.New("source inventory failed")
 	}
-	// Deferred after db.Close: ordinary diagnostic/fenced reads still require
-	// whole-source metadata stability. Read-only SQLite snapshots deliberately
-	// allow database/WAL/SHM movement under SQLite's own transaction locks while
-	// keeping config/key/journal/ownership evidence stable.
+	// Deferred after db.Close: every accepted Phase4-01 read snapshot is
+	// rollback-mode, so the complete source inventory must remain stable.
 	defer func() {
 		after, checkErr := inspectFiles(paths)
-		stable := checkErr == nil
-		if stable && options.ReadOnlySnapshot {
-			stable = sameInspectionFiles(result.Files[3:], after[3:])
-		} else if stable {
-			stable = sameInspectionFiles(result.Files, after)
-		}
+		stable := checkErr == nil && sameInspectionFiles(result.Files, after)
 		if !stable {
 			result.Consistency = "changed"
 			result.Issues = append(result.Issues, "source-changed")
@@ -267,13 +259,7 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		return result, errors.New("source history could not be inspected")
 	}
 	during, checkErr := inspectFiles(paths)
-	stableDuring := checkErr == nil
-	if stableDuring && readOnlySnapshot {
-		stableDuring = sameInspectionFiles(result.Files[3:], during[3:])
-	} else if stableDuring {
-		stableDuring = sameInspectionFiles(result.Files, during)
-	}
-	if !stableDuring {
+	if checkErr != nil || !sameInspectionFiles(result.Files, during) {
 		return result, errors.New("source changed while SQLite was open")
 	}
 	if readTx != nil {
@@ -619,36 +605,13 @@ func validateReadOnlySnapshotSource(databasePath string, files []InspectionFile)
 	if string(header[:16]) != "SQLite format 3\x00" {
 		return errors.New("SQLite header invalid")
 	}
-	switch {
-	case header[18] == 1 && header[19] == 1:
-		if files[1].State == "present" && files[1].Size > 0 {
-			return errors.New("rollback source has unexpected WAL content")
-		}
-		return nil
-	case header[18] == 2 && header[19] == 2:
-		// Read-only WAL connections need the real WAL-index coordination files
-		// already present unless the database is declared immutable. Phase4-01
-		// must not make that immutable assertion and must not create sidecars.
-		for _, sidecar := range []struct {
-			path string
-			file InspectionFile
-		}{
-			{databasePath + "-wal", files[1]},
-			{databasePath + "-shm", files[2]},
-		} {
-			if sidecar.file.State != "present" {
-				return errors.New("WAL read coordination unavailable")
-			}
-			f, err := os.Open(sidecar.path)
-			if err != nil {
-				return errors.New("WAL read coordination unavailable")
-			}
-			_ = f.Close()
-		}
-		return nil
-	default:
-		return errors.New("SQLite journal mode is unsupported for public discovery")
+	if header[18] != 1 || header[19] != 1 {
+		return errors.New("WAL or unsupported journal mode requires later recovery ownership")
 	}
+	if files[1].State == "present" && files[1].Size > 0 {
+		return errors.New("rollback source has unexpected WAL content")
+	}
+	return nil
 }
 
 func inspectionDataSourceName(path string, immutable bool) string {
