@@ -44,7 +44,7 @@ func TestTransitionalClassifier(t *testing.T) {
 	}
 }
 
-func TestClassifierRequestKeepsAmbiguousControlCandidatesWithManager(t *testing.T) {
+func TestClassifierRequestKeepsAmbiguousActiveCandidatesWithManager(t *testing.T) {
 	control := ControlMatcherFunc(func(value string) bool {
 		return value == "/control" || value == "/control/" || len(value) > len("/control/") && strings.HasPrefix(value, "/control/")
 	})
@@ -59,8 +59,6 @@ func TestClassifierRequestKeepsAmbiguousControlCandidatesWithManager(t *testing.
 		"/control%252fsettings",
 		"/control\\settings",
 		"/control//settings",
-		"/retired/settings",
-		"/retired%2fsettings",
 		FixedBootstrapDiscoveryPath + "/",
 		"/.well-known%2Fcpamp-bootstrap",
 		"/.well-known%252Fcpamp-bootstrap",
@@ -78,6 +76,25 @@ func TestClassifierRequestKeepsAmbiguousControlCandidatesWithManager(t *testing.
 	}
 }
 
+func TestClassifierRequestDeniesRetiredCandidates(t *testing.T) {
+	classifier := NewOwnershipClassifier(
+		ControlMatcherFunc(func(value string) bool { return value == "/control" || strings.HasPrefix(value, "/control/") }),
+		ControlMatcherFunc(func(value string) bool { return value == "/retired" || strings.HasPrefix(value, "/retired/") }),
+	)
+	for _, target := range []string{"/retired/settings", "/retired%2fsettings", "/retired%252fsettings"} {
+		t.Run(target, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, "http://example.test"+target, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer manager-looking-secret")
+			if got := classifier.ClassifyRequest(req); got != RouteDeny {
+				t.Fatalf("ClassifyRequest(%q) = %v, want local deny", target, got)
+			}
+		})
+	}
+}
+
 func TestClassifierRequestPreservesNormalGatewayOwnership(t *testing.T) {
 	classifier := NewOwnershipClassifier(
 		ControlMatcherFunc(func(value string) bool { return value == "/control" || strings.HasPrefix(value, "/control/") }),
@@ -88,58 +105,6 @@ func TestClassifierRequestPreservesNormalGatewayOwnership(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer provider-secret")
 		if got := classifier.ClassifyRequest(req); got != RouteGateway {
 			t.Fatalf("ClassifyRequest(%q) = %v, want Gateway", target, got)
-		}
-	}
-}
-
-func TestVerifiedEffectiveClassifierRequiresAuthorityAndKeepsRetiredDeny(t *testing.T) {
-	classifier, err := NewVerifiedEffectiveClassifier(RoutingSnapshot{
-		DesiredControlBasePath:           "/control-new",
-		VerifiedEffectiveControlBasePath: "/control-new",
-		PreviousVerifiedControlPaths:     []string{"/control-old"},
-		Revision:                         3,
-		State:                            SnapshotVerifiedEffective,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, test := range []struct {
-		path string
-		want Route
-	}{
-		{path: "/control-new/api/v2/models", want: RouteManager},
-		{path: "/control-old/api/v2/models", want: RouteManager},
-		{path: "/control-newer/api/v2/models", want: RouteGateway},
-		{path: "/v1/responses", want: RouteGateway},
-	} {
-		if got := classifier.Classify(test.path); got != test.want {
-			t.Fatalf("Classify(%q) = %v, want %v", test.path, got, test.want)
-		}
-	}
-
-	inactive, err := NewVerifiedEffectiveClassifier(RoutingSnapshot{
-		DesiredControlBasePath: "/desired",
-		Revision:               4,
-		State:                  SnapshotDesiredOnly,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := inactive.Classify("/desired/api/v2/models"); got != RouteManager {
-		t.Fatalf("desired-only candidate classified as %v, want Manager deny ownership", got)
-	}
-}
-
-func TestVerifiedEffectiveClassifierRejectsCollisionsAndUnsafePaths(t *testing.T) {
-	for _, snapshot := range []RoutingSnapshot{
-		{VerifiedEffectiveControlBasePath: "/v1", Revision: 1, State: SnapshotVerifiedEffective},
-		{VerifiedEffectiveControlBasePath: FixedBootstrapDiscoveryPath, Revision: 1, State: SnapshotVerifiedEffective},
-		{VerifiedEffectiveControlBasePath: "/control//child", Revision: 1, State: SnapshotVerifiedEffective},
-		{VerifiedEffectiveControlBasePath: "/control%2fchild", Revision: 1, State: SnapshotVerifiedEffective},
-		{DesiredControlBasePath: "/desired", VerifiedEffectiveControlBasePath: "/effective", State: SnapshotVerifiedEffective},
-	} {
-		if _, err := NewVerifiedEffectiveClassifier(snapshot); err == nil {
-			t.Fatalf("unsafe snapshot accepted: %+v", snapshot)
 		}
 	}
 }

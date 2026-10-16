@@ -309,6 +309,14 @@ func TestHandlerRetiredAndAmbiguousControlNeverFallThroughToGateway(t *testing.T
 	gatewayRequests := make(chan *http.Request, 16)
 	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		managerRequests <- r
+		if strings.HasPrefix(r.URL.Path, FixedBootstrapDiscoveryPath) {
+			if r.URL.Path != FixedBootstrapDiscoveryPath {
+				http.NotFound(w, r)
+				return
+			}
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer manager.Close()
@@ -332,14 +340,17 @@ func TestHandlerRetiredAndAmbiguousControlNeverFallThroughToGateway(t *testing.T
 	proxy := httptest.NewServer(NewHandler(classifier, managerTarget, gatewayTarget, log.New(io.Discard, "", 0)))
 	defer proxy.Close()
 
-	for _, target := range []string{
-		"/retired/control",
-		"/retired%2fcontrol",
-		"/control/%252e%252e/control",
-		FixedBootstrapDiscoveryPath,
-		FixedBootstrapDiscoveryPath + "/",
+	for _, test := range []struct {
+		target string
+		want   int
+	}{
+		{target: "/retired/control", want: http.StatusNotFound},
+		{target: "/retired%2fcontrol", want: http.StatusNotFound},
+		{target: "/control/%252e%252e/control", want: http.StatusNoContent},
+		{target: FixedBootstrapDiscoveryPath, want: http.StatusMethodNotAllowed},
+		{target: FixedBootstrapDiscoveryPath + "/", want: http.StatusNotFound},
 	} {
-		req, err := http.NewRequest(http.MethodPost, proxy.URL+target, strings.NewReader("payload"))
+		req, err := http.NewRequest(http.MethodPost, proxy.URL+test.target, strings.NewReader("payload"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -350,12 +361,12 @@ func TestHandlerRetiredAndAmbiguousControlNeverFallThroughToGateway(t *testing.T
 			t.Fatal(err)
 		}
 		_ = response.Body.Close()
-		if response.StatusCode != http.StatusNoContent {
-			t.Fatalf("%s status = %d, want Manager response", target, response.StatusCode)
+		if response.StatusCode != test.want {
+			t.Fatalf("%s status = %d, want %d", test.target, response.StatusCode, test.want)
 		}
 	}
 
-	for range 5 {
+	for range 3 {
 		request := <-managerRequests
 		if request.Header.Get("Authorization") != "Bearer manager-secret" || request.Header.Get("X-CPA-Management-Key") != "cpa-looking-secret" {
 			t.Fatalf("Manager lost credential headers for owned request: %v", request.Header)
