@@ -95,12 +95,18 @@ func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, opt
 		consume(Report{}, err)
 		return
 	}
-	if _, err := os.Lstat(paths.Database); os.IsNotExist(err) {
+	databaseInfo, err := os.Lstat(paths.Database)
+	if os.IsNotExist(err) {
 		report, inspectErr := inspect(ctx, paths, options, nil, false)
 		consume(report, errors.Join(inspectErr, ctx.Err()))
 		return
-	} else if err != nil {
+	}
+	if err != nil {
 		consume(Report{}, errors.New("source inventory unavailable"))
+		return
+	}
+	if databaseInfo.Size() == 0 {
+		consume(Report{}, errors.New("empty database requires host intervention"))
 		return
 	}
 	for _, sidecar := range []string{paths.Database + "-wal", paths.Database + "-journal"} {
