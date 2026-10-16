@@ -107,8 +107,38 @@ describe('canonical Full Web Public API transport', () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
-  it.each(['http://localhost:8317', 'http://localhost:9081', 'file:///tmp/index.html'])(
-    'never sends Full Web credentials to CPA/internal/non-HTTP contexts %s',
+  it.each(['http://manager.example:8317', 'http://manager.example:9081'])(
+    'uses verified canonical authority on a custom public origin %s, not port heuristics',
+    async (origin) => {
+      browserOrigin(origin);
+      const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ technical: true }));
+      const client = createPublicApiClient(() => context, transport);
+      await expect(client.get('technical', credential)).resolves.toEqual({ technical: true });
+      expect(transport).toHaveBeenCalledWith(`${origin}/phase4-test/api/v2/technical`, {
+        method: 'GET',
+        headers: { Accept: 'application/json', Authorization: 'Bearer full-web-admin-secret' },
+        mode: 'same-origin',
+        credentials: 'omit',
+        redirect: 'error',
+      });
+
+      transport.mockClear();
+      for (const invalidContext of [null, { ...context, apiBase: '/v0/management' }]) {
+        await expect(
+          createPublicApiClient(() => invalidContext, transport).get('technical', credential)
+        ).rejects.toMatchObject({ kind: 'routing_unavailable' });
+      }
+      for (const destination of ['/v1/models', '/v0/management', 'http://cpa:8317/v0/management']) {
+        await expect(client.get(destination, credential)).rejects.toMatchObject({
+          kind: 'routing_unavailable',
+        });
+      }
+      expect(transport).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['file:///tmp/index.html', 'ftp://manager.example'])(
+    'never sends Full Web credentials from a non-HTTP context %s',
     async (origin) => {
       browserOrigin(origin);
       const transport = vi.fn<typeof fetch>();

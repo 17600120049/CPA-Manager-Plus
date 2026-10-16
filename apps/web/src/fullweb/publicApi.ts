@@ -38,8 +38,7 @@ export function createPublicApiClient(
         !canonical ||
         context.apiBase !== canonical.apiBase ||
         !/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(resource) ||
-        !['http:', 'https:'].includes(window.location.protocol) ||
-        ['8317', '9081'].includes(window.location.port)
+        !['http:', 'https:'].includes(window.location.protocol)
       ) {
         throw new PublicApiError('routing_unavailable');
       }
