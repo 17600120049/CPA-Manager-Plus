@@ -108,6 +108,16 @@ func TestFencedInspectionAllowsFreshInventoryAndRejectsBusyOrCanceledFence(t *te
 		t.Run(kind, func(t *testing.T) {
 			paths := fixturePaths(t)
 			if kind == "busy" {
+				db, err := sql.Open("sqlite", paths.Database)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
 				lock, err := processlock.Acquire(paths.Database)
 				if err != nil {
 					t.Fatal(err)
@@ -131,6 +141,39 @@ func TestFencedInspectionAllowsFreshInventoryAndRejectsBusyOrCanceledFence(t *te
 				t.Fatal("unavailable inspection changed the source or skipped its consumer")
 			}
 		})
+	}
+}
+
+func TestFencedInspectionLeavesWALRecoveryToLaterOwner(t *testing.T) {
+	paths := fixturePaths(t)
+	db, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`create table settings(key text primary key,value text);create table usage_events(id integer primary key)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.Database+"-wal", []byte("requires-recovery"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := processlock.Acquire(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := marker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceState(t, filepath.Dir(paths.Database))
+	WithFencedInspection(context.Background(), paths, Options{}, func(report Report, err error) {
+		if err == nil || report.SourceKind != "" {
+			t.Fatalf("public WAL inspection unexpectedly classified source: kind=%s err=%v", report.SourceKind, err)
+		}
+	})
+	if !reflect.DeepEqual(before, sourceState(t, filepath.Dir(paths.Database))) {
+		t.Fatal("public WAL rejection modified the source")
 	}
 }
 

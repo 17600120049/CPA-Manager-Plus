@@ -146,6 +146,63 @@ func TestReadOnlyDiscoveryRetainsFenceThroughResponseAndRevokesBeforeWrites(t *t
 	}
 }
 
+func TestFreshNoConfigNormalStartup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	environment := ownedPreflightEnvironment(dir, path)
+	for i, entry := range environment {
+		if strings.HasPrefix(entry, "CPA_MANAGER_CONFIG=") {
+			environment[i] = "CPA_MANAGER_CONFIG="
+		}
+	}
+	for range 2 {
+		func() {
+			process := startManagerServerProcessWithEnvironment(t, environment)
+			defer process.stop(t)
+			deadline := time.Now().Add(5 * time.Second)
+			status, body := waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+			for status == http.StatusServiceUnavailable && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+				status, body = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+			}
+			if status != http.StatusOK || !strings.Contains(body, `"mode":"fresh"`) || !strings.Contains(body, `"status":"fresh_claim_required"`) {
+				t.Fatalf("real Fresh startup did not expose claim entry: %d %s", status, body)
+			}
+			before := managerSourceSnapshot(t, dir)
+			for range 8 {
+				status, body = waitForManagerResponse(t, process.addr, http.MethodGet, bootstrapdiscovery.Path)
+				if status != http.StatusOK || !strings.Contains(body, `"mode":"fresh"`) {
+					t.Fatalf("Fresh discovery was only transient: %d %s", status, body)
+				}
+			}
+			for _, endpoint := range []struct {
+				method, path string
+				status       int
+			}{
+				{http.MethodGet, "/health", http.StatusServiceUnavailable},
+				{http.MethodPost, "/usage-service/config", http.StatusNotFound},
+				{http.MethodPost, bootstrapdiscovery.Path, http.StatusMethodNotAllowed},
+			} {
+				status, _ := waitForManagerResponse(t, process.addr, endpoint.method, endpoint.path)
+				if status != endpoint.status {
+					t.Fatalf("Fresh %s %s = %d", endpoint.method, endpoint.path, status)
+				}
+			}
+			if !reflect.DeepEqual(before, managerSourceSnapshot(t, dir)) {
+				t.Fatal("Fresh HTTP requests changed the source")
+			}
+			for _, file := range []string{path, filepath.Join(dir, "data.key"), filepath.Join(dir, "config.json"), path + ".manager.lock"} {
+				if _, err := os.Lstat(file); !os.IsNotExist(err) {
+					t.Fatalf("Fresh startup created product or coordination state: %s err=%v", file, err)
+				}
+			}
+		}()
+		if _, err := os.Lstat(path + ".manager.lock"); !os.IsNotExist(err) {
+			t.Fatalf("Fresh shutdown retained a process marker: %v", err)
+		}
+	}
+}
+
 func writeHistoricalProfileSource(t *testing.T, path, ref string) {
 	t.Helper()
 	data, err := os.ReadFile("../../internal/service/legacypreflight/testdata/legacy-profiles/schema-fixtures.json")
