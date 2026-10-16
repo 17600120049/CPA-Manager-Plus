@@ -30,9 +30,10 @@ type Report struct {
 }
 
 type Options struct {
-	SourceStopped bool
-	Initialize    bool
-	ValidatedHop  *legacyartifact.ValidatedHopEvidence
+	SourceStopped    bool
+	Initialize       bool
+	ValidatedHop     *legacyartifact.ValidatedHopEvidence
+	readOnlySnapshot bool
 }
 
 type Admission struct {
@@ -113,6 +114,15 @@ func WithFencedInspection(ctx context.Context, paths sqlite.InspectionPaths, opt
 		}
 	}
 	lock, err := processlock.AcquireExisting(paths.Database)
+	if errors.Is(err, processlock.ErrNoExistingLock) {
+		// A legacy source may predate the v2 Manager marker. Use a bounded
+		// SQLite read transaction instead of creating source-adjacent ownership
+		// state solely for discovery.
+		options.readOnlySnapshot = true
+		report, inspectErr := inspect(ctx, paths, options, nil, false)
+		consume(report, errors.Join(inspectErr, ctx.Err()))
+		return
+	}
 	if err != nil {
 		consume(Report{}, errors.New("source ownership unavailable"))
 		return
@@ -142,7 +152,11 @@ func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options)
 // createdLock is only set for the fenced recheck after an initially admitted
 // source had no ownership marker. Diagnostic callers never ignore an old lock.
 func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options, lock *processlock.Lock, createdLock bool) (report Report, err error) {
-	observed, err := sqlite.InspectLegacySource(ctx, paths, sqlite.InspectionOptions{SourceStopped: options.SourceStopped, ManagerLock: lock})
+	observed, err := sqlite.InspectLegacySource(ctx, paths, sqlite.InspectionOptions{
+		SourceStopped: options.SourceStopped,
+		ManagerLock: lock,
+		ReadOnlySnapshot: options.readOnlySnapshot,
+	})
 	report = Report{SourceKind: "unknown", Observed: observed, Unknown: []string{
 		"exact-source-release", "compatibility-profile", "verified-backup", "full-database-integrity", "archive-content",
 	}, Blocked: append([]string{}, observed.Issues...)}

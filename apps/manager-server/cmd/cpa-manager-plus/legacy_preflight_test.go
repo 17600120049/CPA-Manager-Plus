@@ -462,14 +462,10 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// A real existing cooperative ownership fence permits bounded discovery;
-	// ordinary startup must not manufacture an operator stop assertion.
-	lock, err := processlock.Acquire(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := lock.Close(); err != nil {
-		t.Fatal(err)
+	// A real legacy source predates the v2 Manager marker. Discovery must use
+	// no-migrate read-only evidence without creating source-adjacent ownership.
+	if _, err := os.Lstat(path + ".manager.lock"); !os.IsNotExist(err) {
+		t.Fatalf("legacy fixture unexpectedly has Manager marker: %v", err)
 	}
 	before := managerSourceSnapshot(t, dir)
 	process := startManagerServerProcessWithEnvironment(t, ownedPreflightEnvironment(dir, path))
@@ -517,11 +513,6 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 	}
 	changeSource := func(replace bool, credential string) {
 		t.Helper()
-		lock, err := processlock.AcquireExisting(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer lock.Close()
 		if replace {
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)
@@ -546,6 +537,13 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 	assertDiscovery(http.StatusOK, "recovery")
 	changeSource(true, string(raw))
 	assertDiscovery(http.StatusOK, "unsupported_upgrade")
+	marker, err := processlock.Acquire(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := marker.Close(); err != nil {
+		t.Fatal(err)
+	}
 	operatorLock, err := processlock.AcquireExisting(path)
 	if err != nil {
 		t.Fatal(err)
@@ -558,7 +556,7 @@ func TestStartupDiscoveryRunsBeforeWritableMutation(t *testing.T) {
 	if err := os.Remove(path + ".manager.lock"); err != nil {
 		t.Fatal(err)
 	}
-	assertDiscovery(http.StatusServiceUnavailable, "")
+	assertDiscovery(http.StatusOK, "unsupported_upgrade")
 }
 
 func TestFreshReadOnlyDiscoveryDoesNotCreateArtifacts(t *testing.T) {

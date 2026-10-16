@@ -140,7 +140,7 @@ func safeObservation(report legacypreflight.Report) bool {
 
 func stableConsistency(value string) bool {
 	switch value {
-	case "operator-asserted-cold", "manager-fenced-cold", "manager-fenced-recovery-copy":
+	case "operator-asserted-cold", "manager-fenced-cold", "manager-fenced-recovery-copy", "sqlite-read-transaction":
 		return true
 	default:
 		return false

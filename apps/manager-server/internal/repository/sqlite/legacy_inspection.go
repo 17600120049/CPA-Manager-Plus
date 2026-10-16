@@ -25,6 +25,10 @@ type InspectionPaths struct{ Database, Config, DataKey, Archives string }
 type InspectionOptions struct {
 	// Operator assertion that ALL writers have stopped; stat/hash is no fence.
 	SourceStopped bool
+	// ReadOnlySnapshot permits a bounded SQLite read transaction when no
+	// Manager marker exists. It never authorizes writable startup and is only
+	// used by Phase4-01 public discovery for no-WAL/no-journal sources.
+	ReadOnlySnapshot bool
 	// Retained by the caller through native startup, without release/reacquire.
 	// Only cooperating single-Manager writers are fenced; arbitrary writers
 	// must be stopped separately before relying on the inspection.
@@ -146,7 +150,8 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 			return result, errors.New("manager ownership fence unavailable")
 		}
 	}
-	if !options.SourceStopped && !locked {
+	readOnlySnapshot := options.ReadOnlySnapshot && !options.SourceStopped && !locked
+	if !options.SourceStopped && !locked && !readOnlySnapshot {
 		result.Issues = append(result.Issues, "source-quiescence-unproven")
 		return result, nil
 	}
@@ -191,6 +196,11 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		result.Consistency = "manager-fenced-recovery-copy"
 	} else if locked {
 		result.Consistency = "manager-fenced-cold"
+	} else if readOnlySnapshot {
+		// Do not use immutable=1 here: the SQLite read transaction is the
+		// consistency boundary and must participate in SQLite's normal locking.
+		immutable = false
+		result.Consistency = "sqlite-read-transaction"
 	} else {
 		result.Consistency = "operator-asserted-cold"
 	}
@@ -205,7 +215,21 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 			err = errors.Join(err, errors.New("SQLite inspection close failed"))
 		}
 	}()
-	if readErr := inspectSchema(ctx, db, &result); readErr != nil {
+	var reader inspectionQueryer = db
+	var readTx *sql.Tx
+	if readOnlySnapshot {
+		readTx, err = db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		if err != nil {
+			return result, errors.New("SQLite read transaction unavailable")
+		}
+		reader = readTx
+		defer func() {
+			if readTx != nil {
+				_ = readTx.Rollback()
+			}
+		}()
+	}
+	if readErr := inspectSchema(ctx, reader, &result); readErr != nil {
 		result.SQLite = "failed"
 		result.Issues = append(result.Issues, "sqlite-inspection-failed")
 		if ctx.Err() != nil {
@@ -214,19 +238,25 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		return result, errors.New("SQLite source could not be inspected")
 	}
 	result.SQLite = "observed"
-	storage, storageErr := inspectConnectionStorage(ctx, db, paths.Database)
+	storage, storageErr := inspectConnectionStorage(ctx, reader, paths.Database)
 	if storageErr != nil {
 		result.Issues = append(result.Issues, "connection-storage-inspection-failed")
 		return result, errors.New("persisted connection storage could not be inspected")
 	}
 	result.ConnectionStorage = storage
-	if readErr := inspectHistory(ctx, db, &result); readErr != nil {
+	if readErr := inspectHistory(ctx, reader, &result); readErr != nil {
 		result.Issues = append(result.Issues, "history-inspection-failed")
 		return result, errors.New("source history could not be inspected")
 	}
 	during, checkErr := inspectFiles(paths)
 	if checkErr != nil || !sameInspectionFiles(result.Files, during) {
 		return result, errors.New("source changed while SQLite was open")
+	}
+	if readTx != nil {
+		if commitErr := readTx.Commit(); commitErr != nil {
+			return result, errors.New("SQLite read transaction could not finish")
+		}
+		readTx = nil
 	}
 	if locked {
 		if err := options.ManagerLock.Validate(); err != nil {
@@ -236,7 +266,12 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 	return result, nil
 }
 
-func inspectSchema(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+type inspectionQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func inspectSchema(ctx context.Context, db inspectionQueryer, result *LegacyInspection) error {
 	for _, name := range inspectionTableNames {
 		var exists int
 		if err := db.QueryRowContext(ctx, `select exists(select 1 from sqlite_schema where type = 'table' and name = ?)`, name).Scan(&exists); err != nil {
@@ -300,7 +335,7 @@ func inspectionHasColumns(result *LegacyInspection, name string, columns ...stri
 	return false
 }
 
-func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+func inspectHistory(ctx context.Context, db inspectionQueryer, result *LegacyInspection) error {
 	result.HistoryRowsObserved = make(map[string]int)
 	if err := inspectRequiredLegacyMigrations(ctx, db, result); err != nil {
 		return err
@@ -373,7 +408,7 @@ func inspectHistory(ctx context.Context, db *sql.DB, result *LegacyInspection) e
 // The persisted state is only a bounded witness for administrator readiness and
 // historical product evidence; the new domain classifier still decides the
 // public mode and never maps Status directly.
-func inspectBootstrapState(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+func inspectBootstrapState(ctx context.Context, db inspectionQueryer, result *LegacyInspection) error {
 	rows, err := db.QueryContext(ctx, `select key, value from settings where key in ('bootstrap_state_v1', 'admin_credential_v1')`)
 	if err != nil {
 		return err
@@ -432,7 +467,7 @@ func inspectBootstrapState(ctx context.Context, db *sql.DB, result *LegacyInspec
 
 // Observe only exact required migrations' bounded, allowlisted states. A
 // table's existence or an aggregate count cannot prove migration completion.
-func inspectRequiredLegacyMigrations(ctx context.Context, db *sql.DB, result *LegacyInspection) error {
+func inspectRequiredLegacyMigrations(ctx context.Context, db inspectionQueryer, result *LegacyInspection) error {
 	var err error
 	result.CacheAccountingV2, err = inspectRequiredLegacyMigration(ctx, db, result, "usage_cache_accounting_v2")
 	if err != nil {
@@ -444,7 +479,7 @@ func inspectRequiredLegacyMigrations(ctx context.Context, db *sql.DB, result *Le
 
 // These two required v1 migrations have separate historical state machines.
 // Missing/ambiguous rows remain unknown; completed is only a row observation.
-func inspectRequiredLegacyMigration(ctx context.Context, db *sql.DB, result *LegacyInspection, name string) (string, error) {
+func inspectRequiredLegacyMigration(ctx context.Context, db inspectionQueryer, result *LegacyInspection, name string) (string, error) {
 	if !inspectionHasColumns(result, "usage_data_migrations", "name", "status") {
 		return "not-inspected", nil
 	}
