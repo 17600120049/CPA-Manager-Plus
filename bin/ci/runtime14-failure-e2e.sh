@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 project="${CPAMP_RUNTIME14_PROJECT:-cpamp-runtime14-${RANDOM}-$$}"
 public_port="${CPAMP_RUNTIME14_PORT:-29317}"
 skip_build="${CPAMP_RUNTIME14_SKIP_BUILD:-false}"
+initializer_name="${project}-cpamp-manager-init"
 snapshot_root="$(mktemp -d "${TMPDIR:-/tmp}/cpamp-runtime14-failure.XXXXXX")"
 compose=(docker compose --project-directory "${repo_root}" -p "${project}")
 
@@ -18,6 +19,7 @@ cpa_restore_path="/usr/local/bin/cli-proxy-api.runtime14-restore"
 
 cleanup() {
   set +e
+  docker rm -f "${initializer_name}" >/dev/null 2>&1 || true
   if [ -n "${stopped_cpa_pid}" ]; then
     "${compose[@]}" exec -T cpamp-runtime sh -ec 'kill -CONT "$1"' sh "${stopped_cpa_pid}" >/dev/null 2>&1
   fi
@@ -389,6 +391,12 @@ if [ "${skip_build}" != "true" ]; then
 fi
 
 scenario 'A — healthy Manager-owned baseline'
+# Runtime14 tests failure behavior after installation, not Fresh discovery.
+# Seed the Manager volume through the existing explicit writable initializer.
+"${compose[@]}" run -d --no-deps --name "${initializer_name}" cpamp-manager initialize >/dev/null
+retry 90 docker exec "${initializer_name}" wget -qO- http://127.0.0.1:18317/health >/dev/null
+docker stop -t 20 "${initializer_name}" >/dev/null
+docker rm "${initializer_name}" >/dev/null
 "${compose[@]}" up -d
 wait_public_success /health 90
 wait_public_success /v1/models 120
