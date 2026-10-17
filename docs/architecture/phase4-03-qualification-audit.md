@@ -144,8 +144,33 @@ acceptance is not possible until both gates close for both source classes.
 Scope check: no second qualification authority, Runtime authority, routing or
 state ledger, workflow/migration framework, signatures/remote trust, history
 transfer, Upgrade/rollback or product UI is introduced. Source lifecycle,
-configuration, credentials, history and queues are untouched. The only product
-behavior change tightens the confirmed legacy qualification gate.
+configuration, credentials, history and queues are untouched. Product behavior
+changes are limited to the qualification and checkpoint/replay boundaries here.
+
+## State-machine review follow-up
+
+The two P0 production prerequisites above remain blocked. The subsequent review
+identified two independent P1 defects, both reproduced by failing regressions:
+incomplete durable strategy shapes could pass `FreshOperation.Validate`, and
+the HTTP committed-replay shortcut returned success without adapter validation.
+
+Strategy validation now recognizes only the empty initial checkpoint and the
+complete shapes emitted by New Managed and Connect External. Managed records
+require exact artifact identity and a positive Runtime generation; External
+records require their URL fingerprint and existing generation sentinel. Unknown,
+partial and currently unimplemented Adopt checkpoints fail closed. The existing
+repository validator applies this on both load and update, so corrupt records
+cannot reach `/complete` or be admitted after reopen. This validates structure,
+not production qualification or proof of actual CPA state.
+
+Committed HTTP retries now pass through the same strategy adapter. Managed
+requests must match the observed Runtime identity/generation/artifact at every
+durable stage. External URL conflicts are rejected before any source probe;
+matching retries retain the bounded safe-read check. Successful committed replay
+does not rewrite checkpoints, connection ciphertext or revisions, including after
+product completion and real close/reopen. No second persistence authority or
+general state-machine framework is added. Both new HTTP regressions and the
+Fresh repository tests run in the existing Windows preflight job.
 
 ## Local verification
 
@@ -194,3 +219,10 @@ test skip, writable inspection or qualification change is introduced. Windows
 execution on the corrected implementation remains required before CI acceptance.
 The corrected implementation passes local Manager `go test -count=1 ./...` and
 `go vet ./...`, plus Fresh service/command-entry `go test -race -count=1`.
+
+At `1545565b116f83d92f574e9cd75f0921eed2cfd6`,
+[Windows job 117309262171](https://github.com/seakee/CPA-Manager-Plus/actions/runs/39002747923/job/117309262171)
+then passed the complete suite, including LF/CRLF controls and the real
+HTTP/reopen test. All 22 checks on that head passed. The subsequent P1
+state-machine follow-up above requires verification on its own implementation
+head; the earlier green CI does not qualify that new change or either P0 gate.

@@ -69,7 +69,9 @@ func (s *Service) Execute(ctx context.Context, op bootstrap.FreshOperation, requ
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	if op.Validate() != nil || !op.AdminInitialized || op.ProductComplete {
+	// A completed operation can only reconcile its validated committed shape;
+	// both adapters return that checkpoint without another mutation.
+	if op.Validate() != nil || !op.AdminInitialized {
 		return Result{}, &Blocker{Code: "fresh_strategy_authority_unavailable"}
 	}
 	if op.Strategy.Strategy != "" && op.Strategy.Strategy != request.Strategy {
@@ -101,10 +103,10 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 		return result, &Blocker{Code: "exact_v8_artifact_qualification_required"}
 	}
 	checkpoint := op.Strategy
+	if request.ExpectedRuntimeIdentity != status.Identity || request.ExpectedRuntimeGeneration != status.Generation || request.ExpectedArtifactID != status.ActiveGatewayArtifact.ArtifactID {
+		return result, &Blocker{Code: "managed_target_identity_mismatch"}
+	}
 	if checkpoint.Strategy == "" {
-		if request.ExpectedRuntimeIdentity != status.Identity || request.ExpectedRuntimeGeneration != status.Generation || request.ExpectedArtifactID != status.ActiveGatewayArtifact.ArtifactID {
-			return result, &Blocker{Code: "managed_target_identity_mismatch"}
-		}
 		result.Checkpoint = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged,
 			TargetIdentity: string(status.Identity), TargetGeneration: uint64(status.Generation),
 			TargetArtifactID: string(status.ActiveGatewayArtifact.ArtifactID), Stage: "staged"}
@@ -164,6 +166,15 @@ func (s *Service) existing(ctx context.Context, op bootstrap.FreshOperation, req
 	if s.options.Qualification.ValidateForStrategy(bootstrap.ConnectExternal, bootstrap.AdoptSourceNone) != nil {
 		return result, &Blocker{Code: "required_v8_profile_qualification_required"}
 	}
+	baseURL, err := cpa.NormalizeV8BaseURL(request.BaseURL)
+	if err != nil {
+		return result, &Blocker{Code: cpa.V8InvalidConnection.Error()}
+	}
+	targetHash := sha256.Sum256([]byte(baseURL))
+	targetID := "external:sha256:" + hex.EncodeToString(targetHash[:])
+	if op.Strategy.TargetIdentity != "" && op.Strategy.TargetIdentity != targetID {
+		return result, &Blocker{Code: "fresh_strategy_owner_conflict"}
+	}
 	observation, err := cpa.ReadV8Config(ctx, request.BaseURL, request.ManagementKey)
 	if err != nil {
 		var readErr cpa.V8ReadError
@@ -172,10 +183,9 @@ func (s *Service) existing(ctx context.Context, op bootstrap.FreshOperation, req
 		}
 		return result, &Blocker{Code: "management_safe_read_unavailable"}
 	}
-	targetHash := sha256.Sum256([]byte(observation.BaseURL))
-	targetID := "external:sha256:" + hex.EncodeToString(targetHash[:])
-	if op.Strategy.TargetIdentity != "" && op.Strategy.TargetIdentity != targetID {
-		return result, &Blocker{Code: "fresh_strategy_owner_conflict"}
+	if op.Strategy.Stage == "committed" {
+		result.Checkpoint = op.Strategy
+		return result, nil
 	}
 	result.Checkpoint = bootstrap.FreshStrategyCheckpoint{Strategy: request.Strategy, TargetIdentity: targetID, TargetGeneration: 1, Stage: "validated"}
 	if s.options.Protector == nil {

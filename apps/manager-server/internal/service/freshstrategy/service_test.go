@@ -89,6 +89,28 @@ func TestManagedUnqualifiedOrForeignTargetCannotStart(t *testing.T) {
 	}
 }
 
+func TestManagedReplayRejectsChangedRequestForEveryDurableStage(t *testing.T) {
+	artifact := model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))
+	runtime := &managedRuntime{status: model.RuntimeObservedStatus{Identity: "target-one", Generation: 3, ProtocolVersion: "v1", State: model.RuntimeStateReady, Capabilities: model.RuntimeCapabilities{model.RuntimeCapabilityStart}, ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact}}}
+	service := New(Options{Runtime: runtime, Qualification: qualified(), QualifiedArtifactID: artifact})
+	for _, stage := range []string{"staged", "starting", "committed"} {
+		op := operation()
+		op.Strategy = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: stage, TargetIdentity: "target-one", TargetGeneration: 3, TargetArtifactID: string(artifact)}
+		for _, request := range []Request{
+			{Strategy: bootstrap.NewManaged},
+			{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "foreign", ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact},
+			{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "target-one", ExpectedRuntimeGeneration: 4, ExpectedArtifactID: artifact},
+			{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "target-one", ExpectedRuntimeGeneration: 3, ExpectedArtifactID: model.RuntimeArtifactID("sha256:" + strings.Repeat("b", 64))},
+		} {
+			_, err := service.Execute(t.Context(), op, request)
+			var blocker *Blocker
+			if !errors.As(err, &blocker) || blocker.Code != "managed_target_identity_mismatch" || len(runtime.starts) != 0 {
+				t.Fatalf("%s replay bypassed exact request identity: %v", stage, err)
+			}
+		}
+	}
+}
+
 func TestExternalStoresOnlyEncryptedManagementSecretAndKeepsGatewayPending(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -73,6 +74,32 @@ type FreshStrategyCheckpoint struct {
 	Unsupported      []string    `json:"unsupported,omitempty"`
 }
 
+func (c FreshStrategyCheckpoint) validate() error {
+	if c.Strategy == "" {
+		if c.TargetIdentity != "" || c.TargetArtifactID != "" || c.TargetGeneration != 0 || c.Stage != "" || len(c.Unsupported) != 0 {
+			return errors.New("unowned Fresh strategy checkpoint")
+		}
+		return nil
+	}
+	if strings.TrimSpace(c.TargetIdentity) == "" || c.TargetGeneration == 0 || len(c.Unsupported) != 0 {
+		return errors.New("invalid Fresh strategy target")
+	}
+	switch c.Strategy {
+	case NewManaged:
+		if !validContentDigest(ContentDigest(c.TargetArtifactID)) || (c.Stage != "staged" && c.Stage != "starting" && c.Stage != "committed") {
+			return errors.New("invalid managed Fresh strategy checkpoint")
+		}
+	case ConnectExternal:
+		if !strings.HasPrefix(c.TargetIdentity, "external:") || !validContentDigest(ContentDigest(strings.TrimPrefix(c.TargetIdentity, "external:"))) || c.TargetGeneration != 1 || c.TargetArtifactID != "" || (c.Stage != "validated" && c.Stage != "committed") {
+			return errors.New("invalid external Fresh strategy checkpoint")
+		}
+	default:
+		// Adopt has no accepted destination primitive and emits no checkpoint.
+		return errors.New("unsupported Fresh strategy checkpoint")
+	}
+	return nil
+}
+
 func (o FreshOperation) Ownership() FreshOwnership {
 	return FreshOwnership{Identity: o.Identity, CurrentInstallationID: o.Identity.InstallationID,
 		CurrentGeneration: o.Identity.Generation, CurrentOperationID: o.Identity.OperationID, Revision: o.Revision}
@@ -81,6 +108,12 @@ func (o FreshOperation) Ownership() FreshOwnership {
 func (o FreshOperation) Validate() error {
 	if o.Version != FreshContractVersion || !o.Ownership().Valid() || !o.GatewayPending {
 		return errors.New("invalid Fresh ownership checkpoint")
+	}
+	if err := o.Strategy.validate(); err != nil {
+		return err
+	}
+	if o.Strategy.Strategy != "" && !o.AdminInitialized {
+		return errors.New("Fresh strategy requires initialized Admin")
 	}
 	if o.Routing.OperationID == "" {
 		if o.Routing.Revision != 0 || o.Routing.Target != "" || o.Routing.Stage != "" || o.Routing.Committed {

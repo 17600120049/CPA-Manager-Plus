@@ -1,6 +1,9 @@
 package bootstrap
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func ownedFresh() FreshOperation {
 	return FreshOperation{Version: FreshContractVersion, Identity: FreshIdentity{
@@ -80,6 +83,56 @@ func TestFreshRouteCheckpointRequiresOwnedCompleteShape(t *testing.T) {
 		mutate(&op.Routing)
 		if op.Validate() == nil {
 			t.Fatal("malformed route checkpoint accepted")
+		}
+	}
+}
+
+func TestFreshStrategyCheckpointRequiresCompleteShape(t *testing.T) {
+	managed := FreshStrategyCheckpoint{Strategy: NewManaged, Stage: "staged", TargetIdentity: "runtime-one", TargetGeneration: 3, TargetArtifactID: "sha256:" + strings.Repeat("a", 64)}
+	external := FreshStrategyCheckpoint{Strategy: ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1}
+	for _, checkpoint := range []FreshStrategyCheckpoint{{}, managed, external} {
+		op := ownedFresh()
+		op.AdminInitialized = true
+		op.Strategy = checkpoint
+		if err := op.Validate(); err != nil {
+			t.Fatalf("valid checkpoint: %+v: %v", checkpoint, err)
+		}
+	}
+	for name, checkpoint := range map[string]FreshStrategyCheckpoint{
+		"stage alone":         {Stage: "committed"},
+		"target alone":        {TargetIdentity: "runtime-one"},
+		"generation alone":    {TargetGeneration: 1},
+		"artifact alone":      {TargetArtifactID: managed.TargetArtifactID},
+		"unsupported alone":   {Unsupported: []string{"unknown"}},
+		"strategy alone":      {Strategy: NewManaged},
+		"unknown strategy":    {Strategy: "unknown", Stage: "committed", TargetIdentity: "target", TargetGeneration: 1},
+		"unimplemented adopt": {Strategy: AdoptExisting, Stage: "committed", TargetIdentity: "target", TargetGeneration: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			op := ownedFresh()
+			op.AdminInitialized = true
+			op.Strategy = checkpoint
+			if op.Validate() == nil {
+				t.Fatal("partial or unsupported strategy accepted")
+			}
+		})
+	}
+	for _, checkpoint := range []FreshStrategyCheckpoint{managed, external} {
+		for name, mutate := range map[string]func(*FreshStrategyCheckpoint){
+			"missing target":     func(c *FreshStrategyCheckpoint) { c.TargetIdentity = "" },
+			"missing generation": func(c *FreshStrategyCheckpoint) { c.TargetGeneration = 0 },
+			"unknown stage":      func(c *FreshStrategyCheckpoint) { c.Stage = "unknown" },
+			"invalid artifact":   func(c *FreshStrategyCheckpoint) { c.TargetArtifactID = "sha256:invalid" },
+		} {
+			t.Run(string(checkpoint.Strategy)+"/"+name, func(t *testing.T) {
+				op := ownedFresh()
+				op.AdminInitialized = true
+				op.Strategy = checkpoint
+				mutate(&op.Strategy)
+				if op.Validate() == nil {
+					t.Fatal("malformed strategy accepted")
+				}
+			})
 		}
 	}
 }

@@ -214,14 +214,6 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if op.Strategy.Stage == "committed" {
-		if op.Strategy.Strategy != request.Strategy {
-			w.WriteHeader(http.StatusConflict)
-			return
-		}
-		writeFreshJSON(w, op)
-		return
-	}
 	result, err := a.strategy.Execute(r.Context(), op, request.Request)
 	if err != nil {
 		var blocker *freshstrategy.Blocker
@@ -240,6 +232,13 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+	}
+	if op.Strategy.Stage == "committed" {
+		// Reconcile only after the strategy adapter validates the requested
+		// target and current server-owned qualification. Do not rewrite a
+		// committed checkpoint, connection ciphertext or revision on replay.
+		writeFreshJSON(w, op)
+		return
 	}
 	next, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
 		if token, fixed := freshbootstrap.SessionToken(r); fixed {

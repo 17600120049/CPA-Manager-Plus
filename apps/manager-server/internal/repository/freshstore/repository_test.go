@@ -1,6 +1,9 @@
 package freshstore
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -142,7 +145,11 @@ func TestConnectionAndStrategyAreAtomicEncryptedAndNeverOverwritten(t *testing.T
 	defer db.Close()
 	st := New(db)
 	id := bootstrap.FreshIdentity{AdmissionID: "a", InstallationID: "i", Generation: "g", DatabasePath: path, OperationID: "fresh-operation"}
-	record, err := st.Create(t.Context(), id, nil)
+	admin, err := security.NewAdminCredential("Cpamp_Strategy_Admin_Secret_839216", "host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := st.Create(t.Context(), id, &admin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,9 +169,11 @@ func TestConnectionAndStrategyAreAtomicEncryptedAndNeverOverwritten(t *testing.T
 		t.Fatal(err)
 	}
 	connection := &model.ManagerCPAConnectionConfig{CPABaseURL: "http://cpa:8317", ManagementKey: secret}
+	targetHash := sha256.Sum256([]byte(connection.CPABaseURL))
+	checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + hex.EncodeToString(targetHash[:]), TargetGeneration: 1}
 	_, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error {
 		r.Connection = connection
-		r.Operation.Strategy.Stage = "committed"
+		r.Operation.Strategy = checkpoint
 		return errors.New("cancel")
 	})
 	if err == nil {
@@ -174,7 +183,7 @@ func TestConnectionAndStrategyAreAtomicEncryptedAndNeverOverwritten(t *testing.T
 	if err = db.QueryRow("select count(*) from settings where key='manager_config_v1'").Scan(&count); err != nil || count != 0 {
 		t.Fatal("partial connection write", err)
 	}
-	record, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error { r.Connection = connection; r.Operation.Strategy.Stage = "committed"; return nil })
+	record, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error { r.Connection = connection; r.Operation.Strategy = checkpoint; return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,5 +194,47 @@ func TestConnectionAndStrategyAreAtomicEncryptedAndNeverOverwritten(t *testing.T
 	_, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error { r.Connection.ManagementKey = "new secret"; return nil })
 	if err == nil {
 		t.Fatal("overwrite accepted")
+	}
+}
+
+func TestMalformedStrategyCannotBeWrittenOrLoaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manager.sqlite")
+	db, err := sqlite.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	st := New(db)
+	id := bootstrap.FreshIdentity{AdmissionID: "a", InstallationID: "i", Generation: "g", DatabasePath: path, OperationID: "fresh-operation"}
+	admin, err := security.NewAdminCredential("Cpamp_Strategy_Admin_Secret_839216", "host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := st.Create(t.Context(), id, &admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error {
+		r.Operation.Strategy.Stage = "committed"
+		return nil
+	})
+	if !errors.Is(err, ErrNotFresh) {
+		t.Fatal("stage-only commit was saved", err)
+	}
+	loaded, err := st.Load(t.Context())
+	if err != nil || loaded.Operation.Revision != record.Operation.Revision || loaded.Operation.Strategy.Stage != "" {
+		t.Fatal("rejected update changed checkpoint", err)
+	}
+	// Corruption written outside the repository is also rejected on read.
+	record.Operation.Strategy.Stage = "committed"
+	data, err := json.Marshal(record.Operation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec("update settings set value=? where key=?", string(data), OperationKey); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Load(t.Context()); !errors.Is(err, ErrNotFresh) {
+		t.Fatal("malformed durable checkpoint was loaded", err)
 	}
 }
