@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -236,5 +237,101 @@ func TestMalformedStrategyCannotBeWrittenOrLoaded(t *testing.T) {
 	}
 	if _, err = st.Load(t.Context()); !errors.Is(err, ErrNotFresh) {
 		t.Fatal("malformed durable checkpoint was loaded", err)
+	}
+}
+
+func TestExternalCommittedRequiresMatchingDurableConnection(t *testing.T) {
+	for _, kind := range []string{"missing", "different-target", "matching"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "manager.sqlite")
+			db, err := sqlite.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = db.Close() }()
+			st := New(db)
+			id := bootstrap.FreshIdentity{AdmissionID: "a", InstallationID: "i", Generation: "g", DatabasePath: path, OperationID: "fresh-operation"}
+			admin, err := security.NewAdminCredential("Cpamp_Strategy_Admin_Secret_839216", "host")
+			if err != nil {
+				t.Fatal(err)
+			}
+			record, err := st.Create(t.Context(), id, &admin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			protector, err := security.NewProtector([]byte("isolated test key"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret, err := protector.ProtectString("source management key")
+			if err != nil {
+				t.Fatal(err)
+			}
+			baseURL := "http://cpa:8317"
+			digest := sha256.Sum256([]byte(baseURL))
+			checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + hex.EncodeToString(digest[:]), TargetGeneration: 1}
+			var connection *model.ManagerCPAConnectionConfig
+			if kind != "missing" {
+				connection = &model.ManagerCPAConnectionConfig{CPABaseURL: baseURL, ManagementKey: secret}
+				if kind == "different-target" {
+					connection.CPABaseURL = "http://other:8317"
+				}
+			}
+			_, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error {
+				r.Operation.Strategy = checkpoint
+				r.Connection = connection
+				return nil
+			})
+			if kind == "matching" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if !errors.Is(err, ErrNotFresh) {
+					t.Fatal("inconsistent External commit accepted", err)
+				}
+				loaded, err := st.Load(t.Context())
+				if err != nil || loaded.Operation.Revision != record.Operation.Revision || loaded.Connection != nil || loaded.Operation.Strategy.Stage != "" {
+					t.Fatal("rejected update changed durable authority", err)
+				}
+				// Simulate corruption outside the repository, then test a real reopen.
+				record.Operation.Strategy = checkpoint
+				data, err := json.Marshal(record.Operation)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = db.Exec("update settings set value=? where key=?", string(data), OperationKey); err != nil {
+					t.Fatal(err)
+				}
+				if connection != nil {
+					disabled := false
+					data, err = json.Marshal(model.ManagerConfig{CPAConnection: *connection, Collector: model.ManagerCollectorConfig{Enabled: &disabled}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err = db.Exec("insert into settings(key,value,updated_at_ms) values('manager_config_v1',?,1)", string(data)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err = st.Load(t.Context()); !errors.Is(err, ErrNotFresh) {
+					t.Fatal("corrupt External record loaded", err)
+				}
+			}
+			if err = db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			db, err = sqlite.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := New(db).Load(t.Context())
+			if kind == "matching" {
+				if err != nil || loaded.Connection == nil || *loaded.Connection != *connection || !reflect.DeepEqual(loaded.Operation.Strategy, checkpoint) {
+					t.Fatal("matching External record did not survive reopen", err)
+				}
+			} else if !errors.Is(err, ErrNotFresh) {
+				t.Fatal("corrupt External record survived reopen", err)
+			}
+		})
 	}
 }

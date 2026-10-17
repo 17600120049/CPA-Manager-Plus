@@ -2,7 +2,9 @@ package freshstore
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math"
@@ -79,6 +81,17 @@ func valid(r Record) error {
 	}
 	if r.Connection != nil && (r.Connection.CPABaseURL == "" || !security.IsValidProtectedEnvelope(r.Connection.ManagementKey)) {
 		return ErrNotFresh
+	}
+	if r.Operation.Strategy.Strategy == bootstrap.ConnectExternal && r.Operation.Strategy.Stage == "committed" {
+		if r.Connection == nil {
+			return ErrNotFresh
+		}
+		// The strategy service persists its normalized URL and hashes those
+		// exact bytes. Check the same durable fact without service/network reads.
+		digest := sha256.Sum256([]byte(r.Connection.CPABaseURL))
+		if r.Operation.Strategy.TargetIdentity != "external:sha256:"+hex.EncodeToString(digest[:]) {
+			return ErrNotFresh
+		}
 	}
 	return nil
 }

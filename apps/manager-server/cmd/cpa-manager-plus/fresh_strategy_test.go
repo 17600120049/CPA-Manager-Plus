@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -93,6 +95,15 @@ func TestFreshCommittedStrategyReplayChecksTargetsWithoutUpdating(t *testing.T) 
 				mutations = []func(*freshstrategy.Request){func(r *freshstrategy.Request) { r.BaseURL += "/foreign" }}
 			}
 			app := newFreshApplication(opened, config.Config{}, nil)
+			assertFreshAuthority := func(want int) {
+				t.Helper()
+				response := httptest.NewRecorder()
+				app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/internal/routing/fresh-authority", nil))
+				if response.Code != want {
+					t.Fatal("Fresh authority emitted legacy mode or wrong routing state", response.Code)
+				}
+			}
+			assertFreshAuthority(http.StatusNotFound)
 			_, err = app.store.Update(ctx, opened.Record.Operation.Identity, opened.Record.Operation.Revision, func(r *freshstore.Record) error {
 				r.Operation.Strategy = checkpoint
 				r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: r.Operation.Identity.OperationID, Revision: 1, Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true}
@@ -105,6 +116,7 @@ func TestFreshCommittedStrategyReplayChecksTargetsWithoutUpdating(t *testing.T) 
 			for restart := 0; restart < 2; restart++ {
 				app.strategy = freshstrategy.New(options)
 				for complete := 0; complete < 2; complete++ {
+					assertFreshAuthority(http.StatusOK)
 					before, err := app.store.Load(ctx)
 					if err != nil {
 						t.Fatal(err)
@@ -169,44 +181,72 @@ func TestFreshCommittedStrategyReplayChecksTargetsWithoutUpdating(t *testing.T) 
 }
 
 func TestFreshCompleteRejectsMalformedStrategyCheckpoint(t *testing.T) {
-	dir := t.TempDir()
-	paths := legacypreflight.DefaultPaths(filepath.Join(dir, "manager.sqlite"))
-	paths.Config = filepath.Join(dir, "config.json")
-	opened, err := fresh.Open(t.Context(), paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer opened.Close()
-	op := opened.Record.Operation
-	op.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true}
-	op.Strategy.Stage = "committed"
-	data, err := json.Marshal(op)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := opened.DB.Exec("update settings set value=? where key=?", string(data), freshstore.OperationKey); err != nil {
-		t.Fatal(err)
-	}
-	app := newFreshApplication(opened, config.Config{}, nil)
-	req := httptest.NewRequest(http.MethodPost, "/control/api/v2/complete", nil)
-	req.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
-	response := httptest.NewRecorder()
-	app.canonicalAPI(response, req)
-	if response.Code == http.StatusOK {
-		t.Fatal("malformed strategy checkpoint completed the product")
-	}
-	var after string
-	if err := opened.DB.QueryRow("select value from settings where key=?", freshstore.OperationKey).Scan(&after); err != nil || after != string(data) {
-		t.Fatal("rejected completion changed durable checkpoint", err)
-	}
-	if err := opened.Close(); err != nil {
-		t.Fatal(err)
-	}
-	reopened, err := fresh.Open(t.Context(), paths, fresh.OpenOptions{})
-	if reopened != nil {
-		_ = reopened.Close()
-	}
-	if err == nil {
-		t.Fatal("restart admitted malformed strategy checkpoint")
+	for _, kind := range []string{"shape", "missing-external-connection", "mismatched-external-connection"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			paths := legacypreflight.DefaultPaths(filepath.Join(dir, "manager.sqlite"))
+			paths.Config = filepath.Join(dir, "config.json")
+			opened, err := fresh.Open(t.Context(), paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer opened.Close()
+			op := opened.Record.Operation
+			op.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true}
+			op.Strategy.Stage = "committed"
+			if kind != "shape" {
+				digest := sha256.Sum256([]byte("http://accepted-source:8317"))
+				op.Strategy = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + hex.EncodeToString(digest[:]), TargetGeneration: 1}
+				if kind == "mismatched-external-connection" {
+					secret, err := opened.Protector.ProtectString("private-source-key")
+					if err != nil {
+						t.Fatal(err)
+					}
+					disabled := false
+					connection, err := json.Marshal(model.ManagerConfig{CPAConnection: model.ManagerCPAConnectionConfig{CPABaseURL: "http://different-source:8317", ManagementKey: secret}, Collector: model.ManagerCollectorConfig{Enabled: &disabled}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err = opened.DB.Exec("insert into settings(key,value,updated_at_ms) values('manager_config_v1',?,1)", string(connection)); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			data, err := json.Marshal(op)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := opened.DB.Exec("update settings set value=? where key=?", string(data), freshstore.OperationKey); err != nil {
+				t.Fatal(err)
+			}
+			app := newFreshApplication(opened, config.Config{}, nil)
+			startup := newStartupHTTPHandler(bootstrap.PublicDiscovery{})
+			pending := httptest.NewRecorder()
+			startup.ServeHTTP(pending, httptest.NewRequest(http.MethodGet, "/internal/routing/fresh-authority", nil))
+			if pending.Code == http.StatusNoContent {
+				t.Fatal("pending startup acknowledged legacy mode")
+			}
+			req := httptest.NewRequest(http.MethodPost, "/control/api/v2/complete", nil)
+			req.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+			response := httptest.NewRecorder()
+			app.canonicalAPI(response, req)
+			if response.Code == http.StatusOK {
+				t.Fatal("malformed strategy checkpoint completed the product")
+			}
+			var after string
+			if err := opened.DB.QueryRow("select value from settings where key=?", freshstore.OperationKey).Scan(&after); err != nil || after != string(data) {
+				t.Fatal("rejected completion changed durable checkpoint", err)
+			}
+			if err := opened.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := fresh.Open(t.Context(), paths, fresh.OpenOptions{})
+			if reopened != nil {
+				_ = reopened.Close()
+			}
+			if err == nil {
+				t.Fatal("restart admitted malformed strategy checkpoint")
+			}
+		})
 	}
 }
