@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -38,8 +39,9 @@ func main() {
 	}
 	logger := log.New(os.Stderr, "cpamp-ingress: ", log.LstdFlags)
 	fresh := &ingress.FreshRoutes{}
-	handler := ingress.NewFreshHandler(fresh, cfg.managerURL, cfg.gatewayURL, logger)
-	control := &http.Server{Addr: cfg.controlAddr, Handler: fresh.ControlHandler(managerFreshAuthority(cfg.managerURL)), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 16}
+	authority := managerFreshAuthority(cfg.managerURL)
+	handler := ingress.NewFreshHandler(fresh, cfg.managerURL, cfg.gatewayURL, logger, managerLegacyGateway(authority))
+	control := &http.Server{Addr: cfg.controlAddr, Handler: fresh.ControlHandler(authority), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 16}
 	server := &http.Server{
 		Addr:              cfg.addr,
 		Handler:           handler,
@@ -92,6 +94,26 @@ func loadConfig(getenv func(string) string) (config, error) {
 	return config{addr: addr, managerURL: managerURL, gatewayURL: gatewayURL, controlAddr: controlAddr}, nil
 }
 
+var errLegacyManager = errors.New("Manager is serving the legacy application")
+
+// Only the fully started legacy Manager serves 204 on the existing private
+// authority endpoint. Unknown/Fresh/startup/error responses never open Gateway.
+// Retain this process-local mode observation for legacy Manager-outage continuity;
+// an Ingress restart must obtain it again. Fresh admission cannot replace an
+// initialized legacy store through normal startup.
+func managerLegacyGateway(authority func(context.Context) (ingress.FreshRouteState, error)) func(context.Context) bool {
+	var confirmed atomic.Bool
+	return func(ctx context.Context) bool {
+		if !confirmed.Load() {
+			_, err := authority(ctx)
+			if errors.Is(err, errLegacyManager) {
+				confirmed.Store(true)
+			}
+		}
+		return confirmed.Load()
+	}
+}
+
 func managerFreshAuthority(managerURL *url.URL) func(context.Context) (ingress.FreshRouteState, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
@@ -119,6 +141,9 @@ func managerFreshAuthority(managerURL *url.URL) func(context.Context) (ingress.F
 			return state, err
 		}
 		defer res.Body.Close()
+		if res.StatusCode == http.StatusNoContent {
+			return state, errLegacyManager
+		}
 		if res.StatusCode != http.StatusOK {
 			return state, fmt.Errorf("Manager routing authority unavailable: status %d", res.StatusCode)
 		}

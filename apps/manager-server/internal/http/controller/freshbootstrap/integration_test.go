@@ -184,6 +184,9 @@ func TestRealIngressInitialRoutingAuthenticationCutoverAndRestart(t *testing.T) 
 		return response.StatusCode, string(b), response.Header
 	}
 	base := bootstrap.FixedBootstrapAPIPath
+	if code, _, _ := request("GET", "/v1/models", "Bearer client-key", nil); code != 503 || gatewayHits != 0 {
+		t.Fatal("Gateway forwarded before routing prepare/Apply")
+	}
 	for _, auth := range []string{"Bearer cpamp_RoutingIntegration0123456789!", "Bearer cpa-management-key", "", "Fresh wrong-session"} {
 		code, body, _ := request("GET", base+"operation", auth, nil)
 		if code != 401 || strings.Contains(body, "secret") {
@@ -201,6 +204,9 @@ func TestRealIngressInitialRoutingAuthenticationCutoverAndRestart(t *testing.T) 
 	}
 	if code, body, _ := request("POST", base+"routing/prepare", "Fresh "+payload.Token, map[string]any{"identity": id, "target": "/private-control"}); code != 200 {
 		t.Fatal("prepare", code, body)
+	}
+	if code, _, _ := request("GET", "/v1/models", "Bearer client-key", nil); code != 503 || gatewayHits != 0 {
+		t.Fatal("Gateway forwarded with prepared authority before Apply")
 	}
 	if code, body, _ := request("POST", base+"routing/activate", "Fresh "+payload.Token, map[string]any{"identity": id}); code != 200 {
 		t.Fatal("activate real Ingress", code, body)
@@ -226,11 +232,17 @@ func TestRealIngressInitialRoutingAuthenticationCutoverAndRestart(t *testing.T) 
 	before := op.Revision
 	stop()
 	start()
+	if code, _, _ := request("GET", "/v1/models", "Bearer client-key", nil); code != 503 || gatewayHits != 0 {
+		t.Fatal("Gateway forwarded after Ingress restart before Restore")
+	}
 	if e = fixed.Routing.Restore(t.Context()); e != nil {
 		t.Fatal(e)
 	}
 	if code, _, _ := request("GET", "/private-control", "", nil); code != 200 {
 		t.Fatal("committed route not restored")
+	}
+	if code, _, _ := request("GET", "/v1/models", "Bearer client-key", nil); code != 503 || gatewayHits != 0 {
+		t.Fatal("Restore activated Gateway")
 	}
 	op, e = current(t.Context())
 	if e != nil || op.Revision != before || !op.Routing.Committed {

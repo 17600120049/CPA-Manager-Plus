@@ -1,6 +1,7 @@
 package ingress
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/http"
@@ -14,17 +15,19 @@ import (
 const proxyBufferSize = 32 << 10
 
 type Handler struct {
-	classifier Classifier
-	manager    http.Handler
-	gateway    http.Handler
-	fresh      *FreshRoutes
+	classifier    Classifier
+	manager       http.Handler
+	gateway       http.Handler
+	fresh         *FreshRoutes
+	legacyGateway func(context.Context) bool
 }
 
-func NewFreshHandler(fresh *FreshRoutes, managerURL, gatewayURL *url.URL, logger *log.Logger) *Handler {
+func NewFreshHandler(fresh *FreshRoutes, managerURL, gatewayURL *url.URL, logger *log.Logger, legacyGateway func(context.Context) bool) *Handler {
 	legacy := NewTransitionalClassifier()
 	matcher := ControlMatcherFunc(func(p string) bool { return fresh.Matches(p) || legacy.Classify(p) == RouteManager })
 	h := NewHandler(NewClassifier(matcher), managerURL, gatewayURL, logger)
 	h.fresh = fresh
+	h.legacyGateway = legacyGateway
 	return h
 }
 
@@ -47,10 +50,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	default:
 		w.Header().Set("X-CPAMP-Route-Owner", "gateway")
-		// The Fresh route projection is the only Ingress-owned evidence that
-		// this installation is in the bounded Fresh flow. Without it, preserve
-		// the pre-existing Gateway fallback contract for non-Fresh installs.
-		if h.fresh != nil && h.fresh.Active() {
+		// Fresh routing projections establish Control ownership only. Neither
+		// an absent projection (including after an Ingress restart) nor a
+		// committed one proves Gateway client-auth/effective-config safety.
+		// Only a positive legacy-mode reply from the private Manager authority
+		// preserves the separate pre-Fresh passthrough contract.
+		if h.fresh != nil && (h.fresh.Active() || h.legacyGateway == nil || !h.legacyGateway(r.Context())) {
 			http.Error(w, "gateway pending configuration", http.StatusServiceUnavailable)
 			return
 		}
