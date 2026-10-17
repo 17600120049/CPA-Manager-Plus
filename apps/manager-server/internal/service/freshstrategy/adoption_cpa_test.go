@@ -33,6 +33,7 @@ const realCPA8BinarySHA256 = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba3
 // acceptance. Only the test constructor injects resource/profile qualification.
 func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 	cpaPath, supervisorPath := os.Getenv("CPAMP_TEST_CPA_V8"), os.Getenv("CPAMP_TEST_RUNTIME")
+	legacyCPAPath := os.Getenv("CPAMP_TEST_CPA_LEGACY")
 	if cpaPath == "" || supervisorPath == "" {
 		t.Skip("requires exact CPA candidate and built Supervisor; CI runs explicitly")
 	}
@@ -57,26 +58,69 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			sourceAddr, targetAddr, runtimeAddr := freeTestAddress(t), freeTestAddress(t), freeTestAddress(t)
-			_, sourcePort, _ := net.SplitHostPort(sourceAddr)
+			adoptionSourceAddr, targetAddr, runtimeAddr := freeTestAddress(t), freeTestAddress(t), freeTestAddress(t)
 			sourceKey := "isolated-source-management-key"
-			sourceConfig := map[string]any{"config-version": 8, "server": map[string]any{"host": "127.0.0.1", "port": json.Number(sourcePort)}, "oauth": map[string]any{"auth-dir": filepath.Join(sourceRoot, "auth")}, "management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true, "disable-auto-update-panel": true}, "access": map[string]any{"api-keys": []string{"isolated-client-one", "isolated-client-two"}}, "plugins": map[string]any{"enabled": false}}
+			clientKeys := []string{"isolated-client-one", "isolated-client-two"}
+			var source *exec.Cmd
 			if class == bootstrap.AdoptLegacyManaged {
-				sourceConfig = map[string]any{"host": "127.0.0.1", "port": json.Number(sourcePort), "auth-dir": filepath.Join(sourceRoot, "auth"), "remote-management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true}, "api-keys": []string{"isolated-client-one", "isolated-client-two"}, "plugins": map[string]any{"enabled": false}}
+				if legacyCPAPath == "" {
+					t.Fatal("legacy_managed evidence requires pinned historical CPA")
+				}
+				legacyAddr := freeTestAddress(t)
+				_, legacyPort, _ := net.SplitHostPort(legacyAddr)
+				legacyConfig := map[string]any{"host": "127.0.0.1", "port": json.Number(legacyPort), "auth-dir": filepath.Join(sourceRoot, "auth"), "remote-management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true}, "api-keys": clientKeys, "plugins": map[string]any{"enabled": false}}
+				legacyConfigPath := filepath.Join(sourceRoot, "config.yaml")
+				writeTestJSON(t, legacyConfigPath, legacyConfig)
+				source = exec.Command(legacyCPAPath, "-config", legacyConfigPath)
+				source.Dir = sourceRoot
+				if err = source.Start(); err != nil {
+					t.Fatal(err)
+				}
+				defer killTestProcess(source)
+				waitClientModels(t, legacyAddr, clientKeys[0])
+				beforeLegacyTransition := directoryDigest(t, sourceRoot)
+
+				transitionRoot := filepath.Join(root, "legacy-v8-stage")
+				if err = os.Mkdir(transitionRoot, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err = os.Mkdir(filepath.Join(transitionRoot, "auth"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				_, stagePort, _ := net.SplitHostPort(adoptionSourceAddr)
+				stageConfig := map[string]any{"host": "127.0.0.1", "port": json.Number(stagePort), "auth-dir": filepath.Join(transitionRoot, "auth"), "remote-management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true}, "api-keys": clientKeys, "plugins": map[string]any{"enabled": false}}
+				stageConfigPath := filepath.Join(transitionRoot, "config.yaml")
+				writeTestJSON(t, stageConfigPath, stageConfig)
+				stagedSource := exec.Command(cpaPath, "-config", stageConfigPath)
+				stagedSource.Dir = transitionRoot
+				if err = stagedSource.Start(); err != nil {
+					t.Fatal(err)
+				}
+				defer killTestProcess(stagedSource)
+				waitTest(t, func() bool {
+					_, err := cpa.ReadV8AdoptionKeys(t.Context(), "http://"+adoptionSourceAddr, sourceKey)
+					return err == nil
+				})
+				if beforeLegacyTransition != directoryDigest(t, sourceRoot) {
+					t.Fatal("isolated staging-v8 transition changed historical source")
+				}
+				waitClientModels(t, legacyAddr, clientKeys[0])
+			} else {
+				_, sourcePort, _ := net.SplitHostPort(adoptionSourceAddr)
+				sourceConfig := map[string]any{"config-version": 8, "server": map[string]any{"host": "127.0.0.1", "port": json.Number(sourcePort)}, "oauth": map[string]any{"auth-dir": filepath.Join(sourceRoot, "auth")}, "management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true, "disable-auto-update-panel": true}, "access": map[string]any{"api-keys": clientKeys}, "plugins": map[string]any{"enabled": false}}
+				configPath := filepath.Join(sourceRoot, "config.yaml")
+				writeTestJSON(t, configPath, sourceConfig)
+				source = exec.Command(cpaPath, "-config", configPath)
+				source.Dir = sourceRoot
+				if err = source.Start(); err != nil {
+					t.Fatal(err)
+				}
+				defer killTestProcess(source)
+				waitTest(t, func() bool {
+					_, err := cpa.ReadV8AdoptionKeys(t.Context(), "http://"+adoptionSourceAddr, sourceKey)
+					return err == nil
+				})
 			}
-			configPath := filepath.Join(sourceRoot, "config.yaml")
-			writeTestJSON(t, configPath, sourceConfig)
-			source := exec.Command(cpaPath, "-config", configPath)
-			source.Dir = sourceRoot
-			if err = source.Start(); err != nil {
-				t.Fatal(err)
-			}
-			defer killTestProcess(source)
-			waitTest(t, func() bool {
-				_, err := cpa.ReadV8AdoptionKeys(t.Context(), "http://"+sourceAddr, sourceKey)
-				return err == nil
-			})
-			// Startup hashing precedes this preservation snapshot.
 			before := directoryDigest(t, sourceRoot)
 			manifest := filepath.Join(targetRoot, "artifact.json")
 			writeTestJSON(t, manifest, map[string]any{"schemaVersion": 1, "engine": "cpa", "version": "v8.0.13", "artifactId": "sha256:" + realCPA8BinarySHA256})
@@ -134,7 +178,7 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 			q := qualified()
 			q.StagingV8TransitionQualified = true
 			options := Options{Runtime: client, Protector: protector, Qualification: q, QualifiedArtifactID: model.RuntimeArtifactID("sha256:" + realCPA8BinarySHA256), AdoptionResources: acceptedKeys(), DestinationBaseURL: "http://" + targetAddr}
-			request := Request{Strategy: bootstrap.AdoptExisting, BaseURL: "http://" + sourceAddr, ManagementKey: sourceKey, AdoptSourceClass: class, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedArtifactID: options.QualifiedArtifactID}
+			request := Request{Strategy: bootstrap.AdoptExisting, BaseURL: "http://" + adoptionSourceAddr, ManagementKey: sourceKey, AdoptSourceClass: class, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedArtifactID: options.QualifiedArtifactID}
 			dbPath := filepath.Join(root, "manager.sqlite")
 			db, err := sqlite.Open(dbPath)
 			if err != nil {
@@ -224,11 +268,11 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 			if before != directoryDigest(t, sourceRoot) {
 				t.Fatal("Supervisor restart changed source")
 			}
-			keys, err := cpa.ReadV8AdoptionKeys(t.Context(), "http://"+sourceAddr, sourceKey)
-			if err != nil || len(keys) != 2 || keys[0] != "isolated-client-one" || keys[1] != "isolated-client-two" {
-				t.Fatal("source no longer usable")
+			keys, err := cpa.ReadV8AdoptionKeys(t.Context(), "http://"+adoptionSourceAddr, sourceKey)
+			if err != nil || len(keys) != 2 || keys[0] != clientKeys[0] || keys[1] != clientKeys[1] {
+				t.Fatal("qualified staging source no longer usable")
 			}
-			t.Logf("exact artifact=%s class=%s source-preserved=true destination-verified=true sqlite-reopen=true lost-stage-reply=true lost-start-reply=true runtime-restart-fenced=true production-acceptance=pending", options.QualifiedArtifactID, class)
+			t.Logf("exact artifact=%s class=%s source-preserved=true isolated-staging-v8=true destination-verified=true sqlite-reopen=true lost-stage-reply=true lost-start-reply=true runtime-restart-fenced=true production-acceptance=pending", options.QualifiedArtifactID, class)
 		})
 	}
 }
@@ -259,6 +303,22 @@ func killTestProcess(command *exec.Cmd) {
 		_ = command.Wait()
 	}
 }
+func waitClientModels(t *testing.T, address, key string) {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	waitTest(t, func() bool {
+		request, _ := http.NewRequest(http.MethodGet, "http://"+address+"/v1/models", nil)
+		request.Header.Set("Authorization", "Bearer "+key)
+		response, err := client.Do(request)
+		if err != nil {
+			return false
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		_ = response.Body.Close()
+		return response.StatusCode == http.StatusOK
+	})
+}
+
 func waitTest(t *testing.T, ready func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)

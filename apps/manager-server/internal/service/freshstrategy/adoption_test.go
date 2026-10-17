@@ -145,6 +145,15 @@ func TestAdoptionStagesEncryptedSnapshotBeforeDestinationAndVerifiesActualAuth(t
 			if err != nil || staged.Checkpoint.Stage != "staged" || !security.IsValidProtectedEnvelope(staged.AdoptionCiphertext) || len(runtime.stages) != 0 || len(runtime.starts) != 0 || sourceReads != 1 {
 				t.Fatalf("stage did effects: %v", err)
 			}
+			wantDecisions := []bootstrap.AdoptionResourceDecision{
+				acceptedKeys()[0],
+				manualAdoptionDecision("cpa-auth-files", bootstrap.Credentials, bootstrap.CPAAuthFiles, bootstrap.ReauthenticateAfterAdoption),
+				manualAdoptionDecision("cpa-configuration", bootstrap.CPAConfiguration, bootstrap.ManagementAPIFields, bootstrap.ReconfigureAfterAdoption),
+				manualAdoptionDecision("provider-runtime-state", bootstrap.ProviderRuntimeState, bootstrap.ProviderState, bootstrap.ReauthenticateAfterAdoption),
+			}
+			if !reflect.DeepEqual(staged.Checkpoint.AdoptionDecisions, wantDecisions) {
+				t.Fatalf("discovered source resources were not explicitly decided: %+v", staged.Checkpoint.AdoptionDecisions)
+			}
 			public, _ := json.Marshal(staged)
 			for _, secret := range []string{"source-client", "source-management", "never-migrate", "enc:v1"} {
 				if strings.Contains(string(public), secret) {

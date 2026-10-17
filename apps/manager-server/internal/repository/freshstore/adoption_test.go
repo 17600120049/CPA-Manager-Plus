@@ -32,7 +32,11 @@ func TestAdoptionSnapshotAndDestinationCommitShareExistingFreshCAS(t *testing.T)
 	snapshot, _ := protector.ProtectString("test-only encrypted native snapshot")
 	baseURL := "http://destination:8317"
 	digest := sha256.Sum256([]byte(baseURL))
-	checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.AdoptExisting, Stage: "staged", TargetIdentity: "owned-runtime", TargetGeneration: 4, TargetArtifactID: "sha256:" + strings.Repeat("a", 64), SourceIdentity: "external:sha256:" + strings.Repeat("b", 64), SourceClass: bootstrap.AdoptNetworkExisting, DestinationConnectionIdentity: "external:sha256:" + hex.EncodeToString(digest[:]), AdoptionDecisions: []bootstrap.AdoptionResourceDecision{{ResourceRef: "client-api-keys", Kind: bootstrap.APIKeys, Scope: bootstrap.ClientAPIKeys, ReadEvidenceRef: "preflight:keys-read", ReplayEvidenceRef: "preflight:keys-replay", VerifyEvidenceRef: "preflight:keys-verify", Qualification: bootstrap.CapabilityQualified, Disposition: bootstrap.Migrate}}}
+	checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.AdoptExisting, Stage: "staged", TargetIdentity: "owned-runtime", TargetGeneration: 4, TargetArtifactID: "sha256:" + strings.Repeat("a", 64), SourceIdentity: "external:sha256:" + strings.Repeat("b", 64), SourceClass: bootstrap.AdoptNetworkExisting, DestinationConnectionIdentity: "external:sha256:" + hex.EncodeToString(digest[:]), AdoptionDecisions: []bootstrap.AdoptionResourceDecision{
+		{ResourceRef: "client-api-keys", Kind: bootstrap.APIKeys, Scope: bootstrap.ClientAPIKeys, ReadEvidenceRef: "preflight:keys-read", ReplayEvidenceRef: "preflight:keys-replay", VerifyEvidenceRef: "preflight:keys-verify", Qualification: bootstrap.CapabilityQualified, Disposition: bootstrap.Migrate},
+		{ResourceRef: "cpa-auth-files", Kind: bootstrap.Credentials, Scope: bootstrap.CPAAuthFiles, Qualification: bootstrap.CapabilityPending, ManualAction: bootstrap.ReauthenticateAfterAdoption, Disposition: bootstrap.ManualAction},
+		{ResourceRef: "cpa-configuration", Kind: bootstrap.CPAConfiguration, Scope: bootstrap.ManagementAPIFields, Qualification: bootstrap.CapabilityPending, ManualAction: bootstrap.ReconfigureAfterAdoption, Disposition: bootstrap.ManualAction},
+	}}
 	if _, err = store.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error { r.Operation.Strategy = checkpoint; return nil }); !errors.Is(err, ErrNotFresh) {
 		t.Fatal("stage without protected snapshot accepted", err)
 	}

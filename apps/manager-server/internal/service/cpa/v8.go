@@ -66,12 +66,30 @@ func ReadV8Config(ctx context.Context, baseURL, managementKey string) (V8ConfigO
 	return readV8Config(ctx, baseURL, managementKey, nil)
 }
 
-// ReadV8AdoptionKeys is used only after resource-specific server qualification.
-// It shares the bounded safe-read transport; no source write or usage access.
-func ReadV8AdoptionKeys(ctx context.Context, baseURL, managementKey string) ([]string, error) {
+// V8AdoptionSnapshot contains only the bounded source inventory consumed by
+// Fresh Adoption. ResourceSections are stable category names; config values,
+// provider secrets, auth files, usage/history and logs never escape this read.
+type V8AdoptionSnapshot struct {
+	APIKeys          []string
+	ResourceSections []string
+}
+
+// ReadV8AdoptionSnapshot is used only after resource-specific server
+// qualification. It shares the bounded safe-read transport; no source write,
+// lifecycle mutation, usage/history access or queue consumption is performed.
+func ReadV8AdoptionSnapshot(ctx context.Context, baseURL, managementKey string) (V8AdoptionSnapshot, error) {
 	var keys []string
-	_, err := readV8Config(ctx, baseURL, managementKey, &keys)
-	return keys, err
+	observation, err := readV8Config(ctx, baseURL, managementKey, &keys)
+	if err != nil {
+		return V8AdoptionSnapshot{}, err
+	}
+	return V8AdoptionSnapshot{APIKeys: keys, ResourceSections: append([]string(nil), observation.ResourceSections...)}, nil
+}
+
+// ReadV8AdoptionKeys remains the narrow verification/test projection.
+func ReadV8AdoptionKeys(ctx context.Context, baseURL, managementKey string) ([]string, error) {
+	snapshot, err := ReadV8AdoptionSnapshot(ctx, baseURL, managementKey)
+	return snapshot.APIKeys, err
 }
 
 func readV8Config(ctx context.Context, baseURL, managementKey string, adoptionKeys *[]string) (V8ConfigObservation, error) {
@@ -206,7 +224,7 @@ func readV8ConfigWithClient(ctx context.Context, client *http.Client, baseURL, m
 		return V8ConfigObservation{}, V8InvalidConfig
 	}
 	observation := V8ConfigObservation{BaseURL: baseURL, ClientKeyCount: len(clientKeys)}
-	for _, section := range []string{"server", "access", "oauth", "providers", "api-keys", "routing", "client", "logging", "usage", "plugins"} {
+	for _, section := range []string{"server", "management", "access", "oauth", "providers", "api-keys", "routing", "client", "logging", "usage", "plugins", "observability"} {
 		if _, ok := sections[section]; ok {
 			observation.ResourceSections = append(observation.ResourceSections, section)
 			delete(sections, section)

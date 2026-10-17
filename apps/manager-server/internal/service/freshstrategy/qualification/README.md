@@ -56,3 +56,21 @@ source-only consumers with an available destination return
 synthetic acceptance is constructed in memory and is never part of this directory
 or the production binary. Controlled real-CPA CI observations are review inputs,
 not authority files and not automatic production acceptance.
+
+
+## Current acceptance-repair inputs
+
+The bounded destination execution chain is pinned by
+`runtime_destination_implementation.sha256`. The regression test recomputes
+that digest over the Manager Runtime destination client/model and the Supervisor
+destination/start/restart/recovery/private-protocol source files. The pin is part
+of `consumerImplementationSHA256`, so changing that execution chain invalidates
+any later accepted consumer record.
+
+Controlled real-process CI for `legacy_managed` must use a pinned real pre-v8
+CPA source that remains live and byte-preserved while the exact v8 candidate
+runs only against an isolated staging copy. Merely labelling a v8 process as
+`legacy_managed` is not transition evidence.
+
+All consumers remain pending until the exact-head observations from these
+repairs are independently reviewed. CI success alone never writes acceptance.

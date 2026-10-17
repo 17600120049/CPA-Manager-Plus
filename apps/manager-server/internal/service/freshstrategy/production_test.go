@@ -7,9 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -19,6 +22,41 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 )
+
+func TestRuntimeDestinationImplementationPinMatchesExecutionChain(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", "..", "..", "..", ".."))
+	paths := []string{
+		"apps/manager-server/internal/model/runtime.go",
+		"apps/manager-server/internal/model/runtime_destination.go",
+		"apps/manager-server/internal/service/runtime/destination.go",
+		"apps/manager-server/internal/service/runtime/embedded.go",
+		"apps/runtime-supervisor/cmd/cpamp-runtime-supervisor/runtime.go",
+		"apps/runtime-supervisor/internal/lifecycle/destination.go",
+		"apps/runtime-supervisor/internal/lifecycle/start.go",
+		"apps/runtime-supervisor/internal/lifecycle/restart.go",
+		"apps/runtime-supervisor/internal/lifecycle/recovery.go",
+		"apps/runtime-supervisor/internal/protocol/destination.go",
+		"apps/runtime-supervisor/internal/protocol/handler.go",
+	}
+	hash := sha256.New()
+	for _, name := range paths {
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.WriteString(hash, name+"\n")
+		_, _ = hash.Write(data)
+		_, _ = hash.Write([]byte("\n"))
+	}
+	pin, err := productionEvidence.ReadFile("qualification/runtime_destination_implementation.sha256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := hex.EncodeToString(hash.Sum(nil))
+	if strings.TrimSpace(string(pin)) != got {
+		t.Fatalf("Runtime destination implementation pin=%s current=%s", strings.TrimSpace(string(pin)), got)
+	}
+}
 
 func TestProductionRecordRemainsUnqualified(t *testing.T) {
 	consumers, err := loadProductionQualification(productionEvidence)

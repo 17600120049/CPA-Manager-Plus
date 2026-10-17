@@ -190,12 +190,17 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 }
 
 func consumerImplementationSHA256() string {
+	pin, err := productionEvidence.ReadFile("qualification/runtime_destination_implementation.sha256")
+	if err != nil || !hexDigest(strings.TrimSpace(string(pin)), 64) {
+		return ""
+	}
 	hash := sha256.New()
 	for _, name := range []string{"production.go", "service.go", "adoption.go"} {
 		data, _ := consumerImplementation.ReadFile(name) // Required at compile time.
 		_, _ = hash.Write(data)
 	}
 	_, _ = hash.Write([]byte(cpa.V8SafeReadImplementationSHA256()))
+	_, _ = hash.Write(pin)
 	return hex.EncodeToString(hash.Sum(nil))
 }
 

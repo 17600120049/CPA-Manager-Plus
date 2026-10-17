@@ -90,7 +90,18 @@ func TestFreshRouteCheckpointRequiresOwnedCompleteShape(t *testing.T) {
 func TestFreshStrategyCheckpointRequiresCompleteShape(t *testing.T) {
 	managed := FreshStrategyCheckpoint{Strategy: NewManaged, Stage: "staged", TargetIdentity: "runtime-one", TargetGeneration: 3, TargetArtifactID: "sha256:" + strings.Repeat("a", 64)}
 	external := FreshStrategyCheckpoint{Strategy: ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1}
-	for _, checkpoint := range []FreshStrategyCheckpoint{{}, managed, external} {
+	adopt := FreshStrategyCheckpoint{
+		Strategy: AdoptExisting, Stage: "staged", TargetIdentity: "runtime-adopt", TargetGeneration: 4,
+		TargetArtifactID: "sha256:" + strings.Repeat("c", 64),
+		SourceIdentity: "external:sha256:" + strings.Repeat("d", 64), SourceClass: AdoptNetworkExisting,
+		DestinationConnectionIdentity: "external:sha256:" + strings.Repeat("e", 64),
+		AdoptionDecisions: []AdoptionResourceDecision{
+			{ResourceRef: "client-api-keys", Kind: APIKeys, Scope: ClientAPIKeys, ReadEvidenceRef: "preflight:keys-read", ReplayEvidenceRef: "preflight:keys-replay", VerifyEvidenceRef: "preflight:keys-verify", Qualification: CapabilityQualified, Disposition: Migrate},
+			{ResourceRef: "cpa-auth-files", Kind: Credentials, Scope: CPAAuthFiles, Qualification: CapabilityPending, ManualAction: ReauthenticateAfterAdoption, Disposition: ManualAction},
+			{ResourceRef: "cpa-configuration", Kind: CPAConfiguration, Scope: ManagementAPIFields, Qualification: CapabilityPending, ManualAction: ReconfigureAfterAdoption, Disposition: ManualAction},
+		},
+	}
+	for _, checkpoint := range []FreshStrategyCheckpoint{{}, managed, external, adopt} {
 		op := ownedFresh()
 		op.AdminInitialized = true
 		op.Strategy = checkpoint
@@ -99,14 +110,14 @@ func TestFreshStrategyCheckpointRequiresCompleteShape(t *testing.T) {
 		}
 	}
 	for name, checkpoint := range map[string]FreshStrategyCheckpoint{
-		"stage alone":         {Stage: "committed"},
-		"target alone":        {TargetIdentity: "runtime-one"},
-		"generation alone":    {TargetGeneration: 1},
-		"artifact alone":      {TargetArtifactID: managed.TargetArtifactID},
-		"unsupported alone":   {Unsupported: []string{"unknown"}},
-		"strategy alone":      {Strategy: NewManaged},
-		"unknown strategy":    {Strategy: "unknown", Stage: "committed", TargetIdentity: "target", TargetGeneration: 1},
-		"unimplemented adopt": {Strategy: AdoptExisting, Stage: "committed", TargetIdentity: "target", TargetGeneration: 1},
+		"stage alone":       {Stage: "committed"},
+		"target alone":      {TargetIdentity: "runtime-one"},
+		"generation alone":  {TargetGeneration: 1},
+		"artifact alone":    {TargetArtifactID: managed.TargetArtifactID},
+		"unsupported alone": {Unsupported: []string{"unknown"}},
+		"strategy alone":    {Strategy: NewManaged},
+		"unknown strategy":  {Strategy: "unknown", Stage: "committed", TargetIdentity: "target", TargetGeneration: 1},
+		"partial adopt":     {Strategy: AdoptExisting, Stage: "committed", TargetIdentity: "target", TargetGeneration: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			op := ownedFresh()
@@ -117,7 +128,7 @@ func TestFreshStrategyCheckpointRequiresCompleteShape(t *testing.T) {
 			}
 		})
 	}
-	for _, checkpoint := range []FreshStrategyCheckpoint{managed, external} {
+	for _, checkpoint := range []FreshStrategyCheckpoint{managed, external, adopt} {
 		for name, mutate := range map[string]func(*FreshStrategyCheckpoint){
 			"missing target":     func(c *FreshStrategyCheckpoint) { c.TargetIdentity = "" },
 			"missing generation": func(c *FreshStrategyCheckpoint) { c.TargetGeneration = 0 },
@@ -134,5 +145,12 @@ func TestFreshStrategyCheckpointRequiresCompleteShape(t *testing.T) {
 				}
 			})
 		}
+	}
+	op := ownedFresh()
+	op.AdminInitialized = true
+	op.Strategy = adopt
+	op.Strategy.AdoptionDecisions = op.Strategy.AdoptionDecisions[:1]
+	if op.Validate() == nil {
+		t.Fatal("adoption checkpoint silently dropped discovered manual resources")
 	}
 }

@@ -347,3 +347,34 @@ then passed the complete suite, including LF/CRLF controls and the real
 HTTP/reopen test. All 22 checks on that head passed. The subsequent P1
 state-machine follow-up above requires verification on its own implementation
 head; the earlier green CI does not qualify that new change or either P0 gate.
+
+
+## Independent acceptance repair follow-up
+
+The latest repair batch addresses the three findings from the subsequent
+independent #995 review without promoting any production consumer:
+
+- Adoption converts the bounded v8 source-section inventory into explicit
+  existing-domain decisions. Client API keys are the sole `Migrate` resource;
+  CPA auth files, CPA configuration and provider runtime state remain explicit
+  `ManualAction` entries. A staged/committed checkpoint missing the required
+  auth/config decisions fails validation.
+- The real-process legacy case pins and starts an actual v7.0.12 Linux amd64
+  historical source, keeps it live and byte-preserved, and starts the exact
+  v8.0.13 candidate only against an isolated staging copy before destination
+  replay/verification. The previous legacy-shaped-v8 shortcut is no longer
+  treated as transition evidence.
+- `runtime_destination_implementation.sha256` pins the bounded
+  Manager-to-Supervisor destination execution source chain. A test recomputes
+  the digest from actual source files, and the pin is included in
+  `consumerImplementationSHA256`, so a destination/protocol/lifecycle semantic
+  change invalidates any later accepted consumer record.
+
+All four consumers deliberately remain `pending` in this repair batch. The new
+exact-head CI artifact must be independently reviewed before any
+`status: accepted`, case refs, acceptance hash or limitations are written.
+Previous-head green CI is not reused to self-promote the changed implementation.
+
+Scope check: no generic migration engine, second Runtime authority, dynamic
+attestation/trust store, source lifecycle takeover, historical usage/request/log
+migration, v0 fallback, Phase4-04 behavior or product UI is introduced.
