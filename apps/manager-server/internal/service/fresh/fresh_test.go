@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -61,6 +63,21 @@ func sessionFor(t *testing.T, s *Service) (Handoff, SessionResult) {
 		t.Fatal(err)
 	}
 	return h, r
+}
+
+func TestCheckpointURIKeepsWindowsDriveInLocalPath(t *testing.T) {
+	for _, path := range []string{"C:/Manager data/#fresh?/manager.sqlite", "/tmp/Manager data/#fresh?/manager.sqlite"} {
+		u, err := url.Parse(checkpointDataSourceName(path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u.Scheme != "file" || u.Host != "" || strings.TrimPrefix(u.Path, "/") != strings.TrimPrefix(path, "/") || u.Fragment != "" {
+			t.Fatalf("checkpoint URI changed local database path: %q -> %s", path, u)
+		}
+		if u.Query().Get("mode") != "ro" || !reflect.DeepEqual(u.Query()["_pragma"], []string{"query_only(1)", "busy_timeout(2000)"}) {
+			t.Fatalf("checkpoint URI lost read-only constraints: %s", u)
+		}
+	}
 }
 
 func TestClaimAdminContinuationAndRestart(t *testing.T) {

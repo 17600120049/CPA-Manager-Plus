@@ -180,3 +180,17 @@ package pass locally, including race/vet. The parser, schema, production gates
 and original fixture are unchanged; no test is skipped or weakened. Windows
 execution of the corrected suite and the HTTP/reopen test still requires CI on
 the follow-up head.
+
+At follow-up head `6fd49ff85fbe3eba10f05b8e593bcf24565dd380`, Windows
+[job 117303368962](https://github.com/seakee/CPA-Manager-Plus/actions/runs/39000801694/job/117303368962)
+passed both LF/CRLF controls and the full preflight ownership/qualification step.
+The newly executed HTTP/reopen test then failed at the real store reopen with
+`SQL logic error: out of memory (1)`. Fresh's checkpoint reader built
+`file://C:/...`, treating the Windows drive as a URI host. A platform-independent
+regression reproduced that incorrect local path before the fix. The checkpoint
+reader now uses the same leading-slash handling as the existing SQLite URI
+builders, retaining `mode=ro`, `query_only(1)` and its busy timeout. No fallback,
+test skip, writable inspection or qualification change is introduced. Windows
+execution on the corrected implementation remains required before CI acceptance.
+The corrected implementation passes local Manager `go test -count=1 ./...` and
+`go vet ./...`, plus Fresh service/command-entry `go test -race -count=1`.

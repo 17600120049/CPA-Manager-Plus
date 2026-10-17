@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
@@ -196,13 +197,7 @@ func pendingIdentity(r *processlock.FreshReceipt) *bootstrap.FreshIdentity {
 }
 
 func inspectCheckpoint(ctx context.Context, path string, pending *bootstrap.FreshIdentity) (freshstore.Record, error) {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
-	q := u.Query()
-	q.Set("mode", "ro")
-	q.Add("_pragma", "query_only(1)")
-	q.Add("_pragma", "busy_timeout(2000)")
-	u.RawQuery = q.Encode()
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", checkpointDataSourceName(path))
 	if err != nil {
 		return freshstore.Record{}, err
 	}
@@ -231,4 +226,19 @@ func inspectCheckpoint(ctx context.Context, path string, pending *bootstrap.Fres
 		return freshstore.Record{}, err
 	}
 	return freshstore.Record{}, nil
+}
+
+func checkpointDataSourceName(path string) string {
+	// Keep a Windows drive in the local file path, matching sqlite's URI handling.
+	uriPath := filepath.ToSlash(path)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	u := url.URL{Scheme: "file", Path: uriPath}
+	q := u.Query()
+	q.Set("mode", "ro")
+	q.Add("_pragma", "query_only(1)")
+	q.Add("_pragma", "busy_timeout(2000)")
+	u.RawQuery = q.Encode()
+	return u.String()
 }
