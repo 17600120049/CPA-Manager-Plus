@@ -10,6 +10,47 @@ This is an evidence audit, not a qualification authority or an acceptance record
 The plan's independent acceptance approves implementation scope; it does not
 accept the product's CPA artifact/profile or any resource replay capability.
 
+## Web-head reconciliation — 2026-10-17
+
+The original #995 worktree was clean and fast-forwarded from
+`d2493f31f2a67bcf6fad978e4c1be3d04ff23c9f` to the live branch head
+`983055163b32ae9db45ec01dd157e149035de265`. The Web commit tightens credential
+replay and connection-secret recovery; it adds no qualification acceptance or
+destination primitive. All five workflows passed on that exact head. The
+maintainer separately confirmed there is no additional independent acceptance
+record or actual adoption read/replay/verify evidence for this batch.
+
+The four original reports in the binding table below were revalidated with
+`validateEvidence`, including their referenced traces. Their report and manifest
+hashes still match the table. Both r3/r4 tool-identity files also match all six
+recorded source hashes at execution HEAD `7d8c98cb...`. The r5 catalogue and
+historical independent-review hashes above/below are unchanged. These checks
+establish retained integrity only; no candidate was rerun or newly accepted.
+
+The next acceptance work is bounded by the actual consumer, rather than the
+whole AQ/Beta matrix:
+
+| Consumer | Minimum independent decision still needed | Exact retained facts that cannot substitute for it |
+| --- | --- | --- |
+| New Managed | Accept the exact archive/binary/Runtime ArtifactID for this Fresh consumer, with applicable platform/config/mode limitations, evidence hashes, implementation heads and invalidation conditions | r2 normal/expiry and r3/r4 bind the bytes, but the historical review does not grant Fresh production-consumer acceptance |
+| Connect External | Accept the subset used by the single authenticated `GET /v8/management/config`, including the adapter's direct transport, URL/redirect/TLS/DNS/timeout/body/auth boundaries and explicit target/config/mode applicability | In the retained r3 control, only `AQ03-E01-real-auth` and `AQ03-E01-real-config` are `supported`; `AQ03-E02-real-auth`, `AQ03-E02-real-config` and missing/wrong-auth leaves are `limited`; root/prefix, private/remote, IPv6 and mediation leaves are `unknown` |
+| Adopt `network_existing` | Accept its source-read subset separately, and name at least the bounded resource set with exact read/replay/readback/effective-state evidence before authorizing `Migrate` | External config observation drops values and grants no replay/write authority. No inspected record accepts a resource for this consumer's destination replay/verify |
+| Adopt `legacy_managed` | The same resource decisions plus independent acceptance of the actual legacy-to-new-destination staging-v8 transition, preserving the source | r4 `AQ04-S02`–`S10` and `S11-reconcile` remain `limited`; `S01-snapshot`, `S11-lost-reply`, `S12-precommit`, `S13-restore`, `S14-fence`, `S15-tamper` and `S16-crash` remain `unknown` |
+
+This table is a review handoff, not a new profile definition or qualification
+ledger. Applicability must be explicit; accepting an External read does not
+accept network adoption, and network adoption does not accept a legacy
+transition. The current `ReadV8Config` observation is not a resource snapshot.
+Supervisor artifact staging owns executable bytes, not a separately configured
+adoption destination, resource replay or semantic verification. Neither can be
+relabelled as the missing primitive.
+
+With no newly accepted facts, this batch adds neither an empty production
+consumer record/loader nor speculative destination orchestration. The existing
+typed blockers and rejection of Adopt durable checkpoint shapes remain intact.
+Both gates remain **BLOCKED**, successful destination failure/restart/lost-reply
+acceptance remains unperformed, and #995 remains **Draft / NO-GO**.
+
 ## Evidence and independent acceptance are separate
 
 | Consumer fact | Existing evidence | Independently accepted scope | Unaccepted or missing prerequisite |
