@@ -62,6 +62,121 @@ type consumerRecord struct {
 	InvalidatedBy    []string                   `json:"invalidatedBy"`
 	AdoptionEvidence *adoptionResourceEvidence  `json:"adoptionEvidence,omitempty"`
 	LegacyTransition *legacyTransitionEvidence  `json:"legacyTransition,omitempty"`
+	Applicability    *consumerApplicability     `json:"applicability,omitempty"`
+}
+
+// consumerApplicability is the closed, runtime-enforceable scope of an accepted
+// consumer. An accepted record may claim only exactly the scope this build
+// enforces. Evidence restrictions the running code cannot check (target host
+// class, TLS/CA specifics, platform, topology, mediation) cannot be represented
+// here, so the consumer must remain pending instead of being accepted with
+// text-only limitations.
+type consumerApplicability struct {
+	Target               string `json:"target"`
+	SourceTransport      string `json:"sourceTransport"`
+	DestinationTransport string `json:"destinationTransport"`
+	Config               string `json:"config"`
+	Mode                 string `json:"mode"`
+}
+
+const (
+	applicabilityTargetExactV8Artifact           = "exact_cpa_v8_artifact"
+	applicabilityTargetBoundedV8Read             = "bounded_v8_management_surface"
+	applicabilityTargetManagerOwnedV8Destination = "manager_owned_exact_v8_destination"
+
+	applicabilitySourceNone       = "none"
+	applicabilitySourceV8Read     = "bounded_v8_direct_safe_read"
+	applicabilitySourceLegacyRead = "pinned_legacy_cpa_v7_0_12_direct_safe_read"
+
+	applicabilityDestinationExternal  = "external_connection"
+	applicabilityDestinationRuntimeV1 = "manager_runtime_private_v1"
+
+	applicabilityConfigV8         = "cpa_v8"
+	applicabilityConfigLegacyToV8 = "cpa_v7_0_12_source_to_cpa_v8_destination"
+
+	applicabilityModeNewManaged   = "fresh_new_managed"
+	applicabilityModeExternal     = "fresh_connect_external"
+	applicabilityModeAdoptNetwork = "fresh_adopt_network_existing"
+	applicabilityModeAdoptLegacy  = "fresh_adopt_legacy_managed"
+)
+
+// The following limitation keys are the only accepted limitations: each maps to
+// a fact this build actually enforces. Free-text or unenforced review prose is
+// not an authority and makes the consumer unqualified.
+const (
+	limitationManagementGenerationV8 = "management_generation_v8"
+	limitationExactArtifactIdentity  = "exact_cpa_v8_artifact_identity"
+	limitationReadOnlyBoundedRead    = "read_only_bounded_safe_read"
+	limitationDirectTransport        = "direct_transport_no_proxy_no_redirect"
+	limitationClientAPIKeysOnly      = "client_api_keys_only"
+	limitationLegacyProfile          = "legacy_source_profile_cpa_v7_0_12"
+	limitationSourcePreserved        = "source_preserved"
+	limitationGatewayPending         = "gateway_pending"
+)
+
+func requiredConsumerApplicability(key consumerKey) (consumerApplicability, bool) {
+	switch key {
+	case consumerKey{bootstrap.NewManaged, bootstrap.AdoptSourceNone}:
+		return consumerApplicability{
+			Target: applicabilityTargetExactV8Artifact, SourceTransport: applicabilitySourceNone,
+			DestinationTransport: applicabilityDestinationRuntimeV1, Config: applicabilityConfigV8,
+			Mode: applicabilityModeNewManaged,
+		}, true
+	case consumerKey{bootstrap.ConnectExternal, bootstrap.AdoptSourceNone}:
+		return consumerApplicability{
+			Target: applicabilityTargetBoundedV8Read, SourceTransport: applicabilitySourceV8Read,
+			DestinationTransport: applicabilityDestinationExternal, Config: applicabilityConfigV8,
+			Mode: applicabilityModeExternal,
+		}, true
+	case consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting}:
+		return consumerApplicability{
+			Target: applicabilityTargetManagerOwnedV8Destination, SourceTransport: applicabilitySourceV8Read,
+			DestinationTransport: applicabilityDestinationRuntimeV1, Config: applicabilityConfigV8,
+			Mode: applicabilityModeAdoptNetwork,
+		}, true
+	case consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged}:
+		return consumerApplicability{
+			Target: applicabilityTargetManagerOwnedV8Destination, SourceTransport: applicabilitySourceLegacyRead,
+			DestinationTransport: applicabilityDestinationRuntimeV1, Config: applicabilityConfigLegacyToV8,
+			Mode: applicabilityModeAdoptLegacy,
+		}, true
+	}
+	return consumerApplicability{}, false
+}
+
+func requiredConsumerLimitations(key consumerKey) []string {
+	switch key {
+	case consumerKey{bootstrap.NewManaged, bootstrap.AdoptSourceNone}:
+		return []string{limitationManagementGenerationV8, limitationExactArtifactIdentity, limitationGatewayPending}
+	case consumerKey{bootstrap.ConnectExternal, bootstrap.AdoptSourceNone}:
+		return []string{limitationManagementGenerationV8, limitationReadOnlyBoundedRead, limitationDirectTransport, limitationGatewayPending}
+	case consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting}:
+		return []string{limitationManagementGenerationV8, limitationReadOnlyBoundedRead, limitationDirectTransport, limitationClientAPIKeysOnly, limitationSourcePreserved, limitationGatewayPending}
+	case consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged}:
+		return []string{limitationManagementGenerationV8, limitationReadOnlyBoundedRead, limitationDirectTransport, limitationClientAPIKeysOnly, limitationLegacyProfile, limitationSourcePreserved, limitationGatewayPending}
+	}
+	return nil
+}
+
+// sameLimitationSet requires exactly the code-enforced limitations: a missing,
+// extra, duplicate or free-text limitation cannot be enforced at runtime.
+func sameLimitationSet(actual, expected []string) bool {
+	if len(actual) != len(expected) {
+		return false
+	}
+	seen := make(map[string]bool, len(actual))
+	for _, limitation := range actual {
+		if seen[limitation] {
+			return false
+		}
+		seen[limitation] = true
+	}
+	for _, limitation := range expected {
+		if !seen[limitation] {
+			return false
+		}
+	}
+	return true
 }
 
 // These must be independently accepted cases in the consumer's pinned report,
@@ -143,20 +258,24 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 		}
 		switch consumer.Status {
 		case "pending":
-			if consumer.AcceptanceSHA256 != "" || consumer.LegacyTransition != nil {
+			if consumer.AcceptanceSHA256 != "" || consumer.LegacyTransition != nil ||
+				consumer.Applicability != nil || len(consumer.Limitations) != 0 {
 				return nil, errProductionQualification
 			}
 		case "accepted":
 			// Acceptance is explicit and separate from an AQ PASS. The pinned
 			// original independent review must be included in this build.
-			if _, err := pinnedEvidence(files, consumer.AcceptanceSHA256, ".md"); err != nil || len(consumer.Limitations) == 0 ||
+			if _, err := pinnedEvidence(files, consumer.AcceptanceSHA256, ".md"); err != nil ||
 				record.ImplementationSHA256 != consumerImplementationSHA256() {
 				return nil, errProductionQualification
 			}
-			for _, limitation := range consumer.Limitations {
-				if strings.TrimSpace(limitation) == "" {
-					return nil, errProductionQualification
-				}
+			// Acceptance is only valid for exactly the runtime-enforced scope.
+			// A scope the running build cannot check, or any limitation outside
+			// the enforced set, must keep the consumer pending.
+			applicability, enforced := requiredConsumerApplicability(key)
+			if !enforced || consumer.Applicability == nil || *consumer.Applicability != applicability ||
+				!sameLimitationSet(consumer.Limitations, requiredConsumerLimitations(key)) {
+				return nil, errProductionQualification
 			}
 			for _, evidence := range consumer.Evidence {
 				if err := verifyProfileEvidence(files, record, evidence); err != nil {

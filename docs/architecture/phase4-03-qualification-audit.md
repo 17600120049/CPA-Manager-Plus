@@ -462,3 +462,50 @@ repair closes them without accepting any consumer:
 Scope check: no version negotiation/range, no v0/v8 fallback, no new workflow,
 no second qualification ledger, no migration engine, no Runtime/Supervisor
 authority change and no Phase4-04 behavior is introduced.
+
+## Accepted-applicability enforcement (P1)
+
+The loader previously accepted a consumer on `status: accepted`, a pinned
+review hash and any non-empty `limitations` strings. Accepted evidence can be
+narrower than the implementation (target class, transport, config or mode), so
+free text could not prevent an accepted qualification from being used outside
+the reviewed scope. This repair makes the accepted scope machine-checkable and
+keeps every consumer that needs a non-checkable restriction pending.
+
+Phase 1 classification of applicability constraints:
+
+1. **Already enforced by the build:** v8 management generation and config
+   shape; exact CPA v8 archive/binary/ArtifactID for New Managed and Adopt;
+   bounded direct safe read (no proxy/redirect/retry, 5 s, 32 KiB headers,
+   1 MiB body, identity/gzip, JSON content type); exact legacy v7.0.12
+   `X-CPA-VERSION` plus pinned archive/binary; client API keys as the only
+   adopted resource; preserved source; Manager-owned exact-v8 destination;
+   Runtime identity/generation/artifact fencing; Gateway pending; consumer
+   isolation by strategy/source class; persisted Fresh operation revalidation.
+2. **Made enforceable with the existing consumer record:** a closed
+   `applicability` tuple (target, source transport, destination transport,
+   config, mode) and a closed limitation vocabulary whose keys map to the
+   checks above. An accepted consumer must declare exactly the enforced tuple
+   and exactly the enforced limitation set; missing, extra, duplicate,
+   free-text or unenforceable limitations fail the whole record.
+3. **Not enforceable by this Manager, therefore a pending blocker:** target
+   host/topology classes beyond the bounded read (loopback/private/remote,
+   IPv6, reverse proxy, mediation); TLS/CA/mTLS specifics beyond normal
+   verification; CPA platform/OS/arch beyond the artifact bytes; CPA config
+   semantics beyond the checked schema; deployment/operational modes the
+   Manager does not observe; time-bound review validity. These cannot be
+   represented as accepted applicability, so a review relying on them must
+   keep the consumer pending rather than record an unenforced limitation.
+
+The loader now rejects `accepted` consumers without the exact enforced
+applicability/limitations and rejects `pending` consumers that claim either.
+Mode/target mismatches are tested to fail before any source read, destination
+staging or Runtime mutation, including for a persisted staged operation after a
+restart. All four production consumers remain `pending`: the retained evidence
+does not independently accept the exact enforceable scope, legacy transition
+evidence is not independently accepted, and the network-adoption resource cases
+are not accepted.
+
+Scope check: no policy engine, version range, environment probing, new ledger,
+runtime authority, resource type or Phase4-04 behavior is introduced. The
+change is a closed, code-derived applicability check in the existing loader.

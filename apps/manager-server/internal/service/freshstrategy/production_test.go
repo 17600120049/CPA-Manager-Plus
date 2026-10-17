@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -21,6 +23,7 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 )
 
@@ -67,6 +70,19 @@ func TestProductionRecordRemainsUnqualified(t *testing.T) {
 	for key, consumer := range consumers {
 		if consumer.Qualification.ArtifactQualified || consumer.Qualification.RequiredProfileQualified || consumer.Qualification.StagingV8TransitionQualified || consumer.ArtifactID != "" {
 			t.Fatalf("pending evidence promoted %v: %+v", key, consumer)
+		}
+	}
+	data, err := productionEvidence.ReadFile("qualification/consumer.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record productionRecord
+	if err = json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	for _, consumer := range record.Consumers {
+		if consumer.Status != "pending" || consumer.Applicability != nil || len(consumer.Limitations) != 0 {
+			t.Fatalf("compiled consumer is not pending: %+v", consumer)
 		}
 	}
 }
@@ -122,7 +138,13 @@ func acceptedConsumerFixture(t *testing.T, consumerIndex int) (productionRecord,
 	consumer := &record.Consumers[consumerIndex]
 	consumer.Status = "accepted"
 	consumer.AcceptanceSHA256 = storeSyntheticEvidence(files, []byte("Synthetic independent acceptance for loader tests only.\n"), ".md")
-	consumer.Limitations = []string{"synthetic test only; no production acceptance"}
+	key := consumerKey{consumer.Strategy, consumer.SourceClass}
+	applicability, enforced := requiredConsumerApplicability(key)
+	if !enforced {
+		t.Fatalf("no enforced applicability for %v", key)
+	}
+	consumer.Applicability = &applicability
+	consumer.Limitations = slices.Clone(requiredConsumerLimitations(key))
 	for i := range consumer.Evidence {
 		evidence := &consumer.Evidence[i]
 		caseRef := "test-" + evidence.Profile
@@ -359,9 +381,39 @@ func TestProductionLoaderBindsArtifactProfileEvidenceAndHead(t *testing.T) {
 			e := &r.Consumers[0].Evidence[0]
 			e.CaseRefs = append(e.CaseRefs, e.CaseRefs[0])
 		},
-		"missing acceptance":     func(r *productionRecord, _ fstest.MapFS) { r.Consumers[0].AcceptanceSHA256 = "" },
-		"missing limitations":    func(r *productionRecord, _ fstest.MapFS) { r.Consumers[0].Limitations = []string{} },
-		"missing invalidation":   func(r *productionRecord, _ fstest.MapFS) { r.Consumers[0].InvalidatedBy = []string{} },
+		"missing acceptance":   func(r *productionRecord, _ fstest.MapFS) { r.Consumers[0].AcceptanceSHA256 = "" },
+		"missing limitations":  func(r *productionRecord, _ fstest.MapFS) { r.Consumers[0].Limitations = []string{} },
+		"missing invalidation": func(r *productionRecord, _ fstest.MapFS) { r.Consumers[0].InvalidatedBy = []string{} },
+		"missing applicability": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Applicability = nil
+		},
+		"applicability target": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Applicability.Target = applicabilityTargetBoundedV8Read
+		},
+		"applicability source transport": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Applicability.SourceTransport = applicabilitySourceV8Read
+		},
+		"applicability destination transport": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Applicability.DestinationTransport = applicabilityDestinationExternal
+		},
+		"applicability config": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Applicability.Config = applicabilityConfigLegacyToV8
+		},
+		"applicability mode": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Applicability.Mode = applicabilityModeAdoptNetwork
+		},
+		"limitations free text": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Limitations = append(r.Consumers[0].Limitations, "only supported on linux amd64")
+		},
+		"limitations duplicate": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Limitations = append(r.Consumers[0].Limitations, r.Consumers[0].Limitations[0])
+		},
+		"limitations incomplete": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Limitations = r.Consumers[0].Limitations[1:]
+		},
+		"limitations unenforceable": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[0].Limitations = []string{limitationGatewayPending, "private_network_targets_only"}
+		},
 		"duplicate consumer":     func(r *productionRecord, _ fstest.MapFS) { r.Consumers[1] = r.Consumers[0] },
 		"missing legacy profile": func(r *productionRecord, _ fstest.MapFS) { r.Consumers[3].Evidence = r.Consumers[3].Evidence[1:] },
 		"missing original manifest": func(r *productionRecord, f fstest.MapFS) {
@@ -564,6 +616,8 @@ func TestProductionConsumerQualificationDoesNotCrossStrategiesOrSourceClasses(t 
 			record.Consumers[i].Status = "pending"
 			record.Consumers[i].AcceptanceSHA256 = ""
 			record.Consumers[i].LegacyTransition = nil
+			record.Consumers[i].Applicability = nil
+			record.Consumers[i].Limitations = []string{}
 			writeSyntheticRecord(t, files, record)
 			consumers, err = loadProductionQualification(files)
 			if err != nil || consumers[key].Qualification.ValidateForStrategy(key.Strategy, key.Class) == nil {
@@ -597,5 +651,242 @@ func TestLoadedArtifactUsesExistingExactRuntimeFence(t *testing.T) {
 	before := op
 	if result, err := service.Execute(context.Background(), op, request); err == nil || result.Checkpoint.Stage == "committed" || len(runtime.starts) != 1 || !reflect.DeepEqual(op, before) {
 		t.Fatal("changed runtime artifact accepted")
+	}
+}
+
+func TestPendingConsumerCannotClaimApplicabilityOrLimitations(t *testing.T) {
+	data, err := productionEvidence.ReadFile("qualification/consumer.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*productionRecord){
+		"applicability": func(r *productionRecord) {
+			applicability, _ := requiredConsumerApplicability(consumerKey{bootstrap.NewManaged, bootstrap.AdoptSourceNone})
+			r.Consumers[0].Applicability = &applicability
+		},
+		"limitations": func(r *productionRecord) {
+			r.Consumers[0].Limitations = requiredConsumerLimitations(consumerKey{bootstrap.NewManaged, bootstrap.AdoptSourceNone})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var record productionRecord
+			if json.Unmarshal(data, &record) != nil {
+				t.Fatal("compiled pending record is not decodable")
+			}
+			mutate(&record)
+			files := fstest.MapFS{"qualification/consumer.json": &fstest.MapFile{Data: encodeJSON(t, record)}}
+			if consumers, err := loadProductionQualification(files); err == nil || consumers != nil {
+				t.Fatal("pending consumer claimed accepted applicability")
+			}
+		})
+	}
+}
+
+func TestAcceptedConsumerScopeCannotCrossModesOrTargets(t *testing.T) {
+	scenarios := []struct {
+		name    string
+		fixture func(*testing.T, int) (productionRecord, fstest.MapFS)
+		index   int
+		request func(string) Request
+		blocker string
+	}{
+		{
+			name: "new_managed_cannot_connect_external", fixture: acceptedConsumerFixture, index: 0,
+			request: func(source string) Request {
+				return Request{Strategy: bootstrap.ConnectExternal, BaseURL: source, ManagementKey: "private-source"}
+			},
+			blocker: "required_v8_profile_qualification_required",
+		},
+		{
+			name: "connect_external_cannot_adopt_network", fixture: acceptedConsumerFixture, index: 1,
+			request: func(source string) Request {
+				return Request{Strategy: bootstrap.AdoptExisting, AdoptSourceClass: bootstrap.AdoptNetworkExisting, BaseURL: source, ManagementKey: "private-source"}
+			},
+			blocker: "adoption_source_qualification_required",
+		},
+		{
+			name: "connect_external_cannot_adopt_legacy", fixture: acceptedConsumerFixture, index: 1,
+			request: func(source string) Request {
+				return Request{Strategy: bootstrap.AdoptExisting, AdoptSourceClass: bootstrap.AdoptLegacyManaged, BaseURL: source, ManagementKey: "private-source"}
+			},
+			blocker: "adoption_source_qualification_required",
+		},
+		{
+			name: "network_cannot_adopt_legacy", fixture: acceptedConsumerFixture, index: 2,
+			request: func(source string) Request {
+				return Request{Strategy: bootstrap.AdoptExisting, AdoptSourceClass: bootstrap.AdoptLegacyManaged, BaseURL: source, ManagementKey: "private-source"}
+			},
+			blocker: "adoption_source_qualification_required",
+		},
+		{
+			name: "legacy_cannot_adopt_network", fixture: acceptedConsumerFixture, index: 3,
+			request: func(source string) Request {
+				return Request{Strategy: bootstrap.AdoptExisting, AdoptSourceClass: bootstrap.AdoptNetworkExisting, BaseURL: source, ManagementKey: "private-source"}
+			},
+			blocker: "adoption_source_qualification_required",
+		},
+	}
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			record, files := scenario.fixture(t, scenario.index)
+			consumers, err := loadProductionQualification(files)
+			if err != nil {
+				t.Fatalf("accepted fixture: %v", err)
+			}
+			var sourceCalls atomic.Int32
+			source := newScopeTestServer(t, &sourceCalls)
+			runtime, target := newScopeRuntime(t, record.ArtifactID)
+			protector, _ := security.NewProtector([]byte("test-only-applicability-key"))
+			service := &Service{options: Options{Runtime: runtime, Protector: protector, DestinationBaseURL: target.URL}, production: true, consumers: consumers}
+			request := scenario.request(source.URL)
+			request.ExpectedRuntimeIdentity, request.ExpectedRuntimeGeneration, request.ExpectedArtifactID = runtime.status.Identity, runtime.status.Generation, record.ArtifactID
+			assertScopeBlocked(t, service, request, &sourceCalls, runtime, scenario.blocker)
+		})
+	}
+	// A matching mode with a mismatched target artifact must fail before the
+	// source read, destination staging or Runtime mutation.
+	t.Run("adoption_target_mismatch", func(t *testing.T) {
+		record, files := resourceConsumerFixture(t, 2)
+		consumers, err := loadProductionQualification(files)
+		if err != nil {
+			t.Fatalf("accepted fixture: %v", err)
+		}
+		var sourceCalls atomic.Int32
+		source := newScopeTestServer(t, &sourceCalls)
+		runtime, target := newScopeRuntime(t, record.ArtifactID)
+		protector, _ := security.NewProtector([]byte("test-only-applicability-key"))
+		service := &Service{options: Options{Runtime: runtime, Protector: protector, DestinationBaseURL: target.URL}, production: true, consumers: consumers}
+		request := Request{Strategy: bootstrap.AdoptExisting, AdoptSourceClass: bootstrap.AdoptNetworkExisting,
+			BaseURL: source.URL, ManagementKey: "private-source",
+			ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: runtime.status.Generation,
+			ExpectedArtifactID: model.RuntimeArtifactID("sha256:" + strings.Repeat("b", 64))}
+		assertScopeBlocked(t, service, request, &sourceCalls, runtime, "managed_target_identity_mismatch")
+	})
+}
+
+func TestPersistedAdoptionOperationRechecksApplicability(t *testing.T) {
+	record, files := resourceConsumerFixture(t, 2)
+	consumers, err := loadProductionQualification(files)
+	if err != nil {
+		t.Fatalf("accepted fixture: %v", err)
+	}
+	var sourceCalls atomic.Int32
+	source := newScopeTestServer(t, &sourceCalls)
+	runtime, target := newScopeRuntime(t, record.ArtifactID)
+	protector, _ := security.NewProtector([]byte("test-only-applicability-key"))
+	options := Options{Runtime: runtime, Protector: protector, DestinationBaseURL: target.URL}
+	request := Request{Strategy: bootstrap.AdoptExisting, AdoptSourceClass: bootstrap.AdoptNetworkExisting,
+		BaseURL: source.URL, ManagementKey: "private-source",
+		ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: runtime.status.Generation,
+		ExpectedArtifactID: record.ArtifactID}
+	service := &Service{options: options, production: true, consumers: consumers}
+	staged, err := service.Execute(t.Context(), operation(), request)
+	if err != nil || staged.Checkpoint.Stage != "staged" || sourceCalls.Load() != 1 || len(runtime.stages) != 0 || len(runtime.starts) != 0 {
+		t.Fatalf("stage: %+v %v source=%d", staged, err, sourceCalls.Load())
+	}
+	op := operation()
+	op.Strategy = staged.Checkpoint
+	request.AdoptionCiphertext = staged.AdoptionCiphertext
+	// A restart that no longer grants this consumer must re-check the persisted
+	// operation instead of trusting its staged checkpoint.
+	withdrawn := make(map[consumerKey]qualifiedConsumer)
+	restarted := &Service{options: options, production: true, consumers: withdrawn}
+	result, err := restarted.Execute(t.Context(), op, request)
+	var blocker *Blocker
+	if !errors.As(err, &blocker) || blocker.Code != "adoption_source_qualification_required" || result.Checkpoint.Strategy != "" ||
+		sourceCalls.Load() != 1 || len(runtime.stages) != 0 || len(runtime.starts) != 0 {
+		t.Fatalf("persisted scope bypassed recheck: result=%+v err=%v source=%d", result, err, sourceCalls.Load())
+	}
+}
+
+func newScopeTestServer(t *testing.T, calls *atomic.Int32) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v8/management/config":
+			_, _ = w.Write([]byte(`{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"auth"},"access":{"api-keys":["source-client"]}}`))
+		case "/v0/management/config":
+			w.Header().Set("X-CPA-VERSION", "7.0.12")
+			_, _ = w.Write([]byte(`{"tls":{"enable":false},"api-keys":["source-client"]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func newScopeRuntime(t *testing.T, artifact model.RuntimeArtifactID) (*adoptionRuntime, *httptest.Server) {
+	t.Helper()
+	runtime := &adoptionRuntime{managedRuntime: managedRuntime{status: model.RuntimeObservedStatus{
+		Identity: "destination-runtime", Generation: 3, ProtocolVersion: "v1", State: model.RuntimeStateReady,
+		Capabilities:          model.RuntimeCapabilities{model.RuntimeCapabilityStart, model.RuntimeCapabilityStageDestination},
+		ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact},
+	}}}
+	target := httptest.NewServer(http.HandlerFunc(runtime.target))
+	t.Cleanup(target.Close)
+	return runtime, target
+}
+
+func assertScopeBlocked(t *testing.T, service *Service, request Request, sourceCalls *atomic.Int32, runtime *adoptionRuntime, want string) {
+	t.Helper()
+	result, err := service.Execute(t.Context(), operation(), request)
+	var blocker *Blocker
+	if !errors.As(err, &blocker) || blocker.Code != want || result.Checkpoint.Strategy != "" ||
+		sourceCalls.Load() != 0 || len(runtime.stages) != 0 || len(runtime.starts) != 0 {
+		t.Fatalf("scope mismatch %s: result=%+v err=%v source=%d stage=%d start=%d", want, result, err, sourceCalls.Load(), len(runtime.stages), len(runtime.starts))
+	}
+}
+
+func TestProductionLoaderRequiresExactApplicabilityForEveryConsumer(t *testing.T) {
+	alternatives := map[string][]string{
+		"target":               {applicabilityTargetExactV8Artifact, applicabilityTargetBoundedV8Read, applicabilityTargetManagerOwnedV8Destination},
+		"sourceTransport":      {applicabilitySourceNone, applicabilitySourceV8Read, applicabilitySourceLegacyRead},
+		"destinationTransport": {applicabilityDestinationExternal, applicabilityDestinationRuntimeV1},
+		"config":               {applicabilityConfigV8, applicabilityConfigLegacyToV8},
+		"mode":                 {applicabilityModeNewManaged, applicabilityModeExternal, applicabilityModeAdoptNetwork, applicabilityModeAdoptLegacy},
+	}
+	other := func(values []string, expected string) string {
+		for _, value := range values {
+			if value != expected {
+				return value
+			}
+		}
+		return expected + "-unexpected"
+	}
+	for index := 0; index < 4; index++ {
+		for field, values := range alternatives {
+			t.Run(fmt.Sprintf("consumer-%d/%s", index, field), func(t *testing.T) {
+				record, files := acceptedConsumerFixture(t, index)
+				consumer := &record.Consumers[index]
+				switch field {
+				case "target":
+					consumer.Applicability.Target = other(values, consumer.Applicability.Target)
+				case "sourceTransport":
+					consumer.Applicability.SourceTransport = other(values, consumer.Applicability.SourceTransport)
+				case "destinationTransport":
+					consumer.Applicability.DestinationTransport = other(values, consumer.Applicability.DestinationTransport)
+				case "config":
+					consumer.Applicability.Config = other(values, consumer.Applicability.Config)
+				case "mode":
+					consumer.Applicability.Mode = other(values, consumer.Applicability.Mode)
+				}
+				writeSyntheticRecord(t, files, record)
+				if consumers, err := loadProductionQualification(files); err == nil || consumers != nil {
+					t.Fatalf("consumer %d accepted a mismatched %s scope", index, field)
+				}
+			})
+		}
+		t.Run(fmt.Sprintf("consumer-%d/limitations", index), func(t *testing.T) {
+			record, files := acceptedConsumerFixture(t, index)
+			consumer := &record.Consumers[index]
+			consumer.Limitations = append(consumer.Limitations, "review-only-restriction")
+			writeSyntheticRecord(t, files, record)
+			if consumers, err := loadProductionQualification(files); err == nil || consumers != nil {
+				t.Fatalf("consumer %d accepted an unenforced limitation", index)
+			}
+		})
 	}
 }

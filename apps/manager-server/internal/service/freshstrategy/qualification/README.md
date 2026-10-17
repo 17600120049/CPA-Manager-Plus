@@ -15,10 +15,42 @@ observation can change it in a running Manager.
 
 To accept a consumer, independent review must first identify the exact original
 case subset and explicitly accept its applicability to that consumer's actual
-implementation and supported target/transport/config/mode combinations. Accepting
-an observation or an AQ profile name alone is insufficient. Any accepted limits
-must be consistent with the implementation; text cannot impose an unenforced
-runtime restriction. Review must separately accept legacy staging transition.
+implementation. Acceptance is valid only for exactly the scope this build can
+enforce: `applicability` must equal the enforced target/source-transport/
+destination-transport/config/mode tuple, and `limitations` must exactly equal
+the closed enforced set for that consumer. Free-text, missing, extra, duplicate
+or unenforced limitations make the record unqualified. A review that needs a
+restriction outside this closed scope must leave the consumer pending. Review
+must separately accept legacy staging transition.
+
+### Runtime-enforced applicability
+
+| Dimension | Enforced values |
+| --- | --- |
+| `target` | `exact_cpa_v8_artifact`, `bounded_v8_management_surface`, `manager_owned_exact_v8_destination` |
+| `sourceTransport` | `none`, `bounded_v8_direct_safe_read`, `pinned_legacy_cpa_v7_0_12_direct_safe_read` |
+| `destinationTransport` | `external_connection`, `manager_runtime_private_v1` |
+| `config` | `cpa_v8`, `cpa_v7_0_12_source_to_cpa_v8_destination` |
+| `mode` | `fresh_new_managed`, `fresh_connect_external`, `fresh_adopt_network_existing`, `fresh_adopt_legacy_managed` |
+
+The enforced limitation vocabulary is `management_generation_v8`,
+`exact_cpa_v8_artifact_identity`, `read_only_bounded_safe_read`,
+`direct_transport_no_proxy_no_redirect`, `client_api_keys_only`,
+`legacy_source_profile_cpa_v7_0_12`, `source_preserved` and `gateway_pending`,
+with a fixed set per consumer. These keys map to facts the code actually checks;
+they are not review prose.
+
+The following evidence restrictions cannot be checked by the running Manager and
+therefore cannot be represented as accepted applicability. A review that relies
+on one of them must keep the consumer pending:
+
+- target host/topology class (loopback/private/remote, IPv6, reverse proxy or
+  mediation) beyond the bounded safe-read operation itself;
+- TLS/CA/mTLS specifics beyond normal certificate verification;
+- CPA process platform/OS/arch beyond the exact artifact bytes;
+- CPA configuration semantics beyond the checked config schema;
+- deployment/operational modes the Manager does not observe;
+- time-bound review validity.
 
 Only then may the reviewed record name `status: accepted`, its original profile/
 case/report/manifest/runner-HEAD bindings, independent review SHA-256, explicit
@@ -91,13 +123,16 @@ reference and never become durable upstream-controlled identities. The
 inventory and its decisions are written through the existing Fresh CAS before
 any destination mutation and are immutable afterwards.
 
-All current entries still omit `adoptionEvidence` and remain pending. Missing
-destination capability retains `adoption_destination_staging_required`; accepted
-source-only consumers with an available destination return
-`adoption_resource_qualification_required` before source discovery. Test-only
-synthetic acceptance is constructed in memory and is never part of this directory
-or the production binary. Controlled real-CPA CI observations are review inputs,
-not authority files and not automatic production acceptance.
+All current entries still omit `applicability`, `adoptionEvidence` and accepted
+limitations, and remain pending. Missing destination capability retains
+`adoption_destination_staging_required`; accepted source-only consumers with an
+available destination return `adoption_resource_qualification_required` before
+source discovery. Any target/transport/config/mode mismatch has no consumer entry
+and therefore fails before a source probe, destination staging or Runtime
+mutation. Test-only synthetic acceptance is constructed in memory and is never
+part of this directory or the production binary. Controlled real-CPA CI
+observations are review inputs, not authority files and not automatic production
+acceptance.
 
 
 ## Current acceptance-repair inputs
