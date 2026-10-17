@@ -509,3 +509,43 @@ are not accepted.
 Scope check: no policy engine, version range, environment probing, new ledger,
 runtime authority, resource type or Phase4-04 behavior is introduced. The
 change is a closed, code-derived applicability check in the existing loader.
+
+## Adoption resource evidence contract (G5/G7 repair)
+
+The previous `adoptionEvidence` required three case refs to exist in the
+retained r4 `CPA8-STAGE-r1` report. The real CI read/replay/verify evidence is
+not an r4 case, so it could not be expressed without falsely editing r4. The
+contract now binds an independent, class-specific chain:
+
+- checked-in immutable resource manifest selecting `CPA8-ADOPT-RESOURCE-r1` and
+  exactly three cases with distinct proof scopes: `source-read`,
+  `destination-replay`, `destination-verify`;
+- per-run sanitized report binding the manifest, exact runner HEAD/tree, target
+  artifact observation and three completed/passing/supported results;
+- one sanitized trace per case with `runId`/`caseRef`/`sourceClass` and the
+  compiled-consumer digest; replay and verify facts are separate fields, so a
+  read cannot authorize replay and replay cannot authorize verification;
+- class-specific source binding: network requires `sourceProfile: cpa_v8`; legacy
+  requires the pinned v7.0.12 archive/binary and its own read trace.
+
+The real CPA + Supervisor integration test emits the network and legacy resource
+chains after all source/replay/readback/lost-reply/reopen/restart-fence
+assertions. The legacy staging-v8 transition remains a separate checked-in
+manifest/report/observation chain. A network resource chain cannot satisfy a
+legacy consumer (and vice versa), and a resource chain cannot satisfy the
+transition: these are four independent proofs, and the loader grants only the
+fact whose exact chain validated. The r4 `AQ04-S*` cases remain background
+evidence, not resource replay authority.
+
+Checked-in manifests:
+
+- network `qualification/evidence/563ef299810ce576636df6bd5ebf39a0554d54e5b8bde31b8606405c4d2ac3be.json`
+- legacy `qualification/evidence/7388022d21d2d6502449c311bc5379e4e954db0030912e73a2607d809fefb5f2.json`
+
+The loader rejects missing/mismatched manifest, report, head, caseRef, trace,
+proof scope, source class/profile, target artifact, result capability and
+consumer implementation digest. `consumer.json` remains `pending` for all four
+consumers; this repair only makes the real evidence expressible and checkable.
+
+Scope check: no generic AQ framework, second ledger, new Runtime authority,
+remote attestation, full AQ rerun, Phase4-04 or UI is introduced.

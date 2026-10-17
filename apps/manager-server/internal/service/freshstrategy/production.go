@@ -26,7 +26,7 @@ var productionEvidence embed.FS
 // evidence runner HEADs. A semantic source change invalidates an old acceptance
 // without requiring a self-referential commit SHA inside that same commit.
 //
-//go:embed production.go service.go adoption.go legacy_transition.go
+//go:embed production.go service.go adoption.go legacy_transition.go adoption_resource.go
 var consumerImplementation embed.FS
 
 var errProductionQualification = errors.New("production qualification unavailable")
@@ -179,13 +179,19 @@ func sameLimitationSet(actual, expected []string) bool {
 	return true
 }
 
-// These must be independently accepted cases in the consumer's pinned report,
-// not profile-wide booleans or observations produced by a browser probe.
+// adoptionResourceEvidence binds one class-specific client-key resource chain:
+// an immutable manifest, a per-run report, the exact implementation head and the
+// three distinct caseRefs for source read, destination replay and destination
+// verification. It is independent of the retained r4 background profile and of
+// the legacy staging transition.
 type adoptionResourceEvidence struct {
-	Profile       string `json:"profile"`
-	ReadCaseRef   string `json:"readCaseRef"`
-	ReplayCaseRef string `json:"replayCaseRef"`
-	VerifyCaseRef string `json:"verifyCaseRef"`
+	Profile            string `json:"profile"`
+	ManifestSHA256     string `json:"manifestSha256"`
+	ReportSHA256       string `json:"reportSha256"`
+	ImplementationHead string `json:"implementationHead"`
+	ReadCaseRef        string `json:"readCaseRef"`
+	ReplayCaseRef      string `json:"replayCaseRef"`
+	VerifyCaseRef      string `json:"verifyCaseRef"`
 }
 
 type profileEvidence struct {
@@ -258,7 +264,7 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 		}
 		switch consumer.Status {
 		case "pending":
-			if consumer.AcceptanceSHA256 != "" || consumer.LegacyTransition != nil ||
+			if consumer.AcceptanceSHA256 != "" || consumer.LegacyTransition != nil || consumer.AdoptionEvidence != nil ||
 				consumer.Applicability != nil || len(consumer.Limitations) != 0 {
 				return nil, errProductionQualification
 			}
@@ -295,20 +301,12 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 			if qualified.Qualification.ArtifactQualified {
 				qualified.ArtifactID = record.ArtifactID
 			}
-			if resource := consumer.AdoptionEvidence; resource != nil {
-				if resource.Profile != "CPA8-STAGE-r1" {
-					return nil, errProductionQualification
-				}
-				profile := slices.IndexFunc(consumer.Evidence, func(p profileEvidence) bool { return p.Profile == resource.Profile })
-				if profile < 0 {
-					return nil, errProductionQualification
-				}
-				seen := map[string]bool{}
-				for _, ref := range []string{resource.ReadCaseRef, resource.ReplayCaseRef, resource.VerifyCaseRef} {
-					if ref == "" || seen[ref] || !slices.Contains(consumer.Evidence[profile].CaseRefs, ref) {
-						return nil, errProductionQualification
-					}
-					seen[ref] = true
+			if consumer.AdoptionEvidence != nil {
+				// Resource replay authority is independent of the source
+				// profile, the retained r4 background report and the legacy
+				// transition. Only its own class-specific chain may grant it.
+				if err := verifyAdoptionResourceEvidence(files, record, consumer, key.Class); err != nil {
+					return nil, err
 				}
 				qualified.ArtifactID = record.ArtifactID
 				qualified.AdoptionResources = []bootstrap.AdoptionResourceDecision{{ResourceRef: "client-api-keys", Kind: bootstrap.APIKeys, Scope: bootstrap.ClientAPIKeys, ReadEvidenceRef: "preflight:client-api-keys-read", ReplayEvidenceRef: "preflight:client-api-keys-replay", VerifyEvidenceRef: "preflight:client-api-keys-verify", Qualification: bootstrap.CapabilityQualified, Disposition: bootstrap.Migrate}}
@@ -334,7 +332,7 @@ func consumerImplementationDigest(safeReadSHA256, freshStrategySHA256 string) st
 		return ""
 	}
 	hash := sha256.New()
-	for _, name := range []string{"production.go", "service.go", "adoption.go", "legacy_transition.go"} {
+	for _, name := range []string{"production.go", "service.go", "adoption.go", "legacy_transition.go", "adoption_resource.go"} {
 		data, _ := consumerImplementation.ReadFile(name) // Required at compile time.
 		_, _ = hash.Write(data)
 	}

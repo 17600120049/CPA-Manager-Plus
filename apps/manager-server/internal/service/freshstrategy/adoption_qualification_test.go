@@ -13,30 +13,6 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 )
 
-func resourceConsumerFixture(t *testing.T, index int) (productionRecord, fstest.MapFS) {
-	t.Helper()
-	record, files := acceptedConsumerFixture(t, index)
-	consumer := &record.Consumers[index]
-	evidence := &consumer.Evidence[1]
-	refs := []string{"test-keys-read", "test-keys-replay", "test-keys-verify"}
-	evidence.CaseRefs = refs
-	consumer.AdoptionEvidence = &adoptionResourceEvidence{Profile: "CPA8-STAGE-r1", ReadCaseRef: refs[0], ReplayCaseRef: refs[1], VerifyCaseRef: refs[2]}
-	cases, results, traces := []any{}, []any{}, []any{}
-	for i, ref := range refs {
-		traceID := ref + "-trace"
-		traceHash := storeSyntheticEvidence(files, encodeJSON(t, map[string]any{"schemaVersion": 1, "runId": "test-resource-run", "caseRef": ref}), ".json")
-		cases = append(cases, map[string]any{"id": ref, "profileRefs": []string{evidence.Profile}})
-		results = append(results, map[string]any{"caseRef": ref, "executionState": "completed", "assertionOutcome": "pass", "capability": "limited", "evidenceRefs": []string{traceID}})
-		traces = append(traces, map[string]any{"id": traceID, "kind": "sanitized-trace", "sha256": traceHash, "relativePath": string(rune('a'+i)) + ".json"})
-	}
-	manifest := map[string]any{"schemaVersion": 1, "contractId": "cpamp-cpa-v8-qualification", "revision": "test-resources", "candidate": map[string]any{"id": "candidate-test", "declaredSha256": record.ArchiveSHA256}, "profiles": []any{map[string]any{"id": evidence.Profile}}, "cases": cases}
-	evidence.ManifestSHA256 = storeSyntheticEvidence(files, encodeJSON(t, manifest), ".json")
-	report := map[string]any{"schemaVersion": 1, "contractId": "cpamp-cpa-v8-qualification", "manifestRevision": "test-resources", "manifestSha256": evidence.ManifestSHA256, "run": map[string]any{"id": "test-resource-run", "runnerCommit": evidence.ImplementationHead}, "artifactObservation": map[string]any{"candidateRef": "candidate-test", "provenance": "locally-verified", "observedArchiveSha256": record.ArchiveSHA256, "observedBinarySha256": record.BinarySHA256}, "results": results, "evidence": traces}
-	evidence.ReportSHA256 = storeSyntheticEvidence(files, encodeJSON(t, report), ".json")
-	files["qualification/consumer.json"] = &fstest.MapFile{Data: encodeJSON(t, record)}
-	return record, files
-}
-
 func TestProductionAdoptionResourceAcceptanceCannotComeFromSafeRead(t *testing.T) {
 	for _, index := range []int{2, 3} {
 		record, files := resourceConsumerFixture(t, index)

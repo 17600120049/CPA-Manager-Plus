@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -31,13 +32,14 @@ import (
 )
 
 const (
-	realCPA8BinarySHA256          = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
-	realCPA8ArchiveSHA256         = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
-	realCPA8Version               = "v8.0.13"
-	legacyTransitionOutputKey     = "CPAMP_TEST_FRESH_TRANSITION_OUT"
-	legacyTransitionHeadKey       = "CPAMP_TEST_FRESH_TRANSITION_HEAD"
-	legacyTransitionTreeKey       = "CPAMP_TEST_FRESH_TRANSITION_TREE"
-	legacyTransitionSourceHeadKey = "CPAMP_TEST_FRESH_TRANSITION_SOURCE_HEAD"
+	realCPA8BinarySHA256      = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
+	realCPA8ArchiveSHA256     = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
+	realCPA8Version           = "v8.0.13"
+	legacyTransitionOutputKey = "CPAMP_TEST_FRESH_TRANSITION_OUT"
+	legacyTransitionHeadKey   = "CPAMP_TEST_FRESH_TRANSITION_HEAD"
+	legacyTransitionTreeKey   = "CPAMP_TEST_FRESH_TRANSITION_TREE"
+	evidenceSourceHeadKey     = "CPAMP_TEST_FRESH_TRANSITION_SOURCE_HEAD"
+	adoptionResourceOutputKey = "CPAMP_TEST_FRESH_RESOURCE_OUT_DIR"
 )
 
 // These controlled-source runs are implementation evidence, not an independent
@@ -329,6 +331,10 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 				t.Fatalf("real v8 v0 endpoint was accepted as the accepted legacy source profile: %v", err)
 			}
 			directHTTP.CloseIdleConnections()
+			// Emit the class-specific client-key resource chain while both the
+			// source and the exact v8 destination are still live and verified.
+			// It is separate from the legacy transition chain.
+			writeAdoptionResourceEvidence(t, class, record, finalStatus, expectedArtifact, sourceURL, sourceKey, clientKeys, snapshot, legacyCPAPath)
 
 			if class == bootstrap.AdoptLegacyManaged {
 				// The historical v7 process remains live, byte-preserved and on v0.
@@ -428,7 +434,7 @@ func writeLegacyTransitionEvidence(t *testing.T, record freshstore.Record, statu
 		t.Fatal("transition evidence requires a verified exact v8 destination and pending Gateway")
 	}
 	observationData, reportData, authorityData := legacyTransitionEvidencePayload(t, manifestData, manifest, artifact,
-		stagingV8Verified, record.Operation.GatewayPending, head, tree, os.Getenv(legacyTransitionSourceHeadKey))
+		stagingV8Verified, record.Operation.GatewayPending, head, tree, os.Getenv(evidenceSourceHeadKey))
 	directory := filepath.Dir(name)
 	if err := os.WriteFile(name, observationData, 0o600); err != nil {
 		t.Fatal(err)
@@ -506,6 +512,168 @@ func legacyTransitionEvidencePayload(t *testing.T, manifestData []byte, manifest
 		"productionAcceptance": "pending",
 	}
 	return observationData, reportData, encodeJSON(t, authority)
+}
+
+// writeAdoptionResourceEvidence emits the class-specific client-key resource
+// chain: manifest copy, report and three distinct sanitized traces. It is
+// review input, never compiled authority, and never writes consumer.json.
+func writeAdoptionResourceEvidence(t *testing.T, class bootstrap.AdoptSourceClass, record freshstore.Record, status model.RuntimeObservedStatus, artifact model.RuntimeArtifactID, sourceURL, sourceKey string, clientKeys []string, snapshot adoptionSnapshot, legacyCPAPath string) {
+	t.Helper()
+	directory := strings.TrimSpace(os.Getenv(adoptionResourceOutputKey))
+	if directory == "" {
+		return
+	}
+	if strings.TrimSpace(directory) != directory {
+		t.Fatal("invalid resource evidence path")
+	}
+	head, tree := os.Getenv(legacyTransitionHeadKey), os.Getenv(legacyTransitionTreeKey)
+	if !validEvidenceDigest(head, 40) || !validEvidenceDigest(tree, 40) {
+		t.Fatal("resource evidence requires exact tested commit and tree")
+	}
+	manifestName, manifestData, manifest := embeddedAdoptionResourceManifest(t, class)
+	if manifest.Candidate.ArtifactID != string(artifact) || manifest.Candidate.DeclaredSHA256 != realCPA8ArchiveSHA256 ||
+		manifest.SourceClass != class || manifest.SchemaVersion != 1 || manifest.ContractID != adoptionResourceContract {
+		t.Fatalf("checked-in resource manifest does not bind this run: %s", manifestName)
+	}
+	switch class {
+	case bootstrap.AdoptNetworkExisting:
+		if manifest.SourceProfile != adoptionResourceSourceCPAV8 || manifest.LegacySource != nil {
+			t.Fatal("network resource manifest source drifted")
+		}
+	case bootstrap.AdoptLegacyManaged:
+		legacyBytes, err := os.ReadFile(legacyCPAPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		legacyDigest := sha256.Sum256(legacyBytes)
+		if hex.EncodeToString(legacyDigest[:]) != cpa.AcceptedLegacyManagedBinarySHA256 ||
+			manifest.LegacySource == nil || manifest.LegacySource.Version != cpa.AcceptedLegacyManagedVersion ||
+			manifest.LegacySource.ArchiveSHA256 != cpa.AcceptedLegacyManagedArchiveSHA256 ||
+			manifest.LegacySource.BinarySHA256 != cpa.AcceptedLegacyManagedBinarySHA256 {
+			t.Fatal("legacy resource manifest does not bind the pinned source profile")
+		}
+	}
+	var keys []string
+	switch class {
+	case bootstrap.AdoptNetworkExisting:
+		observation, err := cpa.ReadV8AdoptionSnapshot(t.Context(), sourceURL, sourceKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = observation.APIKeys
+	case bootstrap.AdoptLegacyManaged:
+		observation, err := cpa.ReadLegacyManagedAdoptionSnapshot(t.Context(), sourceURL, sourceKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = observation.APIKeys
+	}
+	if !slices.Equal(keys, clientKeys) {
+		t.Fatal("resource read evidence does not match the observed source keys")
+	}
+	read := adoptionResourceReadTrace{ReadVerified: true, ClientKeyCount: len(keys)}
+	if class == bootstrap.AdoptNetworkExisting {
+		read.ManagementGeneration = "v8"
+	} else {
+		read.LegacyVersion = cpa.AcceptedLegacyManagedVersion
+		read.LegacyArchiveSHA256 = cpa.AcceptedLegacyManagedArchiveSHA256
+		read.LegacyBinarySHA256 = cpa.AcceptedLegacyManagedBinarySHA256
+	}
+	if !slices.Equal(snapshot.Destination.APIKeys, clientKeys) || snapshot.Destination.ExpectedActiveArtifactID != artifact ||
+		snapshot.Destination.SourceClass != string(class) {
+		t.Fatal("resource replay evidence does not match the staged destination")
+	}
+	replay := adoptionResourceReplayTrace{
+		ReplayVerified: true, TargetArtifactID: string(artifact), TargetArchiveSHA256: realCPA8ArchiveSHA256,
+		TargetBinarySHA256: realCPA8BinarySHA256, SourcePreserved: true, GatewayPending: record.Operation.GatewayPending,
+	}
+	destinationKeys, err := cpa.ReadV8AdoptionKeys(t.Context(), snapshot.DestinationURL, snapshot.Destination.ManagementKey)
+	if err != nil || !slices.Equal(destinationKeys, clientKeys) {
+		t.Fatalf("resource readback evidence unavailable: %v", err)
+	}
+	if err = cpa.VerifyV8Adoption(t.Context(), snapshot.DestinationURL, snapshot.Destination.ManagementKey, clientKeys); err != nil {
+		t.Fatalf("resource effective-auth evidence unavailable: %v", err)
+	}
+	if status.ActiveGatewayArtifact == nil || status.ActiveGatewayArtifact.ArtifactID != artifact {
+		t.Fatal("resource verify evidence requires the exact observed artifact")
+	}
+	verify := adoptionResourceVerifyTrace{
+		ReadbackVerified: true, EffectiveAuthVerified: true, DestinationVerified: true,
+		TargetArtifactID: string(artifact), TargetArchiveSHA256: realCPA8ArchiveSHA256,
+		TargetBinarySHA256: realCPA8BinarySHA256, GatewayPending: record.Operation.GatewayPending,
+	}
+	readData, replayData, verifyData, reportData, authorityData := adoptionResourceEvidencePayload(t, manifestData, manifest, class, artifact, read, replay, verify, head, tree)
+	short := "network"
+	if class == bootstrap.AdoptLegacyManaged {
+		short = "legacy"
+	}
+	write := func(name string, data []byte) {
+		if err := os.WriteFile(filepath.Join(directory, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("fresh-adoption-resource-"+short+"-read.json", readData)
+	write("fresh-adoption-resource-"+short+"-replay.json", replayData)
+	write("fresh-adoption-resource-"+short+"-verify.json", verifyData)
+	write("fresh-adoption-resource-"+short+"-report.json", reportData)
+	write("fresh-adoption-resource-"+short+"-manifest.json", manifestData)
+	write("fresh-adoption-resource-"+short+"-authority.json", authorityData)
+}
+
+// adoptionResourceEvidencePayload builds the exact sanitized resource evidence
+// bytes without filesystem access, so tests can feed the generator output back
+// into the production loader.
+func adoptionResourceEvidencePayload(t *testing.T, manifestData []byte, manifest adoptionResourceManifest, class bootstrap.AdoptSourceClass, artifact model.RuntimeArtifactID, read adoptionResourceReadTrace, replay adoptionResourceReplayTrace, verify adoptionResourceVerifyTrace, head, tree string) ([]byte, []byte, []byte, []byte, []byte) {
+	t.Helper()
+	short := "network"
+	if class == bootstrap.AdoptLegacyManaged {
+		short = "legacy"
+	}
+	runID := "cpamp-fresh-adoption-resource-" + short + "-" + head[:12]
+	implementation := consumerImplementationSHA256()
+	read.SchemaVersion, read.RunID, read.CaseRef, read.SourceClass, read.ConsumerImplementationSHA256 = 1, runID, manifest.Cases[0].ID, string(class), implementation
+	replay.SchemaVersion, replay.RunID, replay.CaseRef, replay.SourceClass, replay.ConsumerImplementationSHA256 = 1, runID, manifest.Cases[1].ID, string(class), implementation
+	verify.SchemaVersion, verify.RunID, verify.CaseRef, verify.SourceClass, verify.ConsumerImplementationSHA256 = 1, runID, manifest.Cases[2].ID, string(class), implementation
+	readData := encodeJSON(t, read)
+	replayData := encodeJSON(t, replay)
+	verifyData := encodeJSON(t, verify)
+	report := evidenceReport{
+		SchemaVersion: 1, ContractID: manifest.ContractID, ManifestRevision: manifest.Revision,
+		ManifestSHA256: sha256Hex(manifestData),
+		Run:            evidenceRun{ID: runID, RunnerCommit: head, TestedTree: tree},
+		ArtifactObservation: evidenceArtifactObservation{
+			CandidateRef: manifest.Candidate.ID, Provenance: "locally-verified",
+			ObservedArchiveSHA256: realCPA8ArchiveSHA256, ObservedBinarySHA256: realCPA8BinarySHA256,
+		},
+		Results: []evidenceResult{
+			{CaseRef: read.CaseRef, ExecutionState: "completed", AssertionOutcome: "pass", Capability: "supported", EvidenceRefs: []string{read.CaseRef}},
+			{CaseRef: replay.CaseRef, ExecutionState: "completed", AssertionOutcome: "pass", Capability: "supported", EvidenceRefs: []string{replay.CaseRef}},
+			{CaseRef: verify.CaseRef, ExecutionState: "completed", AssertionOutcome: "pass", Capability: "supported", EvidenceRefs: []string{verify.CaseRef}},
+		},
+		Evidence: []evidenceTraceRef{
+			{ID: read.CaseRef, Kind: "sanitized-trace", SHA256: sha256Hex(readData)},
+			{ID: replay.CaseRef, Kind: "sanitized-trace", SHA256: sha256Hex(replayData)},
+			{ID: verify.CaseRef, Kind: "sanitized-trace", SHA256: sha256Hex(verifyData)},
+		},
+	}
+	reportData := encodeJSON(t, report)
+	reportSHA := sha256Hex(reportData)
+	authority := map[string]any{
+		"schemaVersion": 1, "profile": adoptionResourceProfile, "sourceClass": string(class),
+		"caseRefs": []string{read.CaseRef, replay.CaseRef, verify.CaseRef},
+		"manifest": map[string]any{"file": "fresh-adoption-resource-" + short + "-manifest.json", "sha256": sha256Hex(manifestData)},
+		"report":   map[string]any{"file": "fresh-adoption-resource-" + short + "-report.json", "sha256": reportSHA},
+		"traces": map[string]any{
+			"read":   map[string]any{"file": "fresh-adoption-resource-" + short + "-read.json", "sha256": sha256Hex(readData)},
+			"replay": map[string]any{"file": "fresh-adoption-resource-" + short + "-replay.json", "sha256": sha256Hex(replayData)},
+			"verify": map[string]any{"file": "fresh-adoption-resource-" + short + "-verify.json", "sha256": sha256Hex(verifyData)},
+		},
+		"targetArtifactId": string(artifact), "legacyVersion": cpa.AcceptedLegacyManagedVersion,
+		"legacyArchiveSha256":  cpa.AcceptedLegacyManagedArchiveSHA256,
+		"legacyBinarySha256":   cpa.AcceptedLegacyManagedBinarySHA256,
+		"productionAcceptance": "pending",
+	}
+	return readData, replayData, verifyData, reportData, encodeJSON(t, authority)
 }
 
 func validEvidenceDigest(value string, length int) bool {

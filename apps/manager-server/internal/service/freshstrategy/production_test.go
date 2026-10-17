@@ -81,7 +81,8 @@ func TestProductionRecordRemainsUnqualified(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, consumer := range record.Consumers {
-		if consumer.Status != "pending" || consumer.Applicability != nil || len(consumer.Limitations) != 0 {
+		if consumer.Status != "pending" || consumer.Applicability != nil || len(consumer.Limitations) != 0 ||
+			consumer.AdoptionEvidence != nil || consumer.LegacyTransition != nil {
 			t.Fatalf("compiled consumer is not pending: %+v", consumer)
 		}
 	}
@@ -176,7 +177,7 @@ func acceptedConsumerFixture(t *testing.T, consumerIndex int) (productionRecord,
 type syntheticLegacyTransition struct {
 	head        string
 	manifest    legacyTransitionManifest
-	report      legacyTransitionReport
+	report      evidenceReport
 	observation legacyTransitionBinding
 	binding     legacyTransitionEvidence
 }
@@ -189,41 +190,41 @@ func syntheticLegacyTransitionDefaults(record *productionRecord) syntheticLegacy
 			SchemaVersion: 1,
 			ContractID:    "cpamp-cpa-v8-qualification",
 			Revision:      acceptedLegacyTransitionCaseRef,
-			Candidate: legacyTransitionCandidate{
+			Candidate: evidenceCandidate{
 				ID:             "candidate-test",
 				DeclaredSHA256: record.ArchiveSHA256,
 				ArtifactID:     string(record.ArtifactID),
 			},
-			Profiles: []legacyTransitionProfile{{ID: "CPA8-STAGE-r1"}},
-			Cases: []legacyTransitionCase{{
+			Profiles: []evidenceProfile{{ID: "CPA8-STAGE-r1"}},
+			Cases: []evidenceCase{{
 				ID:          acceptedLegacyTransitionCaseRef,
 				ProfileRefs: []string{"CPA8-STAGE-r1"},
 				ProofScope:  "fresh-legacy-staging-transition",
 			}},
-			LegacySource: legacyTransitionSource{
+			LegacySource: evidenceSource{
 				Version:       cpa.AcceptedLegacyManagedVersion,
 				ArchiveSHA256: cpa.AcceptedLegacyManagedArchiveSHA256,
 				BinarySHA256:  cpa.AcceptedLegacyManagedBinarySHA256,
 			},
 		},
-		report: legacyTransitionReport{
+		report: evidenceReport{
 			SchemaVersion: 1,
 			ContractID:    "cpamp-cpa-v8-qualification",
-			Run:           legacyTransitionRun{ID: "test-legacy-transition-run", RunnerCommit: head},
-			ArtifactObservation: legacyTransitionArtifactObservation{
+			Run:           evidenceRun{ID: "test-legacy-transition-run", RunnerCommit: head},
+			ArtifactObservation: evidenceArtifactObservation{
 				CandidateRef:          "candidate-test",
 				Provenance:            "locally-verified",
 				ObservedArchiveSHA256: record.ArchiveSHA256,
 				ObservedBinarySHA256:  record.BinarySHA256,
 			},
-			Results: []legacyTransitionResult{{
+			Results: []evidenceResult{{
 				CaseRef:          acceptedLegacyTransitionCaseRef,
 				ExecutionState:   "completed",
 				AssertionOutcome: "pass",
 				Capability:       "supported",
 				EvidenceRefs:     []string{acceptedLegacyTransitionCaseRef},
 			}},
-			Evidence: []legacyTransitionEvidenceLink{{ID: acceptedLegacyTransitionCaseRef, Kind: "sanitized-trace"}},
+			Evidence: []evidenceTraceRef{{ID: acceptedLegacyTransitionCaseRef, Kind: "sanitized-trace"}},
 		},
 		observation: legacyTransitionBinding{
 			SchemaVersion:                1,

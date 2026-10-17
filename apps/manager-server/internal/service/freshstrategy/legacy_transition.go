@@ -35,63 +35,64 @@ type legacyTransitionEvidence struct {
 // legacyTransitionManifest is the immutable case definition for the actual
 // legacy-to-staging-v8 transition. It is evidence, never a second authority.
 type legacyTransitionManifest struct {
-	SchemaVersion int                       `json:"schemaVersion"`
-	ContractID    string                    `json:"contractId"`
-	Revision      string                    `json:"revision"`
-	Candidate     legacyTransitionCandidate `json:"candidate"`
-	Profiles      []legacyTransitionProfile `json:"profiles"`
-	Cases         []legacyTransitionCase    `json:"cases"`
-	LegacySource  legacyTransitionSource    `json:"legacySource"`
+	SchemaVersion int               `json:"schemaVersion"`
+	ContractID    string            `json:"contractId"`
+	Revision      string            `json:"revision"`
+	Candidate     evidenceCandidate `json:"candidate"`
+	Profiles      []evidenceProfile `json:"profiles"`
+	Cases         []evidenceCase    `json:"cases"`
+	LegacySource  evidenceSource    `json:"legacySource"`
 }
 
-type legacyTransitionCandidate struct {
+type evidenceCandidate struct {
 	ID             string `json:"id"`
 	DeclaredSHA256 string `json:"declaredSha256"`
 	ArtifactID     string `json:"artifactId"`
 }
 
-type legacyTransitionProfile struct {
+type evidenceProfile struct {
 	ID string `json:"id"`
 }
 
-type legacyTransitionCase struct {
+type evidenceCase struct {
 	ID          string   `json:"id"`
 	ProfileRefs []string `json:"profileRefs"`
 	ProofScope  string   `json:"proofScope"`
 }
 
-type legacyTransitionSource struct {
+type evidenceSource struct {
 	Version       string `json:"version"`
 	ArchiveSHA256 string `json:"archiveSha256"`
 	BinarySHA256  string `json:"binarySha256"`
 }
 
-// legacyTransitionReport is the sanitized per-run observation report. It binds
+// evidenceReport is the sanitized per-run observation report. It binds
 // the manifest, the executed implementation head and the observation bytes.
-type legacyTransitionReport struct {
-	SchemaVersion       int                                 `json:"schemaVersion"`
-	ContractID          string                              `json:"contractId"`
-	ManifestRevision    string                              `json:"manifestRevision"`
-	ManifestSHA256      string                              `json:"manifestSha256"`
-	Run                 legacyTransitionRun                 `json:"run"`
-	ArtifactObservation legacyTransitionArtifactObservation `json:"artifactObservation"`
-	Results             []legacyTransitionResult            `json:"results"`
-	Evidence            []legacyTransitionEvidenceLink      `json:"evidence"`
+type evidenceReport struct {
+	SchemaVersion       int                         `json:"schemaVersion"`
+	ContractID          string                      `json:"contractId"`
+	ManifestRevision    string                      `json:"manifestRevision"`
+	ManifestSHA256      string                      `json:"manifestSha256"`
+	Run                 evidenceRun                 `json:"run"`
+	ArtifactObservation evidenceArtifactObservation `json:"artifactObservation"`
+	Results             []evidenceResult            `json:"results"`
+	Evidence            []evidenceTraceRef          `json:"evidence"`
 }
 
-type legacyTransitionRun struct {
+type evidenceRun struct {
 	ID           string `json:"id"`
 	RunnerCommit string `json:"runnerCommit"`
+	TestedTree   string `json:"testedTree,omitempty"`
 }
 
-type legacyTransitionArtifactObservation struct {
+type evidenceArtifactObservation struct {
 	CandidateRef          string `json:"candidateRef"`
 	Provenance            string `json:"provenance"`
 	ObservedArchiveSHA256 string `json:"observedArchiveSha256"`
 	ObservedBinarySHA256  string `json:"observedBinarySha256"`
 }
 
-type legacyTransitionResult struct {
+type evidenceResult struct {
 	CaseRef          string   `json:"caseRef"`
 	ExecutionState   string   `json:"executionState"`
 	AssertionOutcome string   `json:"assertionOutcome"`
@@ -99,7 +100,7 @@ type legacyTransitionResult struct {
 	EvidenceRefs     []string `json:"evidenceRefs"`
 }
 
-type legacyTransitionEvidenceLink struct {
+type evidenceTraceRef struct {
 	ID     string `json:"id"`
 	Kind   string `json:"kind"`
 	SHA256 string `json:"sha256"`
@@ -187,7 +188,7 @@ func verifyLegacyTransition(files fs.FS, record productionRecord, consumer consu
 	if err != nil {
 		return err
 	}
-	var report legacyTransitionReport
+	var report evidenceReport
 	if json.Unmarshal(reportData, &report) != nil || report.SchemaVersion != 1 ||
 		report.ContractID != manifest.ContractID || report.ManifestRevision != manifest.Revision ||
 		report.ManifestSHA256 != binding.ManifestSHA256 || report.Run.ID == "" ||

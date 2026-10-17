@@ -114,6 +114,33 @@ adapter fails closed before interpreting any body when the declared version is
 missing or different. CPA v8.0.13 still serves `/v0/management/config` with a
 legacy-shaped body; it is rejected by version metadata, never treated as legacy.
 
+Client-key adoption resources use a separate, class-specific evidence chain
+instead of the retained r4 report's case refs:
+
+```
+consumer.adoptionEvidence
+  -> resource manifest (CPA8-ADOPT-RESOURCE-r1, exact v8 candidate, source class)
+  -> resource report (manifest, runner HEAD, artifact observation)
+  -> three distinct completed/supported cases and sanitized traces:
+       source-read | destination-replay | destination-verify
+  -> implementation head and compiled-consumer digest
+```
+
+The retained `CPA8-STAGE-r1` report and its `AQ04-S*` case refs remain
+background profile evidence. They are **not** used to prove client-key replay,
+and the new resource cases are not inserted into the immutable r4 report. The
+checked-in resource manifests are
+`evidence/563ef299810ce576636df6bd5ebf39a0554d54e5b8bde31b8606405c4d2ac3be.json`
+(network) and
+`evidence/7388022d21d2d6502449c311bc5379e4e954db0030912e73a2607d809fefb5f2.json`
+(legacy). CI emits per-class
+`fresh-adoption-resource-{network,legacy}-{manifest,report,read,replay,verify,authority}.json`
+from the real process run. Source read, destination replay, destination
+verification and legacy staging transition are four separate proofs: a valid
+one never grants another, and a resource chain for one source class cannot
+authorize the other. Any missing/mismatched manifest, report, head, caseRef,
+trace, source profile or target fails the whole record closed.
+
 Accepted consumers also persist the bounded, non-secret
 `adoptionResources` inventory discovered from the source. Every entry has
 exactly one decision: only `client-api-keys` may be `Migrate`; auth files,

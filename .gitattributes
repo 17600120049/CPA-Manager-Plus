@@ -12,6 +12,7 @@ apps/manager-server/internal/service/freshstrategy/production.go text eol=lf
 apps/manager-server/internal/service/freshstrategy/service.go text eol=lf
 apps/manager-server/internal/service/freshstrategy/adoption.go text eol=lf
 apps/manager-server/internal/service/freshstrategy/legacy_transition.go text eol=lf
+apps/manager-server/internal/service/freshstrategy/adoption_resource.go text eol=lf
 apps/manager-server/internal/service/cpa/v8.go text eol=lf
 apps/manager-server/internal/service/cpa/v8_adoption.go text eol=lf
 apps/manager-server/internal/service/cpa/legacy_adoption.go text eol=lf
