@@ -179,14 +179,34 @@ jobs:
           export CPAMP_TEST_RUNTIME="${tools}/cpamp-runtime-supervisor"
           export CPAMP_TEST_CPA_LEGACY_ARCHIVE_SHA256="8afc9ed4c89a50a5ffce5d122a9bb93442c5b8ff3d8c6f07b7a274c719109b74"
           export CPAMP_TEST_FRESH_TRANSITION_OUT="${evidence}/fresh-legacy-transition.json"
+          export CPAMP_TEST_FRESH_TRANSITION_HEAD="$(git rev-parse HEAD)"
+          export CPAMP_TEST_FRESH_TRANSITION_TREE="$(git rev-parse HEAD^{tree})"
+          export CPAMP_TEST_FRESH_TRANSITION_SOURCE_HEAD="${SOURCE_HEAD}"
           go -C apps/runtime-supervisor test -race -count=1 -json -run '^TestDestinationRealCPAV8$' ./internal/lifecycle | tee "${evidence}/supervisor.jsonl"
           go -C apps/manager-server test -race -count=1 -json -run '^TestAdoptionExactCPAV8WithSupervisor$' ./internal/service/freshstrategy | tee "${evidence}/adoption.jsonl"
           python3 - <<'PY'
-          import json, os, platform, subprocess
+          import hashlib, json, os, platform, subprocess
           def output(*args):
               return subprocess.check_output(args, text=True).strip()
-          value = dict(sourceHead=os.environ['SOURCE_HEAD'], testedCommit=output('git','rev-parse','HEAD'),
-                       testedTree=output('git','rev-parse','HEAD^{tree}'),
+          evidence = os.path.join(os.environ['RUNNER_TEMP'],'fresh-adoption-v8')
+          def sha(name):
+              with open(os.path.join(evidence, name), 'rb') as f:
+                  return hashlib.sha256(f.read()).hexdigest()
+          manifest_sha = sha('fresh-legacy-transition-manifest.json')
+          report_sha = sha('fresh-legacy-transition-report.json')
+          observation_sha = sha('fresh-legacy-transition.json')
+          with open(os.path.join(evidence, 'fresh-legacy-transition-report.json')) as f:
+              report = json.load(f)
+          with open(os.path.join(evidence, 'fresh-legacy-transition-authority.json')) as f:
+              authority = json.load(f)
+          tested_commit = output('git','rev-parse','HEAD')
+          tested_tree = output('git','rev-parse','HEAD^{tree}')
+          if report['manifestSha256'] != manifest_sha or report['evidence'][0]['sha256'] != observation_sha or report['run']['runnerCommit'] != tested_commit:
+              raise SystemExit('transition report does not bind the emitted manifest/observation/head')
+          if authority['manifest']['sha256'] != manifest_sha or authority['report']['sha256'] != report_sha or authority['observation']['sha256'] != observation_sha:
+              raise SystemExit('transition authority digest mismatch')
+          value = dict(sourceHead=os.environ['SOURCE_HEAD'], testedCommit=tested_commit,
+                       testedTree=tested_tree,
                        platform=platform.platform(), goVersion=output('go','version'),
                        archiveSha256='50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3',
                        binarySha256='b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41',
@@ -195,21 +215,12 @@ jobs:
                        legacyBinarySha256=output('sha256sum', os.environ['CPAMP_TEST_CPA_LEGACY']).split()[0],
                        legacyTransition='live-v7-source-to-manager-owned-staging-v8',
                        legacyTransitionCaseRef='fresh-legacy-managed-stage-v8-r1',
+                       transitionManifestSha256=manifest_sha, transitionReportSha256=report_sha,
+                       transitionObservationSha256=observation_sha,
                        sourceClasses=['network_existing','legacy_managed'], resourceInventory='explicit-bounded-decisions',
                        migratedResource='client-api-keys', productionAcceptance='pending', gateway='pending')
-          evidence = os.path.join(os.environ['RUNNER_TEMP'],'fresh-adoption-v8')
           with open(os.path.join(evidence,'environment.json'),'w') as f:
               json.dump(value, f, indent=2)
-          # The Go test emits the transition facts observed from the real v7 and
-          # exact v8 processes. CI only adds exact-head/tree/platform metadata.
-          with open(os.path.join(evidence,'fresh-legacy-transition.json')) as f:
-              transition = json.load(f)
-          transition.update(sourceHead=value['sourceHead'], testedCommit=value['testedCommit'],
-                            testedTree=value['testedTree'], platform=value['platform'],
-                            goVersion=value['goVersion'])
-          with open(os.path.join(evidence,'fresh-legacy-transition.json'),'w') as f:
-              json.dump(transition, f, indent=2)
-              f.write('\n')
           PY
 
       - name: Upload controlled Fresh adoption observations

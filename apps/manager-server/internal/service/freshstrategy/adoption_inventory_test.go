@@ -1,6 +1,7 @@
 package freshstrategy
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -25,6 +26,7 @@ func TestAdoptionSourceClassUsesOnlyItsExplicitReadSurface(t *testing.T) {
 					_, _ = w.Write([]byte(`{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"source-auth"},"access":{"api-keys":["source-client"]},"providers":{}}`))
 				case "/v0/management/config":
 					v0Calls.Add(1)
+					w.Header().Set("X-CPA-VERSION", "7.0.12")
 					_, _ = w.Write([]byte(`{"tls":{"enable":false},"routing":{"strategy":"round-robin"},"gemini-api-key":[{"api-key":"private-provider-secret"}],"api-keys":["source-client"]}`))
 				default:
 					t.Errorf("unexpected source access: %s %s", r.Method, r.URL.Path)
@@ -117,5 +119,58 @@ func TestAdoptionInventoryMappingIsBounded(t *testing.T) {
 	// An upstream-controlled reference can never be turned into a decision.
 	if _, ok := adoptionDecisionsForInventory([]bootstrap.ResourceRef{bootstrap.AdoptionRefClientAPIKeys, "attacker-controlled-key"}, acceptedKeys()[0]); ok {
 		t.Fatal("unbounded resource reference accepted")
+	}
+}
+
+func TestAdoptionRejectsUnacceptedLegacySourceProfileWithoutEffects(t *testing.T) {
+	for _, version := range []string{"", "7.0.11", "7.0.13", "8.0.13", "garbage"} {
+		t.Run("version="+version, func(t *testing.T) {
+			var calls atomic.Int32
+			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				if version != "" {
+					w.Header().Set("X-CPA-VERSION", version)
+				}
+				_, _ = w.Write([]byte(`{"tls":{"enable":false},"api-keys":["source-client"]}`))
+			}))
+			defer source.Close()
+			artifact := model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))
+			runtime := &adoptionRuntime{managedRuntime: managedRuntime{status: model.RuntimeObservedStatus{Identity: "destination-runtime", Generation: 3, ProtocolVersion: "v1", State: model.RuntimeStateReady, Capabilities: model.RuntimeCapabilities{model.RuntimeCapabilityStart, model.RuntimeCapabilityStageDestination}, ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact}}}}
+			target := httptest.NewServer(http.HandlerFunc(runtime.target))
+			defer target.Close()
+			protector, _ := security.NewProtector([]byte("test-only-legacy-profile-key"))
+			q := qualified()
+			q.StagingV8TransitionQualified = true
+			options := Options{Runtime: runtime, Protector: protector, Qualification: q, QualifiedArtifactID: artifact, AdoptionResources: acceptedKeys(), DestinationBaseURL: target.URL}
+			result, err := New(options).Execute(t.Context(), operation(), Request{Strategy: bootstrap.AdoptExisting, BaseURL: source.URL, ManagementKey: "source-management", ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact, AdoptSourceClass: bootstrap.AdoptLegacyManaged})
+			var blocker *Blocker
+			if !errors.As(err, &blocker) || blocker.Code != "adoption_source_read_unavailable" || result.Checkpoint.Strategy != "" || result.AdoptionCiphertext != "" ||
+				len(runtime.stages) != 0 || len(runtime.starts) != 0 || calls.Load() != 1 {
+				t.Fatalf("unaccepted legacy source profile had effects: %+v %v calls=%d", result, err, calls.Load())
+			}
+		})
+	}
+	// Positive control: the exact accepted profile still stages without
+	// destination mutation.
+	var calls atomic.Int32
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-CPA-VERSION", "7.0.12")
+		_, _ = w.Write([]byte(`{"tls":{"enable":false},"api-keys":["source-client"]}`))
+	}))
+	defer source.Close()
+	artifact := model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))
+	runtime := &adoptionRuntime{managedRuntime: managedRuntime{status: model.RuntimeObservedStatus{Identity: "destination-runtime", Generation: 3, ProtocolVersion: "v1", State: model.RuntimeStateReady, Capabilities: model.RuntimeCapabilities{model.RuntimeCapabilityStart, model.RuntimeCapabilityStageDestination}, ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact}}}}
+	target := httptest.NewServer(http.HandlerFunc(runtime.target))
+	defer target.Close()
+	protector, _ := security.NewProtector([]byte("test-only-legacy-profile-key"))
+	q := qualified()
+	q.StagingV8TransitionQualified = true
+	options := Options{Runtime: runtime, Protector: protector, Qualification: q, QualifiedArtifactID: artifact, AdoptionResources: acceptedKeys(), DestinationBaseURL: target.URL}
+	staged, err := New(options).Execute(t.Context(), operation(), Request{Strategy: bootstrap.AdoptExisting, BaseURL: source.URL, ManagementKey: "source-management", ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact, AdoptSourceClass: bootstrap.AdoptLegacyManaged})
+	if err != nil || staged.Checkpoint.Stage != "staged" || len(runtime.stages) != 0 || len(runtime.starts) != 0 || calls.Load() != 1 {
+		t.Fatalf("accepted legacy profile did not stage: %v", err)
 	}
 }

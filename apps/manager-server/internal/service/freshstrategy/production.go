@@ -26,7 +26,7 @@ var productionEvidence embed.FS
 // evidence runner HEADs. A semantic source change invalidates an old acceptance
 // without requiring a self-referential commit SHA inside that same commit.
 //
-//go:embed production.go service.go adoption.go
+//go:embed production.go service.go adoption.go legacy_transition.go
 var consumerImplementation embed.FS
 
 var errProductionQualification = errors.New("production qualification unavailable")
@@ -71,31 +71,6 @@ type adoptionResourceEvidence struct {
 	ReadCaseRef   string `json:"readCaseRef"`
 	ReplayCaseRef string `json:"replayCaseRef"`
 	VerifyCaseRef string `json:"verifyCaseRef"`
-}
-
-// legacyTransitionEvidence is the separate, legacy-only binding for the actual
-// pre-v8 source-to-staging-v8 transition. A CPA8-STAGE-r1 profile observation
-// alone is not this qualification.
-type legacyTransitionEvidence struct {
-	Profile        string `json:"profile"`
-	CaseRef        string `json:"caseRef"`
-	EvidenceSHA256 string `json:"evidenceSha256"`
-}
-
-// legacyTransitionBinding is the sanitized transition observation pinned by
-// evidenceSha256. Extra sanitized metadata is tolerated; these facts are
-// mandatory and must match the build and target exactly.
-type legacyTransitionBinding struct {
-	SchemaVersion                int    `json:"schemaVersion"`
-	CaseRef                      string `json:"caseRef"`
-	SourceClass                  string `json:"sourceClass"`
-	TargetArtifactID             string `json:"targetArtifactId"`
-	TargetArchiveSHA256          string `json:"targetArchiveSha256"`
-	TargetBinarySHA256           string `json:"targetBinarySha256"`
-	ConsumerImplementationSHA256 string `json:"consumerImplementationSha256"`
-	SourcePreserved              bool   `json:"sourcePreserved"`
-	StagingV8Verified            bool   `json:"stagingV8Verified"`
-	DestinationVerified          bool   `json:"destinationVerified"`
 }
 
 type profileEvidence struct {
@@ -227,34 +202,6 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 	return consumers, nil
 }
 
-// verifyLegacyTransition requires the separately pinned, legacy-only transition
-// observation. Accepted source/profile evidence cannot substitute for it.
-func verifyLegacyTransition(files fs.FS, record productionRecord, consumer consumerRecord) error {
-	binding := consumer.LegacyTransition
-	if binding == nil || binding.Profile != "CPA8-STAGE-r1" || binding.CaseRef == "" || !hexDigest(binding.EvidenceSHA256, 64) {
-		return errProductionQualification
-	}
-	if !slices.ContainsFunc(consumer.Evidence, func(evidence profileEvidence) bool { return evidence.Profile == binding.Profile }) {
-		return errProductionQualification
-	}
-	data, err := pinnedEvidence(files, binding.EvidenceSHA256, ".json")
-	if err != nil {
-		return err
-	}
-	var transition legacyTransitionBinding
-	if json.Unmarshal(data, &transition) != nil || transition.SchemaVersion != 1 ||
-		transition.CaseRef != binding.CaseRef ||
-		transition.SourceClass != string(bootstrap.AdoptLegacyManaged) ||
-		transition.TargetArtifactID != string(record.ArtifactID) ||
-		transition.TargetArchiveSHA256 != record.ArchiveSHA256 ||
-		transition.TargetBinarySHA256 != record.BinarySHA256 ||
-		transition.ConsumerImplementationSHA256 != consumerImplementationSHA256() ||
-		!transition.SourcePreserved || !transition.StagingV8Verified || !transition.DestinationVerified {
-		return errProductionQualification
-	}
-	return nil
-}
-
 func consumerImplementationSHA256() string {
 	return consumerImplementationDigest(cpa.SafeReadImplementationSHA256(), bootstrap.FreshStrategyImplementationSHA256())
 }
@@ -268,7 +215,7 @@ func consumerImplementationDigest(safeReadSHA256, freshStrategySHA256 string) st
 		return ""
 	}
 	hash := sha256.New()
-	for _, name := range []string{"production.go", "service.go", "adoption.go"} {
+	for _, name := range []string{"production.go", "service.go", "adoption.go", "legacy_transition.go"} {
 		data, _ := consumerImplementation.ReadFile(name) // Required at compile time.
 		_, _ = hash.Write(data)
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -30,12 +31,13 @@ import (
 )
 
 const (
-	realCPA8BinarySHA256      = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
-	realCPA8ArchiveSHA256     = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
-	realCPA8Version           = "v8.0.13"
-	realLegacyCPAVersion      = "v7.0.12"
-	legacyTransitionCaseRef   = "fresh-legacy-managed-stage-v8-r1"
-	legacyTransitionOutputKey = "CPAMP_TEST_FRESH_TRANSITION_OUT"
+	realCPA8BinarySHA256          = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
+	realCPA8ArchiveSHA256         = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
+	realCPA8Version               = "v8.0.13"
+	legacyTransitionOutputKey     = "CPAMP_TEST_FRESH_TRANSITION_OUT"
+	legacyTransitionHeadKey       = "CPAMP_TEST_FRESH_TRANSITION_HEAD"
+	legacyTransitionTreeKey       = "CPAMP_TEST_FRESH_TRANSITION_TREE"
+	legacyTransitionSourceHeadKey = "CPAMP_TEST_FRESH_TRANSITION_SOURCE_HEAD"
 )
 
 // These controlled-source runs are implementation evidence, not an independent
@@ -81,6 +83,17 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 			if class == bootstrap.AdoptLegacyManaged {
 				if legacyCPAPath == "" {
 					t.Fatal("legacy_managed evidence requires pinned historical CPA")
+				}
+				legacyBytes, err := os.ReadFile(legacyCPAPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				legacyDigest := sha256.Sum256(legacyBytes)
+				if hex.EncodeToString(legacyDigest[:]) != cpa.AcceptedLegacyManagedBinarySHA256 {
+					t.Fatal("historical CPA executable does not match the accepted legacy source profile")
+				}
+				if archive := os.Getenv("CPAMP_TEST_CPA_LEGACY_ARCHIVE_SHA256"); archive != "" && archive != cpa.AcceptedLegacyManagedArchiveSHA256 {
+					t.Fatal("historical CPA archive does not match the accepted legacy source profile")
 				}
 				_, sourcePort, _ := net.SplitHostPort(sourceAddr)
 				legacyConfig := map[string]any{"host": "127.0.0.1", "port": json.Number(sourcePort), "auth-dir": filepath.Join(sourceRoot, "auth"), "remote-management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true}, "api-keys": clientKeys, "plugins": map[string]any{"enabled": false}}
@@ -301,6 +314,21 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 				finalStatus.CPAObservedVersion != realCPA8Version || finalStatus.Identity != status.Identity || finalStatus.Generation != status.Generation {
 				t.Fatalf("destination is not the accepted exact v8 target: %+v %v", finalStatus, err)
 			}
+			// The exact v8 destination still serves the v0 compatibility
+			// endpoint. The legacy adapter must reject it by declared source
+			// profile even though its body is legacy-shaped.
+			directHTTP := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 5 * time.Second}
+			v0Request, _ := http.NewRequest(http.MethodGet, "http://"+targetAddr+"/v0/management/config", nil)
+			v0Request.Header.Set("Authorization", "Bearer "+snapshot.Destination.ManagementKey)
+			v0Response, err := directHTTP.Do(v0Request)
+			if err != nil || v0Response.StatusCode != http.StatusOK {
+				t.Fatalf("exact v8 destination v0 compatibility endpoint unavailable: %v", err)
+			}
+			_ = v0Response.Body.Close()
+			if _, err := cpa.ReadLegacyManagedAdoptionSnapshot(t.Context(), "http://"+targetAddr, snapshot.Destination.ManagementKey); !errors.Is(err, cpa.LegacySourceProfileUnsupported) {
+				t.Fatalf("real v8 v0 endpoint was accepted as the accepted legacy source profile: %v", err)
+			}
+			directHTTP.CloseIdleConnections()
 
 			if class == bootstrap.AdoptLegacyManaged {
 				// The historical v7 process remains live, byte-preserved and on v0.
@@ -347,31 +375,14 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 				if err != nil || !reflect.DeepEqual(keys.APIKeys, clientKeys) {
 					t.Fatal("qualified legacy source no longer usable")
 				}
-				// Emit the sanitized CI observation only after every transition,
-				// preservation and restart-fence assertion passed.
+				// Emit the sanitized manifest/report/observation evidence only
+				// after every transition, preservation and restart-fence
+				// assertion passed.
 				legacyBytes, err := os.ReadFile(legacyCPAPath)
 				if err != nil {
 					t.Fatal(err)
 				}
-				legacyDigest := sha256.Sum256(legacyBytes)
-				writeLegacyTransitionEvidence(t, map[string]any{
-					"schemaVersion":                1,
-					"caseRef":                      legacyTransitionCaseRef,
-					"sourceClass":                  string(bootstrap.AdoptLegacyManaged),
-					"legacyVersion":                realLegacyCPAVersion,
-					"legacyArchiveSha256":          os.Getenv("CPAMP_TEST_CPA_LEGACY_ARCHIVE_SHA256"),
-					"legacyBinarySha256":           hex.EncodeToString(legacyDigest[:]),
-					"targetVersion":                realCPA8Version,
-					"targetArchiveSha256":          realCPA8ArchiveSHA256,
-					"targetBinarySha256":           realCPA8BinarySHA256,
-					"targetArtifactId":             string(expectedArtifact),
-					"consumerImplementationSha256": consumerImplementationSHA256(),
-					"sourcePreserved":              true,
-					"legacyReadVerified":           true,
-					"stagingV8Verified":            finalStatus.CPAObservedVersion == realCPA8Version,
-					"destinationVerified":          true,
-					"gatewayPending":               record.Operation.GatewayPending,
-				})
+				writeLegacyTransitionEvidence(t, record, finalStatus, expectedArtifact, legacyBytes)
 			} else {
 				keys, err := cpa.ReadV8AdoptionKeys(t.Context(), sourceURL, sourceKey)
 				if err != nil || len(keys) != 2 || keys[0] != clientKeys[0] || keys[1] != clientKeys[1] {
@@ -383,9 +394,10 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 	}
 }
 
-// writeLegacyTransitionEvidence emits the sanitized CI observation only when the
-// workflow asks for it. It is review input, never compiled production authority.
-func writeLegacyTransitionEvidence(t *testing.T, value map[string]any) {
+// writeLegacyTransitionEvidence emits the sanitized, content-addressed CI
+// evidence only when the workflow asks for it. It is review input, never
+// compiled production authority, and it never writes consumer.json.
+func writeLegacyTransitionEvidence(t *testing.T, record freshstore.Record, status model.RuntimeObservedStatus, artifact model.RuntimeArtifactID, legacyBinary []byte) {
 	t.Helper()
 	name := os.Getenv(legacyTransitionOutputKey)
 	if name == "" {
@@ -394,13 +406,114 @@ func writeLegacyTransitionEvidence(t *testing.T, value map[string]any) {
 	if strings.TrimSpace(name) != name {
 		t.Fatal("invalid transition evidence path")
 	}
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
+	head, tree := os.Getenv(legacyTransitionHeadKey), os.Getenv(legacyTransitionTreeKey)
+	if !validEvidenceDigest(head, 40) || !validEvidenceDigest(tree, 40) {
+		t.Fatal("transition evidence requires exact tested commit and tree")
+	}
+	legacyDigest := sha256.Sum256(legacyBinary)
+	if hex.EncodeToString(legacyDigest[:]) != cpa.AcceptedLegacyManagedBinarySHA256 {
+		t.Fatal("historical CPA executable does not match the accepted legacy source profile")
+	}
+	manifestName, manifestData, manifest := embeddedLegacyTransitionManifest(t)
+	if manifest.SchemaVersion != 1 || manifest.ContractID != "cpamp-cpa-v8-qualification" ||
+		manifest.Candidate.DeclaredSHA256 != realCPA8ArchiveSHA256 || manifest.Candidate.ArtifactID != string(artifact) ||
+		manifest.LegacySource.Version != cpa.AcceptedLegacyManagedVersion ||
+		manifest.LegacySource.ArchiveSHA256 != cpa.AcceptedLegacyManagedArchiveSHA256 ||
+		manifest.LegacySource.BinarySHA256 != cpa.AcceptedLegacyManagedBinarySHA256 ||
+		len(manifest.Cases) != 1 || manifest.Cases[0].ID != acceptedLegacyTransitionCaseRef {
+		t.Fatalf("checked-in transition manifest does not bind this run: %s", manifestName)
+	}
+	stagingV8Verified := status.CPAObservedVersion == realCPA8Version && status.ActiveGatewayArtifact != nil && status.ActiveGatewayArtifact.ArtifactID == artifact
+	if !stagingV8Verified || !record.Operation.GatewayPending {
+		t.Fatal("transition evidence requires a verified exact v8 destination and pending Gateway")
+	}
+	observationData, reportData, authorityData := legacyTransitionEvidencePayload(t, manifestData, manifest, artifact,
+		stagingV8Verified, record.Operation.GatewayPending, head, tree, os.Getenv(legacyTransitionSourceHeadKey))
+	directory := filepath.Dir(name)
+	if err := os.WriteFile(name, observationData, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(name, append(data, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "fresh-legacy-transition-report.json"), reportData, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(directory, "fresh-legacy-transition-manifest.json"), manifestData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "fresh-legacy-transition-authority.json"), authorityData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// legacyTransitionEvidencePayload builds the exact sanitized CI bytes without
+// touching the filesystem, so regression tests can feed the same generator
+// output back into the production loader.
+func legacyTransitionEvidencePayload(t *testing.T, manifestData []byte, manifest legacyTransitionManifest, artifact model.RuntimeArtifactID, stagingV8Verified, gatewayPending bool, head, tree, sourceHead string) ([]byte, []byte, []byte) {
+	t.Helper()
+	observation := map[string]any{
+		"schemaVersion":                1,
+		"caseRef":                      acceptedLegacyTransitionCaseRef,
+		"sourceClass":                  string(bootstrap.AdoptLegacyManaged),
+		"legacyVersion":                cpa.AcceptedLegacyManagedVersion,
+		"legacyArchiveSha256":          cpa.AcceptedLegacyManagedArchiveSHA256,
+		"legacyBinarySha256":           cpa.AcceptedLegacyManagedBinarySHA256,
+		"targetVersion":                realCPA8Version,
+		"targetArchiveSha256":          realCPA8ArchiveSHA256,
+		"targetBinarySha256":           realCPA8BinarySHA256,
+		"targetArtifactId":             string(artifact),
+		"consumerImplementationSha256": consumerImplementationSHA256(),
+		"sourcePreserved":              true,
+		"legacyReadVerified":           true,
+		"stagingV8Verified":            stagingV8Verified,
+		"destinationVerified":          true,
+		"gatewayPending":               gatewayPending,
+		"sourceHead":                   sourceHead,
+		"testedCommit":                 head,
+		"testedTree":                   tree,
+	}
+	observationData := encodeJSON(t, observation)
+	observationSHA := sha256Hex(observationData)
+	report := map[string]any{
+		"schemaVersion":    1,
+		"contractId":       manifest.ContractID,
+		"manifestRevision": manifest.Revision,
+		"manifestSha256":   sha256Hex(manifestData),
+		"run":              map[string]any{"id": "cpamp-fresh-legacy-transition-" + head[:12], "runnerCommit": head, "testedTree": tree},
+		"artifactObservation": map[string]any{
+			"candidateRef":          manifest.Candidate.ID,
+			"provenance":            "locally-verified",
+			"observedArchiveSha256": realCPA8ArchiveSHA256,
+			"observedBinarySha256":  realCPA8BinarySHA256,
+		},
+		"results": []any{map[string]any{
+			"caseRef": acceptedLegacyTransitionCaseRef, "executionState": "completed",
+			"assertionOutcome": "pass", "capability": "supported",
+			"evidenceRefs": []string{acceptedLegacyTransitionCaseRef},
+		}},
+		"evidence": []any{map[string]any{"id": acceptedLegacyTransitionCaseRef, "kind": "sanitized-trace", "sha256": observationSHA}},
+	}
+	reportData := encodeJSON(t, report)
+	reportSHA := sha256Hex(reportData)
+	authority := map[string]any{
+		"schemaVersion": 1,
+		"caseRef":       acceptedLegacyTransitionCaseRef,
+		"profile":       acceptedLegacyTransitionProfile,
+		"manifest":      map[string]any{"file": "fresh-legacy-transition-manifest.json", "sha256": sha256Hex(manifestData)},
+		"report":        map[string]any{"file": "fresh-legacy-transition-report.json", "sha256": reportSHA},
+		"observation":   map[string]any{"file": "fresh-legacy-transition.json", "sha256": observationSHA},
+		"legacyVersion": cpa.AcceptedLegacyManagedVersion, "legacyArchiveSha256": cpa.AcceptedLegacyManagedArchiveSHA256,
+		"legacyBinarySha256":   cpa.AcceptedLegacyManagedBinarySHA256,
+		"targetArtifactId":     string(artifact),
+		"productionAcceptance": "pending",
+	}
+	return observationData, reportData, encodeJSON(t, authority)
+}
+
+func validEvidenceDigest(value string, length int) bool {
+	if len(value) != length {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && hex.EncodeToString(decoded) == value
 }
 
 func freeTestAddress(t *testing.T) string {

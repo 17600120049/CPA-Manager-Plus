@@ -145,33 +145,145 @@ func acceptedConsumerFixture(t *testing.T, consumerIndex int) (productionRecord,
 		evidence.ReportSHA256 = storeSyntheticEvidence(files, encodeJSON(t, report), ".json")
 	}
 	if consumer.SourceClass == bootstrap.AdoptLegacyManaged {
-		attachSyntheticLegacyTransition(t, files, &record, consumerIndex, nil)
+		attachSyntheticLegacyTransition(t, files, &record, consumerIndex, nil, nil)
 	}
 	writeSyntheticRecord(t, files, record)
 	return record, files
 }
 
-// attachSyntheticLegacyTransition creates the separate legacy-only transition
-// observation. It exists only in test memory and is never compiled authority.
-func attachSyntheticLegacyTransition(t *testing.T, files fstest.MapFS, record *productionRecord, index int, mutate func(*legacyTransitionBinding)) {
+type syntheticLegacyTransition struct {
+	head        string
+	manifest    legacyTransitionManifest
+	report      legacyTransitionReport
+	observation legacyTransitionBinding
+	binding     legacyTransitionEvidence
+}
+
+func syntheticLegacyTransitionDefaults(record *productionRecord) syntheticLegacyTransition {
+	head := strings.Repeat("a", 40)
+	return syntheticLegacyTransition{
+		head: head,
+		manifest: legacyTransitionManifest{
+			SchemaVersion: 1,
+			ContractID:    "cpamp-cpa-v8-qualification",
+			Revision:      acceptedLegacyTransitionCaseRef,
+			Candidate: legacyTransitionCandidate{
+				ID:             "candidate-test",
+				DeclaredSHA256: record.ArchiveSHA256,
+				ArtifactID:     string(record.ArtifactID),
+			},
+			Profiles: []legacyTransitionProfile{{ID: "CPA8-STAGE-r1"}},
+			Cases: []legacyTransitionCase{{
+				ID:          acceptedLegacyTransitionCaseRef,
+				ProfileRefs: []string{"CPA8-STAGE-r1"},
+				ProofScope:  "fresh-legacy-staging-transition",
+			}},
+			LegacySource: legacyTransitionSource{
+				Version:       cpa.AcceptedLegacyManagedVersion,
+				ArchiveSHA256: cpa.AcceptedLegacyManagedArchiveSHA256,
+				BinarySHA256:  cpa.AcceptedLegacyManagedBinarySHA256,
+			},
+		},
+		report: legacyTransitionReport{
+			SchemaVersion: 1,
+			ContractID:    "cpamp-cpa-v8-qualification",
+			Run:           legacyTransitionRun{ID: "test-legacy-transition-run", RunnerCommit: head},
+			ArtifactObservation: legacyTransitionArtifactObservation{
+				CandidateRef:          "candidate-test",
+				Provenance:            "locally-verified",
+				ObservedArchiveSHA256: record.ArchiveSHA256,
+				ObservedBinarySHA256:  record.BinarySHA256,
+			},
+			Results: []legacyTransitionResult{{
+				CaseRef:          acceptedLegacyTransitionCaseRef,
+				ExecutionState:   "completed",
+				AssertionOutcome: "pass",
+				Capability:       "supported",
+				EvidenceRefs:     []string{acceptedLegacyTransitionCaseRef},
+			}},
+			Evidence: []legacyTransitionEvidenceLink{{ID: acceptedLegacyTransitionCaseRef, Kind: "sanitized-trace"}},
+		},
+		observation: legacyTransitionBinding{
+			SchemaVersion:                1,
+			CaseRef:                      acceptedLegacyTransitionCaseRef,
+			SourceClass:                  string(bootstrap.AdoptLegacyManaged),
+			LegacyVersion:                cpa.AcceptedLegacyManagedVersion,
+			LegacyArchiveSHA256:          cpa.AcceptedLegacyManagedArchiveSHA256,
+			LegacyBinarySHA256:           cpa.AcceptedLegacyManagedBinarySHA256,
+			TargetArtifactID:             string(record.ArtifactID),
+			TargetArchiveSHA256:          record.ArchiveSHA256,
+			TargetBinarySHA256:           record.BinarySHA256,
+			ConsumerImplementationSHA256: consumerImplementationSHA256(),
+			SourcePreserved:              true,
+			LegacyReadVerified:           true,
+			StagingV8Verified:            true,
+			DestinationVerified:          true,
+			GatewayPending:               true,
+		},
+	}
+}
+
+// attachSyntheticLegacyTransition creates the separate manifest -> report ->
+// case -> head -> observation chain in test memory only. It is never compiled
+// authority; mutate rewrites content before content-addressing, while corrupt
+// deletes or alters already-addressed bytes.
+func attachSyntheticLegacyTransition(t *testing.T, files fstest.MapFS, record *productionRecord, index int, mutate func(*syntheticLegacyTransition), corrupt func(fstest.MapFS, syntheticLegacyTransition)) {
 	t.Helper()
-	evidence := legacyTransitionBinding{
-		SchemaVersion:                1,
-		CaseRef:                      "test-legacy-managed-stage-v8-r1",
-		SourceClass:                  string(bootstrap.AdoptLegacyManaged),
-		TargetArtifactID:             string(record.ArtifactID),
-		TargetArchiveSHA256:          record.ArchiveSHA256,
-		TargetBinarySHA256:           record.BinarySHA256,
-		ConsumerImplementationSHA256: consumerImplementationSHA256(),
-		SourcePreserved:              true,
-		StagingV8Verified:            true,
-		DestinationVerified:          true,
-	}
+	s := syntheticLegacyTransitionDefaults(record)
 	if mutate != nil {
-		mutate(&evidence)
+		mutate(&s)
 	}
-	digest := storeSyntheticEvidence(files, encodeJSON(t, evidence), ".json")
-	record.Consumers[index].LegacyTransition = &legacyTransitionEvidence{Profile: "CPA8-STAGE-r1", CaseRef: evidence.CaseRef, EvidenceSHA256: digest}
+	observationData := encodeJSON(t, s.observation)
+	if s.binding.EvidenceSHA256 == "" {
+		s.binding.EvidenceSHA256 = sha256Hex(observationData)
+	}
+	if len(s.report.Evidence) > 0 && s.report.Evidence[0].SHA256 == "" {
+		s.report.Evidence[0].SHA256 = s.binding.EvidenceSHA256
+	}
+	manifestData := encodeJSON(t, s.manifest)
+	if s.binding.ManifestSHA256 == "" {
+		s.binding.ManifestSHA256 = sha256Hex(manifestData)
+	}
+	if s.report.ManifestSHA256 == "" {
+		s.report.ManifestSHA256 = s.binding.ManifestSHA256
+	}
+	if s.report.ManifestRevision == "" {
+		s.report.ManifestRevision = s.manifest.Revision
+	}
+	reportData := encodeJSON(t, s.report)
+	if s.binding.ReportSHA256 == "" {
+		s.binding.ReportSHA256 = sha256Hex(reportData)
+	}
+	if s.binding.Profile == "" {
+		s.binding.Profile = "CPA8-STAGE-r1"
+	}
+	if s.binding.CaseRef == "" {
+		s.binding.CaseRef = acceptedLegacyTransitionCaseRef
+	}
+	if s.binding.ImplementationHead == "" {
+		s.binding.ImplementationHead = s.head
+	}
+	if s.binding.LegacyVersion == "" {
+		s.binding.LegacyVersion = cpa.AcceptedLegacyManagedVersion
+	}
+	if s.binding.LegacyArchiveSHA256 == "" {
+		s.binding.LegacyArchiveSHA256 = cpa.AcceptedLegacyManagedArchiveSHA256
+	}
+	if s.binding.LegacyBinarySHA256 == "" {
+		s.binding.LegacyBinarySHA256 = cpa.AcceptedLegacyManagedBinarySHA256
+	}
+	files["qualification/evidence/"+s.binding.ManifestSHA256+".json"] = &fstest.MapFile{Data: manifestData}
+	files["qualification/evidence/"+s.binding.ReportSHA256+".json"] = &fstest.MapFile{Data: reportData}
+	files["qualification/evidence/"+s.binding.EvidenceSHA256+".json"] = &fstest.MapFile{Data: observationData}
+	if corrupt != nil {
+		corrupt(files, s)
+	}
+	record.Consumers[index].LegacyTransition = &s.binding
+}
+
+func sha256Hex(data []byte) string {
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
 }
 
 func encodeJSON(t *testing.T, value any) []byte {
@@ -294,51 +406,27 @@ func TestProductionLoaderRequiresIndependentLegacyTransitionBinding(t *testing.T
 	if err != nil || consumers[network].Qualification.StagingV8TransitionQualified || consumers[network].Qualification.ValidateForStrategy(network.Strategy, network.Class) != nil {
 		t.Fatalf("network adoption must not require or gain a legacy transition: %v", err)
 	}
+	chain := func(mutate func(*syntheticLegacyTransition), corrupt func(fstest.MapFS, syntheticLegacyTransition)) func(*productionRecord, fstest.MapFS) {
+		return func(record *productionRecord, files fstest.MapFS) {
+			attachSyntheticLegacyTransition(t, files, record, 3, mutate, corrupt)
+		}
+	}
+	corruptBytes := func(pick func(syntheticLegacyTransition) string) func(fstest.MapFS, syntheticLegacyTransition) {
+		return func(files fstest.MapFS, s syntheticLegacyTransition) {
+			files["qualification/evidence/"+pick(s)+".json"].Data = []byte("{}\n")
+		}
+	}
+	deleteEntry := func(pick func(syntheticLegacyTransition) string) func(fstest.MapFS, syntheticLegacyTransition) {
+		return func(files fstest.MapFS, s syntheticLegacyTransition) {
+			delete(files, "qualification/evidence/"+pick(s)+".json")
+		}
+	}
 	for name, mutate := range map[string]func(*productionRecord, fstest.MapFS){
 		"legacy accepted without transition binding": func(r *productionRecord, _ fstest.MapFS) {
 			r.Consumers[3].LegacyTransition = nil
 		},
 		"network STAGE evidence reused without binding": func(r *productionRecord, _ fstest.MapFS) {
 			r.Consumers[3].LegacyTransition = nil
-		},
-		"transition profile": func(r *productionRecord, _ fstest.MapFS) {
-			r.Consumers[3].LegacyTransition.Profile = "CPA8-EXTERNAL-SAFETY-r1"
-		},
-		"transition case ref mismatch": func(r *productionRecord, _ fstest.MapFS) {
-			r.Consumers[3].LegacyTransition.CaseRef = "other-case"
-		},
-		"transition evidence missing": func(r *productionRecord, f fstest.MapFS) {
-			delete(f, "qualification/evidence/"+r.Consumers[3].LegacyTransition.EvidenceSHA256+".json")
-		},
-		"transition evidence drift": func(r *productionRecord, f fstest.MapFS) {
-			f["qualification/evidence/"+r.Consumers[3].LegacyTransition.EvidenceSHA256+".json"].Data = []byte("{}")
-		},
-		"transition source class": func(r *productionRecord, f fstest.MapFS) {
-			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.SourceClass = string(bootstrap.AdoptNetworkExisting) })
-		},
-		"transition artifact": func(r *productionRecord, f fstest.MapFS) {
-			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.TargetArtifactID = "sha256:" + strings.Repeat("a", 64) })
-		},
-		"transition archive": func(r *productionRecord, f fstest.MapFS) {
-			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.TargetArchiveSHA256 = strings.Repeat("a", 64) })
-		},
-		"transition binary": func(r *productionRecord, f fstest.MapFS) {
-			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.TargetBinarySHA256 = strings.Repeat("a", 64) })
-		},
-		"transition consumer implementation": func(r *productionRecord, f fstest.MapFS) {
-			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.ConsumerImplementationSHA256 = strings.Repeat("a", 64) })
-		},
-		"transition source not preserved": func(r *productionRecord, f fstest.MapFS) {
-			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.SourcePreserved = false })
-		},
-		"transition staging unverified": func(r *productionRecord, f fstest.MapFS) {
-			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.StagingV8Verified = false })
-		},
-		"transition destination unverified": func(r *productionRecord, f fstest.MapFS) {
-			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.DestinationVerified = false })
-		},
-		"transition schema": func(r *productionRecord, f fstest.MapFS) {
-			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.SchemaVersion = 2 })
 		},
 		"transition carried by network consumer": func(r *productionRecord, _ fstest.MapFS) {
 			r.Consumers[2] = r.Consumers[3]
@@ -356,6 +444,76 @@ func TestProductionLoaderRequiresIndependentLegacyTransitionBinding(t *testing.T
 		"safe-read semantic digest drift": func(r *productionRecord, _ fstest.MapFS) {
 			r.ImplementationSHA256 = consumerImplementationDigest(strings.Repeat("b", 64), bootstrap.FreshStrategyImplementationSHA256())
 		},
+		"transition profile":                   chain(func(s *syntheticLegacyTransition) { s.binding.Profile = "CPA8-EXTERNAL-SAFETY-r1" }, nil),
+		"transition case ref mismatch":         chain(func(s *syntheticLegacyTransition) { s.binding.CaseRef = "other-case" }, nil),
+		"transition manifest digest malformed": chain(func(s *syntheticLegacyTransition) { s.binding.ManifestSHA256 = "not-a-digest" }, nil),
+		"transition report digest malformed":   chain(func(s *syntheticLegacyTransition) { s.binding.ReportSHA256 = "not-a-digest" }, nil),
+		"transition evidence digest malformed": chain(func(s *syntheticLegacyTransition) { s.binding.EvidenceSHA256 = "not-a-digest" }, nil),
+		"transition implementation head malformed": chain(func(s *syntheticLegacyTransition) {
+			s.binding.ImplementationHead = "not-a-head"
+		}, nil),
+		"transition legacy version":             chain(func(s *syntheticLegacyTransition) { s.binding.LegacyVersion = "v7.0.13" }, nil),
+		"transition legacy archive":             chain(func(s *syntheticLegacyTransition) { s.binding.LegacyArchiveSHA256 = strings.Repeat("a", 64) }, nil),
+		"transition legacy binary":              chain(func(s *syntheticLegacyTransition) { s.binding.LegacyBinarySHA256 = strings.Repeat("a", 64) }, nil),
+		"transition source class":               chain(func(s *syntheticLegacyTransition) { s.observation.SourceClass = string(bootstrap.AdoptNetworkExisting) }, nil),
+		"transition observation case ref":       chain(func(s *syntheticLegacyTransition) { s.observation.CaseRef = "other-case" }, nil),
+		"transition observation schema":         chain(func(s *syntheticLegacyTransition) { s.observation.SchemaVersion = 2 }, nil),
+		"transition observation legacy version": chain(func(s *syntheticLegacyTransition) { s.observation.LegacyVersion = "v7.0.13" }, nil),
+		"transition observation legacy archive": chain(func(s *syntheticLegacyTransition) { s.observation.LegacyArchiveSHA256 = strings.Repeat("a", 64) }, nil),
+		"transition observation legacy binary":  chain(func(s *syntheticLegacyTransition) { s.observation.LegacyBinarySHA256 = strings.Repeat("a", 64) }, nil),
+		"transition artifact": chain(func(s *syntheticLegacyTransition) {
+			s.observation.TargetArtifactID = "sha256:" + strings.Repeat("a", 64)
+		}, nil),
+		"transition archive": chain(func(s *syntheticLegacyTransition) { s.observation.TargetArchiveSHA256 = strings.Repeat("a", 64) }, nil),
+		"transition binary":  chain(func(s *syntheticLegacyTransition) { s.observation.TargetBinarySHA256 = strings.Repeat("a", 64) }, nil),
+		"transition consumer implementation": chain(func(s *syntheticLegacyTransition) {
+			s.observation.ConsumerImplementationSHA256 = strings.Repeat("a", 64)
+		}, nil),
+		"transition source not preserved":   chain(func(s *syntheticLegacyTransition) { s.observation.SourcePreserved = false }, nil),
+		"transition legacy read unverified": chain(func(s *syntheticLegacyTransition) { s.observation.LegacyReadVerified = false }, nil),
+		"transition staging unverified":     chain(func(s *syntheticLegacyTransition) { s.observation.StagingV8Verified = false }, nil),
+		"transition destination unverified": chain(func(s *syntheticLegacyTransition) { s.observation.DestinationVerified = false }, nil),
+		"transition gateway not pending":    chain(func(s *syntheticLegacyTransition) { s.observation.GatewayPending = false }, nil),
+		"manifest missing":                  chain(nil, deleteEntry(func(s syntheticLegacyTransition) string { return s.binding.ManifestSHA256 })),
+		"manifest digest mismatch":          chain(nil, corruptBytes(func(s syntheticLegacyTransition) string { return s.binding.ManifestSHA256 })),
+		"manifest schema":                   chain(func(s *syntheticLegacyTransition) { s.manifest.SchemaVersion = 2 }, nil),
+		"manifest contract":                 chain(func(s *syntheticLegacyTransition) { s.manifest.ContractID = "other-contract" }, nil),
+		"manifest revision missing":         chain(func(s *syntheticLegacyTransition) { s.manifest.Revision = "" }, nil),
+		"manifest candidate archive":        chain(func(s *syntheticLegacyTransition) { s.manifest.Candidate.DeclaredSHA256 = strings.Repeat("a", 64) }, nil),
+		"manifest candidate artifact": chain(func(s *syntheticLegacyTransition) {
+			s.manifest.Candidate.ArtifactID = "sha256:" + strings.Repeat("a", 64)
+		}, nil),
+		"manifest profile missing": chain(func(s *syntheticLegacyTransition) { s.manifest.Profiles = nil }, nil),
+		"manifest case missing":    chain(func(s *syntheticLegacyTransition) { s.manifest.Cases = nil }, nil),
+		"manifest case profile mismatch": chain(func(s *syntheticLegacyTransition) {
+			s.manifest.Cases[0].ProfileRefs = []string{"CPA8-EXTERNAL-SAFETY-r1"}
+		}, nil),
+		"manifest case proof scope missing": chain(func(s *syntheticLegacyTransition) { s.manifest.Cases[0].ProofScope = "" }, nil),
+		"manifest legacy version":           chain(func(s *syntheticLegacyTransition) { s.manifest.LegacySource.Version = "v7.0.13" }, nil),
+		"manifest legacy archive":           chain(func(s *syntheticLegacyTransition) { s.manifest.LegacySource.ArchiveSHA256 = strings.Repeat("a", 64) }, nil),
+		"manifest legacy binary":            chain(func(s *syntheticLegacyTransition) { s.manifest.LegacySource.BinarySHA256 = strings.Repeat("a", 64) }, nil),
+		"report missing":                    chain(nil, deleteEntry(func(s syntheticLegacyTransition) string { return s.binding.ReportSHA256 })),
+		"report digest mismatch":            chain(nil, corruptBytes(func(s syntheticLegacyTransition) string { return s.binding.ReportSHA256 })),
+		"report manifest mismatch":          chain(func(s *syntheticLegacyTransition) { s.report.ManifestSHA256 = strings.Repeat("b", 64) }, nil),
+		"report manifest revision":          chain(func(s *syntheticLegacyTransition) { s.report.ManifestRevision = "other-revision" }, nil),
+		"report runner head mismatch":       chain(func(s *syntheticLegacyTransition) { s.report.Run.RunnerCommit = strings.Repeat("b", 40) }, nil),
+		"report run id missing":             chain(func(s *syntheticLegacyTransition) { s.report.Run.ID = "" }, nil),
+		"report case missing":               chain(func(s *syntheticLegacyTransition) { s.report.Results[0].CaseRef = "other-case" }, nil),
+		"report execution state":            chain(func(s *syntheticLegacyTransition) { s.report.Results[0].ExecutionState = "running" }, nil),
+		"report assertion outcome":          chain(func(s *syntheticLegacyTransition) { s.report.Results[0].AssertionOutcome = "fail" }, nil),
+		"report capability":                 chain(func(s *syntheticLegacyTransition) { s.report.Results[0].Capability = "unknown" }, nil),
+		"report evidence refs missing":      chain(func(s *syntheticLegacyTransition) { s.report.Results[0].EvidenceRefs = nil }, nil),
+		"report evidence link missing":      chain(func(s *syntheticLegacyTransition) { s.report.Evidence = nil }, nil),
+		"report artifact candidate":         chain(func(s *syntheticLegacyTransition) { s.report.ArtifactObservation.CandidateRef = "other" }, nil),
+		"report provenance":                 chain(func(s *syntheticLegacyTransition) { s.report.ArtifactObservation.Provenance = "unverified" }, nil),
+		"report artifact archive": chain(func(s *syntheticLegacyTransition) {
+			s.report.ArtifactObservation.ObservedArchiveSHA256 = strings.Repeat("a", 64)
+		}, nil),
+		"report artifact binary": chain(func(s *syntheticLegacyTransition) {
+			s.report.ArtifactObservation.ObservedBinarySHA256 = strings.Repeat("a", 64)
+		}, nil),
+		"observation missing":         chain(nil, deleteEntry(func(s syntheticLegacyTransition) string { return s.binding.EvidenceSHA256 })),
+		"observation digest mismatch": chain(nil, corruptBytes(func(s syntheticLegacyTransition) string { return s.binding.EvidenceSHA256 })),
 	} {
 		t.Run(name, func(t *testing.T) {
 			record, files := acceptedConsumerFixture(t, 3)
@@ -369,12 +527,6 @@ func TestProductionLoaderRequiresIndependentLegacyTransitionBinding(t *testing.T
 			}
 		})
 	}
-}
-
-func rewriteSyntheticLegacyTransition(t *testing.T, files fstest.MapFS, record *productionRecord, index int, mutate func(*legacyTransitionBinding)) {
-	t.Helper()
-	record.Consumers[index].LegacyTransition = nil
-	attachSyntheticLegacyTransition(t, files, record, index, mutate)
 }
 
 func TestProductionConsumerQualificationDoesNotCrossStrategiesOrSourceClasses(t *testing.T) {

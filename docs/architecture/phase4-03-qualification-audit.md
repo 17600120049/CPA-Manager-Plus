@@ -419,3 +419,46 @@ uses the source client keys with a Manager-generated management key and the
 exact accepted ArtifactID, and that the committed checkpoint follows the v8
 readback. Independent acceptance of this exact-head artifact is still required
 before any production consumer may become `accepted`.
+
+## Legacy source-profile and transition-authority repair
+
+The independent review of the previous batch kept Gate A blocked on two P0s; this
+repair closes them without accepting any consumer:
+
+- The explicit legacy adapter now requires the exact accepted source profile.
+  It reads `X-CPA-VERSION` from the single `GET /v0/management/config` response
+  and succeeds only for the pinned CPA v7.0.12 profile (`7.0.12` in the official
+  release header). Missing, malformed, other v7 releases, v8 and unknown values
+  fail closed with a stable typed error before any body interpretation; no
+  destination mutation occurs. The pinned profile also fixes the official Linux
+  amd64 archive (`8afc9ed4...`) and executable (`1eb108b8...`) digests, and the
+  real-process test verifies the downloaded executable against that constant.
+  Body shape remains only an extra sanity check: exact CPA v8.0.13 still serves
+  `/v0/management/config` with a legacy-shaped body, so the real test now proves
+  that endpoint exists and is rejected as an unsupported source profile.
+- Legacy transition authority is a complete chain instead of a standalone
+  observation JSON. The new checked-in, content-addressed manifest
+  `qualification/evidence/316f7452....json` defines the
+  `fresh-legacy-managed-stage-v8-r1` case under `CPA8-STAGE-r1`, the exact v8
+  target and the accepted v7.0.12 source profile. The loader requires a
+  consumer binding with manifest/report/implementation-head/observation digests
+  and verifies: manifest case/profile/source/target, report manifest/revision/
+  runner head/artifact observation/completed PASS result/evidence ref, then the
+  observation's source class, v7 profile, exact target, consumer implementation
+  digest and the source-preserved/legacy-read/staging-v8/destination-verified/
+  Gateway-pending facts. Any mismatch grants nothing. The new case is not
+  inserted into or required from the retained original r4 report case refs.
+- The exact-CPA CI job now emits the sanitized transition manifest copy, report
+  and observation as separate content-addressed artifacts, checks that the
+  report binds the emitted manifest/observation/head, and records their SHA-256
+  values in the environment metadata. The Go test only writes them after every
+  transition, preservation, readback and restart-fence assertion passed. CI
+  still writes no acceptance; `consumer.json` remains pending for all four
+  consumers.
+- `legacy_transition.go` is part of `consumerImplementationSHA256` and has LF
+  attributes, so a change to the transition authority contract invalidates any
+  later acceptance.
+
+Scope check: no version negotiation/range, no v0/v8 fallback, no new workflow,
+no second qualification ledger, no migration engine, no Runtime/Supervisor
+authority change and no Phase4-04 behavior is introduced.

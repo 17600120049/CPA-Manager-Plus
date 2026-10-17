@@ -127,6 +127,9 @@ func TestAdoptionStagesEncryptedSnapshotBeforeDestinationAndVerifiesActualAuth(t
 				}
 				sourceReads++
 				w.Header().Set("Content-Type", "application/json")
+				if class == bootstrap.AdoptLegacyManaged {
+					w.Header().Set("X-CPA-VERSION", "7.0.12")
+				}
 				_, _ = w.Write([]byte(body))
 			}))
 			defer source.Close()
