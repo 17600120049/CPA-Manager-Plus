@@ -23,7 +23,8 @@ runtime restriction. Review must separately accept legacy staging transition.
 Only then may the reviewed record name `status: accepted`, its original profile/
 case/report/manifest/runner-HEAD bindings, independent review SHA-256, explicit
 accepted limitations and invalidation conditions. `implementationSha256` binds
-the compiled Fresh strategy/loader source bytes and the v8 safe-read source
+the compiled Fresh strategy/loader/adoption source bytes and the v8 safe-read/
+destination verification source
 digest; changing them requires renewed acceptance. It is independent of the
 original evidence execution HEADs and avoids a commit containing its own SHA.
 
@@ -39,7 +40,19 @@ Git attributes preserve these bytes on Windows.
 
 The four consumers are independent: New Managed, External, network adoption and
 legacy adoption. Accepted source qualification still grants no resource replay,
-destination ownership, Gateway activation or product completion. Adoption keeps
-`adoption_destination_staging_required` until its separate accepted destination
-primitive exists. Test-only synthetic acceptance is constructed in memory and
-is never part of this directory or the production binary.
+destination ownership, Gateway activation or product completion. Both adoption
+consumers additionally reference the existing immutable `CPA8-STAGE-r1` manifest.
+Their optional `adoptionEvidence` names three distinct accepted cases in that
+profile: `readCaseRef`, `replayCaseRef` and `verifyCaseRef`. Independent review must
+accept those exact cases for the bounded `client-api-keys` resource and this
+implementation. Only that explicit mapping yields its `Migrate` decision and
+exact destination ArtifactID. An External safe-read profile cannot supply it.
+Legacy transition acceptance remains separate from network adoption acceptance.
+
+All current entries still omit `adoptionEvidence` and remain pending. Missing
+destination capability retains `adoption_destination_staging_required`; accepted
+source-only consumers with an available destination return
+`adoption_resource_qualification_required` before source discovery. Test-only
+synthetic acceptance is constructed in memory and is never part of this directory
+or the production binary. Controlled real-CPA CI observations are review inputs,
+not authority files and not automatic production acceptance.

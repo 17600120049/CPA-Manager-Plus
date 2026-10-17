@@ -93,6 +93,7 @@ type Executor struct {
 	closed                   atomic.Bool
 	closeOnce                sync.Once
 	closeErr                 error
+	destination              *destination
 
 	// Prepare staging is serialized independently from lifecycle/recovery
 	// execution. The admission mutex makes worker registration and shutdown a
@@ -216,7 +217,7 @@ func (e *Executor) Start(ctx context.Context, request StartRequest) (journal.Ope
 	// A newly accepted explicit run supersedes any prior crash timer. Only its
 	// own durable terminal success may grant a fresh recovery epoch.
 	e.disableRecovery(RecoveryStateInactive)
-	started, spawnErr := e.process.Start(executionCtx, cpaprocess.StartSpec{Executable: e.currentExecutableLocked()})
+	started, spawnErr := e.startProcess(executionCtx, e.currentExecutableLocked())
 	state, failureCode := journal.StateSucceeded, ""
 	if spawnErr != nil {
 		state, failureCode = journal.StateFailed, "process_start_failed"

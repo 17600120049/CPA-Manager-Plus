@@ -9,6 +9,7 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 
 const OperationKey = "fresh_operation_v1"
 const AuthorityKey = "fresh_authority_v1"
+const adoptionKey = "fresh_adoption_v1"
 const adminKey = "admin_credential_v1"
 
 type repository struct{ db *sql.DB }
@@ -41,7 +43,7 @@ func load(ctx context.Context, q queryer) (Record, error) {
 		k        string
 		v        any
 		optional bool
-	}{{OperationKey, &r.Operation, false}, {AuthorityKey, &r.Authority, false}, {adminKey, &r.Admin, true}} {
+	}{{OperationKey, &r.Operation, false}, {AuthorityKey, &r.Authority, false}, {adminKey, &r.Admin, true}, {adoptionKey, &r.AdoptionCiphertext, true}} {
 		var data string
 		err := q.QueryRowContext(ctx, "select value from settings where key=?", item.k).Scan(&data)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -92,6 +94,24 @@ func valid(r Record) error {
 		if r.Operation.Strategy.TargetIdentity != "external:sha256:"+hex.EncodeToString(digest[:]) {
 			return ErrNotFresh
 		}
+	}
+	if r.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
+		if !security.IsValidProtectedEnvelope(r.AdoptionCiphertext) {
+			return ErrNotFresh
+		}
+		if r.Operation.Strategy.Stage == "committed" {
+			if r.Connection == nil {
+				return ErrNotFresh
+			}
+			digest := sha256.Sum256([]byte(r.Connection.CPABaseURL))
+			if r.Operation.Strategy.DestinationConnectionIdentity != "external:sha256:"+hex.EncodeToString(digest[:]) {
+				return ErrNotFresh
+			}
+		} else if r.Connection != nil {
+			return ErrNotFresh
+		}
+	} else if r.AdoptionCiphertext != "" {
+		return ErrNotFresh
 	}
 	return nil
 }
@@ -222,6 +242,7 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		return Record{}, ErrConflict
 	}
 	before := v
+	before.Operation.Strategy.AdoptionDecisions = slices.Clone(v.Operation.Strategy.AdoptionDecisions)
 	if v.Admin != nil {
 		copy := *v.Admin
 		before.Admin = &copy
@@ -239,6 +260,16 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	if before.Connection != nil && !reflect.DeepEqual(before.Connection, v.Connection) {
 		return Record{}, ErrConflict
 	}
+	if before.AdoptionCiphertext != "" && before.AdoptionCiphertext != v.AdoptionCiphertext {
+		return Record{}, ErrConflict
+	}
+	if before.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
+		frozen := before.Operation.Strategy
+		frozen.Stage = v.Operation.Strategy.Stage
+		if !reflect.DeepEqual(frozen, v.Operation.Strategy) || before.Operation.Strategy.Stage == "committed" && v.Operation.Strategy.Stage != "committed" {
+			return Record{}, ErrConflict
+		}
+	}
 	v.Operation.Revision++
 	if err = valid(v); err != nil {
 		return Record{}, err
@@ -248,6 +279,9 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	}
 	if err == nil && before.Admin == nil && v.Admin != nil {
 		err = write(ctx, tx, adminKey, v.Admin)
+	}
+	if err == nil && before.AdoptionCiphertext == "" && v.AdoptionCiphertext != "" {
+		err = write(ctx, tx, adoptionKey, v.AdoptionCiphertext)
 	}
 	if err == nil && before.Connection == nil && v.Connection != nil {
 		disabled := false

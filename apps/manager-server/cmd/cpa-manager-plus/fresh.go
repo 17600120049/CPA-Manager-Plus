@@ -77,7 +77,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
-	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector})
+	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL})
 	a.fixed = freshbootstrap.Handler{Authority: a.authority, Routing: a.routing, Current: a.current,
 		Shell: httpapi.BootstrapWebHandler(), Strategy: http.HandlerFunc(a.fixedStrategy)}
 	return a
@@ -259,6 +259,14 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		writeFreshStrategyError(w, err)
 		return
 	}
+	if request.Strategy == bootstrap.AdoptExisting {
+		record, err := a.store.Load(r.Context())
+		if err != nil || record.Operation.Identity != op.Identity || record.Operation.Revision != op.Revision {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		request.Request.AdoptionCiphertext = record.AdoptionCiphertext
+	}
 	result, err := a.strategy.Execute(r.Context(), op, request.Request)
 	if err != nil {
 		writeFreshStrategyError(w, err)
@@ -285,6 +293,9 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 			}
 		}
 		record.Operation.Strategy = result.Checkpoint
+		if result.AdoptionCiphertext != "" {
+			record.AdoptionCiphertext = result.AdoptionCiphertext
+		}
 		if result.Connection != nil {
 			record.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: result.Connection.BaseURL, ManagementKey: result.Connection.ManagementKeyCiphertext}
 		}

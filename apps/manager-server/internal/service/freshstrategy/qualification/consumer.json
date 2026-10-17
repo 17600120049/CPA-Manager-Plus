@@ -67,6 +67,13 @@
           "reportSha256": "ce1e806cf8f5a676c97c7337bef3618b2cdf1213b9b33827a90d2e3a0141e779",
           "implementationHead": "7d8c98cb93a4ca9d405f2f91504348d439655f59",
           "caseRefs": []
+        },
+        {
+          "profile": "CPA8-STAGE-r1",
+          "manifestSha256": "3c21eb7db0d45638b9be81891277329b0c04ea941588dc90213d6d864f34896f",
+          "reportSha256": "6add816401dad04a7e29285eece43e30abcef6625313a8e492ae24b4ef079a7c",
+          "implementationHead": "7d8c98cb93a4ca9d405f2f91504348d439655f59",
+          "caseRefs": []
         }
       ],
       "acceptanceSha256": "",

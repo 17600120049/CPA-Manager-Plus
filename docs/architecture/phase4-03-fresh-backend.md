@@ -148,6 +148,47 @@ connection persistence uses the existing Protector and canonical encrypted
 connection representation in the same checkpoint transaction; collector is off.
 External lifecycle, ingress and client-auth policy stay with the operator.
 
+The bounded Adopt destination implementation authorizes only the explicit
+`client-api-keys` resource. It discovers it through the same bounded v8 GET only
+after source-class, exact target artifact and resource read/replay/verify
+acceptance pass. It emits one existing `AdoptionResourceDecision`; credentials,
+provider/runtime state and usage/request/log/history are excluded from discovery
+and replay. Empty, duplicate, whitespace/control-bearing or oversized client-key
+sets fail closed (maximum 128 keys, 4096 bytes each).
+
+Before any destination effect, the caller CAS-persists source URL identity,
+source class, target Runtime identity/generation/artifact, destination connection
+identity, resource decision and the encrypted frozen resource snapshot in the
+same Fresh settings store. `fresh_adoption_v1` contains only a Protector envelope;
+it is not another workflow/operation ledger. Retries compare the original source
+credential, source/destination and target fences and never rediscover a changed
+source or widen the accepted resource set.
+
+The existing RuntimeClient's optional `stage_destination` capability uses the
+same private transport, Supervisor executor, journal and child manager. It creates
+a new Supervisor-owned `destination/` directory, private immutable resource input,
+new CPA config and empty auth directory. No caller-selected filesystem path or
+source lifecycle operation exists. Journal fingerprints contain only public
+identity, never resource secrets or their hashes. Repeated stage requests compare
+the protected target input as well as the public journal identity. Stage is
+serialized with lifecycle mutations, requires no owned child, and publishes
+fsynced files and directory before terminal success. Interrupted/uncertain journal
+states remain unresolved; replay never silently resumes them.
+
+Start uses the same Fresh-derived child operation ID and exact-artifact fence.
+All subsequent spawn paths retain the destination config and artifact, including
+Restart/recovery; this adds no Upgrade behavior. The target listens on loopback
+without a configured child identity; the segregated Docker child uses the private
+container interface. Windows does not advertise destination staging. After Start,
+the Manager verifies native keys by v8 readback and verifies actual `/v1/models`
+authentication: anonymous and Management Key requests must return 401, and each
+migrated client key must return the model-list contract. One five-second total
+budget and fixed direct DNS/transport bound this verification. A final Runtime
+identity/generation/artifact/ready observation must still match. Only then are the
+committed checkpoint and canonical encrypted destination connection written
+atomically. Gateway stays pending. Committed replay verifies the existing target
+without stage or Start side effects.
+
 Fresh Ingress starts with Gateway closed, including before routing prepare/Apply
 and after an Ingress-only restart before Restore. A Control projection or product
 completion never opens it. To preserve the existing non-Fresh Docker lifecycle,
@@ -185,10 +226,13 @@ separately accepted staging-v8 transition.
    Production New Managed/External therefore retain their typed blockers.
    Details and the single authority are in the
    [consumer-record contract](../../apps/manager-server/internal/service/freshstrategy/qualification/README.md).
-2. There is no accepted Adopt destination staging/replay/verify primitive.
-   The existing adoption contract stays fail closed and returns
-   `adoption_destination_staging_required`, explicitly listing unsupported native
-   resources. Synthetic staging experiments are not used in product code.
+2. Adopt destination staging/replay/verify is implemented for client API keys,
+   but no production resource acceptance exists. Source-only qualification
+   cannot authorize replay. The production source qualification and resource
+   blockers remain. Controlled real-CPA CI exercises both source classes, a real
+   SQLite reopen and lost stage/Start responses. The legacy fixture uses the exact
+   v8 candidate with legacy config spelling; it does not establish a historical
+   legacy-runtime-to-v8 transition or independently accept `CPA8-STAGE-r1`.
 
 These are remaining Phase4-03 acceptance blockers, explicitly confirmed by the
 maintainer. This change does not claim end-to-end strategy qualification or full

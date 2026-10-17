@@ -26,7 +26,7 @@ var productionEvidence embed.FS
 // evidence runner HEADs. A semantic source change invalidates an old acceptance
 // without requiring a self-referential commit SHA inside that same commit.
 //
-//go:embed production.go service.go
+//go:embed production.go service.go adoption.go
 var consumerImplementation embed.FS
 
 var errProductionQualification = errors.New("production qualification unavailable")
@@ -37,8 +37,9 @@ type consumerKey struct {
 }
 
 type qualifiedConsumer struct {
-	Qualification bootstrap.CPAQualification
-	ArtifactID    model.RuntimeArtifactID
+	Qualification     bootstrap.CPAQualification
+	ArtifactID        model.RuntimeArtifactID
+	AdoptionResources []bootstrap.AdoptionResourceDecision
 }
 
 type productionRecord struct {
@@ -59,6 +60,16 @@ type consumerRecord struct {
 	AcceptanceSHA256 string                     `json:"acceptanceSha256"`
 	Limitations      []string                   `json:"limitations"`
 	InvalidatedBy    []string                   `json:"invalidatedBy"`
+	AdoptionEvidence *adoptionResourceEvidence  `json:"adoptionEvidence,omitempty"`
+}
+
+// These must be independently accepted cases in the consumer's pinned report,
+// not profile-wide booleans or observations produced by a browser probe.
+type adoptionResourceEvidence struct {
+	Profile       string `json:"profile"`
+	ReadCaseRef   string `json:"readCaseRef"`
+	ReplayCaseRef string `json:"replayCaseRef"`
+	VerifyCaseRef string `json:"verifyCaseRef"`
 }
 
 type profileEvidence struct {
@@ -75,6 +86,7 @@ type profileEvidence struct {
 func NewProduction(options Options) *Service {
 	options.Qualification = bootstrap.CPAQualification{}
 	options.QualifiedArtifactID = ""
+	options.AdoptionResources = nil
 	consumers, err := loadProductionQualification(productionEvidence)
 	if err != nil {
 		consumers = nil // Invalid or unavailable evidence grants nothing.
@@ -120,6 +132,9 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 			}
 		}
 		qualified := qualifiedConsumer{Qualification: bootstrap.CPAQualification{ManagementGeneration: record.ManagementGeneration}}
+		if consumer.AdoptionEvidence != nil && key.Strategy != bootstrap.AdoptExisting {
+			return nil, errProductionQualification
+		}
 		switch consumer.Status {
 		case "pending":
 			if consumer.AcceptanceSHA256 != "" {
@@ -148,6 +163,24 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 			if qualified.Qualification.ArtifactQualified {
 				qualified.ArtifactID = record.ArtifactID
 			}
+			if resource := consumer.AdoptionEvidence; resource != nil {
+				if resource.Profile != "CPA8-STAGE-r1" {
+					return nil, errProductionQualification
+				}
+				profile := slices.IndexFunc(consumer.Evidence, func(p profileEvidence) bool { return p.Profile == resource.Profile })
+				if profile < 0 {
+					return nil, errProductionQualification
+				}
+				seen := map[string]bool{}
+				for _, ref := range []string{resource.ReadCaseRef, resource.ReplayCaseRef, resource.VerifyCaseRef} {
+					if ref == "" || seen[ref] || !slices.Contains(consumer.Evidence[profile].CaseRefs, ref) {
+						return nil, errProductionQualification
+					}
+					seen[ref] = true
+				}
+				qualified.ArtifactID = record.ArtifactID
+				qualified.AdoptionResources = []bootstrap.AdoptionResourceDecision{{ResourceRef: "client-api-keys", Kind: bootstrap.APIKeys, Scope: bootstrap.ClientAPIKeys, ReadEvidenceRef: "preflight:client-api-keys-read", ReplayEvidenceRef: "preflight:client-api-keys-replay", VerifyEvidenceRef: "preflight:client-api-keys-verify", Qualification: bootstrap.CapabilityQualified, Disposition: bootstrap.Migrate}}
+			}
 		default:
 			return nil, errProductionQualification
 		}
@@ -158,7 +191,7 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 
 func consumerImplementationSHA256() string {
 	hash := sha256.New()
-	for _, name := range []string{"production.go", "service.go"} {
+	for _, name := range []string{"production.go", "service.go", "adoption.go"} {
 		data, _ := consumerImplementation.ReadFile(name) // Required at compile time.
 		_, _ = hash.Write(data)
 	}
@@ -170,9 +203,9 @@ func requiredConsumerProfiles(key consumerKey) []string {
 	switch key {
 	case consumerKey{bootstrap.NewManaged, bootstrap.AdoptSourceNone}:
 		return []string{"CPA8-MGMT-MIN-r1"}
-	case consumerKey{bootstrap.ConnectExternal, bootstrap.AdoptSourceNone}, consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting}:
+	case consumerKey{bootstrap.ConnectExternal, bootstrap.AdoptSourceNone}:
 		return []string{"CPA8-EXTERNAL-SAFETY-r1"}
-	case consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged}:
+	case consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged}, consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting}:
 		return []string{"CPA8-EXTERNAL-SAFETY-r1", "CPA8-STAGE-r1"}
 	}
 	return nil

@@ -152,6 +152,49 @@ jobs:
         working-directory: apps/manager-server
         run: go vet ./...
 
+      - name: Verify Fresh adoption with exact CPA v8 and Supervisor
+        if: needs.changes.outputs.manager_runtime == 'true'
+        shell: bash
+        env:
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/fresh-adoption-v8"
+          tools="${RUNNER_TEMP}/fresh-adoption-tools"
+          mkdir -p "${evidence}" "${tools}"
+          curl --fail --location --max-time 120 --output "${tools}/cpa.tar.gz" \
+            https://github.com/router-for-me/CLIProxyAPI/releases/download/v8.0.13/CLIProxyAPI_8.0.13_linux_amd64.tar.gz
+          printf '%s  %s\n' 50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3 "${tools}/cpa.tar.gz" | sha256sum --check --status
+          tar -xzf "${tools}/cpa.tar.gz" -C "${tools}" cli-proxy-api
+          printf '%s  %s\n' b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41 "${tools}/cli-proxy-api" | sha256sum --check --status
+          go -C apps/runtime-supervisor build -trimpath -o "${tools}/cpamp-runtime-supervisor" ./cmd/cpamp-runtime-supervisor
+          export CPAMP_TEST_CPA_V8="${tools}/cli-proxy-api"
+          export CPAMP_TEST_RUNTIME="${tools}/cpamp-runtime-supervisor"
+          go -C apps/runtime-supervisor test -race -count=1 -json -run '^TestDestinationRealCPAV8$' ./internal/lifecycle | tee "${evidence}/supervisor.jsonl"
+          go -C apps/manager-server test -race -count=1 -json -run '^TestAdoptionExactCPAV8WithSupervisor$' ./internal/service/freshstrategy | tee "${evidence}/adoption.jsonl"
+          python3 - <<'PY'
+          import json, os, platform, subprocess
+          def output(*args):
+              return subprocess.check_output(args, text=True).strip()
+          value = dict(sourceHead=os.environ['SOURCE_HEAD'], testedCommit=output('git','rev-parse','HEAD'),
+                       platform=platform.platform(), goVersion=output('go','version'),
+                       archiveSha256='50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3',
+                       binarySha256='b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41',
+                       sourceClasses=['network_existing','legacy_managed'], resource='client-api-keys',
+                       productionAcceptance='pending', gateway='pending')
+          with open(os.path.join(os.environ['RUNNER_TEMP'],'fresh-adoption-v8/environment.json'),'w') as f:
+              json.dump(value, f, indent=2)
+          PY
+
+      - name: Upload controlled Fresh adoption observations
+        if: always() && needs.changes.outputs.manager_runtime == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fresh-adoption-v8-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fresh-adoption-v8/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Record Linux bundle boundary environment
         if: needs.changes.outputs.bundle_boundary == 'true'
         working-directory: apps/manager-server

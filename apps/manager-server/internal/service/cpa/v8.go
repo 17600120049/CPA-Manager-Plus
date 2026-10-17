@@ -63,6 +63,18 @@ func NormalizeV8BaseURL(raw string) (string, error) {
 // schema follows the AQ-03 required-field projection. This helper does not
 // establish independent profile or production-consumer acceptance.
 func ReadV8Config(ctx context.Context, baseURL, managementKey string) (V8ConfigObservation, error) {
+	return readV8Config(ctx, baseURL, managementKey, nil)
+}
+
+// ReadV8AdoptionKeys is used only after resource-specific server qualification.
+// It shares the bounded safe-read transport; no source write or usage access.
+func ReadV8AdoptionKeys(ctx context.Context, baseURL, managementKey string) ([]string, error) {
+	var keys []string
+	_, err := readV8Config(ctx, baseURL, managementKey, &keys)
+	return keys, err
+}
+
+func readV8Config(ctx context.Context, baseURL, managementKey string, adoptionKeys *[]string) (V8ConfigObservation, error) {
 	baseURL, err := NormalizeV8BaseURL(baseURL)
 	if err != nil {
 		return V8ConfigObservation{}, err
@@ -77,10 +89,19 @@ func ReadV8Config(ctx context.Context, baseURL, managementKey string) (V8ConfigO
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	client, closeClient, err := v8DirectClient(ctx, baseURL)
+	if err != nil {
+		return V8ConfigObservation{}, err
+	}
+	defer closeClient()
+	return readV8ConfigWithClient(ctx, client, baseURL, managementKey, adoptionKeys)
+}
+
+func v8DirectClient(ctx context.Context, baseURL string) (*http.Client, func(), error) {
 	u, _ := url.Parse(baseURL)
 	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, u.Hostname())
 	if err != nil || len(addresses) == 0 {
-		return V8ConfigObservation{}, V8ReadUnavailable
+		return nil, nil, V8ReadUnavailable
 	}
 	port := u.Port()
 	if port == "" {
@@ -98,9 +119,12 @@ func ReadV8Config(ctx context.Context, baseURL, managementKey string) (V8ConfigO
 	transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(addresses[0].IP.String(), port))
 	}
-	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return client, transport.CloseIdleConnections, nil
+}
+
+func readV8ConfigWithClient(ctx context.Context, client *http.Client, baseURL, managementKey string, adoptionKeys *[]string) (V8ConfigObservation, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v8/management/config", nil)
 	if err != nil {
 		return V8ConfigObservation{}, V8InvalidConnection
@@ -191,6 +215,28 @@ func ReadV8Config(ctx context.Context, baseURL, managementKey string) (V8ConfigO
 	delete(sections, "config-version")
 	if len(sections) > 0 {
 		observation.ResourceSections = append(observation.ResourceSections, "unknown_cpa_native_resource")
+	}
+	if adoptionKeys != nil {
+		if len(clientKeys) == 0 || len(clientKeys) > 128 {
+			return V8ConfigObservation{}, V8InvalidConfig
+		}
+		keys := make([]string, 0, len(clientKeys))
+		seen := map[string]bool{}
+		for _, raw := range clientKeys {
+			var key string
+			_ = json.Unmarshal(raw, &key)
+			if key == "" || key != strings.TrimSpace(key) || len(key) > 4096 || strings.ContainsAny(key, "\x00\r\n") || seen[key] {
+				return V8ConfigObservation{}, V8InvalidConfig
+			}
+			for _, character := range key {
+				if character < 0x21 || character == 0x7f {
+					return V8ConfigObservation{}, V8InvalidConfig
+				}
+			}
+			seen[key] = true
+			keys = append(keys, key)
+		}
+		*adoptionKeys = keys
 	}
 	return observation, nil
 }

@@ -86,12 +86,12 @@ accepted evidence exists only in test memory. Regression tests cover bindings,
 withdrawal, cross-consumer rejection, production injection rejection, the real
 HTTP/reopen boundary and the existing exact Runtime artifact fence.
 
-**Qualification Gate: BLOCKED by independent production acceptance**, with the
-loader mechanism now implemented. **Adopt destination Gate: BLOCKED**: there is
-still no accepted migratable native resource set or destination primitive.
-Source qualification is not destination/replay authority; Adopt continues to
-block before any source request or destination mutation. No new Runtime API,
-workflow engine, persistence ledger, Gateway grant or Upgrade/UI scope is added.
+At the loader-only baseline, **Qualification Gate: BLOCKED by independent
+production acceptance**, with the loader mechanism implemented. **Adopt
+destination Gate: BLOCKED** at that point lacked both an accepted migratable
+native resource set and a destination primitive. The implementation follow-up
+below supplies the bounded primitive; the missing acceptance still blocks
+production before any source request or destination mutation.
 
 Local loader verification passed: Manager `go test -count=1 ./...` and full
 `go vet ./...`; affected Bootstrap/Fresh/store/CPA/routing/HTTP/command race
@@ -102,11 +102,40 @@ earlier heads' green checks do not qualify this implementation or its evidence.
 
 ## Evidence and independent acceptance are separate
 
+The Adopt implementation follow-up (baseline `38d1a7ec`) adds actual bounded
+destination execution for **client API keys only**, using the existing Fresh
+store/OperationID and Runtime/Supervisor journal. It does not accept any consumer.
+The exact artifact and original immutable AQ bindings below are unchanged. The
+network entry additionally references the same original r4 staging manifest/report
+already used by legacy adoption; no copied manifest or second qualification
+ledger was created. A resource-specific read/replay/verify case mapping in the
+same consumer record is required before `Migrate`; External safe-read acceptance
+cannot supply this mapping.
+
+Reviewable checks now include source preservation; protected snapshot/CAS/reopen;
+destination replay/readback and actual client-auth checks; conflicting source,
+destination, artifact, Runtime identity/generation; partial journal persistence;
+and lost successful stage/Start responses. The existing PR workflow downloads
+the exact original Linux amd64 archive, checks both SHA-256 values, builds the
+current Supervisor, and runs real-process tests for both source classes with race.
+It uploads only sanitized JSONL and source/tested HEAD/artifact metadata as
+`fresh-adoption-v8-<run>-<attempt>`. These observations require independent review;
+they are not inserted into the production consumer record or represented as a
+new AQ acceptance report. A local native build of exact CPA source exercises
+target config/start/auth behavior but is not the qualified Linux artifact.
+
+The controlled `legacy_managed` case uses the exact v8 binary with legacy config
+spelling and preserves that source. It does **not** prove transition from a real
+historical legacy runtime. That missing real transition evidence and its
+independent acceptance remain an explicit legacy blocker. New Managed and
+External production-consumer acceptance also remain absent. Both Gate decisions
+at the top therefore remain **BLOCKED**, even when implementation/CI tests pass.
+
 | Consumer fact | Existing evidence | Independently accepted scope | Unaccepted or missing prerequisite |
 | --- | --- | --- | --- |
-| New Managed exact v8 artifact | r2 normal/expiry and r3/r4 reports observe the same Linux amd64 plugin archive and executable | Historical independent review accepts exact locally verified bytes and their recorded official metadata binding | No accepted New Managed production-consumer qualification, profile/limitations/invalidation binding, or build-bound authority |
+| New Managed exact v8 artifact | r2 normal/expiry and r3/r4 reports observe the same Linux amd64 plugin archive and executable | Historical independent review accepts exact locally verified bytes and their recorded official metadata binding | No accepted New Managed production-consumer qualification or profile/limitations/invalidation binding in the implemented build-bound loader |
 | Connect External required v8 safe-read profile | r3 control run, `CPA8-EXTERNAL-SAFETY-r1`; real auth/config leaves exist | Historical review accepts bounded real config/auth and harness/denial engineering facts | No independently accepted production safe-read subset for the actual supported target/transport/config/mode combinations; deployment/proxy applicability remains unaccepted |
-| Adopt `network_existing` | Same safe-read facts; existing domain resource-decision contract | No independent acceptance of native-resource read/replay/verify for this Fresh consumer | Required profile acceptance plus destination resource replay/readback/effective-state evidence and operation-owned destination execution are missing |
+| Adopt `network_existing` | Same safe-read facts; bounded client-key destination implementation and controlled real-process CI checks | No independent acceptance of native-resource read/replay/verify for this Fresh consumer | Required profile acceptance and independently accepted client-key read/replay/readback/effective-state evidence are missing |
 | Adopt `legacy_managed` | r4 `CPA8-STAGE-r1`; synthetic snapshots, startup writes and conditional restore observations | Historical review accepts only those bounded synthetic engineering facts | Required profile **and** separately accepted staging-v8 transition are missing; real legacy CPA source-to-destination transition/replay/verify is not established |
 
 The historical independent review is
@@ -213,7 +242,8 @@ these exact blockers before source access or destination effects:
 - New Managed: `exact_v8_artifact_qualification_required`.
 - Connect External: `required_v8_profile_qualification_required`.
 - Both Adopt source classes: `adoption_source_qualification_required`.
-- Synthetic qualified Adopt tests: `adoption_destination_staging_required`.
+- Qualified source without a destination primitive: `adoption_destination_staging_required`.
+- Qualified source without independently accepted resource read/replay/verify: `adoption_resource_qualification_required`.
 
 New regression coverage exercises real Fresh store reopen, the authenticated
 strategy handler, rejected HTTP qualification fields, unchanged durable records,
@@ -225,12 +255,12 @@ The existing Windows preflight job now includes the Bootstrap/Fresh strategy
 packages and the new HTTP/reopen test in its startup filter; no new job or
 qualification workflow is introduced.
 
-Destination discovery, resource decisions, replay, semantic verification and
-destination failure/restart/timeout/lost-reply acceptance **remain unimplemented
-and unverified**. There is no accepted resource set with which to implement and
-accept them safely in this batch. Do not equate zero-effect blocker regression
-with successful destination idempotency/verification. Final independent #995
-acceptance is not possible until both gates close for both source classes.
+Destination discovery, resource decisions, replay and semantic verification are
+now implemented for client API keys, with failure/restart/timeout/lost-reply
+regressions and explicit real-process CI checks. These checks establish no
+production acceptance by themselves. Final independent #995 acceptance is not
+possible until both gates close for both source classes, including the missing
+real legacy-to-staging-v8 transition evidence.
 
 Scope check: no second qualification authority, Runtime authority, routing or
 state ledger, workflow/migration framework, signatures/remote trust, history

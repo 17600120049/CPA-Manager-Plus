@@ -66,20 +66,27 @@ type FreshRoutingCheckpoint struct {
 }
 
 type FreshStrategyCheckpoint struct {
-	Strategy         CPAStrategy `json:"strategy,omitempty"`
-	TargetIdentity   string      `json:"targetIdentity,omitempty"`
-	TargetArtifactID string      `json:"targetArtifactId,omitempty"`
-	TargetGeneration uint64      `json:"targetGeneration"`
-	Stage            string      `json:"stage,omitempty"`
-	Unsupported      []string    `json:"unsupported,omitempty"`
+	Strategy                      CPAStrategy                `json:"strategy,omitempty"`
+	TargetIdentity                string                     `json:"targetIdentity,omitempty"`
+	TargetArtifactID              string                     `json:"targetArtifactId,omitempty"`
+	TargetGeneration              uint64                     `json:"targetGeneration"`
+	Stage                         string                     `json:"stage,omitempty"`
+	Unsupported                   []string                   `json:"unsupported,omitempty"`
+	SourceIdentity                string                     `json:"sourceIdentity,omitempty"`
+	SourceClass                   AdoptSourceClass           `json:"sourceClass,omitempty"`
+	DestinationConnectionIdentity string                     `json:"destinationConnectionIdentity,omitempty"`
+	AdoptionDecisions             []AdoptionResourceDecision `json:"adoptionDecisions,omitempty"`
 }
 
 func (c FreshStrategyCheckpoint) validate() error {
 	if c.Strategy == "" {
-		if c.TargetIdentity != "" || c.TargetArtifactID != "" || c.TargetGeneration != 0 || c.Stage != "" || len(c.Unsupported) != 0 {
+		if c.TargetIdentity != "" || c.TargetArtifactID != "" || c.TargetGeneration != 0 || c.Stage != "" || len(c.Unsupported) != 0 || c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0 {
 			return errors.New("unowned Fresh strategy checkpoint")
 		}
 		return nil
+	}
+	if c.Strategy != AdoptExisting && (c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0) {
+		return errors.New("foreign adoption checkpoint")
 	}
 	if strings.TrimSpace(c.TargetIdentity) == "" || c.TargetGeneration == 0 || len(c.Unsupported) != 0 {
 		return errors.New("invalid Fresh strategy target")
@@ -93,11 +100,27 @@ func (c FreshStrategyCheckpoint) validate() error {
 		if !strings.HasPrefix(c.TargetIdentity, "external:") || !validContentDigest(ContentDigest(strings.TrimPrefix(c.TargetIdentity, "external:"))) || c.TargetGeneration != 1 || c.TargetArtifactID != "" || (c.Stage != "validated" && c.Stage != "committed") {
 			return errors.New("invalid external Fresh strategy checkpoint")
 		}
+	case AdoptExisting:
+		if !validContentDigest(ContentDigest(c.TargetArtifactID)) || (c.Stage != "staged" && c.Stage != "committed") ||
+			(c.SourceClass != AdoptNetworkExisting && c.SourceClass != AdoptLegacyManaged) || !validExternalIdentity(c.SourceIdentity) || !validExternalIdentity(c.DestinationConnectionIdentity) || c.SourceIdentity == c.DestinationConnectionIdentity || len(c.AdoptionDecisions) != 1 {
+			return errors.New("invalid adoption checkpoint")
+		}
+		decision := c.AdoptionDecisions[0]
+		if decision.ResourceRef != "client-api-keys" || decision.Kind != APIKeys || decision.Scope != ClientAPIKeys {
+			return errors.New("unsupported adoption resource")
+		}
+		disposition, err := DecideAdoptionResource(decision)
+		if err != nil || disposition != Migrate || decision.Disposition != Migrate {
+			return errors.New("unqualified adoption resource")
+		}
 	default:
-		// Adopt has no accepted destination primitive and emits no checkpoint.
 		return errors.New("unsupported Fresh strategy checkpoint")
 	}
 	return nil
+}
+
+func validExternalIdentity(s string) bool {
+	return strings.HasPrefix(s, "external:") && validContentDigest(ContentDigest(strings.TrimPrefix(s, "external:")))
 }
 
 func (o FreshOperation) Ownership() FreshOwnership {

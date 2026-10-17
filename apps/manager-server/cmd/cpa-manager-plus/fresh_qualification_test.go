@@ -78,7 +78,7 @@ func TestFreshProductionQualificationCannotBeGrantedByHTTPOrRestart(t *testing.T
 				"expectedRuntimeIdentity": "claimed-runtime", "expectedRuntimeGeneration": 7,
 				"expectedArtifactId": "sha256:b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
 			}
-			for _, injected := range []string{"", "qualification", "qualifiedArtifactId"} {
+			for _, injected := range []string{"", "qualification", "qualifiedArtifactId", "adoptionCiphertext", "adoptionResources"} {
 				if injected != "" {
 					body[injected] = map[string]any{"ManagementGeneration": "v8", "ArtifactQualified": true, "RequiredProfileQualified": true, "StagingV8TransitionQualified": true}
 				}

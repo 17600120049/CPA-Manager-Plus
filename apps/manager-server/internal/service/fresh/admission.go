@@ -186,6 +186,11 @@ func Open(ctx context.Context, paths sqlite.InspectionPaths, opts OpenOptions) (
 			return nil, errors.New("Fresh connection secret unavailable")
 		}
 	}
+	if o.Record.AdoptionCiphertext != "" {
+		if _, err = o.Protector.UnprotectString(o.Record.AdoptionCiphertext); err != nil {
+			return nil, errors.New("Fresh adoption snapshot unavailable")
+		}
+	}
 	if err = checkpoint(opts, "checkpoint"); err != nil {
 		return nil, err
 	}

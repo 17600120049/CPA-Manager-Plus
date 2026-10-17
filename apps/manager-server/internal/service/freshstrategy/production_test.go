@@ -42,7 +42,7 @@ func TestProductionConstructorDiscardsInjectedQualification(t *testing.T) {
 	runtime := &managedRuntime{}
 	service := NewProduction(Options{Runtime: runtime, Qualification: bootstrap.CPAQualification{
 		ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true, StagingV8TransitionQualified: true,
-	}, QualifiedArtifactID: model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))})
+	}, QualifiedArtifactID: model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64)), AdoptionResources: acceptedKeys()})
 	for _, item := range []struct {
 		strategy bootstrap.CPAStrategy
 		class    bootstrap.AdoptSourceClass

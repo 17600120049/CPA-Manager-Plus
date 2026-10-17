@@ -29,6 +29,8 @@ type Options struct {
 	Protector           *security.Protector
 	Qualification       bootstrap.CPAQualification
 	QualifiedArtifactID model.RuntimeArtifactID
+	AdoptionResources   []bootstrap.AdoptionResourceDecision
+	DestinationBaseURL  string
 }
 
 type Service struct {
@@ -47,6 +49,8 @@ type Request struct {
 	ExpectedRuntimeGeneration model.RuntimeGeneration    `json:"expectedRuntimeGeneration,omitempty"`
 	ExpectedArtifactID        model.RuntimeArtifactID    `json:"expectedArtifactId,omitempty"`
 	AdoptSourceClass          bootstrap.AdoptSourceClass `json:"adoptSourceClass,omitempty"`
+	// Loaded only by the application from the existing protected Fresh store.
+	AdoptionCiphertext string `json:"-"`
 }
 
 // ProtectedConnection is an internal storage handoff, never part of the public
@@ -58,11 +62,12 @@ type ProtectedConnection struct {
 }
 
 type Result struct {
-	Checkpoint      bootstrap.FreshStrategyCheckpoint `json:"checkpoint"`
-	Connection      *ProtectedConnection              `json:"-"`
-	RuntimeMode     model.RuntimeMode                 `json:"runtimeMode"`
-	GatewayPending  bool                              `json:"gatewayPending"`
-	SourcePreserved bool                              `json:"sourcePreserved"`
+	Checkpoint         bootstrap.FreshStrategyCheckpoint `json:"checkpoint"`
+	Connection         *ProtectedConnection              `json:"-"`
+	RuntimeMode        model.RuntimeMode                 `json:"runtimeMode"`
+	GatewayPending     bool                              `json:"gatewayPending"`
+	SourcePreserved    bool                              `json:"sourcePreserved"`
+	AdoptionCiphertext string                            `json:"-"`
 }
 
 // Execute requires an authenticated, loaded current operation. NewManaged first
@@ -88,6 +93,7 @@ func (s *Service) Execute(ctx context.Context, op bootstrap.FreshOperation, requ
 		consumer := s.consumers[consumerKey{request.Strategy, request.AdoptSourceClass}]
 		scoped.options.Qualification = consumer.Qualification
 		scoped.options.QualifiedArtifactID = consumer.ArtifactID
+		scoped.options.AdoptionResources = consumer.AdoptionResources
 	}
 	switch request.Strategy {
 	case bootstrap.NewManaged:
@@ -167,11 +173,7 @@ func (s *Service) existing(ctx context.Context, op bootstrap.FreshOperation, req
 		if s.options.Qualification.ValidateForStrategy(bootstrap.AdoptExisting, request.AdoptSourceClass) != nil {
 			return result, &Blocker{Code: "adoption_source_qualification_required"}
 		}
-		// Runtime has no accepted destination-stage/replay/verify operation.
-		// Block before probing the user-owned source; missing destination
-		// staging is not permission to inspect or partially replay it.
-		unsupported := []string{"cpa_native_destination_staging_required", "credentials_require_reauthentication", "provider_runtime_state_not_migrated", "historical_usage_excluded"}
-		return result, &Blocker{Code: "adoption_destination_staging_required", Unsupported: unsupported}
+		return s.adopt(ctx, op, request)
 	}
 
 	result.RuntimeMode = model.RuntimeModeExternal

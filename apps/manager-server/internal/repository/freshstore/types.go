@@ -35,6 +35,8 @@ type Record struct {
 	// Canonical server-owned connection. ManagementKey must be a Protector
 	// ciphertext at this repository boundary, never a plaintext journal field.
 	Connection *model.ManagerCPAConnectionConfig
+	// Same Fresh CAS authority; encrypted resource snapshot is never public.
+	AdoptionCiphertext string
 }
 
 // Store exposes only Fresh CAS transactions, not arbitrary workflow execution.
