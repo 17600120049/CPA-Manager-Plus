@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -27,7 +29,6 @@ type config struct {
 	managerURL  *url.URL
 	gatewayURL  *url.URL
 	controlAddr string
-	tokenFile   string
 }
 
 func main() {
@@ -38,13 +39,7 @@ func main() {
 	logger := log.New(os.Stderr, "cpamp-ingress: ", log.LstdFlags)
 	fresh := &ingress.FreshRoutes{}
 	handler := ingress.NewFreshHandler(fresh, cfg.managerURL, cfg.gatewayURL, logger)
-	var control *http.Server
-	if cfg.tokenFile != "" {
-		control = &http.Server{Addr: cfg.controlAddr, Handler: fresh.ControlHandler(func() (string, error) {
-			data, err := os.ReadFile(cfg.tokenFile)
-			return strings.TrimSpace(string(data)), err
-		}), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 16}
-	}
+	control := &http.Server{Addr: cfg.controlAddr, Handler: fresh.ControlHandler(managerFreshAuthority(cfg.managerURL)), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 16}
 	server := &http.Server{
 		Addr:              cfg.addr,
 		Handler:           handler,
@@ -56,9 +51,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	result := make(chan error, 2)
-	if control != nil {
-		go func() { result <- control.ListenAndServe() }()
-	}
+	go func() { result <- control.ListenAndServe() }()
 	go func() {
 		logger.Printf("listening on %s", cfg.addr)
 		result <- server.ListenAndServe()
@@ -75,9 +68,7 @@ func main() {
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.Fatalf("shutdown: %v", err)
 		}
-		if control != nil {
-			_ = control.Shutdown(shutdownCtx)
-		}
+		_ = control.Shutdown(shutdownCtx)
 	}
 }
 
@@ -98,7 +89,50 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if controlAddr == "" {
 		controlAddr = "0.0.0.0:9082"
 	}
-	return config{addr: addr, managerURL: managerURL, gatewayURL: gatewayURL, controlAddr: controlAddr, tokenFile: strings.TrimSpace(getenv("CPAMP_RUNTIME_TOKEN_FILE"))}, nil
+	return config{addr: addr, managerURL: managerURL, gatewayURL: gatewayURL, controlAddr: controlAddr}, nil
+}
+
+func managerFreshAuthority(managerURL *url.URL) func(context.Context) (ingress.FreshRouteState, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   5 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	endpoint := *managerURL
+	endpoint.Path = ingress.FreshRoutingAuthorityPath
+	endpoint.RawPath = ""
+	endpoint.RawQuery = ""
+	endpoint.Fragment = ""
+	return func(ctx context.Context) (ingress.FreshRouteState, error) {
+		var state ingress.FreshRouteState
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return state, err
+		}
+		req.Header.Set("Cache-Control", "no-store")
+		res, err := client.Do(req)
+		if err != nil {
+			return state, err
+		}
+		defer res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			return state, fmt.Errorf("Manager routing authority unavailable: status %d", res.StatusCode)
+		}
+		decoder := json.NewDecoder(io.LimitReader(res.Body, 8192))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&state); err != nil {
+			return ingress.FreshRouteState{}, err
+		}
+		var trailing any
+		if decoder.Decode(&trailing) != io.EOF {
+			return ingress.FreshRouteState{}, errors.New("Manager routing authority returned trailing data")
+		}
+		return state, nil
+	}
 }
 
 func parseUpstream(name, value, fallback string) (*url.URL, error) {

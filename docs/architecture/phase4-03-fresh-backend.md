@@ -122,10 +122,12 @@ Routing is a sub-checkpoint of the original Fresh OperationID, with its own
 revision, intent, apply, public verification and commit stages. No top-level
 `OperationPrefixApply` is created. Verification uses the actual Manager/Ingress
 public entry, HTML/static/API identity and negative Gateway ownership. The private
-Ingress control listener reuses the Runtime transport secret, has no public host
-port and stores only an in-memory projection. Restore redelivers the original DB
-checkpoint after Ingress restart; it cannot reopen committed Bootstrap routes.
-Foreign routing owners are rejected. `CPAMP_PUBLIC_ORIGIN` and the private
+Ingress control listener has no public host port and stores only an in-memory
+projection. It holds no product/Runtime secret: each private routing mutation is
+accepted only when it exactly matches the Manager's current read-only, non-secret
+Fresh routing authority. Restore redelivers the original DB checkpoint after
+Ingress restart; it cannot reopen committed Bootstrap routes. Foreign routing
+owners are rejected. `CPAMP_PUBLIC_ORIGIN` and the private
 `CPAMP_INGRESS_CONTROL_URL` are required for this verification.
 The sole route-owner fixture/schema is version 3,
 `cpamp-v2-phase4-03-routing-ownership-v3`; its predecessor assertions remain
