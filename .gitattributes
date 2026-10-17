@@ -3,6 +3,10 @@
 apps/web/** -linguist-detectable
 
 # Qualification profiles/code and byte-pinned evidence must survive Windows checkout.
+apps/manager-server/internal/service/freshstrategy/qualification/** -text
+apps/manager-server/internal/service/freshstrategy/production.go text eol=lf
+apps/manager-server/internal/service/freshstrategy/service.go text eol=lf
+apps/manager-server/internal/service/cpa/v8.go text eol=lf
 apps/manager-server/tests/qualification/src11/*.go text eol=lf
 bin/qualification/*.py text eol=lf
 tests/fixtures/phase4a-src11/** text eol=lf

@@ -174,12 +174,17 @@ the merged prerequisite plan does not accept the underlying CPA evidence.
 Legacy-managed adoption requires the required-v8 profile in addition to the
 separately accepted staging-v8 transition.
 
-1. There is no accepted production v8 artifact/profile evidence loader. The
-   qualification manifest/README and CI fixtures are contract/test references,
-   not production authority (`qualification: not accepted`, production consumer
-   pending). Production New Managed/External qualification therefore remains
-   typed blocked. Tests injecting qualified exact targets exercise the bounded
-   implementation; they do not establish release qualification.
+1. The production v8 qualification loader is implemented, but independent
+   production acceptance is absent. `freshstrategy.NewProduction` loads one
+   compiled consumer record, independently scoped to New Managed, External,
+   network adoption and legacy adoption. All remain pending. An accepted entry
+   requires actual byte-pinned original evidence and review, exact artifact /
+   profile / runner-HEAD bindings and a matching compiled consumer implementation
+   digest. Missing/malformed/stale evidence grants nothing; fixture/CI PASS,
+   injectable test qualification and Runtime observations cannot promote it.
+   Production New Managed/External therefore retain their typed blockers.
+   Details and the single authority are in the
+   [consumer-record contract](../../apps/manager-server/internal/service/freshstrategy/qualification/README.md).
 2. There is no accepted Adopt destination staging/replay/verify primitive.
    The existing adoption contract stays fail closed and returns
    `adoption_destination_staging_required`, explicitly listing unsupported native
@@ -187,8 +192,8 @@ separately accepted staging-v8 transition.
 
 These are remaining Phase4-03 acceptance blockers, explicitly confirmed by the
 maintainer. This change does not claim end-to-end strategy qualification or full
-Phase4-03 acceptance. No generic qualification service, second evidence schema
-or staging framework was added to work around them.
+Phase4-03 acceptance. No generic qualification service, second AQ evidence
+ledger or staging framework was added to work around them.
 
 ## Verification and scope closure
 

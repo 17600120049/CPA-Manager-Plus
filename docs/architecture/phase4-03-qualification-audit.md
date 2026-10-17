@@ -45,11 +45,60 @@ Supervisor artifact staging owns executable bytes, not a separately configured
 adoption destination, resource replay or semantic verification. Neither can be
 relabelled as the missing primitive.
 
-With no newly accepted facts, this batch adds neither an empty production
-consumer record/loader nor speculative destination orchestration. The existing
+At that head, the evidence-only batch added neither a production consumer
+record/loader nor speculative destination orchestration. The existing
 typed blockers and rejection of Adopt durable checkpoint shapes remain intact.
 Both gates remain **BLOCKED**, successful destination failure/restart/lost-reply
 acceptance remains unperformed, and #995 remains **Draft / NO-GO**.
+
+## Build-bound loader implementation follow-up
+
+The subsequent implementation adds a strict loader and wires production Fresh
+construction through `freshstrategy.NewProduction`. Its sole compiled authority
+is [`qualification/consumer.json`](../../apps/manager-server/internal/service/freshstrategy/qualification/consumer.json).
+No existing immutable manifest can carry accepted Fresh consumer facts without
+widening its fixture/evidence trust semantics, so this is the plan's minimal
+consumer-record exception. The original AQ hashes/HEADs are references, not a
+second AQ ledger. All four consumer entries remain **pending**; no independently
+accepted facts or resource set have been invented.
+
+The loader rejects malformed/noncanonical records, unknown/missing/duplicate
+fields, duplicate consumers, invalid artifact digests, incomplete legacy profile
+bindings and unsupported consumer/profile combinations. Accepted entries would
+additionally require the actual byte-pinned original manifest, report, selected
+sanitized traces and independent review inside the binary, plus explicit case
+sets, accepted limitations and invalidation conditions. It checks exact observed
+archive/binary hashes and resulting ArtifactID, manifest/report/profile/case/run
+bindings and the original evidence runner HEAD. It does not replace the existing
+AQ validator or decide whether a review's applicability/limitations are adequate.
+
+An acceptance also pins the compiled Fresh loader/strategy and v8 safe-read
+implementation digest. This is distinct from original evidence execution HEADs;
+it invalidates qualification when consumer code changes without trying to store
+a commit's own SHA inside that same commit. The canonical consumer record and
+byte-pinned implementation/evidence files have explicit Windows Git attributes.
+The implementation digest remains empty while no consumer is accepted.
+
+Production construction discards injectable qualification and selects only the
+exact strategy/source-class entry. Accepted External safe-read cannot promote
+network adoption, and neither can promote a legacy transition. Synthetic
+accepted evidence exists only in test memory. Regression tests cover bindings,
+withdrawal, cross-consumer rejection, production injection rejection, the real
+HTTP/reopen boundary and the existing exact Runtime artifact fence.
+
+**Qualification Gate: BLOCKED by independent production acceptance**, with the
+loader mechanism now implemented. **Adopt destination Gate: BLOCKED**: there is
+still no accepted migratable native resource set or destination primitive.
+Source qualification is not destination/replay authority; Adopt continues to
+block before any source request or destination mutation. No new Runtime API,
+workflow engine, persistence ledger, Gateway grant or Upgrade/UI scope is added.
+
+Local loader verification passed: Manager `go test -count=1 ./...` and full
+`go vet ./...`; affected Bootstrap/Fresh/store/CPA/routing/HTTP/command race
+suites; Supervisor and Ingress full race/vet; Web type-check and 55 workflow/
+classifier tests. Docker's daemon is unavailable locally. Docker/Windows
+execution must be verified in existing CI on the pushed implementation head;
+earlier heads' green checks do not qualify this implementation or its evidence.
 
 ## Evidence and independent acceptance are separate
 
@@ -142,11 +191,12 @@ Their acceptance is scoped to their own case, even when a later planning record
 accepts that case. Immutability alone does not widen that scope.
 
 **No inspected existing manifest is an accepted Fresh production qualification
-authority.** No consumer record or loader is added while its required accepted
-facts are missing. Once the minimum evidence subset is independently accepted,
-the approved plan permits one minimal build-bound consumer record referencing
-the original hashes/heads/profiles/limitations if no existing authoritative
-manifest can carry them. It must remain the single effective source of truth.
+authority.** The initial audit added no consumer record or loader. The later
+loader implementation above uses the approved minimal consumer-record exception
+because no existing authoritative manifest can carry these facts. Pending
+entries reference the original hashes/heads without granting qualification;
+accepted cases/limitations/review bindings remain absent. This record is the
+single effective source of truth, never a duplicate accepted manifest.
 This document is never loaded as authority, and tests inject only synthetic
 qualification to exercise existing contracts.
 
@@ -227,7 +277,7 @@ Fresh repository tests run in the existing Windows preflight job.
   and the previous head's green CI cannot substitute for that execution.
 
 These checks verify the safe subset and retained blockers. They do not accept
-CPA profiles, the missing loader or successful destination replay/verification.
+CPA production qualification or successful destination replay/verification.
 
 ### Windows CI follow-up
 

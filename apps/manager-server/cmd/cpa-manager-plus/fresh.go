@@ -75,12 +75,9 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtime = runtimeservice.NewEmbeddedClientWithTokenSource(cfg.RuntimeURL, runtimeservice.NewFileRuntimeTokenSource(cfg.RuntimeTokenFile))
 	}
-	// A release/profile catalogue is not installation qualification authority.
-	// Until a real accepted exact-artifact/profile consumer supplies evidence,
-	// strategy execution returns its typed qualification blocker, not a false
-	// product/Gateway success. This does not prevent admission/Admin/routing.
-	a.strategy = freshstrategy.New(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector,
-		Qualification: bootstrap.CPAQualification{ManagementGeneration: bootstrap.CPAManagementGenerationV8}})
+	// Only the build-bound consumer record can grant production qualification.
+	// Pending/missing evidence retains the existing typed strategy blockers.
+	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector})
 	a.fixed = freshbootstrap.Handler{Authority: a.authority, Routing: a.routing, Current: a.current,
 		Shell: httpapi.BootstrapWebHandler(), Strategy: http.HandlerFunc(a.fixedStrategy)}
 	return a

@@ -31,7 +31,11 @@ type Options struct {
 	QualifiedArtifactID model.RuntimeArtifactID
 }
 
-type Service struct{ options Options }
+type Service struct {
+	options    Options
+	production bool
+	consumers  map[consumerKey]qualifiedConsumer
+}
 
 func New(options Options) *Service { return &Service{options: options} }
 
@@ -77,11 +81,19 @@ func (s *Service) Execute(ctx context.Context, op bootstrap.FreshOperation, requ
 	if op.Strategy.Strategy != "" && op.Strategy.Strategy != request.Strategy {
 		return Result{}, &Blocker{Code: "fresh_strategy_owner_conflict"}
 	}
+	// Scope an accepted fact to this exact consumer. External safe-read must
+	// never implicitly grant network adoption or a legacy transition.
+	scoped := *s
+	if s.production {
+		consumer := s.consumers[consumerKey{request.Strategy, request.AdoptSourceClass}]
+		scoped.options.Qualification = consumer.Qualification
+		scoped.options.QualifiedArtifactID = consumer.ArtifactID
+	}
 	switch request.Strategy {
 	case bootstrap.NewManaged:
-		return s.newManaged(ctx, op, request)
+		return scoped.newManaged(ctx, op, request)
 	case bootstrap.ConnectExternal, bootstrap.AdoptExisting:
-		return s.existing(ctx, op, request)
+		return scoped.existing(ctx, op, request)
 	default:
 		return Result{}, &Blocker{Code: "fresh_strategy_invalid"}
 	}
