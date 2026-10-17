@@ -1,7 +1,6 @@
 package freshrouting
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -54,7 +53,7 @@ func TestHTTPDriverVerifiesHTMLGeneratedAssetsForAmpersandPrefix(t *testing.T) {
 	if err != nil || !strings.Contains(string(body), "/operator&amp;team/assets/") {
 		t.Fatalf("expected actual escaped Manager HTML: %s %v", body, err)
 	}
-	driver, err := NewHTTPDriver(HTTPConfig{IngressControlURL: server.URL, PublicOrigin: server.URL, TokenSource: testToken("internal-secret")})
+	driver, err := NewHTTPDriver(HTTPConfig{IngressControlURL: server.URL, PublicOrigin: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,10 +61,6 @@ func TestHTTPDriverVerifiesHTMLGeneratedAssetsForAmpersandPrefix(t *testing.T) {
 		t.Fatalf("HTML entity leaked into asset URL: requests=%d err=%v", assets.Load(), err)
 	}
 }
-
-type testToken string
-
-func (t testToken) Token(context.Context) (string, error) { return string(t), nil }
 
 func TestHTTPDriverSafePublicIdentityVerificationAndRedirectRejection(t *testing.T) {
 	s := State{InstallationID: "installation", Generation: "gen", OperationID: "fresh-operation", Revision: 1, Target: "/private"}
@@ -109,7 +104,7 @@ func TestHTTPDriverSafePublicIdentityVerificationAndRedirectRejection(t *testing
 				}
 			}))
 			defer server.Close()
-			d, e := NewHTTPDriver(HTTPConfig{IngressControlURL: server.URL, PublicOrigin: server.URL, TokenSource: testToken("secret")})
+			d, e := NewHTTPDriver(HTTPConfig{IngressControlURL: server.URL, PublicOrigin: server.URL})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -120,23 +115,23 @@ func TestHTTPDriverSafePublicIdentityVerificationAndRedirectRejection(t *testing
 		})
 	}
 	for _, origin := range []string{"", "http://user:secret@example.com", "http://example.com/path", "http://example.com?query", "ftp://example.com"} {
-		if _, e := NewHTTPDriver(HTTPConfig{IngressControlURL: "http://localhost:9082", PublicOrigin: origin, TokenSource: testToken("secret")}); e == nil {
+		if _, e := NewHTTPDriver(HTTPConfig{IngressControlURL: "http://localhost:9082", PublicOrigin: origin}); e == nil {
 			t.Fatal("unsafe public authority", origin)
 		}
 	}
 }
-func TestHTTPDriverInternalCredentialNeverEntersError(t *testing.T) {
+func TestHTTPDriverInternalControlCarriesNoCredentialAndKeepsErrorsOpaque(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer internal-secret" {
-			t.Error("missing internal auth")
+		if r.Header.Get("Authorization") != "" {
+			t.Error("internal control unexpectedly carried a credential")
 		}
 		w.WriteHeader(500)
-		io.WriteString(w, "internal-secret /private/host")
+		io.WriteString(w, "private-internal-detail")
 	}))
 	defer server.Close()
-	d, _ := NewHTTPDriver(HTTPConfig{IngressControlURL: server.URL, PublicOrigin: server.URL, TokenSource: testToken("internal-secret")})
+	d, _ := NewHTTPDriver(HTTPConfig{IngressControlURL: server.URL, PublicOrigin: server.URL})
 	_, e := d.Inspect(t.Context())
-	if e == nil || strings.Contains(e.Error(), "secret") || strings.Contains(e.Error(), "host") {
+	if e == nil || strings.Contains(e.Error(), "private-internal-detail") {
 		t.Fatal(e)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
@@ -113,14 +114,19 @@ func Open(ctx context.Context, paths sqlite.InspectionPaths, opts OpenOptions) (
 			if err != nil {
 				return nil, err
 			}
-			dir, e := os.Open(filepath.Dir(paths.DataKey))
-			if e != nil {
-				return nil, e
-			}
-			e = dir.Sync()
-			_ = dir.Close()
-			if e != nil {
-				return nil, e
+			// Windows does not support fsync on an opened directory. The key
+			// file itself is already synced above; retain directory-entry fsync
+			// on platforms that support it.
+			if runtime.GOOS != "windows" {
+				dir, e := os.Open(filepath.Dir(paths.DataKey))
+				if e != nil {
+					return nil, e
+				}
+				e = dir.Sync()
+				_ = dir.Close()
+				if e != nil {
+					return nil, e
+				}
 			}
 		}
 	}

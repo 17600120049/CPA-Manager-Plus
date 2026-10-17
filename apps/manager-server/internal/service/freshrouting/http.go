@@ -12,21 +12,21 @@ import (
 	"strings"
 	"time"
 
-	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 )
 
-const InternalPath = "/internal/routing/fresh"
+const (
+	InternalPath  = "/internal/routing/fresh"
+	AuthorityPath = "/internal/routing/fresh-authority"
+)
 
 type HTTPConfig struct {
 	IngressControlURL string
 	PublicOrigin      string
-	TokenSource       runtimeservice.RuntimeTokenSource
 	Client            *http.Client
 }
 type HTTPDriver struct {
 	control string
 	public  string
-	tokens  runtimeservice.RuntimeTokenSource
 	client  *http.Client
 }
 
@@ -35,7 +35,7 @@ func NewHTTPDriver(c HTTPConfig) (*HTTPDriver, error) {
 		u, e := url.Parse(s)
 		return e == nil && u.Host != "" && u.User == nil && (u.Path == "" || u.Path == "/") && u.RawQuery == "" && u.Fragment == "" && (u.Scheme == "http" || (!internal && u.Scheme == "https"))
 	}
-	if !validOrigin(c.IngressControlURL, true) || !validOrigin(c.PublicOrigin, false) || c.TokenSource == nil {
+	if !validOrigin(c.IngressControlURL, true) || !validOrigin(c.PublicOrigin, false) {
 		return nil, ErrBlocked
 	}
 	client := c.Client
@@ -46,7 +46,7 @@ func NewHTTPDriver(c HTTPConfig) (*HTTPDriver, error) {
 	}
 	copyClient := *client
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &HTTPDriver{strings.TrimRight(c.IngressControlURL, "/"), strings.TrimRight(c.PublicOrigin, "/"), c.TokenSource, &copyClient}, nil
+	return &HTTPDriver{control: strings.TrimRight(c.IngressControlURL, "/"), public: strings.TrimRight(c.PublicOrigin, "/"), client: &copyClient}, nil
 }
 func (d *HTTPDriver) controlRequest(ctx context.Context, method string, state *State) (State, error) {
 	var body io.Reader
@@ -58,11 +58,6 @@ func (d *HTTPDriver) controlRequest(ctx context.Context, method string, state *S
 	if err != nil {
 		return State{}, ErrBlocked
 	}
-	token, err := d.tokens.Token(ctx)
-	if err != nil || token == "" {
-		return State{}, ErrBlocked
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Cache-Control", "no-store")
 	response, err := d.client.Do(req)

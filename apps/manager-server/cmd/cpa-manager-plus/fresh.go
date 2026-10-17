@@ -91,8 +91,25 @@ func (a *freshApplication) current(ctx context.Context) (bootstrap.FreshOperatio
 
 func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if r != nil && r.URL != nil && r.URL.Path == freshrouting.AuthorityPath && r.URL.EscapedPath() == r.URL.Path && r.URL.RawQuery == "" {
+		a.routingAuthority(w, r)
+		return
+	}
 	protect := routing.ProtectFixedBootstrap(http.HandlerFunc(a.canonical), a.fixed)
 	httpapi.ProtectBrandResources(protect).ServeHTTP(w, r)
+}
+
+func (a *freshApplication) routingAuthority(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	op, err := a.current(r.Context())
+	if err != nil || op.Routing.Target == "" || op.Routing.OperationID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	writeFreshJSON(w, freshrouting.StateFor(op))
 }
 
 func (a *freshApplication) canonical(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +269,6 @@ func freshDriver(cfg config.Config) freshrouting.Driver {
 	driver, err := freshrouting.NewHTTPDriver(freshrouting.HTTPConfig{
 		IngressControlURL: strings.TrimSpace(os.Getenv("CPAMP_INGRESS_CONTROL_URL")),
 		PublicOrigin:      strings.TrimSpace(os.Getenv("CPAMP_PUBLIC_ORIGIN")),
-		TokenSource:       runtimeservice.NewFileRuntimeTokenSource(cfg.RuntimeTokenFile),
 	})
 	if err != nil {
 		return nil
