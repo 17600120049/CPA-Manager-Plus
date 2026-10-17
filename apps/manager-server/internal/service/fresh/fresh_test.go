@@ -377,6 +377,11 @@ func TestAdmissionSubprocessKillWindows(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Observe crash artifacts after the owner exits: Windows locks
+			// receipt bytes against other readers while the child is alive.
+			// The child is parked at the same durable window on every OS.
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
 			receiptData, err := os.ReadFile(p.Database + ".manager.lock")
 			if err != nil {
 				t.Fatal(err)
@@ -405,8 +410,6 @@ func TestAdmissionSubprocessKillWindows(t *testing.T) {
 					t.Fatal("unexpected checkpoint presence at kill window")
 				}
 			}
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
 			o, err := Open(t.Context(), p, OpenOptions{})
 			if err != nil {
 				t.Fatal("restart:", err)
