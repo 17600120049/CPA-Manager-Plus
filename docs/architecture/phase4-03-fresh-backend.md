@@ -148,6 +148,23 @@ connection persistence uses the existing Protector and canonical encrypted
 connection representation in the same checkpoint transaction; collector is off.
 External lifecycle, ingress and client-auth policy stay with the operator.
 
+Fresh Ingress starts with Gateway closed, including before routing prepare/Apply
+and after an Ingress-only restart before Restore. A Control projection or product
+completion never opens it. To preserve the existing non-Fresh Docker lifecycle,
+only the fully started legacy Manager router returns an explicit HTTP 204 on the
+existing private `/internal/routing/fresh-authority` endpoint. Ingress may retain
+that legacy mode observation in memory during a Manager outage; it must obtain it
+again after its own restart. Fresh/pending/error/404 replies cannot authorize this
+passthrough. Public Ingress still denies the authority namespace. This is a
+legacy startup-mode acknowledgement, not a Fresh qualification or safety grant.
+
+The Fresh store rejects a committed External checkpoint unless its encrypted
+connection exists and its persisted normalized URL hashes to the checkpoint's
+target identity. This cross-check applies on both transactional writes and reads,
+including completion and restart. File-backed data keys must pass file open/sync
+and supported directory sync before SQLite opens. Explicit raw keys use no
+file-backed durability fence.
+
 ### Explicit production prerequisite gaps
 
 The [2026-10-17 evidence audit](phase4-03-qualification-audit.md) records exact

@@ -53,6 +53,7 @@ func checkpoint(opts OpenOptions, name string) error {
 // Open enters the actual Manager store while retaining the original fence.
 // No DB, data key or checkpoint can be created before the pending receipt sync.
 func Open(ctx context.Context, paths sqlite.InspectionPaths, opts OpenOptions) (opened *Opened, err error) {
+	fileBackedKey := strings.TrimSpace(opts.DataKey) == ""
 	admission, err := legacypreflight.AdmitStartup(ctx, paths, legacypreflight.Options{Initialize: opts.Initialize, FreshAdmission: true})
 	if err != nil {
 		return nil, err
@@ -86,7 +87,7 @@ func Open(ctx context.Context, paths sqlite.InspectionPaths, opts OpenOptions) (
 		if prior.Operation.Identity.Valid() && opts.AdminKey != "" && (prior.Admin == nil || !security.VerifyAdminKey(*prior.Admin, opts.AdminKey)) {
 			return nil, freshstore.ErrConflict
 		}
-		if opts.DataKey == "" {
+		if fileBackedKey {
 			if _, e = os.Stat(paths.DataKey); e != nil {
 				return nil, errors.New("Fresh data key unavailable")
 			}
@@ -108,26 +109,31 @@ func Open(ctx context.Context, paths sqlite.InspectionPaths, opts OpenOptions) (
 	if err != nil {
 		return nil, err
 	}
-	if paths.DataKey != "" {
-		if f, e := os.OpenFile(paths.DataKey, os.O_RDWR, 0); e == nil {
-			err = f.Sync()
-			_ = f.Close()
-			if err != nil {
-				return nil, err
+	if err = checkpoint(opts, "data-key-loaded"); err != nil {
+		return nil, err
+	}
+	if fileBackedKey {
+		f, e := os.OpenFile(paths.DataKey, os.O_RDWR, 0)
+		if e != nil {
+			return nil, e
+		}
+		err = f.Sync()
+		_ = f.Close()
+		if err != nil {
+			return nil, err
+		}
+		// Windows does not support fsync on an opened directory. The key
+		// file itself is already synced above; retain directory-entry fsync
+		// on platforms that support it.
+		if runtime.GOOS != "windows" {
+			dir, e := os.Open(filepath.Dir(paths.DataKey))
+			if e != nil {
+				return nil, e
 			}
-			// Windows does not support fsync on an opened directory. The key
-			// file itself is already synced above; retain directory-entry fsync
-			// on platforms that support it.
-			if runtime.GOOS != "windows" {
-				dir, e := os.Open(filepath.Dir(paths.DataKey))
-				if e != nil {
-					return nil, e
-				}
-				e = dir.Sync()
-				_ = dir.Close()
-				if e != nil {
-					return nil, e
-				}
+			e = dir.Sync()
+			_ = dir.Close()
+			if e != nil {
+				return nil, e
 			}
 		}
 	}

@@ -80,6 +80,69 @@ func TestCheckpointURIKeepsWindowsDriveInLocalPath(t *testing.T) {
 	}
 }
 
+func TestFileDataKeyFenceFailurePreventsSQLiteAndCanRetry(t *testing.T) {
+	p := pathsFor(t.TempDir())
+	_, err := Open(t.Context(), p, OpenOptions{Hook: func(stage string) error {
+		if stage == "data-key-loaded" {
+			// Deterministic OpenFile failure on all platforms, regardless of uid
+			// or permission semantics: the successfully loaded key is now absent.
+			return os.Remove(p.DataKey)
+		}
+		return nil
+	}})
+	if err == nil {
+		t.Fatal("missing file-backed key bypassed durability fence")
+	}
+	for _, name := range []string{p.Database, p.Database + "-wal", p.Database + "-shm"} {
+		if _, err := os.Stat(name); !os.IsNotExist(err) {
+			t.Fatal("SQLite created before key durability", name, err)
+		}
+	}
+	receiptBytes, err := os.ReadFile(p.Database + ".manager.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt processlock.FreshReceipt
+	if err := json.Unmarshal(receiptBytes, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := Open(t.Context(), p, OpenOptions{})
+	if err != nil {
+		t.Fatal("retry after fence failure", err)
+	}
+	defer retry.Close()
+	if retry.Record.Operation.Identity != receipt.Identity {
+		t.Fatal("retry replaced Fresh admission")
+	}
+}
+
+func TestExplicitRawDataKeyDoesNotRequireFileFence(t *testing.T) {
+	for _, raw := range []string{"explicit raw key", "  explicit raw key  "} {
+		t.Run(raw, func(t *testing.T) {
+			p := pathsFor(t.TempDir())
+			o, err := Open(t.Context(), p, OpenOptions{DataKey: raw})
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity := o.Record.Operation.Identity
+			if _, err := os.Stat(p.DataKey); !os.IsNotExist(err) {
+				t.Fatal("raw key materialized a key file", err)
+			}
+			if err := o.Close(); err != nil {
+				t.Fatal(err)
+			}
+			o, err = Open(t.Context(), p, OpenOptions{DataKey: raw})
+			if err != nil {
+				t.Fatal("raw key reopen", err)
+			}
+			defer o.Close()
+			if o.Record.Operation.Identity != identity {
+				t.Fatal("raw key reopen changed identity")
+			}
+		})
+	}
+}
+
 func TestClaimAdminContinuationAndRestart(t *testing.T) {
 	o, s := openTest(t)
 	ctx := t.Context()
