@@ -76,16 +76,17 @@ type FreshStrategyCheckpoint struct {
 	SourceClass                   AdoptSourceClass           `json:"sourceClass,omitempty"`
 	DestinationConnectionIdentity string                     `json:"destinationConnectionIdentity,omitempty"`
 	AdoptionDecisions             []AdoptionResourceDecision `json:"adoptionDecisions,omitempty"`
+	AdoptionResources             []ResourceRef              `json:"adoptionResources,omitempty"`
 }
 
 func (c FreshStrategyCheckpoint) validate() error {
 	if c.Strategy == "" {
-		if c.TargetIdentity != "" || c.TargetArtifactID != "" || c.TargetGeneration != 0 || c.Stage != "" || len(c.Unsupported) != 0 || c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0 {
+		if c.TargetIdentity != "" || c.TargetArtifactID != "" || c.TargetGeneration != 0 || c.Stage != "" || len(c.Unsupported) != 0 || c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0 {
 			return errors.New("unowned Fresh strategy checkpoint")
 		}
 		return nil
 	}
-	if c.Strategy != AdoptExisting && (c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0) {
+	if c.Strategy != AdoptExisting && (c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0) {
 		return errors.New("foreign adoption checkpoint")
 	}
 	if strings.TrimSpace(c.TargetIdentity) == "" || c.TargetGeneration == 0 || len(c.Unsupported) != 0 {
@@ -103,7 +104,7 @@ func (c FreshStrategyCheckpoint) validate() error {
 	case AdoptExisting:
 		if !validContentDigest(ContentDigest(c.TargetArtifactID)) || (c.Stage != "staged" && c.Stage != "committed") ||
 			(c.SourceClass != AdoptNetworkExisting && c.SourceClass != AdoptLegacyManaged) || !validExternalIdentity(c.SourceIdentity) || !validExternalIdentity(c.DestinationConnectionIdentity) || c.SourceIdentity == c.DestinationConnectionIdentity ||
-			!validFreshAdoptionDecisions(c.AdoptionDecisions) {
+			!validFreshAdoptionInventory(c.AdoptionResources, c.AdoptionDecisions) {
 			return errors.New("invalid adoption checkpoint")
 		}
 	default:
@@ -114,49 +115,6 @@ func (c FreshStrategyCheckpoint) validate() error {
 
 func validExternalIdentity(s string) bool {
 	return strings.HasPrefix(s, "external:") && validContentDigest(ContentDigest(strings.TrimPrefix(s, "external:")))
-}
-
-func validFreshAdoptionDecisions(decisions []AdoptionResourceDecision) bool {
-	if len(decisions) < 3 || len(decisions) > 4 {
-		return false
-	}
-	seen := map[ResourceRef]bool{}
-	required := map[ResourceRef]bool{"client-api-keys": false, "cpa-auth-files": false, "cpa-configuration": false}
-	for _, decision := range decisions {
-		if seen[decision.ResourceRef] {
-			return false
-		}
-		seen[decision.ResourceRef] = true
-		disposition, err := DecideAdoptionResource(decision)
-		if err != nil || decision.Disposition != disposition {
-			return false
-		}
-		manualShape := decision.Qualification == CapabilityPending && decision.ReadEvidenceRef == "" && decision.ReplayEvidenceRef == "" && decision.VerifyEvidenceRef == ""
-		switch decision.ResourceRef {
-		case "client-api-keys":
-			if decision.Kind != APIKeys || decision.Scope != ClientAPIKeys || decision.Qualification != CapabilityQualified || decision.ManualAction != "" || disposition != Migrate {
-				return false
-			}
-			required[decision.ResourceRef] = true
-		case "cpa-auth-files":
-			if decision.Kind != Credentials || decision.Scope != CPAAuthFiles || !manualShape || decision.ManualAction != ReauthenticateAfterAdoption || disposition != ManualAction {
-				return false
-			}
-			required[decision.ResourceRef] = true
-		case "cpa-configuration":
-			if decision.Kind != CPAConfiguration || decision.Scope != ManagementAPIFields || !manualShape || decision.ManualAction != ReconfigureAfterAdoption || disposition != ManualAction {
-				return false
-			}
-			required[decision.ResourceRef] = true
-		case "provider-runtime-state":
-			if decision.Kind != ProviderRuntimeState || decision.Scope != ProviderState || !manualShape || decision.ManualAction != ReauthenticateAfterAdoption || disposition != ManualAction {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return required["client-api-keys"] && required["cpa-auth-files"] && required["cpa-configuration"]
 }
 
 func (o FreshOperation) Ownership() FreshOwnership {

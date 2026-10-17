@@ -61,6 +61,7 @@ type consumerRecord struct {
 	Limitations      []string                   `json:"limitations"`
 	InvalidatedBy    []string                   `json:"invalidatedBy"`
 	AdoptionEvidence *adoptionResourceEvidence  `json:"adoptionEvidence,omitempty"`
+	LegacyTransition *legacyTransitionEvidence  `json:"legacyTransition,omitempty"`
 }
 
 // These must be independently accepted cases in the consumer's pinned report,
@@ -70,6 +71,31 @@ type adoptionResourceEvidence struct {
 	ReadCaseRef   string `json:"readCaseRef"`
 	ReplayCaseRef string `json:"replayCaseRef"`
 	VerifyCaseRef string `json:"verifyCaseRef"`
+}
+
+// legacyTransitionEvidence is the separate, legacy-only binding for the actual
+// pre-v8 source-to-staging-v8 transition. A CPA8-STAGE-r1 profile observation
+// alone is not this qualification.
+type legacyTransitionEvidence struct {
+	Profile        string `json:"profile"`
+	CaseRef        string `json:"caseRef"`
+	EvidenceSHA256 string `json:"evidenceSha256"`
+}
+
+// legacyTransitionBinding is the sanitized transition observation pinned by
+// evidenceSha256. Extra sanitized metadata is tolerated; these facts are
+// mandatory and must match the build and target exactly.
+type legacyTransitionBinding struct {
+	SchemaVersion                int    `json:"schemaVersion"`
+	CaseRef                      string `json:"caseRef"`
+	SourceClass                  string `json:"sourceClass"`
+	TargetArtifactID             string `json:"targetArtifactId"`
+	TargetArchiveSHA256          string `json:"targetArchiveSha256"`
+	TargetBinarySHA256           string `json:"targetBinarySha256"`
+	ConsumerImplementationSHA256 string `json:"consumerImplementationSha256"`
+	SourcePreserved              bool   `json:"sourcePreserved"`
+	StagingV8Verified            bool   `json:"stagingV8Verified"`
+	DestinationVerified          bool   `json:"destinationVerified"`
 }
 
 type profileEvidence struct {
@@ -135,9 +161,14 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 		if consumer.AdoptionEvidence != nil && key.Strategy != bootstrap.AdoptExisting {
 			return nil, errProductionQualification
 		}
+		// Only the legacy consumer may carry a legacy transition binding, and
+		// it is meaningful only once that consumer is accepted.
+		if consumer.LegacyTransition != nil && key.Class != bootstrap.AdoptLegacyManaged {
+			return nil, errProductionQualification
+		}
 		switch consumer.Status {
 		case "pending":
-			if consumer.AcceptanceSHA256 != "" {
+			if consumer.AcceptanceSHA256 != "" || consumer.LegacyTransition != nil {
 				return nil, errProductionQualification
 			}
 		case "accepted":
@@ -159,7 +190,14 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 			}
 			qualified.Qualification.ArtifactQualified = key.Strategy == bootstrap.NewManaged
 			qualified.Qualification.RequiredProfileQualified = key.Strategy != bootstrap.NewManaged
-			qualified.Qualification.StagingV8TransitionQualified = key.Class == bootstrap.AdoptLegacyManaged
+			if key.Class == bootstrap.AdoptLegacyManaged {
+				// Transition authority is independent of the source/profile
+				// evidence and must be validated explicitly.
+				if err := verifyLegacyTransition(files, record, consumer); err != nil {
+					return nil, err
+				}
+				qualified.Qualification.StagingV8TransitionQualified = true
+			}
 			if qualified.Qualification.ArtifactQualified {
 				qualified.ArtifactID = record.ArtifactID
 			}
@@ -189,7 +227,42 @@ func loadProductionQualification(files fs.FS) (map[consumerKey]qualifiedConsumer
 	return consumers, nil
 }
 
+// verifyLegacyTransition requires the separately pinned, legacy-only transition
+// observation. Accepted source/profile evidence cannot substitute for it.
+func verifyLegacyTransition(files fs.FS, record productionRecord, consumer consumerRecord) error {
+	binding := consumer.LegacyTransition
+	if binding == nil || binding.Profile != "CPA8-STAGE-r1" || binding.CaseRef == "" || !hexDigest(binding.EvidenceSHA256, 64) {
+		return errProductionQualification
+	}
+	if !slices.ContainsFunc(consumer.Evidence, func(evidence profileEvidence) bool { return evidence.Profile == binding.Profile }) {
+		return errProductionQualification
+	}
+	data, err := pinnedEvidence(files, binding.EvidenceSHA256, ".json")
+	if err != nil {
+		return err
+	}
+	var transition legacyTransitionBinding
+	if json.Unmarshal(data, &transition) != nil || transition.SchemaVersion != 1 ||
+		transition.CaseRef != binding.CaseRef ||
+		transition.SourceClass != string(bootstrap.AdoptLegacyManaged) ||
+		transition.TargetArtifactID != string(record.ArtifactID) ||
+		transition.TargetArchiveSHA256 != record.ArchiveSHA256 ||
+		transition.TargetBinarySHA256 != record.BinarySHA256 ||
+		transition.ConsumerImplementationSHA256 != consumerImplementationSHA256() ||
+		!transition.SourcePreserved || !transition.StagingV8Verified || !transition.DestinationVerified {
+		return errProductionQualification
+	}
+	return nil
+}
+
 func consumerImplementationSHA256() string {
+	return consumerImplementationDigest(cpa.SafeReadImplementationSHA256(), bootstrap.FreshStrategyImplementationSHA256())
+}
+
+// consumerImplementationDigest composes the compiled Fresh strategy, adoption
+// and loader bytes with both safe-read families and the destination execution
+// pin. Drift in any of them invalidates an old acceptance.
+func consumerImplementationDigest(safeReadSHA256, freshStrategySHA256 string) string {
 	pin, err := productionEvidence.ReadFile("qualification/runtime_destination_implementation.sha256")
 	if err != nil || !hexDigest(strings.TrimSpace(string(pin)), 64) {
 		return ""
@@ -199,7 +272,8 @@ func consumerImplementationSHA256() string {
 		data, _ := consumerImplementation.ReadFile(name) // Required at compile time.
 		_, _ = hash.Write(data)
 	}
-	_, _ = hash.Write([]byte(cpa.V8SafeReadImplementationSHA256()))
+	_, _ = hash.Write([]byte(safeReadSHA256))
+	_, _ = hash.Write([]byte(freshStrategySHA256))
 	_, _ = hash.Write(pin)
 	return hex.EncodeToString(hash.Sum(nil))
 }

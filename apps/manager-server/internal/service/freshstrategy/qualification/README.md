@@ -49,6 +49,27 @@ implementation. Only that explicit mapping yields its `Migrate` decision and
 exact destination ArtifactID. An External safe-read profile cannot supply it.
 Legacy transition acceptance remains separate from network adoption acceptance.
 
+Legacy transition authority is also separate from source/profile evidence. An
+accepted `adopt_existing`/`legacy_managed` consumer must carry a
+`legacyTransition` binding naming the accepted `CPA8-STAGE-r1` case and a
+byte-pinned `evidence/<sha256>.json` transition observation. That observation
+binds `schemaVersion`, `caseRef`, `sourceClass = legacy_managed`, the exact
+target ArtifactID plus archive/binary digests, the compiled consumer
+implementation digest and the `sourcePreserved`/`stagingV8Verified`/
+`destinationVerified` facts. `network_existing` must not carry the field, and
+only a validated binding sets `StagingV8TransitionQualified`; the ordinary
+`CPA8-STAGE-r1` profile evidence never does. The CI artifact
+`fresh-legacy-transition.json` is review input, not authority.
+
+Accepted consumers also persist the bounded, non-secret
+`adoptionResources` inventory discovered from the source. Every entry has
+exactly one decision: only `client-api-keys` may be `Migrate`; auth files,
+provider state and configuration sections remain explicit manual or unsupported
+actions. Unknown upstream sections collapse to the fixed `cpa-config-unknown`
+reference and never become durable upstream-controlled identities. The
+inventory and its decisions are written through the existing Fresh CAS before
+any destination mutation and are immutable afterwards.
+
 All current entries still omit `adoptionEvidence` and remain pending. Missing
 destination capability retains `adoption_destination_staging_required`; accepted
 source-only consumers with an available destination return
@@ -67,10 +88,13 @@ destination/start/restart/recovery/private-protocol source files. The pin is par
 of `consumerImplementationSHA256`, so changing that execution chain invalidates
 any later accepted consumer record.
 
-Controlled real-process CI for `legacy_managed` must use a pinned real pre-v8
-CPA source that remains live and byte-preserved while the exact v8 candidate
-runs only against an isolated staging copy. Merely labelling a v8 process as
-`legacy_managed` is not transition evidence.
+Controlled real-process CI for `legacy_managed` uses a pinned real pre-v8 CPA
+source that remains live and byte-preserved. Fresh points at that v7 source URL
+and reads it only through the explicit legacy v0 adapter; the exact v8 candidate
+then runs as the Manager-owned destination created by the existing Supervisor
+`StageDestination` child operation. That destination is the staging-v8
+transition itself. Merely labelling a v8 process as `legacy_managed`, or letting
+a test pre-build a v8 source, is not transition evidence.
 
 All consumers remain pending until the exact-head observations from these
 repairs are independently reviewed. CI success alone never writes acceptance.

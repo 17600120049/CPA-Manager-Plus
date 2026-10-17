@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"reflect"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -21,6 +22,35 @@ type adoptionSnapshot struct {
 	Destination         model.RuntimeDestinationRequest
 }
 
+// adoptionSourceSnapshot is the single internal Fresh source inventory. Both
+// source classes normalize into it; their readers remain explicit and neither
+// falls back to the other.
+type adoptionSourceSnapshot struct {
+	APIKeys             []string
+	DiscoveredResources []bootstrap.ResourceRef
+}
+
+// adoptionSectionRefs maps the bounded safe-read section inventory to the
+// existing stable adoption resource references. Arbitrary upstream keys never
+// become refs.
+var adoptionSectionRefs = map[string]bootstrap.ResourceRef{
+	"access":                      bootstrap.AdoptionRefClientAPIKeys,
+	"oauth":                       bootstrap.AdoptionRefCPAAuthFiles,
+	"server":                      bootstrap.AdoptionRefConfigServer,
+	"management":                  bootstrap.AdoptionRefConfigManagement,
+	"routing":                     bootstrap.AdoptionRefConfigRouting,
+	"logging":                     bootstrap.AdoptionRefConfigLogging,
+	"usage":                       bootstrap.AdoptionRefConfigUsage,
+	"plugins":                     bootstrap.AdoptionRefConfigPlugins,
+	"observability":               bootstrap.AdoptionRefConfigObservability,
+	"unknown_cpa_native_resource": bootstrap.AdoptionRefConfigUnknown,
+	"providers":                   bootstrap.AdoptionRefProviderStateProviders,
+	"api-keys":                    bootstrap.AdoptionRefProviderStateAPIKeys,
+	"client":                      bootstrap.AdoptionRefProviderStateClient,
+}
+
+var errUnsupportedAdoptionSourceClass = errors.New("unsupported adoption source class")
+
 func connectionIdentity(base string) string {
 	digest := sha256.Sum256([]byte(base))
 	return "external:sha256:" + hex.EncodeToString(digest[:])
@@ -33,7 +63,7 @@ func qualifiedClientAPIKeyDecision(resources []bootstrap.AdoptionResourceDecisio
 	decision := resources[0]
 	disposition, err := bootstrap.DecideAdoptionResource(decision)
 	return decision, err == nil &&
-		decision.ResourceRef == "client-api-keys" &&
+		decision.ResourceRef == bootstrap.AdoptionRefClientAPIKeys &&
 		decision.Kind == bootstrap.APIKeys &&
 		decision.Scope == bootstrap.ClientAPIKeys &&
 		decision.Qualification == bootstrap.CapabilityQualified &&
@@ -41,64 +71,85 @@ func qualifiedClientAPIKeyDecision(resources []bootstrap.AdoptionResourceDecisio
 		decision.Disposition == disposition
 }
 
-func manualAdoptionDecision(ref bootstrap.ResourceRef, kind bootstrap.AdoptionResourceKind, scope bootstrap.AdoptionScope, action bootstrap.AdoptionManualAction) bootstrap.AdoptionResourceDecision {
-	return bootstrap.AdoptionResourceDecision{
-		ResourceRef: ref, Kind: kind, Scope: scope,
-		Qualification: bootstrap.CapabilityPending,
-		ManualAction:  action,
-		Disposition:   bootstrap.ManualAction,
+// readAdoptionSource performs the only source read for the explicit source
+// class. network_existing uses exclusively the v8 probe; legacy_managed uses
+// exclusively the explicit legacy v0 adapter. A failed read is never retried
+// against the other generation.
+func readAdoptionSource(ctx context.Context, class bootstrap.AdoptSourceClass, source, managementKey string) (adoptionSourceSnapshot, error) {
+	var keys, sections []string
+	switch class {
+	case bootstrap.AdoptNetworkExisting:
+		snapshot, err := cpa.ReadV8AdoptionSnapshot(ctx, source, managementKey)
+		if err != nil {
+			return adoptionSourceSnapshot{}, err
+		}
+		keys, sections = snapshot.APIKeys, snapshot.ResourceSections
+	case bootstrap.AdoptLegacyManaged:
+		snapshot, err := cpa.ReadLegacyManagedAdoptionSnapshot(ctx, source, managementKey)
+		if err != nil {
+			return adoptionSourceSnapshot{}, err
+		}
+		keys, sections = snapshot.APIKeys, snapshot.ResourceSections
+	default:
+		return adoptionSourceSnapshot{}, errUnsupportedAdoptionSourceClass
 	}
+	refs, err := adoptionResourceRefs(sections)
+	if err != nil {
+		return adoptionSourceSnapshot{}, err
+	}
+	return adoptionSourceSnapshot{APIKeys: keys, DiscoveredResources: refs}, nil
 }
 
-// adoptionDecisionsForSections maps the safe-read section inventory into the
-// four existing bounded Adoption resource categories. Only accepted client API
-// keys may migrate. Auth files, configuration and provider runtime state remain
-// explicit ManualAction entries; they are never silently dropped or replayed.
-func adoptionDecisionsForSections(sections []string, migrate bootstrap.AdoptionResourceDecision) ([]bootstrap.AdoptionResourceDecision, bool) {
+func adoptionResourceRefs(sections []string) ([]bootstrap.ResourceRef, error) {
 	seenSection := map[string]bool{}
-	hasAccess, hasAuth, hasConfig, hasProvider := false, false, false, false
+	seenRef := map[bootstrap.ResourceRef]bool{}
+	refs := make([]bootstrap.ResourceRef, 0, len(sections))
 	for _, section := range sections {
-		if seenSection[section] {
-			return nil, false
+		ref, ok := adoptionSectionRefs[section]
+		if !ok || seenSection[section] || seenRef[ref] {
+			return nil, errUnsupportedAdoptionSourceClass
 		}
 		seenSection[section] = true
-		switch section {
-		case "access":
-			hasAccess = true
-		case "oauth":
-			hasAuth = true
-		case "providers", "api-keys", "client":
-			hasProvider = true
-		case "server", "management", "routing", "logging", "usage", "plugins", "observability", "unknown_cpa_native_resource":
-			hasConfig = true
-		default:
-			return nil, false
-		}
+		seenRef[ref] = true
+		refs = append(refs, ref)
 	}
-	if !hasAccess || !hasAuth || !hasConfig {
+	if !seenRef[bootstrap.AdoptionRefClientAPIKeys] || !seenRef[bootstrap.AdoptionRefCPAAuthFiles] {
+		return nil, errUnsupportedAdoptionSourceClass
+	}
+	return refs, nil
+}
+
+// adoptionDecisionsForInventory gives every discovered bounded resource exactly
+// one existing-domain decision. Only accepted client API keys may migrate; auth
+// files, provider state and configuration remain explicit manual actions.
+func adoptionDecisionsForInventory(refs []bootstrap.ResourceRef, migrate bootstrap.AdoptionResourceDecision) ([]bootstrap.AdoptionResourceDecision, bool) {
+	if len(refs) == 0 {
 		return nil, false
 	}
-	decisions := []bootstrap.AdoptionResourceDecision{
-		migrate,
-		manualAdoptionDecision("cpa-auth-files", bootstrap.Credentials, bootstrap.CPAAuthFiles, bootstrap.ReauthenticateAfterAdoption),
-		manualAdoptionDecision("cpa-configuration", bootstrap.CPAConfiguration, bootstrap.ManagementAPIFields, bootstrap.ReconfigureAfterAdoption),
+	decisions := make([]bootstrap.AdoptionResourceDecision, 0, len(refs))
+	hasKeys, hasAuth := false, false
+	for _, ref := range refs {
+		decision, ok := bootstrap.FreshAdoptionDecision(ref, migrate)
+		if !ok {
+			return nil, false
+		}
+		switch ref {
+		case bootstrap.AdoptionRefClientAPIKeys:
+			hasKeys = true
+		case bootstrap.AdoptionRefCPAAuthFiles:
+			hasAuth = true
+		}
+		decisions = append(decisions, decision)
 	}
-	if hasProvider {
-		decisions = append(decisions, manualAdoptionDecision("provider-runtime-state", bootstrap.ProviderRuntimeState, bootstrap.ProviderState, bootstrap.ReauthenticateAfterAdoption))
+	if !hasKeys || !hasAuth {
+		return nil, false
 	}
 	return decisions, true
 }
 
-func adoptionCheckpointDecisionsValid(decisions []bootstrap.AdoptionResourceDecision, migrate bootstrap.AdoptionResourceDecision) bool {
-	expected := []bootstrap.AdoptionResourceDecision{
-		migrate,
-		manualAdoptionDecision("cpa-auth-files", bootstrap.Credentials, bootstrap.CPAAuthFiles, bootstrap.ReauthenticateAfterAdoption),
-		manualAdoptionDecision("cpa-configuration", bootstrap.CPAConfiguration, bootstrap.ManagementAPIFields, bootstrap.ReconfigureAfterAdoption),
-	}
-	if len(decisions) == 4 {
-		expected = append(expected, manualAdoptionDecision("provider-runtime-state", bootstrap.ProviderRuntimeState, bootstrap.ProviderState, bootstrap.ReauthenticateAfterAdoption))
-	}
-	return len(decisions) >= 3 && len(decisions) <= 4 && reflect.DeepEqual(decisions, expected)
+func adoptionCheckpointDecisionsValid(resources []bootstrap.ResourceRef, decisions []bootstrap.AdoptionResourceDecision, migrate bootstrap.AdoptionResourceDecision) bool {
+	expected, ok := adoptionDecisionsForInventory(resources, migrate)
+	return ok && reflect.DeepEqual(decisions, expected)
 }
 
 func (s *Service) adopt(ctx context.Context, op bootstrap.FreshOperation, r Request) (Result, error) {
@@ -143,14 +194,15 @@ func (s *Service) adopt(ctx context.Context, op bootstrap.FreshOperation, r Requ
 		if r.AdoptionCiphertext != "" {
 			return block("fresh_strategy_owner_conflict")
 		}
-		sourceSnapshot, err := cpa.ReadV8AdoptionSnapshot(ctx, source, r.ManagementKey)
+		sourceSnapshot, err := readAdoptionSource(ctx, r.AdoptSourceClass, source, r.ManagementKey)
 		if err != nil {
 			return block("adoption_source_read_unavailable")
 		}
-		decisions, complete := adoptionDecisionsForSections(sourceSnapshot.ResourceSections, decision)
+		decisions, complete := adoptionDecisionsForInventory(sourceSnapshot.DiscoveredResources, decision)
 		if !complete {
 			return block("adoption_resource_qualification_required")
 		}
+		checkpoint.AdoptionResources = sourceSnapshot.DiscoveredResources
 		checkpoint.AdoptionDecisions = decisions
 		secret := make([]byte, 32)
 		if _, err = rand.Read(secret); err != nil {
@@ -171,8 +223,9 @@ func (s *Service) adopt(ctx context.Context, op bootstrap.FreshOperation, r Requ
 		return result, nil
 	}
 	checkpoint.Stage = op.Strategy.Stage
+	checkpoint.AdoptionResources = append([]bootstrap.ResourceRef(nil), op.Strategy.AdoptionResources...)
 	checkpoint.AdoptionDecisions = append([]bootstrap.AdoptionResourceDecision(nil), op.Strategy.AdoptionDecisions...)
-	if !adoptionCheckpointDecisionsValid(checkpoint.AdoptionDecisions, decision) || !reflect.DeepEqual(checkpoint, op.Strategy) {
+	if !adoptionCheckpointDecisionsValid(checkpoint.AdoptionResources, checkpoint.AdoptionDecisions, decision) || !reflect.DeepEqual(checkpoint, op.Strategy) {
 		return block("fresh_strategy_owner_conflict")
 	}
 	if !security.IsValidProtectedEnvelope(r.AdoptionCiphertext) {

@@ -6,15 +6,16 @@ import (
 	"encoding/hex"
 )
 
-//go:embed v8.go v8_adoption.go
-var v8SafeReadImplementation embed.FS
+//go:embed v8.go v8_adoption.go legacy_adoption.go
+var safeReadImplementation embed.FS
 
-// V8SafeReadImplementationSHA256 binds the Fresh consumer's acceptance to the
-// actual compiled safe-read implementation. It grants no qualification itself.
-func V8SafeReadImplementationSHA256() string {
+// SafeReadImplementationSHA256 binds a Fresh consumer acceptance to the actual
+// compiled management safe-read/adoption implementation: both the v8 probe and
+// the explicit legacy_managed v0 adapter. It grants no qualification itself.
+func SafeReadImplementationSHA256() string {
 	hash := sha256.New()
-	for _, name := range []string{"v8.go", "v8_adoption.go"} {
-		data, _ := v8SafeReadImplementation.ReadFile(name)
+	for _, name := range []string{"v8.go", "v8_adoption.go", "legacy_adoption.go"} {
+		data, _ := safeReadImplementation.ReadFile(name)
 		_, _ = hash.Write(data)
 	}
 	return hex.EncodeToString(hash.Sum(nil))

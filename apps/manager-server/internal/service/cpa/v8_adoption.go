@@ -23,7 +23,7 @@ func VerifyV8Adoption(ctx context.Context, baseURL, managementKey string, keys [
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	client, closeClient, err := v8DirectClient(ctx, baseURL)
+	client, closeClient, err := directReadClient(ctx, baseURL)
 	if err != nil {
 		return err
 	}
@@ -46,9 +46,9 @@ func VerifyV8Adoption(ctx context.Context, baseURL, managementKey string, keys [
 		if err != nil {
 			return V8ReadUnavailable
 		}
-		data, readErr := io.ReadAll(io.LimitReader(response.Body, v8ReadLimit+1))
+		data, readErr := io.ReadAll(io.LimitReader(response.Body, safeReadLimit+1))
 		_ = response.Body.Close()
-		if readErr != nil || len(data) > v8ReadLimit {
+		if readErr != nil || len(data) > safeReadLimit {
 			return V8InvalidConfig
 		}
 		if i < 2 {

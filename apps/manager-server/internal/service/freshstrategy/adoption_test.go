@@ -116,14 +116,18 @@ func TestAdoptionStagesEncryptedSnapshotBeforeDestinationAndVerifiesActualAuth(t
 		t.Run(string(class), func(t *testing.T) {
 			sourceReads := 0
 			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != "GET" || r.URL.Path != "/v8/management/config" || r.Header.Get("Authorization") != "Bearer source-management" {
-					t.Error("source lifecycle/history/config mutated")
+				path, body := "/v8/management/config", `{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"source-auth"},"access":{"api-keys":["source-client-one","source-client-two"]},"providers":{"secret":"never-migrate"},"usage":{"history":"never-migrate"}}`
+				if class == bootstrap.AdoptLegacyManaged {
+					path, body = "/v0/management/config", `{"tls":{"enable":false},"routing":{"strategy":"round-robin"},"usage-statistics-enabled":false,"gemini-api-key":[{"api-key":"never-migrate-provider"}],"api-keys":["source-client-one","source-client-two"]}`
+				}
+				if r.Method != "GET" || r.URL.Path != path || r.Header.Get("Authorization") != "Bearer source-management" {
+					t.Error("source lifecycle/history/config mutated or cross-generation read")
 					w.WriteHeader(403)
 					return
 				}
 				sourceReads++
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"source-auth"},"access":{"api-keys":["source-client-one","source-client-two"]},"providers":{"secret":"never-migrate"},"usage":{"history":"never-migrate"}}`))
+				_, _ = w.Write([]byte(body))
 			}))
 			defer source.Close()
 			artifact := model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))
@@ -145,14 +149,32 @@ func TestAdoptionStagesEncryptedSnapshotBeforeDestinationAndVerifiesActualAuth(t
 			if err != nil || staged.Checkpoint.Stage != "staged" || !security.IsValidProtectedEnvelope(staged.AdoptionCiphertext) || len(runtime.stages) != 0 || len(runtime.starts) != 0 || sourceReads != 1 {
 				t.Fatalf("stage did effects: %v", err)
 			}
-			wantDecisions := []bootstrap.AdoptionResourceDecision{
-				acceptedKeys()[0],
-				manualAdoptionDecision("cpa-auth-files", bootstrap.Credentials, bootstrap.CPAAuthFiles, bootstrap.ReauthenticateAfterAdoption),
-				manualAdoptionDecision("cpa-configuration", bootstrap.CPAConfiguration, bootstrap.ManagementAPIFields, bootstrap.ReconfigureAfterAdoption),
-				manualAdoptionDecision("provider-runtime-state", bootstrap.ProviderRuntimeState, bootstrap.ProviderState, bootstrap.ReauthenticateAfterAdoption),
+			wantResources := []bootstrap.ResourceRef{bootstrap.AdoptionRefConfigServer, bootstrap.AdoptionRefClientAPIKeys, bootstrap.AdoptionRefCPAAuthFiles, bootstrap.AdoptionRefProviderStateProviders, bootstrap.AdoptionRefConfigUsage}
+			if class == bootstrap.AdoptLegacyManaged {
+				wantResources = []bootstrap.ResourceRef{bootstrap.AdoptionRefClientAPIKeys, bootstrap.AdoptionRefCPAAuthFiles, bootstrap.AdoptionRefConfigServer, bootstrap.AdoptionRefConfigRouting, bootstrap.AdoptionRefConfigUsage, bootstrap.AdoptionRefProviderStateProviders}
 			}
-			if !reflect.DeepEqual(staged.Checkpoint.AdoptionDecisions, wantDecisions) {
+			if !reflect.DeepEqual(staged.Checkpoint.AdoptionResources, wantResources) {
+				t.Fatalf("discovered source inventory was not bounded: %+v", staged.Checkpoint.AdoptionResources)
+			}
+			wantDecisions, ok := adoptionDecisionsForInventory(wantResources, acceptedKeys()[0])
+			if !ok || !reflect.DeepEqual(staged.Checkpoint.AdoptionDecisions, wantDecisions) {
 				t.Fatalf("discovered source resources were not explicitly decided: %+v", staged.Checkpoint.AdoptionDecisions)
+			}
+			migrated := 0
+			for _, decision := range staged.Checkpoint.AdoptionDecisions {
+				if decision.Disposition == bootstrap.Migrate {
+					migrated++
+					if decision.ResourceRef != bootstrap.AdoptionRefClientAPIKeys {
+						t.Fatalf("non-client resource migrated: %+v", decision)
+					}
+					continue
+				}
+				if decision.ResourceRef == bootstrap.AdoptionRefClientAPIKeys || decision.ManualAction == "" || decision.Qualification != bootstrap.CapabilityPending {
+					t.Fatalf("discovered resource silently dropped or migrated: %+v", decision)
+				}
+			}
+			if migrated != 1 {
+				t.Fatal("client API keys were not the sole migrated resource")
 			}
 			public, _ := json.Marshal(staged)
 			for _, secret := range []string{"source-client", "source-management", "never-migrate", "enc:v1"} {
@@ -203,6 +225,9 @@ func TestAdoptionStagesEncryptedSnapshotBeforeDestinationAndVerifiesActualAuth(t
 				if !reflect.DeepEqual(request, runtime.stages[0]) {
 					t.Fatal("retry changed frozen replay")
 				}
+			}
+			if runtime.stages[0].OperationID != "fresh-operation-123:adopt-destination" || runtime.starts[0].OperationID != "fresh-operation-123:adopt-destination:start" {
+				t.Fatal("destination did not reuse the same Fresh child operation IDs")
 			}
 			op.Strategy = committed.Checkpoint
 			plainSnapshot, _ := protector.UnprotectString(r.AdoptionCiphertext)

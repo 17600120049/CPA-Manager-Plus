@@ -13,7 +13,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,10 +29,23 @@ import (
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 )
 
-const realCPA8BinarySHA256 = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
+const (
+	realCPA8BinarySHA256      = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
+	realCPA8ArchiveSHA256     = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
+	realCPA8Version           = "v8.0.13"
+	realLegacyCPAVersion      = "v7.0.12"
+	legacyTransitionCaseRef   = "fresh-legacy-managed-stage-v8-r1"
+	legacyTransitionOutputKey = "CPAMP_TEST_FRESH_TRANSITION_OUT"
+)
 
 // These controlled-source runs are implementation evidence, not an independent
 // acceptance. Only the test constructor injects resource/profile qualification.
+//
+// The legacy_managed case points Fresh at the real pre-v8 process. The legacy
+// v0 safe read observes that process; the existing Supervisor StageDestination
+// child operation then creates the Manager-owned exact v8 destination, which is
+// the staging-v8 transition itself. No second runtime or artificial v8 source
+// stands in for the historical source.
 func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 	cpaPath, supervisorPath := os.Getenv("CPAMP_TEST_CPA_V8"), os.Getenv("CPAMP_TEST_RUNTIME")
 	legacyCPAPath := os.Getenv("CPAMP_TEST_CPA_LEGACY")
@@ -58,7 +73,8 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			adoptionSourceAddr, targetAddr, runtimeAddr := freeTestAddress(t), freeTestAddress(t), freeTestAddress(t)
+			sourceAddr, targetAddr, runtimeAddr := freeTestAddress(t), freeTestAddress(t), freeTestAddress(t)
+			sourceURL := "http://" + sourceAddr
 			sourceKey := "isolated-source-management-key"
 			clientKeys := []string{"isolated-client-one", "isolated-client-two"}
 			var source *exec.Cmd
@@ -66,47 +82,28 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 				if legacyCPAPath == "" {
 					t.Fatal("legacy_managed evidence requires pinned historical CPA")
 				}
-				legacyAddr := freeTestAddress(t)
-				_, legacyPort, _ := net.SplitHostPort(legacyAddr)
-				legacyConfig := map[string]any{"host": "127.0.0.1", "port": json.Number(legacyPort), "auth-dir": filepath.Join(sourceRoot, "auth"), "remote-management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true}, "api-keys": clientKeys, "plugins": map[string]any{"enabled": false}}
-				legacyConfigPath := filepath.Join(sourceRoot, "config.yaml")
-				writeTestJSON(t, legacyConfigPath, legacyConfig)
-				source = exec.Command(legacyCPAPath, "-config", legacyConfigPath)
+				_, sourcePort, _ := net.SplitHostPort(sourceAddr)
+				legacyConfig := map[string]any{"host": "127.0.0.1", "port": json.Number(sourcePort), "auth-dir": filepath.Join(sourceRoot, "auth"), "remote-management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true}, "api-keys": clientKeys, "plugins": map[string]any{"enabled": false}}
+				configPath := filepath.Join(sourceRoot, "config.yaml")
+				writeTestJSON(t, configPath, legacyConfig)
+				source = exec.Command(legacyCPAPath, "-config", configPath)
 				source.Dir = sourceRoot
 				if err = source.Start(); err != nil {
 					t.Fatal(err)
 				}
 				defer killTestProcess(source)
-				waitClientModels(t, legacyAddr, clientKeys[0])
-				beforeLegacyTransition := directoryDigest(t, sourceRoot)
-
-				transitionRoot := filepath.Join(root, "legacy-v8-stage")
-				if err = os.Mkdir(transitionRoot, 0o700); err != nil {
-					t.Fatal(err)
-				}
-				if err = os.Mkdir(filepath.Join(transitionRoot, "auth"), 0o700); err != nil {
-					t.Fatal(err)
-				}
-				_, stagePort, _ := net.SplitHostPort(adoptionSourceAddr)
-				stageConfig := map[string]any{"host": "127.0.0.1", "port": json.Number(stagePort), "auth-dir": filepath.Join(transitionRoot, "auth"), "remote-management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true}, "api-keys": clientKeys, "plugins": map[string]any{"enabled": false}}
-				stageConfigPath := filepath.Join(transitionRoot, "config.yaml")
-				writeTestJSON(t, stageConfigPath, stageConfig)
-				stagedSource := exec.Command(cpaPath, "-config", stageConfigPath)
-				stagedSource.Dir = transitionRoot
-				if err = stagedSource.Start(); err != nil {
-					t.Fatal(err)
-				}
-				defer killTestProcess(stagedSource)
 				waitTest(t, func() bool {
-					_, err := cpa.ReadV8AdoptionKeys(t.Context(), "http://"+adoptionSourceAddr, sourceKey)
+					_, err := cpa.ReadLegacyManagedAdoptionSnapshot(t.Context(), sourceURL, sourceKey)
 					return err == nil
 				})
-				if beforeLegacyTransition != directoryDigest(t, sourceRoot) {
-					t.Fatal("isolated staging-v8 transition changed historical source")
+				// The real v7 source cannot answer the v8 probe; this adapter is
+				// explicit, never a v0 fallback from a failed v8 read.
+				if _, err := cpa.ReadV8AdoptionSnapshot(t.Context(), sourceURL, sourceKey); err == nil {
+					t.Fatal("historical source unexpectedly answered the v8 management read")
 				}
-				waitClientModels(t, legacyAddr, clientKeys[0])
+				waitClientModels(t, sourceAddr, clientKeys[0])
 			} else {
-				_, sourcePort, _ := net.SplitHostPort(adoptionSourceAddr)
+				_, sourcePort, _ := net.SplitHostPort(sourceAddr)
 				sourceConfig := map[string]any{"config-version": 8, "server": map[string]any{"host": "127.0.0.1", "port": json.Number(sourcePort)}, "oauth": map[string]any{"auth-dir": filepath.Join(sourceRoot, "auth")}, "management": map[string]any{"secret-key": sourceKey, "disable-control-panel": true, "disable-auto-update-panel": true}, "access": map[string]any{"api-keys": clientKeys}, "plugins": map[string]any{"enabled": false}}
 				configPath := filepath.Join(sourceRoot, "config.yaml")
 				writeTestJSON(t, configPath, sourceConfig)
@@ -117,13 +114,13 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 				}
 				defer killTestProcess(source)
 				waitTest(t, func() bool {
-					_, err := cpa.ReadV8AdoptionKeys(t.Context(), "http://"+adoptionSourceAddr, sourceKey)
+					_, err := cpa.ReadV8AdoptionKeys(t.Context(), sourceURL, sourceKey)
 					return err == nil
 				})
 			}
 			before := directoryDigest(t, sourceRoot)
 			manifest := filepath.Join(targetRoot, "artifact.json")
-			writeTestJSON(t, manifest, map[string]any{"schemaVersion": 1, "engine": "cpa", "version": "v8.0.13", "artifactId": "sha256:" + realCPA8BinarySHA256})
+			writeTestJSON(t, manifest, map[string]any{"schemaVersion": 1, "engine": "cpa", "version": realCPA8Version, "artifactId": "sha256:" + realCPA8BinarySHA256})
 			token := "isolated-runtime-transport-token"
 			supervisor := exec.Command(supervisorPath)
 			supervisor.Dir = targetRoot
@@ -148,6 +145,7 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 			transport.Proxy = nil
 			defer transport.CloseIdleConnections()
 			var lostStage, lostStart atomic.Bool
+			var stageRequests, startRequests atomic.Int32
 			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				request := r.Clone(r.Context())
 				request.URL.Scheme = upstream.Scheme
@@ -160,6 +158,12 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 				}
 				defer response.Body.Close()
 				body, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
+				if r.URL.Path == "/v1/runtime/operations/stage-destination" && response.StatusCode == 200 {
+					stageRequests.Add(1)
+				}
+				if r.URL.Path == "/v1/runtime/operations/start" && response.StatusCode == 200 {
+					startRequests.Add(1)
+				}
 				lose := r.URL.Path == "/v1/runtime/operations/stage-destination" && !lostStage.Swap(true) || r.URL.Path == "/v1/runtime/operations/start" && !lostStart.Swap(true)
 				if lose && response.StatusCode == 200 {
 					conn, _, err := w.(http.Hijacker).Hijack()
@@ -176,9 +180,10 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 			client := runtimeservice.NewEmbeddedClient(proxy.URL, token)
 			protector, _ := security.NewProtector([]byte("isolated-exact-cpa-data-key"))
 			q := qualified()
-			q.StagingV8TransitionQualified = true
-			options := Options{Runtime: client, Protector: protector, Qualification: q, QualifiedArtifactID: model.RuntimeArtifactID("sha256:" + realCPA8BinarySHA256), AdoptionResources: acceptedKeys(), DestinationBaseURL: "http://" + targetAddr}
-			request := Request{Strategy: bootstrap.AdoptExisting, BaseURL: "http://" + adoptionSourceAddr, ManagementKey: sourceKey, AdoptSourceClass: class, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedArtifactID: options.QualifiedArtifactID}
+			q.StagingV8TransitionQualified = class == bootstrap.AdoptLegacyManaged
+			expectedArtifact := model.RuntimeArtifactID("sha256:" + realCPA8BinarySHA256)
+			options := Options{Runtime: client, Protector: protector, Qualification: q, QualifiedArtifactID: expectedArtifact, AdoptionResources: acceptedKeys(), DestinationBaseURL: "http://" + targetAddr}
+			request := Request{Strategy: bootstrap.AdoptExisting, BaseURL: sourceURL, ManagementKey: sourceKey, AdoptSourceClass: class, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedArtifactID: options.QualifiedArtifactID}
 			dbPath := filepath.Join(root, "manager.sqlite")
 			db, err := sqlite.Open(dbPath)
 			if err != nil {
@@ -219,10 +224,14 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 				t.Fatal(err)
 			}
 			request.AdoptionCiphertext = record.AdoptionCiphertext
+			stageCallsBefore, startCallsBefore := stageRequests.Load(), startRequests.Load()
 			for i := 0; i < 2; i++ {
 				if result, err := New(options).Execute(t.Context(), record.Operation, request); err == nil || result.Checkpoint.Stage == "committed" {
 					t.Fatal("lost mutation response committed target")
 				}
+			}
+			if record.Operation.Strategy.Stage != "staged" {
+				t.Fatal("durable checkpoint committed before verified readback")
 			}
 			var committed Result
 			waitTest(t, func() bool {
@@ -241,12 +250,77 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 			if _, err = New(options).Execute(t.Context(), record.Operation, request); err != nil {
 				t.Fatal("committed replay", err)
 			}
+			stageCallsCommitted, startCallsCommitted := stageRequests.Load(), startRequests.Load()
+			if stageCallsCommitted == stageCallsBefore || startCallsCommitted == startCallsBefore {
+				t.Fatal("lost responses were not actually exercised")
+			}
+			if _, err = New(options).Execute(t.Context(), record.Operation, request); err != nil || stageRequests.Load() != stageCallsCommitted || startRequests.Load() != startCallsCommitted {
+				t.Fatal("committed replay mutated destination or changed child operation IDs")
+			}
+			// Never alias the preserved source with the Manager-owned destination.
+			if committed.Connection.BaseURL != "http://"+targetAddr || committed.Connection.BaseURL == sourceURL {
+				t.Fatal("destination aliased the preserved source")
+			}
 			if before != directoryDigest(t, sourceRoot) {
 				t.Fatal("source config or native resource state changed")
 			}
 			if !lostStage.Load() || !lostStart.Load() || !record.Operation.GatewayPending {
 				t.Fatal("lost response/Gateway boundary was not exercised")
 			}
+
+			// Decrypt the Manager-owned destination snapshot only to verify its
+			// bounds: same Fresh child OperationID, new management key, source
+			// client keys, exact artifact.
+			plainSnapshot, err := protector.UnprotectString(record.AdoptionCiphertext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var snapshot adoptionSnapshot
+			if err = json.Unmarshal([]byte(plainSnapshot), &snapshot); err != nil {
+				t.Fatal(err)
+			}
+			if snapshot.SourceManagementKey != sourceKey || snapshot.DestinationURL != "http://"+targetAddr ||
+				snapshot.Destination.OperationID != string(identity.OperationID)+":adopt-destination" ||
+				snapshot.Destination.SourceClass != string(class) ||
+				snapshot.Destination.ExpectedActiveArtifactID != expectedArtifact ||
+				snapshot.Destination.ManagementKey == sourceKey || len(snapshot.Destination.ManagementKey) != 64 {
+				t.Fatalf("destination snapshot bounds changed: %+v", snapshot.Destination)
+			}
+			if !reflect.DeepEqual(snapshot.Destination.APIKeys, clientKeys) {
+				t.Fatal("destination did not receive the source client API keys")
+			}
+			destinationKeys, err := cpa.ReadV8AdoptionKeys(t.Context(), "http://"+targetAddr, snapshot.Destination.ManagementKey)
+			if err != nil || !reflect.DeepEqual(destinationKeys, clientKeys) {
+				t.Fatalf("destination v8 readback: %v %v", destinationKeys, err)
+			}
+			if err = cpa.VerifyV8Adoption(t.Context(), "http://"+targetAddr, snapshot.Destination.ManagementKey, clientKeys); err != nil {
+				t.Fatalf("destination verification: %v", err)
+			}
+			finalStatus, err := direct.Status(t.Context())
+			if err != nil || finalStatus.ActiveGatewayArtifact == nil || finalStatus.ActiveGatewayArtifact.ArtifactID != expectedArtifact ||
+				finalStatus.CPAObservedVersion != realCPA8Version || finalStatus.Identity != status.Identity || finalStatus.Generation != status.Generation {
+				t.Fatalf("destination is not the accepted exact v8 target: %+v %v", finalStatus, err)
+			}
+
+			if class == bootstrap.AdoptLegacyManaged {
+				// The historical v7 process remains live, byte-preserved and on v0.
+				waitClientModels(t, sourceAddr, clientKeys[0])
+				legacy, err := cpa.ReadLegacyManagedAdoptionSnapshot(t.Context(), sourceURL, sourceKey)
+				if err != nil || !reflect.DeepEqual(legacy.APIKeys, clientKeys) {
+					t.Fatalf("legacy source no longer readable or preserved: %v", err)
+				}
+				directHTTP := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 5 * time.Second}
+				response, err := directHTTP.Get(sourceURL + "/v8/management/config")
+				if err != nil || response.StatusCode != http.StatusNotFound {
+					t.Fatalf("historical source answered v8 management: %v", err)
+				}
+				_ = response.Body.Close()
+				directHTTP.CloseIdleConnections()
+				if before != directoryDigest(t, sourceRoot) {
+					t.Fatal("legacy source changed during transition")
+				}
+			}
+
 			if _, err = direct.Stop(t.Context(), model.RuntimeMutationRequest{OperationID: "test-restart-owned-target", ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation}); err != nil {
 				t.Fatal(err)
 			}
@@ -268,12 +342,64 @@ func TestAdoptionExactCPAV8WithSupervisor(t *testing.T) {
 			if before != directoryDigest(t, sourceRoot) {
 				t.Fatal("Supervisor restart changed source")
 			}
-			keys, err := cpa.ReadV8AdoptionKeys(t.Context(), "http://"+adoptionSourceAddr, sourceKey)
-			if err != nil || len(keys) != 2 || keys[0] != clientKeys[0] || keys[1] != clientKeys[1] {
-				t.Fatal("qualified staging source no longer usable")
+			if class == bootstrap.AdoptLegacyManaged {
+				keys, err := cpa.ReadLegacyManagedAdoptionSnapshot(t.Context(), sourceURL, sourceKey)
+				if err != nil || !reflect.DeepEqual(keys.APIKeys, clientKeys) {
+					t.Fatal("qualified legacy source no longer usable")
+				}
+				// Emit the sanitized CI observation only after every transition,
+				// preservation and restart-fence assertion passed.
+				legacyBytes, err := os.ReadFile(legacyCPAPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				legacyDigest := sha256.Sum256(legacyBytes)
+				writeLegacyTransitionEvidence(t, map[string]any{
+					"schemaVersion":                1,
+					"caseRef":                      legacyTransitionCaseRef,
+					"sourceClass":                  string(bootstrap.AdoptLegacyManaged),
+					"legacyVersion":                realLegacyCPAVersion,
+					"legacyArchiveSha256":          os.Getenv("CPAMP_TEST_CPA_LEGACY_ARCHIVE_SHA256"),
+					"legacyBinarySha256":           hex.EncodeToString(legacyDigest[:]),
+					"targetVersion":                realCPA8Version,
+					"targetArchiveSha256":          realCPA8ArchiveSHA256,
+					"targetBinarySha256":           realCPA8BinarySHA256,
+					"targetArtifactId":             string(expectedArtifact),
+					"consumerImplementationSha256": consumerImplementationSHA256(),
+					"sourcePreserved":              true,
+					"legacyReadVerified":           true,
+					"stagingV8Verified":            finalStatus.CPAObservedVersion == realCPA8Version,
+					"destinationVerified":          true,
+					"gatewayPending":               record.Operation.GatewayPending,
+				})
+			} else {
+				keys, err := cpa.ReadV8AdoptionKeys(t.Context(), sourceURL, sourceKey)
+				if err != nil || len(keys) != 2 || keys[0] != clientKeys[0] || keys[1] != clientKeys[1] {
+					t.Fatal("qualified staging source no longer usable")
+				}
 			}
-			t.Logf("exact artifact=%s class=%s source-preserved=true isolated-staging-v8=true destination-verified=true sqlite-reopen=true lost-stage-reply=true lost-start-reply=true runtime-restart-fenced=true production-acceptance=pending", options.QualifiedArtifactID, class)
+			t.Logf("exact artifact=%s class=%s source-preserved=true destination-readback=true destination-verified=true sqlite-reopen=true lost-stage-reply=true lost-start-reply=true runtime-restart-fenced=true production-acceptance=pending", options.QualifiedArtifactID, class)
 		})
+	}
+}
+
+// writeLegacyTransitionEvidence emits the sanitized CI observation only when the
+// workflow asks for it. It is review input, never compiled production authority.
+func writeLegacyTransitionEvidence(t *testing.T, value map[string]any) {
+	t.Helper()
+	name := os.Getenv(legacyTransitionOutputKey)
+	if name == "" {
+		return
+	}
+	if strings.TrimSpace(name) != name {
+		t.Fatal("invalid transition evidence path")
+	}
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(name, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

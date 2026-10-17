@@ -93,12 +93,13 @@ func TestFreshStrategyCheckpointRequiresCompleteShape(t *testing.T) {
 	adopt := FreshStrategyCheckpoint{
 		Strategy: AdoptExisting, Stage: "staged", TargetIdentity: "runtime-adopt", TargetGeneration: 4,
 		TargetArtifactID: "sha256:" + strings.Repeat("c", 64),
-		SourceIdentity: "external:sha256:" + strings.Repeat("d", 64), SourceClass: AdoptNetworkExisting,
+		SourceIdentity:   "external:sha256:" + strings.Repeat("d", 64), SourceClass: AdoptNetworkExisting,
 		DestinationConnectionIdentity: "external:sha256:" + strings.Repeat("e", 64),
+		AdoptionResources:             []ResourceRef{"client-api-keys", "cpa-auth-files", "cpa-config-server"},
 		AdoptionDecisions: []AdoptionResourceDecision{
 			{ResourceRef: "client-api-keys", Kind: APIKeys, Scope: ClientAPIKeys, ReadEvidenceRef: "preflight:keys-read", ReplayEvidenceRef: "preflight:keys-replay", VerifyEvidenceRef: "preflight:keys-verify", Qualification: CapabilityQualified, Disposition: Migrate},
 			{ResourceRef: "cpa-auth-files", Kind: Credentials, Scope: CPAAuthFiles, Qualification: CapabilityPending, ManualAction: ReauthenticateAfterAdoption, Disposition: ManualAction},
-			{ResourceRef: "cpa-configuration", Kind: CPAConfiguration, Scope: ManagementAPIFields, Qualification: CapabilityPending, ManualAction: ReconfigureAfterAdoption, Disposition: ManualAction},
+			{ResourceRef: "cpa-config-server", Kind: CPAConfiguration, Scope: ManagementAPIFields, Qualification: CapabilityPending, ManualAction: ReconfigureAfterAdoption, Disposition: ManualAction},
 		},
 	}
 	for _, checkpoint := range []FreshStrategyCheckpoint{{}, managed, external, adopt} {
@@ -152,5 +153,90 @@ func TestFreshStrategyCheckpointRequiresCompleteShape(t *testing.T) {
 	op.Strategy.AdoptionDecisions = op.Strategy.AdoptionDecisions[:1]
 	if op.Validate() == nil {
 		t.Fatal("adoption checkpoint silently dropped discovered manual resources")
+	}
+}
+
+func freshKeysDecision() AdoptionResourceDecision {
+	return AdoptionResourceDecision{ResourceRef: AdoptionRefClientAPIKeys, Kind: APIKeys, Scope: ClientAPIKeys, ReadEvidenceRef: "preflight:keys-read", ReplayEvidenceRef: "preflight:keys-replay", VerifyEvidenceRef: "preflight:keys-verify", Qualification: CapabilityQualified, Disposition: Migrate}
+}
+
+func freshManualDecision(ref ResourceRef) AdoptionResourceDecision {
+	decision, _ := FreshAdoptionDecision(ref, AdoptionResourceDecision{})
+	return decision
+}
+
+func TestFreshAdoptionInventoryRequiresExactlyOneDecisionPerResource(t *testing.T) {
+	keys := freshKeysDecision()
+	base := func() FreshStrategyCheckpoint {
+		return FreshStrategyCheckpoint{
+			Strategy: AdoptExisting, Stage: "staged", TargetIdentity: "runtime-adopt", TargetGeneration: 4,
+			TargetArtifactID: "sha256:" + strings.Repeat("c", 64),
+			SourceIdentity:   "external:sha256:" + strings.Repeat("d", 64), SourceClass: AdoptLegacyManaged,
+			DestinationConnectionIdentity: "external:sha256:" + strings.Repeat("e", 64),
+			AdoptionResources:             []ResourceRef{AdoptionRefClientAPIKeys, AdoptionRefCPAAuthFiles},
+			AdoptionDecisions:             []AdoptionResourceDecision{keys, freshManualDecision(AdoptionRefCPAAuthFiles)},
+		}
+	}
+	if err := base().validate(); err != nil {
+		t.Fatalf("valid inventory rejected: %v", err)
+	}
+	for name, mutate := range map[string]func(*FreshStrategyCheckpoint){
+		"duplicate resource": func(c *FreshStrategyCheckpoint) {
+			c.AdoptionResources = []ResourceRef{AdoptionRefClientAPIKeys, AdoptionRefClientAPIKeys}
+		},
+		"missing decision": func(c *FreshStrategyCheckpoint) { c.AdoptionDecisions = c.AdoptionDecisions[:1] },
+		"extra decision": func(c *FreshStrategyCheckpoint) {
+			c.AdoptionDecisions = append(c.AdoptionDecisions, freshManualDecision(AdoptionRefConfigUnknown))
+		},
+		"unknown resource": func(c *FreshStrategyCheckpoint) {
+			c.AdoptionResources = append(c.AdoptionResources, "attacker-supplied")
+			c.AdoptionDecisions = append(c.AdoptionDecisions, AdoptionResourceDecision{ResourceRef: "attacker-supplied", Kind: CPAConfiguration, Scope: ManagementAPIFields, Qualification: CapabilityPending, ManualAction: ReconfigureAfterAdoption, Disposition: ManualAction})
+		},
+		"migrating unknown resource": func(c *FreshStrategyCheckpoint) {
+			c.AdoptionResources = append(c.AdoptionResources, AdoptionRefConfigUnknown)
+			c.AdoptionDecisions = append(c.AdoptionDecisions, AdoptionResourceDecision{ResourceRef: AdoptionRefConfigUnknown, Kind: CPAConfiguration, Scope: ManagementAPIFields, Qualification: CapabilityQualified, Disposition: Migrate})
+		},
+		"provider resource migrated": func(c *FreshStrategyCheckpoint) {
+			c.AdoptionResources = append(c.AdoptionResources, AdoptionRefProviderStateProviders)
+			c.AdoptionDecisions = append(c.AdoptionDecisions, AdoptionResourceDecision{ResourceRef: AdoptionRefProviderStateProviders, Kind: ProviderRuntimeState, Scope: ProviderState, Qualification: CapabilityQualified, Disposition: Migrate})
+		},
+		"missing client keys": func(c *FreshStrategyCheckpoint) {
+			c.AdoptionResources = []ResourceRef{AdoptionRefCPAAuthFiles}
+			c.AdoptionDecisions = c.AdoptionDecisions[1:]
+		},
+		"missing auth files": func(c *FreshStrategyCheckpoint) {
+			c.AdoptionResources = []ResourceRef{AdoptionRefClientAPIKeys}
+			c.AdoptionDecisions = c.AdoptionDecisions[:1]
+		},
+		"inventory without decisions": func(c *FreshStrategyCheckpoint) { c.AdoptionDecisions = nil },
+		"decisions without inventory": func(c *FreshStrategyCheckpoint) { c.AdoptionResources = nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			op := ownedFresh()
+			op.AdminInitialized = true
+			op.Strategy = base()
+			mutate(&op.Strategy)
+			if op.Validate() == nil {
+				t.Fatal("malformed adoption inventory accepted")
+			}
+		})
+	}
+}
+
+func TestFreshAdoptionInventoryKeepsManualResourcesExplicit(t *testing.T) {
+	if _, ok := FreshAdoptionDecision(AdoptionRefClientAPIKeys, freshManualDecision(AdoptionRefCPAAuthFiles)); ok {
+		t.Fatal("unknown client-key shape accepted")
+	}
+	if _, ok := FreshAdoptionDecision(AdoptionRefClientAPIKeys, AdoptionResourceDecision{}); ok {
+		t.Fatal("unqualified client-key migration accepted")
+	}
+	for _, ref := range []ResourceRef{AdoptionRefConfigServer, AdoptionRefConfigManagement, AdoptionRefConfigRouting, AdoptionRefConfigLogging, AdoptionRefConfigUsage, AdoptionRefConfigPlugins, AdoptionRefConfigObservability, AdoptionRefConfigUnknown, AdoptionRefProviderStateProviders, AdoptionRefProviderStateAPIKeys, AdoptionRefProviderStateClient} {
+		decision, ok := FreshAdoptionDecision(ref, AdoptionResourceDecision{})
+		if !ok || decision.Disposition != ManualAction || decision.Qualification != CapabilityPending || decision.ManualAction == "" || decision.ResourceRef != ref {
+			t.Fatalf("resource %q was not a bounded manual action: %+v", ref, decision)
+		}
+	}
+	if _, ok := FreshAdoptionDecision("cpa-configuration", AdoptionResourceDecision{}); ok {
+		t.Fatal("retired aggregate configuration ref accepted")
 	}
 }

@@ -243,6 +243,7 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	}
 	before := v
 	before.Operation.Strategy.AdoptionDecisions = slices.Clone(v.Operation.Strategy.AdoptionDecisions)
+	before.Operation.Strategy.AdoptionResources = slices.Clone(v.Operation.Strategy.AdoptionResources)
 	if v.Admin != nil {
 		copy := *v.Admin
 		before.Admin = &copy

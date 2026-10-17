@@ -21,6 +21,7 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 )
 
 func TestRuntimeDestinationImplementationPinMatchesExecutionChain(t *testing.T) {
@@ -143,8 +144,34 @@ func acceptedConsumerFixture(t *testing.T, consumerIndex int) (productionRecord,
 		}
 		evidence.ReportSHA256 = storeSyntheticEvidence(files, encodeJSON(t, report), ".json")
 	}
+	if consumer.SourceClass == bootstrap.AdoptLegacyManaged {
+		attachSyntheticLegacyTransition(t, files, &record, consumerIndex, nil)
+	}
 	writeSyntheticRecord(t, files, record)
 	return record, files
+}
+
+// attachSyntheticLegacyTransition creates the separate legacy-only transition
+// observation. It exists only in test memory and is never compiled authority.
+func attachSyntheticLegacyTransition(t *testing.T, files fstest.MapFS, record *productionRecord, index int, mutate func(*legacyTransitionBinding)) {
+	t.Helper()
+	evidence := legacyTransitionBinding{
+		SchemaVersion:                1,
+		CaseRef:                      "test-legacy-managed-stage-v8-r1",
+		SourceClass:                  string(bootstrap.AdoptLegacyManaged),
+		TargetArtifactID:             string(record.ArtifactID),
+		TargetArchiveSHA256:          record.ArchiveSHA256,
+		TargetBinarySHA256:           record.BinarySHA256,
+		ConsumerImplementationSHA256: consumerImplementationSHA256(),
+		SourcePreserved:              true,
+		StagingV8Verified:            true,
+		DestinationVerified:          true,
+	}
+	if mutate != nil {
+		mutate(&evidence)
+	}
+	digest := storeSyntheticEvidence(files, encodeJSON(t, evidence), ".json")
+	record.Consumers[index].LegacyTransition = &legacyTransitionEvidence{Profile: "CPA8-STAGE-r1", CaseRef: evidence.CaseRef, EvidenceSHA256: digest}
 }
 
 func encodeJSON(t *testing.T, value any) []byte {
@@ -254,6 +281,102 @@ func TestProductionLoaderBindsArtifactProfileEvidenceAndHead(t *testing.T) {
 	}
 }
 
+func TestProductionLoaderRequiresIndependentLegacyTransitionBinding(t *testing.T) {
+	legacy := consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged}
+	network := consumerKey{bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting}
+	_, files := acceptedConsumerFixture(t, 3)
+	consumers, err := loadProductionQualification(files)
+	if err != nil || !consumers[legacy].Qualification.StagingV8TransitionQualified || consumers[legacy].Qualification.ValidateForStrategy(legacy.Strategy, legacy.Class) != nil {
+		t.Fatalf("positive synthetic legacy transition control: %v", err)
+	}
+	_, files = acceptedConsumerFixture(t, 2)
+	consumers, err = loadProductionQualification(files)
+	if err != nil || consumers[network].Qualification.StagingV8TransitionQualified || consumers[network].Qualification.ValidateForStrategy(network.Strategy, network.Class) != nil {
+		t.Fatalf("network adoption must not require or gain a legacy transition: %v", err)
+	}
+	for name, mutate := range map[string]func(*productionRecord, fstest.MapFS){
+		"legacy accepted without transition binding": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[3].LegacyTransition = nil
+		},
+		"network STAGE evidence reused without binding": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[3].LegacyTransition = nil
+		},
+		"transition profile": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[3].LegacyTransition.Profile = "CPA8-EXTERNAL-SAFETY-r1"
+		},
+		"transition case ref mismatch": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[3].LegacyTransition.CaseRef = "other-case"
+		},
+		"transition evidence missing": func(r *productionRecord, f fstest.MapFS) {
+			delete(f, "qualification/evidence/"+r.Consumers[3].LegacyTransition.EvidenceSHA256+".json")
+		},
+		"transition evidence drift": func(r *productionRecord, f fstest.MapFS) {
+			f["qualification/evidence/"+r.Consumers[3].LegacyTransition.EvidenceSHA256+".json"].Data = []byte("{}")
+		},
+		"transition source class": func(r *productionRecord, f fstest.MapFS) {
+			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.SourceClass = string(bootstrap.AdoptNetworkExisting) })
+		},
+		"transition artifact": func(r *productionRecord, f fstest.MapFS) {
+			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.TargetArtifactID = "sha256:" + strings.Repeat("a", 64) })
+		},
+		"transition archive": func(r *productionRecord, f fstest.MapFS) {
+			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.TargetArchiveSHA256 = strings.Repeat("a", 64) })
+		},
+		"transition binary": func(r *productionRecord, f fstest.MapFS) {
+			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.TargetBinarySHA256 = strings.Repeat("a", 64) })
+		},
+		"transition consumer implementation": func(r *productionRecord, f fstest.MapFS) {
+			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.ConsumerImplementationSHA256 = strings.Repeat("a", 64) })
+		},
+		"transition source not preserved": func(r *productionRecord, f fstest.MapFS) {
+			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.SourcePreserved = false })
+		},
+		"transition staging unverified": func(r *productionRecord, f fstest.MapFS) {
+			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.StagingV8Verified = false })
+		},
+		"transition destination unverified": func(r *productionRecord, f fstest.MapFS) {
+			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.DestinationVerified = false })
+		},
+		"transition schema": func(r *productionRecord, f fstest.MapFS) {
+			rewriteSyntheticLegacyTransition(t, f, r, 3, func(b *legacyTransitionBinding) { b.SchemaVersion = 2 })
+		},
+		"transition carried by network consumer": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[2] = r.Consumers[3]
+		},
+		"transition on pending legacy": func(r *productionRecord, _ fstest.MapFS) {
+			r.Consumers[3].Status = "pending"
+			r.Consumers[3].AcceptanceSHA256 = ""
+		},
+		"consumer implementation drift": func(r *productionRecord, _ fstest.MapFS) {
+			r.ImplementationSHA256 = strings.Repeat("a", 64)
+		},
+		"bootstrap semantic digest drift": func(r *productionRecord, _ fstest.MapFS) {
+			r.ImplementationSHA256 = consumerImplementationDigest(cpa.SafeReadImplementationSHA256(), strings.Repeat("b", 64))
+		},
+		"safe-read semantic digest drift": func(r *productionRecord, _ fstest.MapFS) {
+			r.ImplementationSHA256 = consumerImplementationDigest(strings.Repeat("b", 64), bootstrap.FreshStrategyImplementationSHA256())
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			record, files := acceptedConsumerFixture(t, 3)
+			if consumers, err := loadProductionQualification(files); err != nil || !consumers[legacy].Qualification.StagingV8TransitionQualified {
+				t.Fatalf("positive synthetic control: %v", err)
+			}
+			mutate(&record, files)
+			writeSyntheticRecord(t, files, record)
+			if consumers, err := loadProductionQualification(files); err == nil || consumers != nil {
+				t.Fatal("missing or mismatched legacy transition granted qualification")
+			}
+		})
+	}
+}
+
+func rewriteSyntheticLegacyTransition(t *testing.T, files fstest.MapFS, record *productionRecord, index int, mutate func(*legacyTransitionBinding)) {
+	t.Helper()
+	record.Consumers[index].LegacyTransition = nil
+	attachSyntheticLegacyTransition(t, files, record, index, mutate)
+}
+
 func TestProductionConsumerQualificationDoesNotCrossStrategiesOrSourceClasses(t *testing.T) {
 	keys := []consumerKey{{bootstrap.NewManaged, ""}, {bootstrap.ConnectExternal, ""}, {bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting}, {bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged}}
 	for i, key := range keys {
@@ -288,6 +411,7 @@ func TestProductionConsumerQualificationDoesNotCrossStrategiesOrSourceClasses(t 
 			// An unchanged PASS report with acceptance withdrawn grants nothing.
 			record.Consumers[i].Status = "pending"
 			record.Consumers[i].AcceptanceSHA256 = ""
+			record.Consumers[i].LegacyTransition = nil
 			writeSyntheticRecord(t, files, record)
 			consumers, err = loadProductionQualification(files)
 			if err != nil || consumers[key].Qualification.ValidateForStrategy(key.Strategy, key.Class) == nil {

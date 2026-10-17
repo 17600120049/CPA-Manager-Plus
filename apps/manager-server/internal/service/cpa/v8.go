@@ -15,7 +15,9 @@ import (
 	"unicode/utf8"
 )
 
-const v8ReadLimit = 1 << 20
+// safeReadLimit bounds every management safe-read body. The same envelope is
+// shared by the v8 probe and the explicit legacy_managed v0 adapter.
+const safeReadLimit = 1 << 20
 
 // V8ReadError exposes stable failures only. Neither upstream bodies nor URLs or
 // credentials are safe diagnostic text at the Fresh authority boundary.
@@ -97,17 +99,12 @@ func readV8Config(ctx context.Context, baseURL, managementKey string, adoptionKe
 	if err != nil {
 		return V8ConfigObservation{}, err
 	}
-	if managementKey == "" || managementKey != strings.TrimSpace(managementKey) || len(managementKey) > 4096 {
+	if !validManagementKey(managementKey) {
 		return V8ConfigObservation{}, V8InvalidConnection
-	}
-	for _, c := range managementKey {
-		if c < 0x21 || c == 0x7f {
-			return V8ConfigObservation{}, V8InvalidConnection
-		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	client, closeClient, err := v8DirectClient(ctx, baseURL)
+	client, closeClient, err := directReadClient(ctx, baseURL)
 	if err != nil {
 		return V8ConfigObservation{}, err
 	}
@@ -115,7 +112,22 @@ func readV8Config(ctx context.Context, baseURL, managementKey string, adoptionKe
 	return readV8ConfigWithClient(ctx, client, baseURL, managementKey, adoptionKeys)
 }
 
-func v8DirectClient(ctx context.Context, baseURL string) (*http.Client, func(), error) {
+func validManagementKey(managementKey string) bool {
+	if managementKey == "" || managementKey != strings.TrimSpace(managementKey) || len(managementKey) > 4096 {
+		return false
+	}
+	for _, c := range managementKey {
+		if c < 0x21 || c == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// directReadClient is the shared management safe-read transport: direct
+// connectivity, no proxy, one fixed DNS resolution, no redirect following, no
+// retry and a bounded header/body budget. It never mutates its target.
+func directReadClient(ctx context.Context, baseURL string) (*http.Client, func(), error) {
 	u, _ := url.Parse(baseURL)
 	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, u.Hostname())
 	if err != nil || len(addresses) == 0 {
@@ -170,27 +182,8 @@ func readV8ConfigWithClient(ctx context.Context, client *http.Client, baseURL, m
 		(len(parameters) == 1 && !strings.EqualFold(parameters["charset"], "utf-8")) {
 		return V8ConfigObservation{}, V8InvalidConfig
 	}
-	encoded, err := io.ReadAll(io.LimitReader(response.Body, v8ReadLimit+1))
-	if err != nil || len(encoded) > v8ReadLimit {
-		return V8ConfigObservation{}, V8InvalidConfig
-	}
-	data := encoded
-	switch response.Header.Get("Content-Encoding") {
-	case "", "identity":
-	case "gzip":
-		reader, err := gzip.NewReader(bytes.NewReader(encoded))
-		if err != nil {
-			return V8ConfigObservation{}, V8InvalidConfig
-		}
-		data, err = io.ReadAll(io.LimitReader(reader, v8ReadLimit+1))
-		_ = reader.Close()
-		if err != nil || len(data) > v8ReadLimit {
-			return V8ConfigObservation{}, V8InvalidConfig
-		}
-	default:
-		return V8ConfigObservation{}, V8InvalidConfig
-	}
-	if !utf8.Valid(data) {
+	data, ok := readBoundedJSONBody(response)
+	if !ok {
 		return V8ConfigObservation{}, V8InvalidConfig
 	}
 	var config struct {
@@ -260,3 +253,33 @@ func readV8ConfigWithClient(ctx context.Context, client *http.Client, baseURL, m
 }
 
 var _ error = V8ReadError("")
+
+// readBoundedJSONBody enforces the shared safe-read body envelope after a 200
+// response: at most one MiB on the wire and after decompression, identity or
+// gzip only, and valid UTF-8. Callers keep their own typed error constants.
+func readBoundedJSONBody(response *http.Response) ([]byte, bool) {
+	encoded, err := io.ReadAll(io.LimitReader(response.Body, safeReadLimit+1))
+	if err != nil || len(encoded) > safeReadLimit {
+		return nil, false
+	}
+	data := encoded
+	switch response.Header.Get("Content-Encoding") {
+	case "", "identity":
+	case "gzip":
+		reader, err := gzip.NewReader(bytes.NewReader(encoded))
+		if err != nil {
+			return nil, false
+		}
+		data, err = io.ReadAll(io.LimitReader(reader, safeReadLimit+1))
+		_ = reader.Close()
+		if err != nil || len(data) > safeReadLimit {
+			return nil, false
+		}
+	default:
+		return nil, false
+	}
+	if !utf8.Valid(data) {
+		return nil, false
+	}
+	return data, true
+}

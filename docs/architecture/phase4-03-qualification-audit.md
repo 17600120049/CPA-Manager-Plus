@@ -124,12 +124,14 @@ they are not inserted into the production consumer record or represented as a
 new AQ acceptance report. A local native build of exact CPA source exercises
 target config/start/auth behavior but is not the qualified Linux artifact.
 
-The controlled `legacy_managed` case uses the exact v8 binary with legacy config
-spelling and preserves that source. It does **not** prove transition from a real
-historical legacy runtime. That missing real transition evidence and its
-independent acceptance remain an explicit legacy blocker. New Managed and
-External production-consumer acceptance also remain absent. Both Gate decisions
-at the top therefore remain **BLOCKED**, even when implementation/CI tests pass.
+At that baseline the controlled `legacy_managed` case used the exact v8 binary
+with legacy config spelling. It did **not** prove transition from a real
+historical legacy runtime; the follow-up below replaces that shortcut with a
+live v7.0.12 source and an explicit legacy read. Independent acceptance of the
+resulting transition evidence remains an explicit legacy blocker. New Managed
+and External production-consumer acceptance also remain absent. Both Gate
+decisions at the top therefore remain **BLOCKED**, even when implementation/CI
+tests pass.
 
 | Consumer fact | Existing evidence | Independently accepted scope | Unaccepted or missing prerequisite |
 | --- | --- | --- | --- |
@@ -378,3 +380,42 @@ Previous-head green CI is not reused to self-promote the changed implementation.
 Scope check: no generic migration engine, second Runtime authority, dynamic
 attestation/trust store, source lifecycle takeover, historical usage/request/log
 migration, v0 fallback, Phase4-04 behavior or product UI is introduced.
+
+## Legacy transition, inventory and semantic-binding follow-up
+
+This batch closes four implementation gaps without accepting any consumer:
+
+- `legacy_managed` adoption now reads a real pre-v8 source through a dedicated,
+  explicit `GET /v0/management/config` adapter with the same direct transport,
+  fixed DNS, no proxy, no redirect/retry, bounded header/body and five-second
+  budget as the v8 safe read. It is not a v0 fallback: `network_existing` uses
+  only the v8 probe, legacy uses only this adapter, and neither retries against
+  the other generation. Only client API keys and fixed bounded resource
+  categories escape the adapter.
+- Both source classes normalize into one internal snapshot and persist the
+  bounded `adoptionResources` inventory together with one decision per resource
+  in the existing Fresh checkpoint/CAS before any destination mutation.
+  `client-api-keys` is the sole `Migrate`; auth files, provider state,
+  configuration sections and the fixed `cpa-config-unknown` sentinel remain
+  explicit manual or unsupported actions. The inventory is immutable after the
+  staged checkpoint and survives Manager/SQLite reopen.
+- The production loader no longer derives legacy transition qualification from
+  the source class. An accepted legacy consumer must carry a separate
+  `legacyTransition` binding to a byte-pinned transition observation that binds
+  the exact target ArtifactID/archive/binary, source class, consumer
+  implementation digest and source-preserved/staging-v8/destination-verified
+  facts. `network_existing` must not carry it; pending consumers must not either.
+  All four compiled consumers remain `pending`.
+- The consumer implementation digest now also covers the Bootstrap
+  qualification/adoption/checkpoint semantic sources and the legacy safe-read
+  adapter, with LF attributes for Windows byte equality. The exact-CPA CI job
+  emits a sanitized `fresh-legacy-transition.json` from an actual v7.0.12
+  process plus the Manager-owned exact v8.0.13 destination, and merges only
+  exact-head/tree/platform metadata. CI PASS still writes no acceptance.
+
+The controlled legacy case now points Fresh at the real v7 process URL and
+asserts the source stays live, byte-preserved, on v0 only, that the destination
+uses the source client keys with a Manager-generated management key and the
+exact accepted ArtifactID, and that the committed checkpoint follows the v8
+readback. Independent acceptance of this exact-head artifact is still required
+before any production consumer may become `accepted`.

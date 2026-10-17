@@ -178,6 +178,7 @@ jobs:
           export CPAMP_TEST_CPA_LEGACY="${tools}/v7/cli-proxy-api"
           export CPAMP_TEST_RUNTIME="${tools}/cpamp-runtime-supervisor"
           export CPAMP_TEST_CPA_LEGACY_ARCHIVE_SHA256="8afc9ed4c89a50a5ffce5d122a9bb93442c5b8ff3d8c6f07b7a274c719109b74"
+          export CPAMP_TEST_FRESH_TRANSITION_OUT="${evidence}/fresh-legacy-transition.json"
           go -C apps/runtime-supervisor test -race -count=1 -json -run '^TestDestinationRealCPAV8$' ./internal/lifecycle | tee "${evidence}/supervisor.jsonl"
           go -C apps/manager-server test -race -count=1 -json -run '^TestAdoptionExactCPAV8WithSupervisor$' ./internal/service/freshstrategy | tee "${evidence}/adoption.jsonl"
           python3 - <<'PY'
@@ -185,17 +186,30 @@ jobs:
           def output(*args):
               return subprocess.check_output(args, text=True).strip()
           value = dict(sourceHead=os.environ['SOURCE_HEAD'], testedCommit=output('git','rev-parse','HEAD'),
+                       testedTree=output('git','rev-parse','HEAD^{tree}'),
                        platform=platform.platform(), goVersion=output('go','version'),
                        archiveSha256='50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3',
                        binarySha256='b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41',
                        legacyVersion='v7.0.12',
                        legacyArchiveSha256=os.environ['CPAMP_TEST_CPA_LEGACY_ARCHIVE_SHA256'],
                        legacyBinarySha256=output('sha256sum', os.environ['CPAMP_TEST_CPA_LEGACY']).split()[0],
-                       legacyTransition='live-v7-source-to-isolated-v8-staging-copy',
+                       legacyTransition='live-v7-source-to-manager-owned-staging-v8',
+                       legacyTransitionCaseRef='fresh-legacy-managed-stage-v8-r1',
                        sourceClasses=['network_existing','legacy_managed'], resourceInventory='explicit-bounded-decisions',
                        migratedResource='client-api-keys', productionAcceptance='pending', gateway='pending')
-          with open(os.path.join(os.environ['RUNNER_TEMP'],'fresh-adoption-v8/environment.json'),'w') as f:
+          evidence = os.path.join(os.environ['RUNNER_TEMP'],'fresh-adoption-v8')
+          with open(os.path.join(evidence,'environment.json'),'w') as f:
               json.dump(value, f, indent=2)
+          # The Go test emits the transition facts observed from the real v7 and
+          # exact v8 processes. CI only adds exact-head/tree/platform metadata.
+          with open(os.path.join(evidence,'fresh-legacy-transition.json')) as f:
+              transition = json.load(f)
+          transition.update(sourceHead=value['sourceHead'], testedCommit=value['testedCommit'],
+                            testedTree=value['testedTree'], platform=value['platform'],
+                            goVersion=value['goVersion'])
+          with open(os.path.join(evidence,'fresh-legacy-transition.json'),'w') as f:
+              json.dump(transition, f, indent=2)
+              f.write('\n')
           PY
 
       - name: Upload controlled Fresh adoption observations
