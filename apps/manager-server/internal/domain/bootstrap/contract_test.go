@@ -1280,17 +1280,32 @@ func TestStrictFixtureRejectsUnknownDuplicateAndMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	unknown := bytes.Replace(data, []byte(`"schemaVersion": 2,`), []byte(`"schemaVersion": 2, "unexpected": true,`), 1)
-	if _, err := strictDecodeFixture(unknown, schema); err == nil {
-		t.Fatal("unknown field accepted")
-	}
-	duplicate := bytes.Replace(data, []byte(`"schemaVersion": 2,`), []byte(`"schemaVersion": 2, "schemaVersion": 2,`), 1)
-	if _, err := strictDecodeFixture(duplicate, schema); err == nil {
-		t.Fatal("duplicate key accepted")
-	}
-	missing := bytes.Replace(data, []byte("  \"contractId\": \"cpamp-v2-phase4-00-bootstrap-contract-v2\",\n"), nil, 1)
-	if _, err := strictDecodeFixture(missing, schema); err == nil {
-		t.Fatal("missing required field accepted")
+	lf := bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	for _, fixture := range []struct {
+		name string
+		data []byte
+	}{
+		{"LF", lf},
+		{"CRLF", bytes.ReplaceAll(lf, []byte("\n"), []byte("\r\n"))},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			unknown := bytes.Replace(fixture.data, []byte(`"schemaVersion": 2,`), []byte(`"schemaVersion": 2, "unexpected": true,`), 1)
+			if _, err := strictDecodeFixture(unknown, schema); err == nil {
+				t.Fatal("unknown field accepted")
+			}
+			duplicate := bytes.Replace(fixture.data, []byte(`"schemaVersion": 2,`), []byte(`"schemaVersion": 2, "schemaVersion": 2,`), 1)
+			if _, err := strictDecodeFixture(duplicate, schema); err == nil {
+				t.Fatal("duplicate key accepted")
+			}
+			// Remove the JSON member independently of checkout line endings.
+			missing := bytes.Replace(fixture.data, []byte(`"contractId": "cpamp-v2-phase4-00-bootstrap-contract-v2",`), nil, 1)
+			if bytes.Equal(missing, fixture.data) {
+				t.Fatal("negative fixture did not remove the required field")
+			}
+			if _, err := strictDecodeFixture(missing, schema); err == nil {
+				t.Fatal("missing required field accepted")
+			}
+		})
 	}
 }
 

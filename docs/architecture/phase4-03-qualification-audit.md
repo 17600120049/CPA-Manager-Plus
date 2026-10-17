@@ -162,3 +162,21 @@ behavior change tightens the confirmed legacy qualification gate.
 
 These checks verify the safe subset and retained blockers. They do not accept
 CPA profiles, the missing loader or successful destination replay/verification.
+
+### Windows CI follow-up
+
+At pushed head `3149fb24781cd32e73336a7a37690814729e68cf`, the added
+Fresh strategy qualification tests passed on Windows. The expanded Bootstrap
+suite exposed a pre-existing negative-fixture construction defect:
+`TestStrictFixtureRejectsUnknownDuplicateAndMissing` removed a member by matching
+an LF-terminated line. With CRLF checkout bytes the replacement was a no-op,
+so it incorrectly tested the original valid fixture as a missing-field case.
+The job failed and the subsequent Fresh HTTP/reopen step was not executed.
+
+The follow-up test change removes the JSON member independently of line endings,
+asserts that removal actually changed the bytes, and exercises both LF and CRLF
+for missing/unknown/duplicate rejection. Both variants and the full Bootstrap
+package pass locally, including race/vet. The parser, schema, production gates
+and original fixture are unchanged; no test is skipped or weakened. Windows
+execution of the corrected suite and the HTTP/reopen test still requires CI on
+the follow-up head.
