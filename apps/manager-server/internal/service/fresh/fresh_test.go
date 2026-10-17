@@ -2,7 +2,9 @@ package fresh
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
@@ -143,6 +146,62 @@ func TestExplicitRawDataKeyDoesNotRequireFileFence(t *testing.T) {
 	}
 }
 
+func TestExistingExternalConnectionRejectsWrongDataKey(t *testing.T) {
+	p := pathsFor(t.TempDir())
+	o, err := Open(t.Context(), p, OpenOptions{AdminKey: "cpamp_AbcDef0123456789ManualKey!"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalDataKey, err := os.ReadFile(p.DataKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const baseURL = "http://cpa:8317"
+	const managementKey = "private-management-secret"
+	protected, err := o.Protector.ProtectString(managementKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(baseURL))
+	st := freshstore.New(o.DB)
+	_, err = st.Update(t.Context(), o.Record.Operation.Identity, o.Record.Operation.Revision, func(r *freshstore.Record) error {
+		r.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+			Strategy: bootstrap.ConnectExternal, Stage: "committed",
+			TargetIdentity: "external:sha256:" + hex.EncodeToString(digest[:]), TargetGeneration: 1,
+		}
+		r.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: baseURL, ManagementKey: protected}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = o.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(p.DataKey, []byte("0123456789abcdef0123456789abcdef\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if reopened, reopenErr := Open(t.Context(), p, OpenOptions{}); reopenErr == nil {
+		_ = reopened.Close()
+		t.Fatal("wrong data key reopened a persisted External credential")
+	}
+	if err = os.WriteFile(p.DataKey, originalDataKey, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(t.Context(), p, OpenOptions{})
+	if err != nil {
+		t.Fatal("original data key no longer reopens Fresh state", err)
+	}
+	defer reopened.Close()
+	if reopened.Record.Connection == nil {
+		t.Fatal("restored Fresh state lost External connection")
+	}
+	got, err := reopened.Protector.UnprotectString(reopened.Record.Connection.ManagementKey)
+	if err != nil || got != managementKey {
+		t.Fatal("restored data key cannot decrypt External credential", err)
+	}
+}
+
 func TestClaimAdminContinuationAndRestart(t *testing.T) {
 	o, s := openTest(t)
 	ctx := t.Context()
@@ -165,6 +224,15 @@ func TestClaimAdminContinuationAndRestart(t *testing.T) {
 	retry, err := s.CommitAdmin(ctx, session.Token, req)
 	if err != nil || retry.Revision != op.Revision {
 		t.Fatal("lost result changed admin", err)
+	}
+	conflict := req
+	conflict.Key = "cpamp_AbcDef0123456789ManualKey!"
+	if _, err = s.CommitAdmin(ctx, session.Token, conflict); err == nil {
+		t.Fatal("same commit id accepted a different Admin key")
+	}
+	current, err := freshstore.New(o.DB).Load(ctx)
+	if err != nil || current.Admin == nil || !security.VerifyAdminKey(*current.Admin, key) || security.VerifyAdminKey(*current.Admin, conflict.Key) {
+		t.Fatal("conflicting lost-response replay changed canonical Admin", err)
 	}
 	if _, err = s.GenerateAdmin(ctx, session.Token); err == nil {
 		t.Fatal("admin generated after commit")

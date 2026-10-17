@@ -181,6 +181,11 @@ func Open(ctx context.Context, paths sqlite.InspectionPaths, opts OpenOptions) (
 			return nil, err
 		}
 	}
+	if o.Record.Connection != nil {
+		if _, err = o.Protector.UnprotectString(o.Record.Connection.ManagementKey); err != nil {
+			return nil, errors.New("Fresh connection secret unavailable")
+		}
+	}
 	if err = checkpoint(opts, "checkpoint"); err != nil {
 		return nil, err
 	}

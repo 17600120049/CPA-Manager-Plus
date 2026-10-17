@@ -173,7 +173,7 @@ func (s *Service) CommitAdmin(ctx context.Context, token string, req AdminCommit
 		return bootstrap.FreshOperation{}, ErrAuthority
 	}
 	if v.Operation.AdminInitialized {
-		if v.Authority.AdminCommitID == req.CommitID {
+		if v.Authority.AdminCommitID == req.CommitID && v.Admin != nil && security.VerifyAdminKey(*v.Admin, req.Key) {
 			return v.Operation, nil
 		}
 		return bootstrap.FreshOperation{}, ErrAuthority
@@ -199,7 +199,9 @@ func (s *Service) CommitAdmin(ctx context.Context, token string, req AdminCommit
 	})
 	if errors.Is(err, freshstore.ErrConflict) {
 		current, loadErr := s.active(ctx)
-		if loadErr == nil && s.session(current, token) && current.Operation.Identity == req.Identity && current.Authority.AdminCommitID == req.CommitID && current.Operation.AdminInitialized {
+		if loadErr == nil && s.session(current, token) && current.Operation.Identity == req.Identity &&
+			current.Authority.AdminCommitID == req.CommitID && current.Operation.AdminInitialized &&
+			current.Admin != nil && security.VerifyAdminKey(*current.Admin, req.Key) {
 			return current.Operation, nil
 		}
 	}

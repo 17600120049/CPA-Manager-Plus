@@ -92,7 +92,10 @@ func TestFreshCommittedStrategyReplayChecksTargetsWithoutUpdating(t *testing.T) 
 				}
 				checkpoint = result.Checkpoint
 				connection = &model.ManagerCPAConnectionConfig{CPABaseURL: result.Connection.BaseURL, ManagementKey: result.Connection.ManagementKeyCiphertext}
-				mutations = []func(*freshstrategy.Request){func(r *freshstrategy.Request) { r.BaseURL += "/foreign" }}
+				mutations = []func(*freshstrategy.Request){
+					func(r *freshstrategy.Request) { r.BaseURL += "/foreign" },
+					func(r *freshstrategy.Request) { r.ManagementKey = "different-valid-source-secret" },
+				}
 			}
 			app := newFreshApplication(opened, config.Config{}, nil)
 			assertFreshAuthority := func(want int) {

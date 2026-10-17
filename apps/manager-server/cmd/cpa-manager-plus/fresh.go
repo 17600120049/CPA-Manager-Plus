@@ -19,6 +19,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshrouting"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshstrategy"
@@ -63,12 +64,13 @@ type freshApplication struct {
 	authority *fresh.Service
 	routing   *freshrouting.Service
 	strategy  *freshstrategy.Service
+	protector *security.Protector
 	fixed     http.Handler
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
-	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver)}
+	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector}
 	var runtime runtimeservice.RuntimeClient
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtime = runtimeservice.NewEmbeddedClientWithTokenSource(cfg.RuntimeURL, runtimeservice.NewFileRuntimeTokenSource(cfg.RuntimeTokenFile))
@@ -87,6 +89,48 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 func (a *freshApplication) current(ctx context.Context) (bootstrap.FreshOperation, error) {
 	r, err := a.store.Load(ctx)
 	return r.Operation, err
+}
+
+func (a *freshApplication) validateCommittedExternalReplay(ctx context.Context, op bootstrap.FreshOperation, request freshstrategy.Request) error {
+	if op.Strategy.Strategy != bootstrap.ConnectExternal || op.Strategy.Stage != "committed" || request.Strategy != bootstrap.ConnectExternal {
+		return nil
+	}
+	record, err := a.store.Load(ctx)
+	if err != nil {
+		return err
+	}
+	if record.Operation.Identity != op.Identity || record.Operation.Revision != op.Revision {
+		return &freshstrategy.Blocker{Code: "fresh_strategy_owner_conflict"}
+	}
+	if record.Connection == nil || a.protector == nil {
+		return &freshstrategy.Blocker{Code: "management_secret_storage_unavailable"}
+	}
+	baseURL, err := cpa.NormalizeV8BaseURL(request.BaseURL)
+	if err != nil {
+		return &freshstrategy.Blocker{Code: cpa.V8InvalidConnection.Error()}
+	}
+	if record.Connection.CPABaseURL != baseURL {
+		return &freshstrategy.Blocker{Code: "fresh_strategy_owner_conflict"}
+	}
+	persistedKey, err := a.protector.UnprotectString(record.Connection.ManagementKey)
+	if err != nil {
+		return &freshstrategy.Blocker{Code: "management_secret_storage_unavailable"}
+	}
+	if !security.EqualHMAC(persistedKey, request.ManagementKey) {
+		return &freshstrategy.Blocker{Code: "fresh_strategy_owner_conflict"}
+	}
+	return nil
+}
+
+func writeFreshStrategyError(w http.ResponseWriter, err error) {
+	var blocker *freshstrategy.Blocker
+	if errors.As(err, &blocker) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		writeFreshJSON(w, blocker)
+		return
+	}
+	w.WriteHeader(http.StatusServiceUnavailable)
 }
 
 func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -214,16 +258,13 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	if err := a.validateCommittedExternalReplay(r.Context(), op, request.Request); err != nil {
+		writeFreshStrategyError(w, err)
+		return
+	}
 	result, err := a.strategy.Execute(r.Context(), op, request.Request)
 	if err != nil {
-		var blocker *freshstrategy.Blocker
-		if errors.As(err, &blocker) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
-			writeFreshJSON(w, blocker)
-			return
-		}
-		w.WriteHeader(http.StatusServiceUnavailable)
+		writeFreshStrategyError(w, err)
 		return
 	}
 	if token, fixed := freshbootstrap.SessionToken(r); fixed {
