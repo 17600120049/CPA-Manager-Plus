@@ -1,7 +1,7 @@
 package ingress
 
 import (
-	"crypto/subtle"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,7 +11,10 @@ import (
 	"sync"
 )
 
-const FreshRoutingControlPath = "/internal/routing/fresh"
+const (
+	FreshRoutingControlPath   = "/internal/routing/fresh"
+	FreshRoutingAuthorityPath = "/internal/routing/fresh-authority"
+)
 
 // FreshRoutes is an ephemeral consumer of the Manager's one durable Fresh
 // checkpoint. It is not another routing ledger or configuration authority.
@@ -49,19 +52,14 @@ func validFreshState(s FreshRouteState) bool {
 	return true
 }
 
-// ControlHandler is mounted only on a separate private listener. Neither the
-// public classifier nor Manager fixed namespace exposes this transport.
-func (f *FreshRoutes) ControlHandler(token func() (string, error)) http.Handler {
+// ControlHandler is mounted only on a separate private listener. It holds no
+// credential: a mutation is accepted only when the requested non-secret
+// projection exactly matches the Manager's current durable Fresh authority.
+func (f *FreshRoutes) ControlHandler(authority func(context.Context) (FreshRouteState, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.URL.Path != FreshRoutingControlPath || r.URL.EscapedPath() != r.URL.Path {
 			http.NotFound(w, r)
-			return
-		}
-		expected, err := token()
-		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if err != nil || expected == "" || len(expected) != len(provided) || subtle.ConstantTimeCompare([]byte(expected), []byte(provided)) != 1 {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		switch r.Method {
@@ -76,7 +74,20 @@ func (f *FreshRoutes) ControlHandler(token func() (string, error)) http.Handler 
 			}
 			var trailing any
 			if decoder.Decode(&trailing) != io.EOF {
-				http.Error(w, "invalid routing projection", 400)
+				http.Error(w, "invalid routing projection", http.StatusBadRequest)
+				return
+			}
+			if authority == nil {
+				http.Error(w, "routing authority unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			owned, err := authority(r.Context())
+			if err != nil {
+				http.Error(w, "routing authority unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if owned != requested {
+				http.Error(w, "routing authority mismatch", http.StatusConflict)
 				return
 			}
 			f.mu.Lock()

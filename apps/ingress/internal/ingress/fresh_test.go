@@ -2,6 +2,7 @@ package ingress
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -11,45 +12,51 @@ import (
 	"testing"
 )
 
-func TestFreshPrivateProjectionFencesForeignOwnerAndRetainsCommit(t *testing.T) {
+func TestFreshPrivateProjectionRequiresCurrentManagerAuthorityAndRetainsFence(t *testing.T) {
 	f := &FreshRoutes{}
-	h := f.ControlHandler(func() (string, error) { return "internal-secret", nil })
+	var authorized FreshRouteState
+	h := f.ControlHandler(func(context.Context) (FreshRouteState, error) { return authorized, nil })
 	s := FreshRouteState{InstallationID: "install", Generation: "gen", OperationID: "fresh-op", Revision: 1, Target: "/private-control"}
-	put := func(state FreshRouteState, auth string) int {
+	put := func(state FreshRouteState) int {
 		data, _ := json.Marshal(state)
 		r := httptest.NewRequest("PUT", FreshRoutingControlPath, bytes.NewReader(data))
-		r.Header.Set("Authorization", auth)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		return w.Code
 	}
-	if put(s, "Bearer wrong") != 401 || f.Active() {
-		t.Fatal("unauthorized apply")
+	if put(s) != http.StatusConflict || f.Active() {
+		t.Fatal("projection without Manager authority was accepted")
 	}
-	if put(s, "Bearer internal-secret") != 200 || !f.Matches(s.Target+"/api/v2/operation") || f.Matches(s.Target+"-alias") {
-		t.Fatal("matching checkpoint failed")
+	authorized = s
+	if put(s) != http.StatusOK || !f.Matches(s.Target+"/api/v2/operation") || f.Matches(s.Target+"-alias") {
+		t.Fatal("matching Manager checkpoint failed")
 	}
 	foreign := s
 	foreign.OperationID = "new-prefix-operation"
-	if put(foreign, "Bearer internal-secret") != 409 {
+	authorized = foreign
+	if put(foreign) != http.StatusConflict {
 		t.Fatal("foreign owner accepted")
 	}
 	foreign = s
 	foreign.Generation = "new-gen"
-	if put(foreign, "Bearer internal-secret") != 409 {
+	authorized = foreign
+	if put(foreign) != http.StatusConflict {
 		t.Fatal("foreign generation accepted")
 	}
 	foreign = s
 	foreign.Target = "/other"
-	if put(foreign, "Bearer internal-secret") != 409 {
+	authorized = foreign
+	if put(foreign) != http.StatusConflict {
 		t.Fatal("foreign target accepted")
 	}
 	s.Committed = true
-	if put(s, "Bearer internal-secret") != 200 {
+	authorized = s
+	if put(s) != http.StatusOK {
 		t.Fatal("commit acknowledgement rejected")
 	}
 	s.Committed = false
-	if put(s, "Bearer internal-secret") != 409 {
+	authorized = s
+	if put(s) != http.StatusConflict {
 		t.Fatal("retired state reopened")
 	}
 	for _, target := range []string{"/", "/v1", "/.well-known/cpamp-bootstrap/nested", "/health", "/other/../control", "/control%2falias"} {
@@ -58,10 +65,9 @@ func TestFreshPrivateProjectionFencesForeignOwnerAndRetainsCommit(t *testing.T) 
 		bad.Target = target
 		data, _ := json.Marshal(bad)
 		r := httptest.NewRequest("PUT", FreshRoutingControlPath, bytes.NewReader(data))
-		r.Header.Set("Authorization", "Bearer internal-secret")
 		w := httptest.NewRecorder()
-		empty.ControlHandler(func() (string, error) { return "internal-secret", nil }).ServeHTTP(w, r)
-		if w.Code != 400 {
+		empty.ControlHandler(func(context.Context) (FreshRouteState, error) { return bad, nil }).ServeHTTP(w, r)
+		if w.Code != http.StatusBadRequest {
 			t.Fatal(target, w.Code)
 		}
 	}
