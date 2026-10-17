@@ -28,9 +28,6 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshrouting"
 )
 
-type internalToken string
-
-func (t internalToken) Token(context.Context) (string, error) { return string(t), nil }
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	l, e := net.Listen("tcp", "127.0.0.1:0")
@@ -100,6 +97,20 @@ func TestRealIngressInitialRoutingAuthenticationCutoverAndRestart(t *testing.T) 
 		json.NewEncoder(w).Encode(freshrouting.StateFor(op))
 	})
 	manager := httptest.NewServer(routing.ProtectFixedBootstrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == freshrouting.AuthorityPath && r.URL.EscapedPath() == r.URL.Path && r.URL.RawQuery == "" {
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			op, e := current(r.Context())
+			if e != nil || op.Routing.Target == "" || op.Routing.OperationID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(freshrouting.StateFor(op))
+			return
+		}
 		op, e := current(r.Context())
 		if e != nil || op.Routing.Target == "" {
 			http.NotFound(w, r)
@@ -117,14 +128,10 @@ func TestRealIngressInitialRoutingAuthenticationCutoverAndRestart(t *testing.T) 
 	defer gateway.Close()
 	publicAddr, controlAddr := freeAddr(t), freeAddr(t)
 	origin := "http://" + publicAddr
-	tokenFile := filepath.Join(task, "runtime-token")
-	if os.WriteFile(tokenFile, []byte("internal-runtime-token"), 0600) != nil {
-		t.Fatal("write task token")
-	}
 	var process *exec.Cmd
 	start := func() {
 		process = exec.Command(binary)
-		process.Env = append(os.Environ(), "CPAMP_INGRESS_ADDR="+publicAddr, "CPAMP_INGRESS_CONTROL_ADDR="+controlAddr, "CPAMP_RUNTIME_TOKEN_FILE="+tokenFile, "CPAMP_MANAGER_URL="+manager.URL, "CPAMP_GATEWAY_URL="+gateway.URL)
+		process.Env = append(os.Environ(), "CPAMP_INGRESS_ADDR="+publicAddr, "CPAMP_INGRESS_CONTROL_ADDR="+controlAddr, "CPAMP_MANAGER_URL="+manager.URL, "CPAMP_GATEWAY_URL="+gateway.URL)
 		process.Stdout = io.Discard
 		process.Stderr = io.Discard
 		if e := process.Start(); e != nil {
@@ -150,7 +157,7 @@ func TestRealIngressInitialRoutingAuthenticationCutoverAndRestart(t *testing.T) 
 	}
 	defer stop()
 	start()
-	driver, e := freshrouting.NewHTTPDriver(freshrouting.HTTPConfig{IngressControlURL: "http://" + controlAddr, PublicOrigin: origin, TokenSource: internalToken("internal-runtime-token")})
+	driver, e := freshrouting.NewHTTPDriver(freshrouting.HTTPConfig{IngressControlURL: "http://" + controlAddr, PublicOrigin: origin})
 	if e != nil {
 		t.Fatal(e)
 	}

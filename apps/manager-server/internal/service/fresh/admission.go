@@ -108,7 +108,7 @@ func Open(ctx context.Context, paths sqlite.InspectionPaths, opts OpenOptions) (
 		return nil, err
 	}
 	if paths.DataKey != "" {
-		if f, e := os.Open(paths.DataKey); e == nil {
+		if f, e := os.OpenFile(paths.DataKey, os.O_RDWR, 0); e == nil {
 			err = f.Sync()
 			_ = f.Close()
 			if err != nil {
