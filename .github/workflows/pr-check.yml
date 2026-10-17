@@ -372,7 +372,7 @@ jobs:
         working-directory: apps/manager-server
         shell: pwsh
         run: |
-          go test -count=1 -json ./internal/processlock ./internal/config ./internal/service/legacypreflight ./internal/command/legacypreflight |
+          go test -count=1 -json ./internal/processlock ./internal/config ./internal/service/legacypreflight ./internal/command/legacypreflight ./internal/domain/bootstrap ./internal/service/freshstrategy |
             Tee-Object -FilePath "$env:RUNNER_TEMP/manager-preflight-windows/preflight.jsonl"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -381,7 +381,7 @@ jobs:
         working-directory: apps/manager-server
         shell: pwsh
         run: |
-          go test -count=1 -json -run '^(TestBlockedLegacyNormalStartupHasNoSourceSideEffects|TestNativePreflightRetainsEncryptedKeyGuardsForBothSettings|TestLegacyPreflightMainDispatchReturnsBeforeServer|TestNativeV2FreshAndReopenStartup|TestFreshNoConfigNormalStartup|TestStartupPreflightTimeout|TestNativeV2CrashWALStartupReadsCommittedUsage|TestFreshInitializationFailureAllowsRetry)$' ./cmd/cpa-manager-plus |
+          go test -count=1 -json -run '^(TestBlockedLegacyNormalStartupHasNoSourceSideEffects|TestNativePreflightRetainsEncryptedKeyGuardsForBothSettings|TestLegacyPreflightMainDispatchReturnsBeforeServer|TestNativeV2FreshAndReopenStartup|TestFreshNoConfigNormalStartup|TestStartupPreflightTimeout|TestNativeV2CrashWALStartupReadsCommittedUsage|TestFreshInitializationFailureAllowsRetry|TestFreshProductionQualificationCannotBeGrantedByHTTPOrRestart)$' ./cmd/cpa-manager-plus |
             Tee-Object -FilePath "$env:RUNNER_TEMP/manager-preflight-windows/startup.jsonl"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

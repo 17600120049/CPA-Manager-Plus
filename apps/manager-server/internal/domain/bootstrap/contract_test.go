@@ -1362,7 +1362,8 @@ func TestCPAQualificationFreshClaimAndGatewayAreIndependentGates(t *testing.T) {
 		{"network adopt cannot use staging", bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting, bootstrap.CPAQualification{ManagementGeneration: "v8", StagingV8TransitionQualified: true}, true},
 		{"legacy adopt cannot use network profile", bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged, bootstrap.CPAQualification{ManagementGeneration: "v8", RequiredProfileQualified: true}, true},
 		{"network adopt qualified", bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting, bootstrap.CPAQualification{ManagementGeneration: "v8", RequiredProfileQualified: true}, false},
-		{"legacy adopt qualified", bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged, bootstrap.CPAQualification{ManagementGeneration: "v8", StagingV8TransitionQualified: true}, false},
+		{"legacy adopt cannot use staging alone", bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged, bootstrap.CPAQualification{ManagementGeneration: "v8", StagingV8TransitionQualified: true}, true},
+		{"legacy adopt qualified", bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged, bootstrap.CPAQualification{ManagementGeneration: "v8", RequiredProfileQualified: true, StagingV8TransitionQualified: true}, false},
 	} {
 		err := item.q.ValidateForStrategy(item.strategy, item.adopt)
 		if item.wantError && err == nil {

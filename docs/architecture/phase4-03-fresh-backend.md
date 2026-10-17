@@ -150,6 +150,13 @@ External lifecycle, ingress and client-auth policy stay with the operator.
 
 ### Explicit production prerequisite gaps
 
+The [2026-10-17 evidence audit](phase4-03-qualification-audit.md) records exact
+accessible original report/manifest hashes, execution heads, accepted observation
+limits and manifest reuse decisions. Both production gates remain **BLOCKED**;
+the merged prerequisite plan does not accept the underlying CPA evidence.
+Legacy-managed adoption requires the required-v8 profile in addition to the
+separately accepted staging-v8 transition.
+
 1. There is no accepted production v8 artifact/profile evidence loader. The
    qualification manifest/README and CI fixtures are contract/test references,
    not production authority (`qualification: not accepted`, production consumer

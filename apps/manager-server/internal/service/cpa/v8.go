@@ -60,7 +60,8 @@ func NormalizeV8BaseURL(raw string) (string, error) {
 // ReadV8Config is the sole production Fresh External probe. It performs exactly
 // one authenticated GET, with direct transport, fixed DNS resolution, normal TLS
 // verification, no redirects/retries, and one five-second total budget. The
-// schema is the accepted AQ-03 required-field projection.
+// schema follows the AQ-03 required-field projection. This helper does not
+// establish independent profile or production-consumer acceptance.
 func ReadV8Config(ctx context.Context, baseURL, managementKey string) (V8ConfigObservation, error) {
 	baseURL, err := NormalizeV8BaseURL(baseURL)
 	if err != nil {
