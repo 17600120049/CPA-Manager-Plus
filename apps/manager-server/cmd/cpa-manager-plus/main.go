@@ -257,7 +257,7 @@ func runServerWithOptions(options legacypreflight.Options) {
 	}
 	defer func() {
 		if err := databaseLock.Close(); err != nil {
-			log.Printf("close manager database process lock: %v", err)
+			log.Print("close manager database process lock failed")
 		}
 	}()
 	// Admission permits writes, not a Bootstrap Completed transition. Revoke
@@ -299,7 +299,15 @@ func runServerWithOptions(options legacypreflight.Options) {
 	}
 	db, err := store.Open(cfg.DBPath, protector)
 	if err != nil {
-		failStartup("open sqlite: %v", err)
+		// Store.Open closes its failed SQLite handle. Release admission before
+		// waiting so host-side maintenance is not blocked by diagnostics. Keep
+		// the invalidated discovery unavailable and never assemble the app graph.
+		if err := databaseLock.Close(); err != nil {
+			log.Print("failed to close startup database admission")
+		}
+		log.Print("Manager store could not be opened; keeping safe not-ready diagnostics available")
+		waitForReadOnlyStartup(ctx, server, serverResult)
+		return
 	}
 	databaseLock.RetainMarker()
 	defer func() {
@@ -639,7 +647,7 @@ func serveHTTPServer(server *http.Server, listener net.Listener, stop context.Ca
 }
 
 // waitForReadOnlyStartup keeps a safely bound discovery/liveness listener alive
-// when the source is rejected by the normal writable gate. No Store, worker or
+// when the writable gate rejects the source or Store.Open fails. No worker or
 // mutation handler is constructed on this path.
 func waitForReadOnlyStartup(ctx context.Context, server *http.Server, result <-chan error) {
 	select {
