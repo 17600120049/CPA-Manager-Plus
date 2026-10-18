@@ -6,12 +6,17 @@ fixture profiles, not independently accepted Fresh production consumers. The
 record references those original hashes/runner HEADs; it does not replace their
 reports, create a second AQ ledger, or grant whole-profile/Beta qualification.
 
-**All four consumers are pending. No production qualification is granted.**
-The empty case sets, acceptance hashes, limitations and implementation hash
-are deliberate missing acceptance facts, not placeholders interpreted as PASS.
-The current record preserves the candidate and evidence identities from the
-Phase4-03 audit. No fixture, CI job, request, environment variable or Runtime
-observation can change it in a running Manager.
+**All four consumers are accepted only for the exact scope and implementation pinned below.**
+The accepted scope is bounded to the four Phase4-03 consumer paths.
+Original r4 Stage capability remains `limited`; dedicated CI resource and
+Legacy transition chains provide the separate live-process proof.
+The single build-bound `consumer.json` controls authorization. No fixture, CI
+job, request, environment variable or Runtime observation can change it in a
+running Manager.
+
+The current [independent bounded acceptance](evidence/65eb659a172c9075afeddc959a9ab825d208cc728487186cce2514dd8d27050a.md)
+records each consumer's evidence and limits. External acceptance does not
+guarantee connectivity for every topology; Gateway remains pending.
 
 To accept a consumer, independent review must first identify the exact original
 case subset and explicitly accept its applicability to that consumer's actual
@@ -73,12 +78,13 @@ Git attributes preserve these bytes on Windows.
 The four consumers are independent: New Managed, External, network adoption and
 legacy adoption. Accepted source qualification still grants no resource replay,
 destination ownership, Gateway activation or product completion. Both adoption
-consumers additionally reference the existing immutable `CPA8-STAGE-r1` manifest.
-Their optional `adoptionEvidence` names three distinct accepted cases in that
-profile: `readCaseRef`, `replayCaseRef` and `verifyCaseRef`. Independent review must
-accept those exact cases for the bounded `client-api-keys` resource and this
-implementation. Only that explicit mapping yields its `Migrate` decision and
-exact destination ArtifactID. An External safe-read profile cannot supply it.
+consumers reference original `CPA8-STAGE-r1` limited background evidence
+separately from the real-process resource proof. `adoptionEvidence` binds the
+independent class-specific `CPA8-ADOPT-RESOURCE-r1` manifest and its distinct
+`readCaseRef`, `replayCaseRef` and `verifyCaseRef`. Only those separately
+accepted completed/supported cases authorize the bounded `client-api-keys`
+`Migrate` decision and exact destination ArtifactID. External safe-read or the
+original r4 `limited` observations cannot substitute for any resource proof.
 Legacy transition acceptance remains separate from network adoption acceptance.
 
 Legacy transition authority is separate from source/profile evidence and is a
@@ -110,8 +116,12 @@ The accepted legacy source profile is exact, not a version range: CPA `v7.0.12`
 `8afc9ed4c89a50a5ffce5d122a9bb93442c5b8ff3d8c6f07b7a274c719109b74` and Linux
 amd64 executable SHA-256
 `1eb108b85ad554b92bab9f5a85af433d7c2e1b951bb192b639d73605d4593d1a`. The runtime
-adapter fails closed before interpreting any body when the declared version is
-missing or different. CPA v8.0.13 still serves `/v0/management/config` with a
+adapter checks the authenticated endpoint's declared `X-CPA-VERSION`
+and the constrained v0 response shape; it does **not** attest the remote source
+binary SHA. The reference binary hashes above identify the CI test executable,
+not arbitrary operator-selected production sources. The runtime adapter fails
+closed before interpreting any body when the declared version is missing or
+different. CPA v8.0.13 still serves `/v0/management/config` with a
 legacy-shaped body; it is rejected by version metadata, never treated as legacy.
 
 Client-key adoption resources use a separate, class-specific evidence chain
@@ -150,8 +160,10 @@ reference and never become durable upstream-controlled identities. The
 inventory and its decisions are written through the existing Fresh CAS before
 any destination mutation and are immutable afterwards.
 
-All current entries still omit `applicability`, `adoptionEvidence` and accepted
-limitations, and remain pending. Missing destination capability retains
+The four accepted entries carry exact `applicability`, independently
+accepted evidence and their enforced limitations. On a missing/mismatched
+source or withdrawn qualification they remain fail-closed. Missing destination
+capability retains
 `adoption_destination_staging_required`; accepted source-only consumers with an
 available destination return `adoption_resource_qualification_required` before
 source discovery. Any target/transport/config/mode mismatch has no consumer entry
@@ -179,5 +191,5 @@ then runs as the Manager-owned destination created by the existing Supervisor
 transition itself. Merely labelling a v8 process as `legacy_managed`, or letting
 a test pre-build a v8 source, is not transition evidence.
 
-All consumers remain pending until the exact-head observations from these
-repairs are independently reviewed. CI success alone never writes acceptance.
+Acceptance is based on the independently reviewed exact evidence bytes,
+not on CI success alone. Any implementation drift invalidates the record.

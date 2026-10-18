@@ -20,7 +20,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 )
 
-func TestFreshProductionQualificationCannotBeGrantedByHTTPOrRestart(t *testing.T) {
+func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	paths := legacypreflight.DefaultPaths(filepath.Join(dir, "manager.sqlite"))
@@ -66,20 +66,23 @@ func TestFreshProductionQualificationCannotBeGrantedByHTTPOrRestart(t *testing.T
 			class    bootstrap.AdoptSourceClass
 			blocker  string
 		}{
-			{bootstrap.NewManaged, "", "exact_v8_artifact_qualification_required"},
-			{bootstrap.ConnectExternal, "", "required_v8_profile_qualification_required"},
-			{bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting, "adoption_source_qualification_required"},
-			{bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged, "adoption_source_qualification_required"},
+			{bootstrap.NewManaged, "", "managed_target_staging_required"},
+			{bootstrap.ConnectExternal, "", "management_safe_read_unavailable"},
+			{bootstrap.AdoptExisting, bootstrap.AdoptNetworkExisting, "adoption_destination_staging_required"},
+			{bootstrap.AdoptExisting, bootstrap.AdoptLegacyManaged, "adoption_destination_staging_required"},
 		} {
 			body := map[string]any{
 				"identity": before.Operation.Identity, "expectedRevision": before.Operation.Revision,
 				"strategy": item.strategy, "adoptSourceClass": item.class,
-				"baseUrl": source.URL, "managementKey": "private-source-secret",
+				"baseUrl": "http://127.0.0.1:0", "managementKey": "private-source-secret",
 				"expectedRuntimeIdentity": "claimed-runtime", "expectedRuntimeGeneration": 7,
 				"expectedArtifactId": "sha256:b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
 			}
 			for _, injected := range []string{"", "qualification", "qualifiedArtifactId", "adoptionCiphertext", "adoptionResources"} {
 				if injected != "" {
+					// Keep a reachable source behind malformed HTTP input so the
+					// no-source-request assertion detects an authority bypass.
+					body["baseUrl"] = source.URL
 					body[injected] = map[string]any{"ManagementGeneration": "v8", "ArtifactQualified": true, "RequiredProfileQualified": true, "StagingV8TransitionQualified": true}
 				}
 				encoded, err := json.Marshal(body)
@@ -102,7 +105,7 @@ func TestFreshProductionQualificationCannotBeGrantedByHTTPOrRestart(t *testing.T
 					}
 				}
 				after, err := app.store.Load(ctx)
-				if err != nil || !reflect.DeepEqual(before, after) || sourceCalls.Load() != 0 {
+				if err != nil || !reflect.DeepEqual(before, after) || sourceCalls.Load() != 0 || !after.Operation.GatewayPending {
 					t.Fatal("blocked request changed source or durable Fresh state")
 				}
 			}

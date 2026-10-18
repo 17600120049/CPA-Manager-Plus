@@ -62,43 +62,94 @@ func TestRuntimeDestinationImplementationPinMatchesExecutionChain(t *testing.T) 
 	}
 }
 
-func TestProductionRecordRemainsUnqualified(t *testing.T) {
+func TestProductionRecordContainsOnlyIndependentlyReviewedConsumers(t *testing.T) {
 	consumers, err := loadProductionQualification(productionEvidence)
 	if err != nil || len(consumers) != 4 {
 		t.Fatalf("compiled consumer record: %v", err)
-	}
-	for key, consumer := range consumers {
-		if consumer.Qualification.ArtifactQualified || consumer.Qualification.RequiredProfileQualified || consumer.Qualification.StagingV8TransitionQualified || consumer.ArtifactID != "" {
-			t.Fatalf("pending evidence promoted %v: %+v", key, consumer)
-		}
 	}
 	data, err := productionEvidence.ReadFile("qualification/consumer.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var record productionRecord
-	if err = json.Unmarshal(data, &record); err != nil {
+	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
 	}
-	for _, consumer := range record.Consumers {
-		if consumer.Status != "pending" || consumer.Applicability != nil || len(consumer.Limitations) != 0 ||
-			consumer.AdoptionEvidence != nil || consumer.LegacyTransition != nil {
-			t.Fatalf("compiled consumer is not pending: %+v", consumer)
+	if record.ImplementationSHA256 != consumerImplementationSHA256() {
+		t.Fatal("compiled consumer digest mismatch")
+	}
+	for _, item := range record.Consumers {
+		key := consumerKey{item.Strategy, item.SourceClass}
+		applicable, ok := requiredConsumerApplicability(key)
+		if item.Status != "accepted" || !ok || item.Applicability == nil || *item.Applicability != applicable ||
+			!sameLimitationSet(item.Limitations, requiredConsumerLimitations(key)) {
+			t.Fatalf("unaccepted or unenforced consumer %v", key)
+		}
+		if item.AcceptanceSHA256 == "" {
+			t.Fatalf("missing acceptance review %v", key)
+		}
+		if _, err := pinnedEvidence(productionEvidence, item.AcceptanceSHA256, ".md"); err != nil {
+			t.Fatal(err)
+		}
+		loaded := consumers[key]
+		expected := bootstrap.CPAQualification{
+			ManagementGeneration:         bootstrap.CPAManagementGenerationV8,
+			ArtifactQualified:            item.Strategy == bootstrap.NewManaged,
+			RequiredProfileQualified:     item.Strategy != bootstrap.NewManaged,
+			StagingV8TransitionQualified: item.SourceClass == bootstrap.AdoptLegacyManaged,
+		}
+		if loaded.Qualification != expected {
+			t.Fatalf("qualification crossed consumer boundaries for %v: %+v", key, loaded.Qualification)
+		}
+		if item.Strategy == bootstrap.NewManaged && (!loaded.Qualification.ArtifactQualified || loaded.ArtifactID != record.ArtifactID) {
+			t.Fatal("New Managed exact artifact not accepted")
+		}
+		if item.Strategy == bootstrap.ConnectExternal && !loaded.Qualification.RequiredProfileQualified {
+			t.Fatal("External safe read not accepted")
+		}
+		if item.Strategy == bootstrap.AdoptExisting && (!loaded.Qualification.RequiredProfileQualified || len(loaded.AdoptionResources) != 1 || loaded.ArtifactID != record.ArtifactID) {
+			t.Fatal("Adoption resource not independently accepted")
+		}
+		if item.SourceClass == bootstrap.AdoptLegacyManaged && !loaded.Qualification.StagingV8TransitionQualified {
+			t.Fatal("Legacy transition qualification not accepted")
+		}
+		if item.Strategy == bootstrap.AdoptExisting {
+			resource := loaded.AdoptionResources[0]
+			if resource.ResourceRef != "client-api-keys" || resource.Kind != bootstrap.APIKeys ||
+				resource.Scope != bootstrap.ClientAPIKeys || resource.Qualification != bootstrap.CapabilityQualified || resource.Disposition != bootstrap.Migrate {
+				t.Fatalf("unaccepted resource migration for %v: %+v", key, resource)
+			}
+		} else if len(loaded.AdoptionResources) != 0 || (item.Strategy == bootstrap.ConnectExternal && loaded.ArtifactID != "") {
+			t.Fatalf("source-only qualification gained destination authority for %v", key)
 		}
 	}
 }
 
 func TestProductionConstructorDiscardsInjectedQualification(t *testing.T) {
+	runtime := &managedRuntime{}
+	service := NewProduction(Options{Runtime: runtime, Qualification: bootstrap.CPAQualification{
+		ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true,
+		StagingV8TransitionQualified: true,
+	}, QualifiedArtifactID: model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64)),
+		AdoptionResources: acceptedKeys()})
+	if service.options.Qualification.ArtifactQualified || service.options.Qualification.RequiredProfileQualified ||
+		service.options.Qualification.StagingV8TransitionQualified || service.options.QualifiedArtifactID != "" ||
+		len(service.options.AdoptionResources) != 0 {
+		t.Fatal("injected qualification was not discarded by production constructor")
+	}
+	// No request-supplied status can enlarge compiled qualification.
+	if len(service.consumers) != 4 {
+		t.Fatal("missing accepted compiled consumers")
+	}
+	// A failed or withdrawn compiled record must not fall back to the injected
+	// options, even after production normally has accepted consumers.
+	service.consumers = nil
 	var requests atomic.Int32
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		t.Error("unqualified production consumer touched source")
 	}))
 	defer source.Close()
-	runtime := &managedRuntime{}
-	service := NewProduction(Options{Runtime: runtime, Qualification: bootstrap.CPAQualification{
-		ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true, StagingV8TransitionQualified: true,
-	}, QualifiedArtifactID: model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64)), AdoptionResources: acceptedKeys()})
 	for _, item := range []struct {
 		strategy bootstrap.CPAStrategy
 		class    bootstrap.AdoptSourceClass
@@ -112,7 +163,7 @@ func TestProductionConstructorDiscardsInjectedQualification(t *testing.T) {
 		for attempt := 0; attempt < 2; attempt++ {
 			result, err := service.Execute(context.Background(), operation(), Request{Strategy: item.strategy, AdoptSourceClass: item.class, BaseURL: source.URL, ManagementKey: "private-source-secret"})
 			var blocker *Blocker
-			if !errors.As(err, &blocker) || blocker.Code != item.blocker || result.Checkpoint.Strategy != "" {
+			if !errors.As(err, &blocker) || blocker.Code != item.blocker || result.Checkpoint.Strategy != "" || !result.GatewayPending {
 				t.Fatalf("%s/%s: %+v %v", item.strategy, item.class, result, err)
 			}
 		}
@@ -135,6 +186,20 @@ func acceptedConsumerFixture(t *testing.T, consumerIndex int) (productionRecord,
 		t.Fatal(err)
 	}
 	files := fstest.MapFS{}
+	// Synthetic one-consumer tests cannot inherit the real accepted production
+	// record. Reset all consumers to the original pending shapes in memory only.
+	for i := range record.Consumers {
+		item := &record.Consumers[i]
+		item.Status = "pending"
+		item.AcceptanceSHA256 = ""
+		item.Limitations = []string{}
+		item.Applicability = nil
+		item.AdoptionEvidence = nil
+		item.LegacyTransition = nil
+		for j := range item.Evidence {
+			item.Evidence[j].CaseRefs = []string{}
+		}
+	}
 	record.ImplementationSHA256 = consumerImplementationSHA256()
 	consumer := &record.Consumers[consumerIndex]
 	consumer.Status = "accepted"
@@ -640,12 +705,12 @@ func TestLoadedArtifactUsesExistingExactRuntimeFence(t *testing.T) {
 	op := operation()
 	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "destination", ExpectedRuntimeGeneration: 7, ExpectedArtifactID: record.ArtifactID}
 	staged, err := service.Execute(context.Background(), op, request)
-	if err != nil || staged.Checkpoint.Stage != "staged" || len(runtime.starts) != 0 {
+	if err != nil || staged.Checkpoint.Stage != "staged" || len(runtime.starts) != 0 || !staged.GatewayPending {
 		t.Fatalf("stage: %+v %v", staged, err)
 	}
 	op.Strategy = staged.Checkpoint
 	committed, err := service.Execute(context.Background(), op, request)
-	if err != nil || committed.Checkpoint.Stage != "committed" || len(runtime.starts) != 1 {
+	if err != nil || committed.Checkpoint.Stage != "committed" || len(runtime.starts) != 1 || !committed.GatewayPending {
 		t.Fatalf("commit: %+v %v", committed, err)
 	}
 	runtime.status.ActiveGatewayArtifact.ArtifactID = model.RuntimeArtifactID("sha256:" + strings.Repeat("c", 64))
@@ -656,10 +721,6 @@ func TestLoadedArtifactUsesExistingExactRuntimeFence(t *testing.T) {
 }
 
 func TestPendingConsumerCannotClaimApplicabilityOrLimitations(t *testing.T) {
-	data, err := productionEvidence.ReadFile("qualification/consumer.json")
-	if err != nil {
-		t.Fatal(err)
-	}
 	for name, mutate := range map[string]func(*productionRecord){
 		"applicability": func(r *productionRecord) {
 			applicability, _ := requiredConsumerApplicability(consumerKey{bootstrap.NewManaged, bootstrap.AdoptSourceNone})
@@ -670,12 +731,19 @@ func TestPendingConsumerCannotClaimApplicabilityOrLimitations(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			var record productionRecord
-			if json.Unmarshal(data, &record) != nil {
-				t.Fatal("compiled pending record is not decodable")
+			record, files := acceptedConsumerFixture(t, 0)
+			// Exercise rejection of unauthorized properties on a deliberately
+			// withdrawn/pending consumer, not the embedded accepted one.
+			record.Consumers[0].Status = "pending"
+			record.Consumers[0].AcceptanceSHA256 = ""
+			record.Consumers[0].Applicability = nil
+			record.Consumers[0].Limitations = []string{}
+			writeSyntheticRecord(t, files, record)
+			if consumers, err := loadProductionQualification(files); err != nil || consumers[consumerKey{bootstrap.NewManaged, ""}].Qualification.ArtifactQualified {
+				t.Fatalf("withdrawn control: %v", err)
 			}
 			mutate(&record)
-			files := fstest.MapFS{"qualification/consumer.json": &fstest.MapFile{Data: encodeJSON(t, record)}}
+			writeSyntheticRecord(t, files, record)
 			if consumers, err := loadProductionQualification(files); err == nil || consumers != nil {
 				t.Fatal("pending consumer claimed accepted applicability")
 			}
@@ -782,7 +850,7 @@ func TestPersistedAdoptionOperationRechecksApplicability(t *testing.T) {
 		ExpectedArtifactID: record.ArtifactID}
 	service := &Service{options: options, production: true, consumers: consumers}
 	staged, err := service.Execute(t.Context(), operation(), request)
-	if err != nil || staged.Checkpoint.Stage != "staged" || sourceCalls.Load() != 1 || len(runtime.stages) != 0 || len(runtime.starts) != 0 {
+	if err != nil || staged.Checkpoint.Stage != "staged" || sourceCalls.Load() != 1 || len(runtime.stages) != 0 || len(runtime.starts) != 0 || !staged.GatewayPending {
 		t.Fatalf("stage: %+v %v source=%d", staged, err, sourceCalls.Load())
 	}
 	op := operation()
@@ -790,12 +858,22 @@ func TestPersistedAdoptionOperationRechecksApplicability(t *testing.T) {
 	request.AdoptionCiphertext = staged.AdoptionCiphertext
 	// A restart that no longer grants this consumer must re-check the persisted
 	// operation instead of trusting its staged checkpoint.
-	withdrawn := make(map[consumerKey]qualifiedConsumer)
+	consumer := &record.Consumers[2]
+	consumer.Status = "pending"
+	consumer.AcceptanceSHA256 = ""
+	consumer.Applicability = nil
+	consumer.Limitations = []string{}
+	consumer.AdoptionEvidence = nil
+	writeSyntheticRecord(t, files, record)
+	withdrawn, err := loadProductionQualification(files)
+	if err != nil {
+		t.Fatalf("withdrawn production record: %v", err)
+	}
 	restarted := &Service{options: options, production: true, consumers: withdrawn}
 	result, err := restarted.Execute(t.Context(), op, request)
 	var blocker *Blocker
 	if !errors.As(err, &blocker) || blocker.Code != "adoption_source_qualification_required" || result.Checkpoint.Strategy != "" ||
-		sourceCalls.Load() != 1 || len(runtime.stages) != 0 || len(runtime.starts) != 0 {
+		sourceCalls.Load() != 1 || len(runtime.stages) != 0 || len(runtime.starts) != 0 || !result.GatewayPending {
 		t.Fatalf("persisted scope bypassed recheck: result=%+v err=%v source=%d", result, err, sourceCalls.Load())
 	}
 }
