@@ -1,0 +1,1408 @@
+{
+  "schemaVersion": 1,
+  "contractId": "cpamp-cpa-v8-qualification",
+  "manifestRevision": "r4",
+  "manifestSha256": "3c21eb7db0d45638b9be81891277329b0c04ea941588dc90213d6d864f34896f",
+  "run": {
+    "id": "AQ02-7f46f93331f0db48be0e864fc4fc88ee64d771ad5a403259",
+    "kind": "upstream-run",
+    "runnerCommit": "7d8c98cb93a4ca9d405f2f91504348d439655f59",
+    "state": "completed",
+    "selectedCaseRefs": [
+      "AQ04-U01-config",
+      "AQ04-U02-enable",
+      "AQ04-U02-receipt",
+      "AQ04-U03-batch",
+      "AQ04-U04-disable",
+      "AQ04-U04-backlog",
+      "AQ04-U05-availability",
+      "AQ04-U05-clear",
+      "AQ04-U06-five-seconds",
+      "AQ04-U07-sixty-seconds",
+      "AQ04-U08-bounds",
+      "AQ04-U09-pop",
+      "AQ04-U09-relay",
+      "AQ04-U10-unknown-cutpoint",
+      "AQ04-U11-projection",
+      "AQ04-U12-graceful",
+      "AQ04-U13-forced",
+      "AQ04-U14-competition",
+      "AQ04-U15-subscribe",
+      "AQ04-U16-fanout",
+      "AQ04-U17-pressure",
+      "AQ04-U17-overflow-unknown",
+      "AQ04-U18-binding",
+      "AQ04-S01-snapshot",
+      "AQ04-S02-legacy",
+      "AQ04-S03-plaintext",
+      "AQ04-S04-mixed",
+      "AQ04-S05-v8",
+      "AQ04-S06-paths",
+      "AQ04-S07-invalid",
+      "AQ04-S08-readonly",
+      "AQ04-S09-commit",
+      "AQ04-S10-rejected",
+      "AQ04-S11-reconcile",
+      "AQ04-S11-lost-reply",
+      "AQ04-S12-precommit",
+      "AQ04-S13-restore",
+      "AQ04-S14-fence",
+      "AQ04-S15-tamper",
+      "AQ04-S16-crash"
+    ],
+    "startedAt": "2026-10-06T17:16:28.250Z",
+    "endedAt": "2026-10-06T17:18:38.989Z",
+    "setupState": "ready",
+    "cleanupState": "completed",
+    "fixtureInputRefs": [
+      {
+        "fixtureRef": "CPA8-USAGE-STAGE-upstream-real-r4",
+        "revision": "r4",
+        "configProfileId": "usage-stage-owned-r4",
+        "modeProfileId": "linux-amd64-network-none-r4"
+      },
+      {
+        "fixtureRef": "CPA8-USAGE-STAGE-local-stub-r4",
+        "revision": "r4",
+        "configProfileId": "usage-stage-owned-r4",
+        "modeProfileId": "linux-amd64-network-none-r4"
+      },
+      {
+        "fixtureRef": "CPA8-USAGE-STAGE-boundary-deny-r4",
+        "revision": "r4",
+        "configProfileId": "usage-stage-owned-r4",
+        "modeProfileId": "linux-amd64-network-none-r4"
+      }
+    ]
+  },
+  "artifactObservation": {
+    "candidateRef": "CPA8-8.0.13-linux-amd64-plugin",
+    "provenance": "locally-verified",
+    "observedArchiveSha256": "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3",
+    "observedBinarySha256": "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
+  },
+  "results": [
+    {
+      "caseRef": "AQ04-U01-config",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U01-config-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U01-config-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U01-config-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U01-config-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U02-enable",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U02-enable-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U02-enable-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U02-enable-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U02-enable-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U02-receipt",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U02-receipt-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U02-receipt-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U02-receipt-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U02-receipt-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U03-batch",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U03-batch-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U03-batch-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U03-batch-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U03-batch-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U04-disable",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U04-disable-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U04-disable-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U04-disable-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U04-disable-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U04-backlog",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U04-backlog-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U04-backlog-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U04-backlog-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U04-backlog-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U05-availability",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U05-availability-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U05-availability-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U05-availability-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U05-availability-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U05-clear",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U05-clear-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U05-clear-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U05-clear-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U05-clear-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U06-five-seconds",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U06-five-seconds-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U06-five-seconds-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U06-five-seconds-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U06-five-seconds-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U07-sixty-seconds",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U07-sixty-seconds-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U07-sixty-seconds-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U07-sixty-seconds-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U07-sixty-seconds-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U08-bounds",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U08-bounds-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U08-bounds-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U08-bounds-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U08-bounds-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U09-pop",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U09-pop-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U09-pop-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U09-pop-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U09-pop-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U09-relay",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U09-relay-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U09-relay-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U09-relay-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U09-relay-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U10-unknown-cutpoint",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U10-unknown-cutpoint-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U10-unknown-cutpoint-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U10-unknown-cutpoint-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U10-unknown-cutpoint-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U11-projection",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U11-projection-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U11-projection-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U11-projection-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U11-projection-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U12-graceful",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U12-graceful-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U12-graceful-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U12-graceful-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U12-graceful-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U13-forced",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U13-forced-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U13-forced-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U13-forced-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U13-forced-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U14-competition",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U14-competition-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U14-competition-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U14-competition-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U14-competition-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U15-subscribe",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U15-subscribe-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U15-subscribe-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U15-subscribe-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U15-subscribe-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U16-fanout",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U16-fanout-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U16-fanout-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U16-fanout-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U16-fanout-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U17-pressure",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U17-pressure-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U17-pressure-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U17-pressure-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U17-pressure-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U17-overflow-unknown",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U17-overflow-unknown-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U17-overflow-unknown-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U17-overflow-unknown-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U17-overflow-unknown-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-U18-binding",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-U18-binding-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U18-binding-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-U18-binding-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-U18-binding-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S01-snapshot",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S01-snapshot-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S01-snapshot-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S01-snapshot-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S01-snapshot-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S02-legacy",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S02-legacy-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S02-legacy-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S02-legacy-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S02-legacy-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S03-plaintext",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S03-plaintext-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S03-plaintext-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S03-plaintext-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S03-plaintext-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S04-mixed",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S04-mixed-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S04-mixed-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S04-mixed-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S04-mixed-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S05-v8",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S05-v8-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S05-v8-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S05-v8-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S05-v8-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S06-paths",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S06-paths-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S06-paths-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S06-paths-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S06-paths-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S07-invalid",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S07-invalid-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S07-invalid-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S07-invalid-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S07-invalid-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S08-readonly",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S08-readonly-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S08-readonly-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S08-readonly-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S08-readonly-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S09-commit",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S09-commit-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S09-commit-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S09-commit-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S09-commit-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S10-rejected",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S10-rejected-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S10-rejected-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S10-rejected-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S10-rejected-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S11-reconcile",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "limited",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S11-reconcile-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S11-reconcile-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S11-reconcile-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S11-reconcile-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S11-lost-reply",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S11-lost-reply-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S11-lost-reply-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S11-lost-reply-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S11-lost-reply-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S12-precommit",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S12-precommit-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S12-precommit-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S12-precommit-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S12-precommit-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S13-restore",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S13-restore-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S13-restore-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S13-restore-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S13-restore-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S14-fence",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S14-fence-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S14-fence-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S14-fence-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S14-fence-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S15-tamper",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S15-tamper-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S15-tamper-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S15-tamper-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S15-tamper-TRACE"
+      ]
+    },
+    {
+      "caseRef": "AQ04-S16-crash",
+      "executionState": "completed",
+      "assertionOutcome": "pass",
+      "capability": "unknown",
+      "reasonCode": "COVERAGE_UNKNOWN",
+      "assertions": [
+        {
+          "expectationRef": "AQ04-S16-crash-OBSERVATION",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S16-crash-STATE",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        },
+        {
+          "expectationRef": "AQ04-S16-crash-CONTROL",
+          "outcome": "pass",
+          "observationCode": "EXPECTED_MATCH"
+        }
+      ],
+      "evidenceRefs": [
+        "AQ04-S16-crash-TRACE"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "AQ04-U01-config-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U01-config.json",
+      "sha256": "e984826372056f09c68216d09eddcb55a47046670c05cb88a13965a4706eb25c"
+    },
+    {
+      "id": "AQ04-U02-enable-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U02-enable.json",
+      "sha256": "bef641cf267366dcdf006d09c9fdc91a6ec13583d7c13cf6d0c5c17710ec9903"
+    },
+    {
+      "id": "AQ04-U02-receipt-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U02-receipt.json",
+      "sha256": "41602cea7ec93627bd44b6d217ef03978c4a87d82fcae2129b241ceab3633bc3"
+    },
+    {
+      "id": "AQ04-U03-batch-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U03-batch.json",
+      "sha256": "9d7621f3a715a43be95008807280e6dd7a4dfa0d130a40c8cf345fdf1e71aa50"
+    },
+    {
+      "id": "AQ04-U04-disable-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U04-disable.json",
+      "sha256": "4dca9a31830a52758215b178eae0856b1e195c2591fab550920565cd8737c0f9"
+    },
+    {
+      "id": "AQ04-U04-backlog-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U04-backlog.json",
+      "sha256": "ce65ac243668046035022c2b327b09385c4c396853e4048ea6223b583f89b772"
+    },
+    {
+      "id": "AQ04-U05-availability-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U05-availability.json",
+      "sha256": "9852e4de0dd53d4684cc4e3a0f179fb36d64546d9717a75673f8f8405e0a3146"
+    },
+    {
+      "id": "AQ04-U05-clear-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U05-clear.json",
+      "sha256": "9fd6484b7da374445f6338a9cbd517fa792af9810baa7934eab6cc7bd617d236"
+    },
+    {
+      "id": "AQ04-U06-five-seconds-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U06-five-seconds.json",
+      "sha256": "8cf0b963f3b59b7b257d69cc273a1f3dc8f96db8d0fb59147f4d8b71c0d8e9ca"
+    },
+    {
+      "id": "AQ04-U07-sixty-seconds-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U07-sixty-seconds.json",
+      "sha256": "6dba5c6fd28958b0e3422fe882f38f460d8cc724e4a834ac9c6a859b70bab7a1"
+    },
+    {
+      "id": "AQ04-U08-bounds-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U08-bounds.json",
+      "sha256": "763780ca89aea51e06a241c050466c89a5d5cdecb9efa44fc4cdfb03ff07c7a0"
+    },
+    {
+      "id": "AQ04-U09-pop-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U09-pop.json",
+      "sha256": "119457856e0947fe97ab3e1f75978f4a45bccd983ba6194dabeaca2b1884a26b"
+    },
+    {
+      "id": "AQ04-U09-relay-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U09-relay.json",
+      "sha256": "808268a871af8818e03f83fa51d1d0088b8d9dcb85307c30862e4cdb0f6780c4"
+    },
+    {
+      "id": "AQ04-U10-unknown-cutpoint-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U10-unknown-cutpoint.json",
+      "sha256": "ff6a2833d2182b80ac9c6f298233cf443f8366b8881ef3a8c6734f9cc37ed1a7"
+    },
+    {
+      "id": "AQ04-U11-projection-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U11-projection.json",
+      "sha256": "3f6f134a705d871f3508d5189420ab6a17d40135e33259963f93107eb9a5ddbb"
+    },
+    {
+      "id": "AQ04-U12-graceful-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U12-graceful.json",
+      "sha256": "178c4bec8682191c29df9a85db6b44aa51aa7a76a7b114e8044e35bbd11be31a"
+    },
+    {
+      "id": "AQ04-U13-forced-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U13-forced.json",
+      "sha256": "1e34695d8d67671bba0a57e8355ad66cff6e2a1470c1e2668013b9387cc35725"
+    },
+    {
+      "id": "AQ04-U14-competition-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U14-competition.json",
+      "sha256": "09ad77b6f039d6a54e08823a9c09bf20c1f3105191670e47490987162c3b47d7"
+    },
+    {
+      "id": "AQ04-U15-subscribe-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U15-subscribe.json",
+      "sha256": "3002c9e0f463de0d550caacfc2cc25ab07ba5c68d74ae7a236a1788ad2e49872"
+    },
+    {
+      "id": "AQ04-U16-fanout-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U16-fanout.json",
+      "sha256": "3972da6bb00b1646e2d7d759d3c5dc0ee5aa81e886ecdf2be3f51966a3323cde"
+    },
+    {
+      "id": "AQ04-U17-pressure-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U17-pressure.json",
+      "sha256": "c5638faeaa2d8121d4abd66757ddc32af2e35c9c06e4c28d04c1d6c19f0f5680"
+    },
+    {
+      "id": "AQ04-U17-overflow-unknown-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U17-overflow-unknown.json",
+      "sha256": "7c3486e0eca6e847a6cc15590db03e424e1a82b265ec42264dcaddf9e1eed993"
+    },
+    {
+      "id": "AQ04-U18-binding-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-U18-binding.json",
+      "sha256": "864b9452b5a3929371eaefb4ee2642e312c745ca8cc3b4c4533f52981e726ccc"
+    },
+    {
+      "id": "AQ04-S01-snapshot-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S01-snapshot.json",
+      "sha256": "87c8d011c37abc775ed3579f794be06392a2ef95414eb98af169ed1c1e94eec3"
+    },
+    {
+      "id": "AQ04-S02-legacy-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S02-legacy.json",
+      "sha256": "50302fa738bc2a2c3b7328d0d62b3d187e56b5aed383b878935bda91797cbff7"
+    },
+    {
+      "id": "AQ04-S03-plaintext-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S03-plaintext.json",
+      "sha256": "5d2cbe9dd3daaf954f1a2621a54c1864e20e3f1b0e38ce4a7fbc4fd70ad1ec48"
+    },
+    {
+      "id": "AQ04-S04-mixed-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S04-mixed.json",
+      "sha256": "ac19374faf2d207974544e43f81fe4bf069ab3c7e7a243ba37c899238d28ee7f"
+    },
+    {
+      "id": "AQ04-S05-v8-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S05-v8.json",
+      "sha256": "72d7b000294af2c7ac49ff814d81b2cff508ce18a3e2d73acbdbf7f129b2a3b5"
+    },
+    {
+      "id": "AQ04-S06-paths-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S06-paths.json",
+      "sha256": "e7d8aae47690e923dc8f097ce16619169e2f9a3fcbd5af694c6e3ccc3b497cde"
+    },
+    {
+      "id": "AQ04-S07-invalid-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S07-invalid.json",
+      "sha256": "201393356c89275ff1b0105a15858264c45325f399af0bf00fc22c16c9847a7e"
+    },
+    {
+      "id": "AQ04-S08-readonly-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S08-readonly.json",
+      "sha256": "013d6a36984509068aa3b7c7686c28c21425c8354c6fa2d3b2ae8a594291ad2d"
+    },
+    {
+      "id": "AQ04-S09-commit-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S09-commit.json",
+      "sha256": "bc91f0feb97e90a85f40244813c6282404a857806e0f1eb79b53db80b269f448"
+    },
+    {
+      "id": "AQ04-S10-rejected-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S10-rejected.json",
+      "sha256": "6b315e5f6dd596929e6dccf23301589aba45ec197f307714893f00c7f18b67ec"
+    },
+    {
+      "id": "AQ04-S11-reconcile-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S11-reconcile.json",
+      "sha256": "4b4e21ce42da7f85d3a7ade5b4ea49a4fbe342e6b694ac8fe81ece9c72beb524"
+    },
+    {
+      "id": "AQ04-S11-lost-reply-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S11-lost-reply.json",
+      "sha256": "413a87c9798a2584a3470ec15699bdda4122103a14227899387399df05f89e67"
+    },
+    {
+      "id": "AQ04-S12-precommit-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S12-precommit.json",
+      "sha256": "bcae24654fe5b4eb6d79f850e0b20b8a1007f4ed447b2944b5a7df6ca06f306f"
+    },
+    {
+      "id": "AQ04-S13-restore-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S13-restore.json",
+      "sha256": "dc0afda07092eb947e447e999f59525cd87536b22827bc275d8d5ed736d0717f"
+    },
+    {
+      "id": "AQ04-S14-fence-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S14-fence.json",
+      "sha256": "7b856041a6df157772662bf9a3e22cf202518300f3676da7a9e7367de15f2194"
+    },
+    {
+      "id": "AQ04-S15-tamper-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S15-tamper.json",
+      "sha256": "a7a440ad655612e028cc4284c71a530233fd725f3ceffaeaf8650d248c8ad061"
+    },
+    {
+      "id": "AQ04-S16-crash-TRACE",
+      "kind": "sanitized-trace",
+      "relativePath": "AQ04-S16-crash.json",
+      "sha256": "0a4c5bb21edc6bc727ed05f548a71c376008f9ad12687ef5828d3a88d5ce113a"
+    }
+  ]
+}

@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "managementGeneration": "v8",
+  "implementationSha256": "4ead43972543c565ca147b248c166229ec83ee90a8db86267fc6d1f896e8247d",
+  "archiveSha256": "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3",
+  "binarySha256": "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
+  "artifactId": "sha256:b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
+  "consumers": [
+    {
+      "strategy": "new_managed",
+      "sourceClass": "",
+      "status": "accepted",
+      "evidence": [
+        {
+          "profile": "CPA8-MGMT-MIN-r1",
+          "manifestSha256": "758fafa41bbbf6ce58961c0a3ac3beedab2af29b18631bef3ffb4064dd3955f2",
+          "reportSha256": "5481b5ca7ce53175bc5199f32cd6a68f5a1f29c302c9cbf3465a1a62ccfe0d92",
+          "implementationHead": "27f4bf80dc7cbbca90c07cc2d3853be7c5ee9902",
+          "caseRefs": [
+            "AQ02-M01-bearer",
+            "AQ02-M11-root"
+          ]
+        }
+      ],
+      "acceptanceSha256": "65eb659a172c9075afeddc959a9ab825d208cc728487186cce2514dd8d27050a",
+      "limitations": [
+        "management_generation_v8",
+        "exact_cpa_v8_artifact_identity",
+        "gateway_pending"
+      ],
+      "invalidatedBy": [
+        "artifact",
+        "manifest",
+        "report",
+        "implementation",
+        "profile",
+        "config",
+        "mode"
+      ],
+      "applicability": {
+        "target": "exact_cpa_v8_artifact",
+        "sourceTransport": "none",
+        "destinationTransport": "manager_runtime_private_v1",
+        "config": "cpa_v8",
+        "mode": "fresh_new_managed"
+      }
+    },
+    {
+      "strategy": "connect_external",
+      "sourceClass": "",
+      "status": "accepted",
+      "evidence": [
+        {
+          "profile": "CPA8-EXTERNAL-SAFETY-r1",
+          "manifestSha256": "75f79bc124a5a712ac74f162b0ab8d434438863b295a79de60e92a8d7c5523ea",
+          "reportSha256": "ce1e806cf8f5a676c97c7337bef3618b2cdf1213b9b33827a90d2e3a0141e779",
+          "implementationHead": "7d8c98cb93a4ca9d405f2f91504348d439655f59",
+          "caseRefs": [
+            "AQ03-E01-real-auth",
+            "AQ03-E01-real-config"
+          ]
+        }
+      ],
+      "acceptanceSha256": "65eb659a172c9075afeddc959a9ab825d208cc728487186cce2514dd8d27050a",
+      "limitations": [
+        "management_generation_v8",
+        "read_only_bounded_safe_read",
+        "direct_transport_no_proxy_no_redirect",
+        "gateway_pending"
+      ],
+      "invalidatedBy": [
+        "artifact",
+        "manifest",
+        "report",
+        "implementation",
+        "profile",
+        "config",
+        "mode"
+      ],
+      "applicability": {
+        "target": "bounded_v8_management_surface",
+        "sourceTransport": "bounded_v8_direct_safe_read",
+        "destinationTransport": "external_connection",
+        "config": "cpa_v8",
+        "mode": "fresh_connect_external"
+      }
+    },
+    {
+      "strategy": "adopt_existing",
+      "sourceClass": "network_existing",
+      "status": "accepted",
+      "evidence": [
+        {
+          "profile": "CPA8-EXTERNAL-SAFETY-r1",
+          "manifestSha256": "75f79bc124a5a712ac74f162b0ab8d434438863b295a79de60e92a8d7c5523ea",
+          "reportSha256": "ce1e806cf8f5a676c97c7337bef3618b2cdf1213b9b33827a90d2e3a0141e779",
+          "implementationHead": "7d8c98cb93a4ca9d405f2f91504348d439655f59",
+          "caseRefs": [
+            "AQ03-E01-real-auth",
+            "AQ03-E01-real-config"
+          ]
+        },
+        {
+          "profile": "CPA8-STAGE-r1",
+          "manifestSha256": "3c21eb7db0d45638b9be81891277329b0c04ea941588dc90213d6d864f34896f",
+          "reportSha256": "6add816401dad04a7e29285eece43e30abcef6625313a8e492ae24b4ef079a7c",
+          "implementationHead": "7d8c98cb93a4ca9d405f2f91504348d439655f59",
+          "caseRefs": [
+            "AQ04-S05-v8"
+          ]
+        }
+      ],
+      "acceptanceSha256": "65eb659a172c9075afeddc959a9ab825d208cc728487186cce2514dd8d27050a",
+      "limitations": [
+        "management_generation_v8",
+        "read_only_bounded_safe_read",
+        "direct_transport_no_proxy_no_redirect",
+        "client_api_keys_only",
+        "source_preserved",
+        "gateway_pending"
+      ],
+      "invalidatedBy": [
+        "artifact",
+        "manifest",
+        "report",
+        "implementation",
+        "profile",
+        "config",
+        "mode"
+      ],
+      "adoptionEvidence": {
+        "profile": "CPA8-ADOPT-RESOURCE-r1",
+        "manifestSha256": "563ef299810ce576636df6bd5ebf39a0554d54e5b8bde31b8606405c4d2ac3be",
+        "reportSha256": "626ea7f1b87ed64a315c2334b97dd694d20deb36f5088f13e69f926e2813c139",
+        "implementationHead": "d34355aff4d297f4b2f907a9a7f6f3973c6009f7",
+        "readCaseRef": "fresh-network-client-api-keys-read",
+        "replayCaseRef": "fresh-network-client-api-keys-replay",
+        "verifyCaseRef": "fresh-network-client-api-keys-verify"
+      },
+      "applicability": {
+        "target": "manager_owned_exact_v8_destination",
+        "sourceTransport": "bounded_v8_direct_safe_read",
+        "destinationTransport": "manager_runtime_private_v1",
+        "config": "cpa_v8",
+        "mode": "fresh_adopt_network_existing"
+      }
+    },
+    {
+      "strategy": "adopt_existing",
+      "sourceClass": "legacy_managed",
+      "status": "accepted",
+      "evidence": [
+        {
+          "profile": "CPA8-EXTERNAL-SAFETY-r1",
+          "manifestSha256": "75f79bc124a5a712ac74f162b0ab8d434438863b295a79de60e92a8d7c5523ea",
+          "reportSha256": "ce1e806cf8f5a676c97c7337bef3618b2cdf1213b9b33827a90d2e3a0141e779",
+          "implementationHead": "7d8c98cb93a4ca9d405f2f91504348d439655f59",
+          "caseRefs": [
+            "AQ03-E01-real-auth",
+            "AQ03-E01-real-config"
+          ]
+        },
+        {
+          "profile": "CPA8-STAGE-r1",
+          "manifestSha256": "3c21eb7db0d45638b9be81891277329b0c04ea941588dc90213d6d864f34896f",
+          "reportSha256": "6add816401dad04a7e29285eece43e30abcef6625313a8e492ae24b4ef079a7c",
+          "implementationHead": "7d8c98cb93a4ca9d405f2f91504348d439655f59",
+          "caseRefs": [
+            "AQ04-S02-legacy",
+            "AQ04-S05-v8"
+          ]
+        }
+      ],
+      "acceptanceSha256": "65eb659a172c9075afeddc959a9ab825d208cc728487186cce2514dd8d27050a",
+      "limitations": [
+        "management_generation_v8",
+        "read_only_bounded_safe_read",
+        "direct_transport_no_proxy_no_redirect",
+        "client_api_keys_only",
+        "legacy_source_profile_cpa_v7_0_12",
+        "source_preserved",
+        "gateway_pending"
+      ],
+      "invalidatedBy": [
+        "artifact",
+        "manifest",
+        "report",
+        "implementation",
+        "profile",
+        "config",
+        "mode"
+      ],
+      "adoptionEvidence": {
+        "profile": "CPA8-ADOPT-RESOURCE-r1",
+        "manifestSha256": "7388022d21d2d6502449c311bc5379e4e954db0030912e73a2607d809fefb5f2",
+        "reportSha256": "58ebdad76139495ceefdb5052c455de9d78573e2f90dfd98de019fb64fe8ddd0",
+        "implementationHead": "d34355aff4d297f4b2f907a9a7f6f3973c6009f7",
+        "readCaseRef": "fresh-legacy-client-api-keys-read",
+        "replayCaseRef": "fresh-legacy-client-api-keys-replay",
+        "verifyCaseRef": "fresh-legacy-client-api-keys-verify"
+      },
+      "legacyTransition": {
+        "profile": "CPA8-STAGE-r1",
+        "caseRef": "fresh-legacy-managed-stage-v8-r1",
+        "manifestSha256": "316f7452e29145039eb856dee65cfc15c2f0bdc86e839be4cc4b43d8a1794694",
+        "reportSha256": "431a700908e54bafdebf5a968dda6ae0caf759249662a1fcf268080eb4ece13a",
+        "implementationHead": "d34355aff4d297f4b2f907a9a7f6f3973c6009f7",
+        "evidenceSha256": "6c0f14a4456e16da48ee4d091a7fbcc566812031e8078038701b5a403e0dcc75",
+        "legacyVersion": "v7.0.12",
+        "legacyArchiveSha256": "8afc9ed4c89a50a5ffce5d122a9bb93442c5b8ff3d8c6f07b7a274c719109b74",
+        "legacyBinarySha256": "1eb108b85ad554b92bab9f5a85af433d7c2e1b951bb192b639d73605d4593d1a"
+      },
+      "applicability": {
+        "target": "manager_owned_exact_v8_destination",
+        "sourceTransport": "pinned_legacy_cpa_v7_0_12_direct_safe_read",
+        "destinationTransport": "manager_runtime_private_v1",
+        "config": "cpa_v7_0_12_source_to_cpa_v8_destination",
+        "mode": "fresh_adopt_legacy_managed"
+      }
+    }
+  ]
+}

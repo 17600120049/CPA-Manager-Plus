@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "runId": "AQ02-b337a9f1b7f782395dfd8990957b2e18191f7e0f1f8a3de8",
+  "caseRef": "AQ02-M01-bearer",
+  "records": [
+    {
+      "expectationRef": "AQ02-M01-bearer-HTTP",
+      "outcome": "pass",
+      "observationCode": "EXPECTED_MATCH",
+      "httpStatus": 200,
+      "elapsedMs": 1225,
+      "requestBytes": 0,
+      "responseBytes": 1065
+    },
+    {
+      "expectationRef": "AQ02-M01-bearer-STATE",
+      "outcome": "pass",
+      "observationCode": "EXPECTED_MATCH",
+      "httpStatus": 200,
+      "elapsedMs": 1225,
+      "requestBytes": 0,
+      "responseBytes": 1065
+    },
+    {
+      "expectationRef": "AQ02-M01-bearer-CONTROL",
+      "outcome": "pass",
+      "observationCode": "EXPECTED_MATCH",
+      "httpStatus": 200,
+      "elapsedMs": 1225,
+      "requestBytes": 0,
+      "responseBytes": 1065
+    }
+  ]
+}
