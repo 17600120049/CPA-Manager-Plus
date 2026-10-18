@@ -117,6 +117,30 @@ Local test/build artifacts remain under task-owned `bin/tmp/phase4-04a/`.
 These bounded fixtures and local tests do not qualify a production source,
 Docker/native deployment, real v1-to-v2 migration or recovery.
 
+### Phase4-04B1: published archive content
+
+Matching evidence now calls the maintained usage archive file reader through
+`usage.ValidatePublishedArchiveFiles`, with persisted repository rows and no
+Store, worker, or lifecycle transition. It checks bounded manifest JSON,
+gzip/JSONL restore envelopes, canonical event hashes, ordering, counts, byte
+totals, time ranges and segment/run digests. Existing path and private-file
+checks apply. Cancellation is observed during segment checksum and decoding.
+Required/present publication metadata selects decoding; legal unpublished,
+failed/resumable and cancelled snapshots retain their existing lifecycle rules.
+Cancelled snapshots without segment rows check the retained manifest and run
+metadata only; they do not establish complete payload evidence.
+
+Focused tests use private byte-identical copies of fixed BAK-02 and optionally
+the pinned materialized RET-07 bundle (`CPAMP_TEST_RET07_BUNDLE`). Git does not
+preserve archive 0600 modes; only disposable copies receive private modes.
+Corruption cases recompute outer bundle, manifest and segment digests before
+asserting decoded-content rejection and unchanged source/backup bytes.
+
+Payload validity does not qualify historical completeness, exact database
+writer provenance, noncooperating writer exclusion/continuity or retained
+pricing/coverage parity. All three production NO-GOs and
+`UpgradeAuthorized=false`, `TrustedHopReceipt=false` remain unchanged.
+
 ## 04A / 04B boundary and scope check
 
 04A supplies an authenticated source/backup observation and explicit stop

@@ -28,6 +28,7 @@ import (
 	managersqlite "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/usagearchive"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/usage"
 	_ "modernc.org/sqlite"
 )
 
@@ -35,7 +36,7 @@ const Version = 2
 const CooperatingFence = "cooperating-manager-lock"
 const maxManifestBytes = 16 * 1024 * 1024
 
-// Matches the production usage archive manifest bound; decoding is deferred.
+// Matches the production usage archive manifest bound.
 const maxArchiveManifestBytes = 4 * 1024 * 1024
 const maxEntries = 10000
 
@@ -331,7 +332,7 @@ func sqliteURI(path string) string {
 //  6. Every archive segment has a supported status, safe path, and matches its
 //     DB-recorded SHA-256 and compressed byte count. Recorded run manifests also
 //     match their DB digest within the production size bound. No provenance is
-//     authenticated, and archive decoding/event validation is deferred.
+//     authenticated. Published manifests and payloads pass the production reader.
 //  7. Persisted archive run contracts and maintenance locks match production
 //     stages. A separate writable copy passes production open/migration and
 //     archive reader queries; only the original file set is ever published.
@@ -636,7 +637,29 @@ func validateArchiveEvidence(ctx context.Context, db *sql.DB, l Layout) error {
 	if err := validateArchiveRunManifests(ctx, db, l.ArchivesPath, segments, runs); err != nil {
 		return err
 	}
-	return validateArchiveMaintenanceLocks(ctx, db, runs)
+	if err := validateArchiveMaintenanceLocks(ctx, db, runs); err != nil {
+		return err
+	}
+	// The SQL rows above are closed before repository reads: this is a single-
+	// connection, read-only snapshot. Never open a writable Store or resume a job.
+	repo := usagearchive.New(db)
+	for runID := range runs {
+		run, err := repo.Run(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("archive persisted rows payload run: %w", err)
+		}
+		if run.ManifestFile == "" {
+			continue // Legitimate pre-publication/paused/cancelled snapshot.
+		}
+		segments, err := repo.Segments(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("archive persisted rows payload segments: %w", err)
+		}
+		if err := usage.ValidatePublishedArchiveFiles(ctx, l.ArchivesPath, run, segments); err != nil {
+			return fmt.Errorf("archive published payload %s: %w", runID, err)
+		}
+	}
+	return ctx.Err()
 }
 
 func archiveEvidencePath(root, runID, fileName string) (string, error) {
@@ -848,7 +871,7 @@ func validateArchiveRunManifests(ctx context.Context, db *sql.DB, root string, s
 		}
 		// MarkArchived and MarkVerified publish these fields atomically with the
 		// run/segment statuses. Bind the snapshot to those transition receipts,
-		// without importing coverage, manifest decoding or historical validation.
+		// without inferring coverage or historical completeness.
 		if (policy.manifestRequired || publicationRecorded) &&
 			(strings.TrimSpace(archiveDigest.String) == "" || !archivedAt.Valid || archivedAt.Int64 <= 0) {
 			return errors.New("archive publication requires archive_digest and positive archived_at_ms")

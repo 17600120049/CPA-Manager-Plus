@@ -1308,6 +1308,34 @@ func TestUsageArchiveServiceValidatesCutoff(t *testing.T) {
 	}
 }
 
+func TestUsageArchiveFileInspectionCancellation(t *testing.T) {
+	service, _, _ := newArchiveTestService(t, 1, 1, archiveTestServiceEvents(1))
+	created, err := service.CreateArchive(context.Background(), 5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := service.ResumeArchive(context.Background(), created.Run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.archive.testHook = func(point string) error {
+		if point == "archive_segment_content_inspection_started" {
+			cancel() // After opening the real file, before checksum/decode reads.
+		}
+		return nil
+	}
+	if err := service.archive.verifyManifestFiles(ctx, archived.Run, archived.Segments, false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("in-flight archive read did not observe cancellation: %v", err)
+	}
+	service.archive.testHook = nil
+	after, err := service.ArchiveStatus(context.Background(), archived.Run.ID)
+	if err != nil || !reflect.DeepEqual(after, archived) {
+		t.Fatalf("read-only cancellation changed archive state: %v", err)
+	}
+}
+
 func TestUsageArchiveRecordLimitMatchesImporter(t *testing.T) {
 	service, _, _ := newArchiveTestService(t, 1, 1, nil)
 	runID := strings.Repeat("a", 32)
@@ -1337,7 +1365,7 @@ func TestUsageArchiveRecordLimitMatchesImporter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write exact-limit archive record: %v", err)
 	}
-	inspection, err := service.archive.inspectSegment(segment, sha256.New(), false)
+	inspection, err := service.archive.inspectSegment(context.Background(), segment, sha256.New(), false)
 	if err != nil {
 		t.Fatalf("inspect exact-limit archive record: %v", err)
 	}
@@ -1367,7 +1395,7 @@ func TestUsageArchiveInspectionRejectsUnrestorableRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write unrestorable archive record: %v", err)
 	}
-	if _, err := service.archive.inspectSegment(segment, sha256.New(), false); !errors.Is(err, usageparser.ErrInvalidArchiveRecord) {
+	if _, err := service.archive.inspectSegment(context.Background(), segment, sha256.New(), false); !errors.Is(err, usageparser.ErrInvalidArchiveRecord) {
 		t.Fatalf("inspect unrestorable archive record error = %v", err)
 	}
 }
@@ -3065,7 +3093,7 @@ func TestUsageArchiveInspectionRequireRestorableEventHash(t *testing.T) {
 	}
 
 	// With requireRestorableEventHash = false, inspection should succeed
-	inspection, err := service.archive.inspectSegment(segment, sha256.New(), false)
+	inspection, err := service.archive.inspectSegment(context.Background(), segment, sha256.New(), false)
 	if err != nil {
 		t.Fatalf("inspectSegment with requireRestorableEventHash=false failed: %v", err)
 	}
@@ -3074,7 +3102,7 @@ func TestUsageArchiveInspectionRequireRestorableEventHash(t *testing.T) {
 	}
 
 	// With requireRestorableEventHash = true, inspection must fail
-	_, err = service.archive.inspectSegment(segment, sha256.New(), true)
+	_, err = service.archive.inspectSegment(context.Background(), segment, sha256.New(), true)
 	if err == nil {
 		t.Fatal("inspectSegment with requireRestorableEventHash=true succeeded, want error")
 	}
