@@ -40,6 +40,18 @@ func TestPersistedCPAConnectionRevisionLifecycle(t *testing.T) {
 	if err := r.SaveManagerConfigAndSetup(ctx, cfg, setup); err != nil { t.Fatal(err) }
 	second := load()
 	if second == first { t.Fatalf("same-URL key rotation retained revision") }
+	// Key bytes (including surrounding spaces) must not be normalized away
+	// when deciding whether an old private revision can be reused.
+	setup.ManagementKey = " secret-two "
+	cfg.CPAConnection.ManagementKey = setup.ManagementKey
+	if err := r.SaveManagerConfigAndSetup(ctx, cfg, setup); err != nil { t.Fatal(err) }
+	spaced := load()
+	if spaced == second { t.Fatalf("different key bytes reused the old revision") }
+	setup.ManagementKey = "secret-two"
+	cfg.CPAConnection.ManagementKey = setup.ManagementKey
+	if err := r.SaveManagerConfigAndSetup(ctx, cfg, setup); err != nil { t.Fatal(err) }
+	second = load()
+	if second == spaced { t.Fatalf("key bytes restored without changing revision") }
 	reopened := New(db)
 	if v, found, err := reopened.LoadPersistedCPAConnectionRevision(ctx); err != nil || !found || v != second {
 		t.Fatalf("repository restart: revision=%q found=%v err=%v", v, found, err)

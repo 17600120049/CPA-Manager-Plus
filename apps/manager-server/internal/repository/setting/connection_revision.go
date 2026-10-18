@@ -81,10 +81,10 @@ func (r *repository) readConnectionSnapshot(ctx context.Context, db connectionSn
 		return snapshot, nil
 	}
 	base := strings.TrimSpace(cfg.CPAConnection.CPABaseURL)
-	key := strings.TrimSpace(cfg.CPAConnection.ManagementKey)
-	if base == "" || key == "" ||
+	key := cfg.CPAConnection.ManagementKey
+	if base == "" || strings.TrimSpace(key) == "" ||
 		base != strings.TrimSpace(setup.CPAUpstreamURL) ||
-		key != strings.TrimSpace(setup.ManagementKey) {
+		key != setup.ManagementKey {
 		return snapshot, nil
 	}
 	snapshot.valid = true
@@ -118,6 +118,12 @@ func (r *repository) saveWithConnectionRevision(
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Claim the SQLite writer before reading the previous authority. A deferred
+	// read transaction can otherwise conflict with another connection writer
+	// when both readers later try to upgrade to a writer.
+	if _, err := tx.ExecContext(ctx, "update settings set value = value where key = ?", managerConfigKey); err != nil {
+		return err
+	}
 	before, err := r.readConnectionSnapshot(ctx, tx)
 	if err != nil {
 		return err
