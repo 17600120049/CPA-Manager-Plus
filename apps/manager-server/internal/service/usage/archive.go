@@ -1199,7 +1199,7 @@ func (m *archiveManager) buildManifest(ctx context.Context, run store.UsageArchi
 		if segment.Sequence != index+1 || (index > 0 && segment.FirstEventID <= previousLastEventID) {
 			return ArchiveManifest{}, fmt.Errorf("%w: archive segment ordering is invalid at sequence %d", ErrArchiveCoverageIncomplete, segment.Sequence)
 		}
-		inspection, err := m.inspectSegment(segment, overallDigest, false)
+		inspection, err := m.inspectSegment(ctx, segment, overallDigest, false)
 		if err != nil {
 			return ArchiveManifest{}, err
 		}
@@ -1382,10 +1382,20 @@ func (m *archiveManager) verifyManifest(ctx context.Context, run store.UsageArch
 	return m.verifyManifestFiles(ctx, run, segments, true, progress...)
 }
 
-func (m *archiveManager) verifyManifestFiles(ctx context.Context, run store.UsageArchiveRun, segments []store.UsageArchiveSegment, notify bool, progress ...archiveSegmentProgressFunc) error {
-	if len(segments) == 0 {
-		return fmt.Errorf("%w: archive has no segments", ErrArchiveCoverageIncomplete)
+// ValidatePublishedArchiveFiles reads published evidence without a Store, worker,
+// lifecycle transition or filesystem writes. The caller owns lifecycle admission;
+// a valid payload establishes neither source provenance nor historical coverage.
+func ValidatePublishedArchiveFiles(ctx context.Context, directory string, run usagearchive.Run, segments []usagearchive.Segment) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
+	// Deliberately bypass the active manager constructor and service/job setup.
+	// Only the maintained file reader is used; no writable dependency is supplied.
+	reader := archiveManager{config: ArchiveConfig{Directory: directory}}
+	return reader.verifyManifestFiles(ctx, run, segments, false)
+}
+
+func (m *archiveManager) verifyManifestFiles(ctx context.Context, run store.UsageArchiveRun, segments []store.UsageArchiveSegment, notify bool, progress ...archiveSegmentProgressFunc) error {
 	manifestPath, err := m.resolveArchivePath(run.ManifestFile)
 	if err != nil {
 		return err
@@ -1398,7 +1408,7 @@ func (m *archiveManager) verifyManifestFiles(ctx context.Context, run store.Usag
 	if info.Size() <= 0 || info.Size() > maxArchiveManifestBytes {
 		return fmt.Errorf("usage archive manifest size %d is invalid", info.Size())
 	}
-	payload, err := io.ReadAll(io.LimitReader(file, maxArchiveManifestBytes+1))
+	payload, err := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: file}, maxArchiveManifestBytes+1))
 	if err != nil {
 		return fmt.Errorf("read usage archive manifest: %w", err)
 	}
@@ -1427,26 +1437,38 @@ func (m *archiveManager) verifyManifestFiles(ctx context.Context, run store.Usag
 	}
 	if manifest.SchemaVersion != run.SchemaVersion || manifest.Format != run.Format || manifest.RunID != run.ID || manifest.Mode != run.Mode ||
 		manifest.CutoffTimestampMS != run.CutoffTimestampMS || manifest.TargetEventID != run.TargetEventID ||
-		manifest.FirstEventID != segments[0].FirstEventID || manifest.LastEventID != segments[len(segments)-1].LastEventID ||
 		manifest.EventCount != run.EventCount || manifest.UncompressedBytes != run.ArchivedUncompressedBytes ||
 		manifest.CompressedBytes != run.ArchivedCompressedBytes || manifest.EventHashDigest != run.ArchiveDigest ||
-		manifest.GeneratedAtMS != run.ArchivedAtMS || len(manifest.Segments) != len(segments) {
+		manifest.GeneratedAtMS != run.ArchivedAtMS {
 		return errors.New("usage archive manifest does not match run metadata")
+	}
+	if len(segments) == 0 {
+		// A cancelled snapshot may retain a manifest after segment rows have
+		// been abandoned. Decode the present manifest, but do not invent DB
+		// segment evidence or promote this snapshot to a complete publication.
+		if run.Status == usagearchive.StatusCancelled {
+			return nil
+		}
+		return fmt.Errorf("%w: archive has no segments", ErrArchiveCoverageIncomplete)
+	}
+	if manifest.FirstEventID != segments[0].FirstEventID || manifest.LastEventID != segments[len(segments)-1].LastEventID || len(manifest.Segments) != len(segments) {
+		return errors.New("usage archive manifest does not match segment metadata")
 	}
 	overallDigest := sha256.New()
 	var previousLastEventID int64
 	var minTimestampMS, maxTimestampMS int64
+	var eventCount, uncompressedBytes, compressedBytes int64
 	for index, segment := range segments {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if segment.Sequence != index+1 || (index > 0 && segment.FirstEventID <= previousLastEventID) {
+		if segment.RunID != run.ID || segment.Sequence != index+1 || (index > 0 && segment.FirstEventID <= previousLastEventID) {
 			return fmt.Errorf("usage archive segment ordering is invalid at sequence %d", segment.Sequence)
 		}
 		if manifest.Segments[index] != manifestSegment(segment) {
 			return fmt.Errorf("usage archive manifest segment %d does not match repository metadata", segment.Sequence)
 		}
-		inspection, err := m.inspectSegment(segment, overallDigest, true)
+		inspection, err := m.inspectSegment(ctx, segment, overallDigest, true)
 		if err != nil {
 			return err
 		}
@@ -1460,6 +1482,9 @@ func (m *archiveManager) verifyManifestFiles(ctx context.Context, run store.Usag
 		minTimestampMS = min(minTimestampMS, inspection.MinTimestampMS)
 		maxTimestampMS = max(maxTimestampMS, inspection.MaxTimestampMS)
 		previousLastEventID = segment.LastEventID
+		eventCount += inspection.EventCount
+		uncompressedBytes += inspection.UncompressedBytes
+		compressedBytes += inspection.CompressedBytes
 		if len(progress) > 0 && progress[0] != nil {
 			progress[0](int64(index+1), int64(len(segments)))
 		}
@@ -1468,6 +1493,10 @@ func (m *archiveManager) verifyManifestFiles(ctx context.Context, run store.Usag
 				return err
 			}
 		}
+	}
+	if manifest.EventCount != eventCount || run.ArchivedEventCount != eventCount || run.LastArchivedEventID != previousLastEventID ||
+		manifest.UncompressedBytes != uncompressedBytes || manifest.CompressedBytes != compressedBytes {
+		return errors.New("usage archive manifest totals do not match segments")
 	}
 	if manifest.MinTimestampMS != minTimestampMS || manifest.MaxTimestampMS != maxTimestampMS {
 		return errors.New("usage archive manifest time range does not match segments")
@@ -1478,7 +1507,7 @@ func (m *archiveManager) verifyManifestFiles(ctx context.Context, run store.Usag
 	return nil
 }
 
-func (m *archiveManager) inspectSegment(segment store.UsageArchiveSegment, overallDigest hash.Hash, requireRestorableEventHash bool) (archiveFileInspection, error) {
+func (m *archiveManager) inspectSegment(ctx context.Context, segment store.UsageArchiveSegment, overallDigest hash.Hash, requireRestorableEventHash bool) (archiveFileInspection, error) {
 	path, err := m.resolveArchivePath(segment.FileName)
 	if err != nil {
 		return archiveFileInspection{}, err
@@ -1492,7 +1521,7 @@ func (m *archiveManager) inspectSegment(segment store.UsageArchiveSegment, overa
 	if err := m.callTestHook("archive_segment_content_inspection_started"); err != nil {
 		return archiveFileInspection{}, err
 	}
-	copied, copyErr := io.Copy(contentDigest, file)
+	copied, copyErr := io.Copy(contentDigest, &contextReader{ctx: ctx, reader: file})
 	if copyErr != nil {
 		return archiveFileInspection{}, copyErr
 	}
@@ -1502,7 +1531,7 @@ func (m *archiveManager) inspectSegment(segment store.UsageArchiveSegment, overa
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return archiveFileInspection{}, err
 	}
-	zipper, err := gzip.NewReader(file)
+	zipper, err := gzip.NewReader(&contextReader{ctx: ctx, reader: file})
 	if err != nil {
 		return archiveFileInspection{}, fmt.Errorf("open usage archive segment %d: %w", segment.Sequence, err)
 	}
@@ -1515,6 +1544,9 @@ func (m *archiveManager) inspectSegment(segment store.UsageArchiveSegment, overa
 		ContentSHA256:   hex.EncodeToString(contentDigest.Sum(nil)),
 	}
 	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return archiveFileInspection{}, err
+		}
 		payload := scanner.Bytes()
 		if len(payload) == 0 {
 			return archiveFileInspection{}, fmt.Errorf("usage archive segment %d contains an empty record", segment.Sequence)

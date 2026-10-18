@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -324,6 +325,16 @@ func TestUpgradeArchiveAndRawDeletedEvidenceRemainBounded(t *testing.T) {
 				}
 			}
 			if err := os.CopyFS(paths.Archives, os.DirFS(filepath.Join(root, "usage-archives"))); err != nil {
+				t.Fatal(err)
+			}
+			// Git/CopyFS does not preserve the production archive's private mode.
+			// Restore it only on this test-owned copy, never the fixed evidence.
+			if err := filepath.WalkDir(paths.Archives, func(path string, entry fs.DirEntry, err error) error {
+				if err != nil || entry.IsDir() {
+					return err
+				}
+				return os.Chmod(path, 0600)
+			}); err != nil {
 				t.Fatal(err)
 			}
 			credential, err := security.NewAdminCredential(upgradeTestKey, "test")
