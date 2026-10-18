@@ -257,7 +257,7 @@ func runServerWithOptions(options legacypreflight.Options) {
 	}
 	defer func() {
 		if err := databaseLock.Close(); err != nil {
-			log.Printf("close manager database process lock: %v", err)
+			log.Print("close manager database process lock failed")
 		}
 	}()
 	// Admission permits writes, not a Bootstrap Completed transition. Revoke
@@ -303,7 +303,7 @@ func runServerWithOptions(options legacypreflight.Options) {
 		// waiting so host-side maintenance is not blocked by diagnostics. Keep
 		// the invalidated discovery unavailable and never assemble the app graph.
 		if err := databaseLock.Close(); err != nil {
-			log.Printf("close failed startup admission: %v", err)
+			log.Print("failed to close startup database admission")
 		}
 		log.Print("Manager store could not be opened; keeping safe not-ready diagnostics available")
 		waitForReadOnlyStartup(ctx, server, serverResult)
