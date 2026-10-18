@@ -29,9 +29,10 @@ func (s persistedConnectionSnapshot) sameConnection(other persistedConnectionSna
 	return s.valid && other.valid && s.baseURL == other.baseURL && s.key == other.key
 }
 
-// LoadPersistedCPAConnectionRevision intentionally does not accept env-owned
-// connections as qualified. A future consumer MUST resolve effective ownership
-// separately; this method describes the persisted DB pair only.
+// LoadPersistedCPAConnectionRevision reports only the persisted DB pair. It has
+// no visibility into environment overrides or restoration continuity; found is
+// not effective-source qualification. A future consumer MUST resolve these
+// separately before using the revision for authorization.
 func (r *repository) LoadPersistedCPAConnectionRevision(ctx context.Context) (string, bool, error) {
 	// Read the manager row, legacy setup and revision in one DB snapshot.
 	// Separate autocommit reads could combine different committed epochs.

@@ -22,6 +22,7 @@ func TestSetupRecoversAuthoritylessPartialHistoricalConnections(t *testing.T) {
 		managerConfig *store.ManagerConfig
 		setup         *store.Setup
 	}{
+		{name: "fresh install"},
 		{
 			name:  "setup key only",
 			setup: &store.Setup{ManagementKey: "stale-key"},
@@ -43,6 +44,9 @@ func TestSetupRecoversAuthoritylessPartialHistoricalConnections(t *testing.T) {
 			cpa := testutil.NewCPAMock(t)
 			cpa.ManagementKey = "new-management-key"
 			service, st, _ := newSetupService(t, tt.managerConfig, tt.setup)
+			if _, found, err := st.Settings.LoadPersistedCPAConnectionRevision(t.Context()); err != nil || found {
+				t.Fatalf("historical/fresh revision found=%v err=%v", found, err)
+			}
 
 			result, err := service.Setup(context.Background(), Request{
 				CPAUpstreamURL:               cpa.URL(),
@@ -55,6 +59,9 @@ func TestSetupRecoversAuthoritylessPartialHistoricalConnections(t *testing.T) {
 			}
 			if !result.OK || result.Upstream != cpa.URL() {
 				t.Fatalf("setup result = %#v", result)
+			}
+			if rev, found, err := st.Settings.LoadPersistedCPAConnectionRevision(t.Context()); err != nil || !found || len(rev) != 32 {
+				t.Fatalf("accepted setup revision found=%v err=%v", found, err)
 			}
 
 			managerCfg, ok, err := st.LoadManagerConfig(context.Background())
@@ -130,6 +137,9 @@ func TestSetupKeepsCompleteConnectionRotationRules(t *testing.T) {
 	cpa := testutil.NewCPAMock(t)
 	cpa.ManagementKey = "old-management-key"
 	service, st, _ := newSetupService(t, nil, nil)
+	if _, found, err := st.Settings.LoadPersistedCPAConnectionRevision(t.Context()); err != nil || found {
+		t.Fatalf("fresh setup revision found=%v err=%v", found, err)
+	}
 	if err := st.SaveManagerConfigAndSetup(context.Background(), store.ManagerConfig{
 		CPAConnection: store.ManagerCPAConnectionConfig{
 			CPABaseURL:    cpa.URL(),
@@ -141,6 +151,10 @@ func TestSetupKeepsCompleteConnectionRotationRules(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("save complete connection: %v", err)
 	}
+	before, found, err := st.Settings.LoadPersistedCPAConnectionRevision(t.Context())
+	if err != nil || !found {
+		t.Fatalf("initial revision found=%v err=%v", found, err)
+	}
 
 	cpa.ManagementKey = "rotated-management-key"
 	if _, err := service.Setup(context.Background(), Request{
@@ -150,6 +164,10 @@ func TestSetupKeepsCompleteConnectionRotationRules(t *testing.T) {
 		EnsureUsageStatisticsEnabled: boolPtr(false),
 	}, ""); err != nil {
 		t.Fatalf("valid same-URL key rotation rejected: %v", err)
+	}
+	after, found, err := st.Settings.LoadPersistedCPAConnectionRevision(t.Context())
+	if err != nil || !found || after == before {
+		t.Fatalf("setup key rotation revision found=%v rotated=%v err=%v", found, after != before, err)
 	}
 
 	if _, err := service.Setup(context.Background(), Request{
