@@ -33,7 +33,14 @@ func (s persistedConnectionSnapshot) sameConnection(other persistedConnectionSna
 // connections as qualified. A future consumer MUST resolve effective ownership
 // separately; this method describes the persisted DB pair only.
 func (r *repository) LoadPersistedCPAConnectionRevision(ctx context.Context) (string, bool, error) {
-	snapshot, err := r.readConnectionSnapshot(ctx, r.db)
+	// Read the manager row, legacy setup and revision in one DB snapshot.
+	// Separate autocommit reads could combine different committed epochs.
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return "", false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	snapshot, err := r.readConnectionSnapshot(ctx, tx)
 	if err != nil {
 		return "", false, err
 	}
