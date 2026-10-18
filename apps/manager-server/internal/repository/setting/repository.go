@@ -25,6 +25,9 @@ type Repository interface {
 	SaveManagerConfigAndSetup(ctx context.Context, cfg model.ManagerConfig, setup model.Setup) error
 	NormalizeLegacyConnectionStorage(ctx context.Context, cfg model.ManagerConfig, managerPresent bool, setup model.Setup, setupPresent bool) error
 	LoadManagerConfig(ctx context.Context) (model.ManagerConfig, bool, error)
+	// LoadPersistedCPAConnectionRevision reports only the persisted DB-owned
+	// revision; effective env ownership and CPA instance identity remain separate.
+	LoadPersistedCPAConnectionRevision(ctx context.Context) (string, bool, error)
 	SetEmbeddedRuntimeDesiredLifecycle(ctx context.Context, desired model.EmbeddedRuntimeDesiredLifecycle) (model.EmbeddedRuntimeDesiredState, error)
 	LoadEmbeddedRuntimeDesiredState(ctx context.Context) (model.EmbeddedRuntimeDesiredState, bool, error)
 	SaveAutomationSettings(ctx context.Context, settings model.AutomationSettings) (model.AutomationSettings, error)
@@ -56,15 +59,9 @@ func (r *repository) SaveSetup(ctx context.Context, setup model.Setup) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(
-		ctx,
-		`insert into settings(key, value, updated_at_ms)
-		 values('setup', ?, ?)
-		 on conflict(key) do update set value = excluded.value, updated_at_ms = excluded.updated_at_ms`,
-		string(data),
-		time.Now().UnixMilli(),
-	)
-	return err
+	return r.saveWithConnectionRevision(ctx, false, func(tx *sql.Tx) error {
+		return upsertSetting(ctx, tx, "setup", data, time.Now().UnixMilli())
+	})
 }
 
 func (r *repository) SaveManagerConfigAndSetup(ctx context.Context, cfg model.ManagerConfig, setup model.Setup) error {
@@ -78,23 +75,12 @@ func (r *repository) SaveManagerConfigAndSetup(ctx context.Context, cfg model.Ma
 		return err
 	}
 
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	updatedAtMS := cfg.UpdatedAtMS
-	if updatedAtMS == 0 {
-		updatedAtMS = time.Now().UnixMilli()
-	}
-	if err := upsertSetting(ctx, tx, managerConfigKey, cfgData, updatedAtMS); err != nil {
-		return err
-	}
-	if err := upsertSetting(ctx, tx, "setup", setupData, time.Now().UnixMilli()); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return r.saveWithConnectionRevision(ctx, true, func(tx *sql.Tx) error {
+		if err := upsertSetting(ctx, tx, managerConfigKey, cfgData, cfg.UpdatedAtMS); err != nil {
+			return err
+		}
+		return upsertSetting(ctx, tx, "setup", setupData, time.Now().UnixMilli())
+	})
 }
 
 // NormalizeLegacyConnectionStorage is migration-only persistence. Unlike the
@@ -138,22 +124,18 @@ func (r *repository) NormalizeLegacyConnectionStorage(
 		}
 	}
 
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if managerPresent {
-		if err := upsertSetting(ctx, tx, managerConfigKey, managerData, managerUpdatedAtMS); err != nil {
-			return err
+	// Legacy normalization must not mint a fresh trusted revision for history.
+	return r.saveWithConnectionRevision(ctx, false, func(tx *sql.Tx) error {
+		if managerPresent {
+			if err := upsertSetting(ctx, tx, managerConfigKey, managerData, managerUpdatedAtMS); err != nil {
+				return err
+			}
 		}
-	}
-	if setupPresent {
-		if err := upsertSetting(ctx, tx, "setup", setupData, time.Now().UnixMilli()); err != nil {
-			return err
+		if setupPresent {
+			return upsertSetting(ctx, tx, "setup", setupData, time.Now().UnixMilli())
 		}
-	}
-	return tx.Commit()
+		return nil
+	})
 }
 
 func (r *repository) LoadSetup(ctx context.Context) (model.Setup, bool, error) {
@@ -182,7 +164,9 @@ func (r *repository) SaveManagerConfig(ctx context.Context, cfg model.ManagerCon
 	if err != nil {
 		return err
 	}
-	return upsertSetting(ctx, r.db, managerConfigKey, data, cfg.UpdatedAtMS)
+	return r.saveWithConnectionRevision(ctx, true, func(tx *sql.Tx) error {
+		return upsertSetting(ctx, tx, managerConfigKey, data, cfg.UpdatedAtMS)
+	})
 }
 
 type settingWriter interface {

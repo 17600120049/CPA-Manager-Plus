@@ -53,6 +53,9 @@ func TestRunStoresFreshConnectionEncryptedWithoutLeakingSecret(t *testing.T) {
 
 	requireRawSettingEncrypted(t, dbPath, "manager_config_v1")
 	requireRawSettingEncrypted(t, dbPath, "setup")
+	if revision := rawSettingValue(t, dbPath, "cpa_connection_revision_v1"); len(revision) != 32 {
+		t.Fatal("offline import did not commit an opaque revision")
+	}
 	cfg, setup := loadProtectedConnections(t, dbPath, dataKeyPath)
 	if cfg.CPAConnection.CPABaseURL != testCPABaseURL || cfg.CPAConnection.ManagementKey != testCPAManagementKey {
 		t.Fatalf("stored manager config = %#v", cfg.CPAConnection)
@@ -68,6 +71,7 @@ func TestRunIsIdempotentAndPreservesExistingManagerSettings(t *testing.T) {
 	dbPath := filepath.Join(dir, "usage.sqlite")
 	dataKeyPath := filepath.Join(dir, "data.key")
 	runStoreCommand(t, dbPath, dataKeyPath, testCPABaseURL, testCPAManagementKey)
+	beforeRevision := rawSettingValue(t, dbPath, "cpa_connection_revision_v1")
 
 	dataKey, _, err := security.LoadOrCreateDataKey("", dataKeyPath)
 	if err != nil {
@@ -97,6 +101,9 @@ func TestRunIsIdempotentAndPreservesExistingManagerSettings(t *testing.T) {
 	}
 
 	runStoreCommand(t, dbPath, dataKeyPath, testCPABaseURL+"/", testCPAManagementKey)
+	if after := rawSettingValue(t, dbPath, "cpa_connection_revision_v1"); after != beforeRevision {
+		t.Fatal("idempotent offline import after store restart rotated revision")
+	}
 	stored, _ := loadProtectedConnections(t, dbPath, dataKeyPath)
 	if stored.Collector.BatchSize != 321 || stored.Collector.QueryLimit != 65432 {
 		t.Fatalf("customized manager settings were overwritten: %#v", stored.Collector)
@@ -392,6 +399,7 @@ func TestRunRollsBackManagerConfigWhenLegacySetupWriteFails(t *testing.T) {
 	runStoreCommand(t, dbPath, dataKeyPath, testCPABaseURL, testCPAManagementKey)
 	beforeManagerConfig := rawSettingValue(t, dbPath, "manager_config_v1")
 	beforeSetup := rawSettingValue(t, dbPath, "setup")
+	beforeRevision := rawSettingValue(t, dbPath, "cpa_connection_revision_v1")
 	execSQLiteStatements(t, dbPath,
 		`create trigger block_setup_insert before insert on settings
 		 when new.key = 'setup' begin select raise(abort, 'setup write blocked'); end`,
@@ -415,6 +423,9 @@ func TestRunRollsBackManagerConfigWhenLegacySetupWriteFails(t *testing.T) {
 	}
 	if got := rawSettingValue(t, dbPath, "setup"); got != beforeSetup {
 		t.Fatal("setup changed despite transaction rollback")
+	}
+	if got := rawSettingValue(t, dbPath, "cpa_connection_revision_v1"); got != beforeRevision {
+		t.Fatal("revision changed despite offline import rollback")
 	}
 }
 
