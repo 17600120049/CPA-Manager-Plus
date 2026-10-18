@@ -2,6 +2,7 @@ package legacypreflight
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,7 +13,9 @@ import (
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/setting"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacyartifact"
 )
 
@@ -27,6 +30,7 @@ type Report struct {
 	BridgeReadiness        *BridgeReadiness        `json:"bridgeReadiness,omitempty"`
 	PlannedBridgeCandidate *PlannedBridgeCandidate `json:"plannedBridgeCandidate,omitempty"`
 	ForwardHopEvidence     *ForwardHopEvidence     `json:"forwardHopEvidence,omitempty"`
+	UpgradePreconditions   *UpgradePreconditions   `json:"upgradePreconditions,omitempty"`
 }
 
 type Options struct {
@@ -36,6 +40,7 @@ type Options struct {
 	FreshAdmission   bool
 	ValidatedHop     *legacyartifact.ValidatedHopEvidence
 	readOnlySnapshot bool
+	adminKey         string
 }
 
 type Admission struct {
@@ -154,11 +159,23 @@ func Inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options)
 // createdLock is only set for the fenced recheck after an initially admitted
 // source had no ownership marker. Diagnostic callers never ignore an old lock.
 func inspect(ctx context.Context, paths sqlite.InspectionPaths, options Options, lock *processlock.Lock, createdLock bool) (report Report, err error) {
-	observed, err := sqlite.InspectLegacySource(ctx, paths, sqlite.InspectionOptions{
+	inspectionOptions := sqlite.InspectionOptions{
 		SourceStopped:    options.SourceStopped,
 		ManagerLock:      lock,
 		ReadOnlySnapshot: options.readOnlySnapshot,
-	})
+	}
+	var observed sqlite.LegacyInspection
+	if options.adminKey != "" {
+		observed, err = sqlite.InspectLegacySourceForAdmin(ctx, paths, inspectionOptions, func(db *sql.DB) error {
+			credential, found, err := setting.New(db).LoadAdminCredential(ctx)
+			if err != nil || !found || !security.VerifyAdminKey(credential, options.adminKey) {
+				return sqlite.ErrLegacyAdminUnauthorized
+			}
+			return nil
+		})
+	} else {
+		observed, err = sqlite.InspectLegacySource(ctx, paths, inspectionOptions)
+	}
 	report = Report{SourceKind: "unknown", Observed: observed, Unknown: []string{
 		"exact-source-release", "compatibility-profile", "verified-backup", "full-database-integrity", "archive-content",
 	}, Blocked: append([]string{}, observed.Issues...)}

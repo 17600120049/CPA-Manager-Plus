@@ -99,6 +99,33 @@ var inspectionTableNames = []string{
 }
 
 func InspectLegacySource(ctx context.Context, paths InspectionPaths, options InspectionOptions) (result LegacyInspection, err error) {
+	return inspectLegacySource(ctx, paths, options, nil)
+}
+
+var ErrLegacyAdminUnauthorized = errors.New("existing Manager administrator key could not be verified; stopped-host recovery required if lost")
+
+// InspectLegacySourceForAdmin uses the same read-only/copy inspection path as
+// discovery, but verifies the existing credential before reading schema/history.
+// No writable Store, credential initialization or Session fallback is involved.
+func InspectLegacySourceForAdmin(ctx context.Context, paths InspectionPaths, options InspectionOptions, verifyAdmin func(*sql.DB) error) (LegacyInspection, error) {
+	if verifyAdmin == nil {
+		return LegacyInspection{}, ErrLegacyAdminUnauthorized
+	}
+	authorized := false
+	result, err := inspectLegacySource(ctx, paths, options, func(db *sql.DB) error {
+		if err := verifyAdmin(db); err != nil {
+			return err
+		}
+		authorized = true
+		return nil
+	})
+	if !authorized {
+		return LegacyInspection{}, errors.Join(ErrLegacyAdminUnauthorized, err)
+	}
+	return result, err
+}
+
+func inspectLegacySource(ctx context.Context, paths InspectionPaths, options InspectionOptions, authorize func(*sql.DB) error) (result LegacyInspection, err error) {
 	result = LegacyInspection{SQLite: "not-inspected", Consistency: "unknown", History: map[string]string{
 		"rawDeleted": "not-inspected", "archives": "not-inspected",
 		"migrations": "not-inspected", "maintenance": "not-inspected",
@@ -226,6 +253,11 @@ func InspectLegacySource(ctx context.Context, paths InspectionPaths, options Ins
 		}
 	}()
 	var reader inspectionQueryer = db
+	if authorize != nil {
+		if err := authorize(db); err != nil {
+			return LegacyInspection{}, err
+		}
+	}
 	var readTx *sql.Tx
 	if readOnlySnapshot {
 		// The connection is already mode=ro + query_only; a plain transaction
