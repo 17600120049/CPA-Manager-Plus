@@ -2,6 +2,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOOTSTRAP_UI, createBootstrapTransport } from './bootstrapTransport';
 import { FreshBootstrapPage } from './FreshBootstrapPage';
+import { fullWebText } from '../i18n/fullweb';
 
 const identity = {
   admissionId: 'admission-01',
@@ -480,6 +481,12 @@ describe('FreshBootstrapPage product preview workflow', () => {
       findByTestId(renderer.root, 'routing-form').props.onSubmit({ preventDefault: vi.fn() })
     );
     expect(findByTestId(renderer.root, 'continue-console').props.href).toBe('/console');
+    expect(findByTestId(renderer.root, 'op-routing-status').children.join('')).toBe(
+      fullWebText('routeVerifiedState')
+    );
+    expect(findByTestId(renderer.root, 'op-routing-status').children.join('')).not.toContain(
+      '未切换'
+    );
     expect(findByTestId(renderer.root, 'console-path').props.disabled).toBe(true);
     await expect(transport.fetchOperation()).rejects.toMatchObject({ kind: 'authority' });
   });

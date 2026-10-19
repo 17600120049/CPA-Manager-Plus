@@ -1,5 +1,7 @@
 {
   "fullweb": {
+    "lastRead": "上次同步",
+    "routeVerifiedState": "已核验 · 控制台可登录",
     "routeTitle": "启用控制台路由",
     "pathLabel": "控制台路径",
     "pathHelp": "使用 canonical 路径，例如 /console。准备后目标将锁定；失败可沿用原操作重试。",

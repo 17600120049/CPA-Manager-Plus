@@ -585,7 +585,9 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       ? 'Step 3 · 管理员初始化已完成'
                       : 'Step 2 · Fresh New 管理员密钥初始化'}
                   </span>
-                  <span className="badge badge-neutral">Revision #{operation.revision}</span>
+                  <span className="badge badge-neutral">
+                    {t('lastRead')} · Revision #{operation.revision}
+                  </span>
                 </div>
                 <h1 className="wizard-title">
                   {isAdminDone
@@ -674,9 +676,11 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                   <div className="info-row">
                     <span className="info-key">正式路由切流状态</span>
                     <span className="info-val" data-testid="op-routing-status">
-                      {operation.routing.committed
-                        ? `Committed (${operation.routing.target || 'console'})`
-                        : '未切换 · 当前位于独立受控 Bootstrap 入口'}
+                      {verifiedRoute
+                        ? t('routeVerifiedState')
+                        : operation.routing.committed
+                          ? `Committed (${operation.routing.target || 'console'})`
+                          : '未切换 · 当前位于独立受控 Bootstrap 入口'}
                     </span>
                   </div>
                 </div>
@@ -860,16 +864,18 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       <label className="form-label" htmlFor="console-path">
                         {t('pathLabel')}
                       </label>
-                      <input
-                        id="console-path"
-                        className="form-input"
-                        data-testid="console-path"
-                        value={preparedTarget || routeTarget}
-                        onChange={(event) => setRouteTarget(event.target.value)}
-                        disabled={!!preparedTarget || routingBusy || !!verifiedRoute}
-                        autoComplete="off"
-                        spellCheck={false}
-                      />
+                      <div className="input-wrap">
+                        <input
+                          id="console-path"
+                          className="form-input"
+                          data-testid="console-path"
+                          value={preparedTarget || routeTarget}
+                          onChange={(event) => setRouteTarget(event.target.value)}
+                          disabled={!!preparedTarget || routingBusy || !!verifiedRoute}
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                      </div>
                       <p className="form-hint">{t('pathHelp')}</p>
                       {routingError && (
                         <p role="alert" className="alert alert-warn">
@@ -904,7 +910,9 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       style={{ marginTop: 18, padding: '16px 0 0' }}
                     >
                       <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                        可通过受控会话令牌随时核验服务端实时 Operation 状态
+                        {verifiedRoute
+                          ? t('loginHelp')
+                          : '可通过受控会话令牌随时核验服务端实时 Operation 状态'}
                       </span>
                       <button
                         type="button"

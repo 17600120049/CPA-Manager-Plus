@@ -32,7 +32,9 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal('window', { location: new URL('https://manager.example/console') });
-    vi.stubGlobal('document', { documentElement: { classList: { toggle: vi.fn<typeof fetch>() } } });
+    vi.stubGlobal('document', {
+      documentElement: { classList: { toggle: vi.fn<typeof fetch>() } },
+    });
     vi.stubGlobal('localStorage', {
       setItem: vi.fn(() => {
         throw new Error('persistence forbidden');
@@ -75,6 +77,8 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       .mockResolvedValueOnce(Response.json({ ...operation, revision: 7 }));
     await mount(fetchMock);
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(document.title).toContain('CPAMP');
+    expect(input().parent?.props.className).toBe('input-wrap');
     await login();
     expect(view()).toContain(operation.identity.operationId);
     expect(view()).toContain('Pending');
@@ -106,7 +110,9 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
   it.each([401, 403, 503, 409])(
     'does not display operation for failed login (%s), or reflect server errors',
     async (status) => {
-      await mount(vi.fn<typeof fetch>().mockResolvedValue(new Response('secret server details', { status })));
+      await mount(
+        vi.fn<typeof fetch>().mockResolvedValue(new Response('secret server details', { status }))
+      );
       await login();
       expect(renderer.root.findAllByProps({ 'data-testid': 'console-operation' })).toHaveLength(0);
       expect(input().props.value).toBe('');
@@ -150,7 +156,10 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       resolve = done;
     });
     await mount(
-      vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(operation)).mockReturnValueOnce(pending)
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(operation))
+        .mockReturnValueOnce(pending)
     );
     await login();
     await act(async () => buttons()[1].props.onClick());

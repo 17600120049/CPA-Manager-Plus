@@ -18,6 +18,9 @@ export function FreshConsolePage({
   const [error, setError] = useState('');
   const [light, setLight] = useState(false);
   const requestId = useRef(0);
+  useEffect(() => {
+    document.title = t('consoleTitle');
+  }, []);
   useEffect(
     () => () => {
       requestId.current++;
@@ -113,18 +116,20 @@ export function FreshConsolePage({
                   <label className="form-label" htmlFor="console-admin-key">
                     {t('keyLabel')}
                   </label>
-                  <input
-                    id="console-admin-key"
-                    className="form-input"
-                    type="password"
-                    value={key}
-                    onChange={(event) => setKey(event.target.value)}
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    disabled={busy}
-                  />
+                  <div className="input-wrap">
+                    <input
+                      id="console-admin-key"
+                      className="form-input"
+                      type="password"
+                      value={key}
+                      onChange={(event) => setKey(event.target.value)}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      disabled={busy}
+                    />
+                  </div>
                   <p>{t('loginHelp')}</p>
                   <button className="btn btn-primary" type="submit" disabled={busy || !key}>
                     {busy ? t('loggingIn') : t('login')}

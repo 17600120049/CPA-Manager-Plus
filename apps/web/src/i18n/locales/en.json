@@ -1,5 +1,7 @@
 {
   "fullweb": {
+    "lastRead": "Last read",
+    "routeVerifiedState": "Verified · console ready for login",
     "routeTitle": "Enable console routing",
     "pathLabel": "Console path",
     "pathHelp": "Use a canonical path such as /console. Prepare locks the target; retries continue the same operation.",
