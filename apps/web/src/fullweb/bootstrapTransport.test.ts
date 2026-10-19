@@ -188,3 +188,126 @@ describe('bounded Bootstrap handoff and transport', () => {
   });
 });
 
+describe('Fresh routing prepare, cutover and lost-response recovery', () => {
+  const prepared = {
+    ...operation,
+    adminInitialized: true,
+    revision: 3,
+    routing: {
+      target: '/console',
+      operationId: identity.operationId,
+      revision: 1,
+      stage: 'intent_persisted',
+      committed: false,
+    },
+  };
+  const committed = {
+    ...prepared,
+    revision: 6,
+    routing: { ...prepared.routing, stage: 'committed', committed: true },
+  };
+  const state = {
+    installationId: identity.installationId,
+    generation: identity.generation,
+    operationId: identity.operationId,
+    target: '/console',
+    revision: 1,
+    committed: true,
+  };
+  const reply = (value: unknown) =>
+    Response.json(value, { headers: { 'X-CPAMP-Route-Owner': 'manager' } });
+  beforeEach(() =>
+    vi.stubGlobal('window', { location: new URL('https://manager.example' + BOOTSTRAP_UI) })
+  );
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function preparedClient(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
+    fetchMock.mockResolvedValueOnce(reply(prepared));
+    const client = createBootstrapTransport(fetchMock);
+    await client.start({ ...handoff, resume: true });
+    return client;
+  }
+
+  it('prepares with the original identity and activates only with a matching committed public identity', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(reply({ ...prepared, routing: { committed: false } }))
+      .mockResolvedValueOnce(reply(prepared))
+      .mockResolvedValueOnce(reply(committed))
+      .mockResolvedValueOnce(reply(state));
+    const client = createBootstrapTransport(fetchMock);
+    await client.start({ ...handoff, resume: true });
+    await client.prepareRouting('/console');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ identity, target: '/console' });
+    expect(await client.activateRouting()).toBe('/console');
+    expect(fetchMock.mock.calls[3]).toEqual([
+      'https://manager.example/console/api/v2/bootstrap/identity',
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        mode: 'same-origin',
+        credentials: 'omit',
+        redirect: 'error',
+        cache: 'no-store',
+      },
+    ]);
+  });
+
+  it.each([404, 503, 'network', 'body'])(
+    'recovers activation response loss (%s) through the same canonical checkpoint',
+    async (failure) => {
+      const fetchMock = vi.fn<typeof fetch>();
+      const client = await preparedClient(fetchMock);
+      if (failure === 'network') fetchMock.mockRejectedValueOnce(new Error('not reflected'));
+      else if (failure === 'body') fetchMock.mockResolvedValueOnce(new Response('{'));
+      else fetchMock.mockResolvedValueOnce(new Response('', { status: Number(failure) }));
+      fetchMock.mockResolvedValueOnce(reply(state));
+      expect(await client.activateRouting()).toBe('/console');
+      expect(fetchMock.mock.calls[2][1]?.headers).not.toHaveProperty('Authorization');
+    }
+  );
+
+  it.each([401, 409])(
+    'does not bypass a rejected or conflicting activation (%s)',
+    async (status) => {
+      const fetchMock = vi.fn<typeof fetch>();
+      const client = await preparedClient(fetchMock);
+      fetchMock.mockResolvedValueOnce(new Response('', { status }));
+      await expect(client.activateRouting()).rejects.toMatchObject({ status });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it.each([
+    { committed: false },
+    { generation: 'foreign' },
+    { target: '/other' },
+    { revision: 2 },
+    { operationId: 'foreign' },
+  ])('refuses incomplete or foreign recovered state %j', async (change) => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const client = await preparedClient(fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(reply({ ...state, ...change }));
+    await expect(client.activateRouting()).rejects.toBeInstanceOf(BootstrapTransportError);
+  });
+
+  it.each([
+    '/v1',
+    '/console/',
+    '/a/../console',
+    '//other',
+    '/console%2fpath',
+    '/console?query',
+    '/other',
+  ])(
+    'rejects a noncanonical or replacement target before sending any credential (%s)',
+    async (target) => {
+      const fetchMock = vi.fn<typeof fetch>();
+      const client = await preparedClient(fetchMock);
+      await expect(client.prepareRouting(target)).rejects.toMatchObject({ kind: 'bad_request' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
+});

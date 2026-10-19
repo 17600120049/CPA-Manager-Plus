@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { fullWebText as t } from '../i18n/fullweb';
+import { validControlBasePath } from './routingContext';
 import {
   BootstrapTransportClient,
   BootstrapTransportError,
@@ -111,9 +113,64 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   const [refreshing, setRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
   const [commitCompletedInSession, setCommitCompletedInSession] = useState(false);
+  const [routeTarget, setRouteTarget] = useState('/console');
+  const [attemptedTarget, setAttemptedTarget] = useState('');
+  const [routingBusy, setRoutingBusy] = useState(false);
+  const [verifiedRoute, setVerifiedRoute] = useState('');
+  const [routingError, setRoutingError] = useState('');
 
   const keyInputRef = useRef<HTMLInputElement | null>(null);
   const startedRef = useRef(false);
+
+  const preparedTarget = operation?.routing.target || attemptedTarget;
+
+  async function handleEnableConsole(event: React.FormEvent) {
+    event.preventDefault();
+    if (routingBusy || refreshing || !operation?.adminInitialized) return;
+    const target = preparedTarget || routeTarget;
+    if (!validControlBasePath(target)) {
+      setRoutingError(t('invalidPath'));
+      return;
+    }
+    setRoutingBusy(true);
+    setRoutingError('');
+    setAttemptedTarget(target);
+    try {
+      // Always reconcile the original intent; never create a new route owner.
+      if (!operation.routing.target) {
+        const next = await transport.prepareRouting(target);
+        setOperation(next);
+      }
+      setVerifiedRoute(await transport.activateRouting());
+      transport.clear();
+    } catch (err) {
+      const kind = err instanceof BootstrapTransportError ? err.kind : 'unknown';
+      setRoutingError(
+        t(
+          kind === 'conflict'
+            ? 'routeConflict'
+            : kind === 'unavailable'
+              ? 'routeUnavailable'
+              : kind === 'rejected' || kind === 'authority'
+                ? 'routeRejected'
+                : kind === 'mismatch'
+                  ? 'routeMismatch'
+                  : 'routeFailure'
+        )
+      );
+      // Prepare may have persisted before the connection was lost. Failure to
+      // read it keeps the attempted target locked rather than inventing state.
+      try {
+        const current = await transport.fetchOperation();
+        setOperation(current);
+        if (!current.routing.target) setAttemptedTarget('');
+      } catch {
+        /* Retry stays on the original intent. */
+      }
+    } finally {
+      setRoutingBusy(false);
+    }
+  }
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', lightTheme);
@@ -209,7 +266,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   }
 
   async function handleRefreshOperation() {
-    if (refreshing || submitting || generating) return;
+    if (refreshing || submitting || generating || routingBusy || verifiedRoute) return;
     setRefreshing(true);
     setFeedback(null);
     try {
@@ -427,7 +484,9 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                   <div className="info-row">
                     <span className="info-key">授权模式</span>
                     <span className="info-val">
-                      {handoff?.resume ? 'Resume Session (GET operation)' : 'Claim Exchange (POST claim/exchange)'}
+                      {handoff?.resume
+                        ? 'Resume Session (GET operation)'
+                        : 'Claim Exchange (POST claim/exchange)'}
                     </span>
                   </div>
                   {handoff && (
@@ -457,14 +516,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 </div>
                 <h1 className="wizard-title">无法建立 Fresh Bootstrap 受控会话</h1>
                 <p className="wizard-desc">
-                  客户端已完成地址栏敏感片段清理，但与 Manager Bootstrap 后端交换或恢复授权时未通过验证。
+                  客户端已完成地址栏敏感片段清理，但与 Manager Bootstrap
+                  后端交换或恢复授权时未通过验证。
                 </p>
               </div>
               <div className="wizard-card-body">
                 <div
-                  className={`alert ${
-                    initError.tone === 'warn' ? 'alert-warn' : 'alert-danger'
-                  }`}
+                  className={`alert ${initError.tone === 'warn' ? 'alert-warn' : 'alert-danger'}`}
                   role="alert"
                 >
                   <span className="alert-icon" aria-hidden="true">
@@ -502,7 +560,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
               {handoff && (initErrorKind === 'transport' || initErrorKind === 'unavailable') && (
                 <div className="wizard-card-footer">
                   <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                    可尝试重新连接一次；若返回 HTTP 401（令牌已被消费），请在宿主机重新运行 cpa-manager-plus initialize 获取新 Handoff
+                    可尝试重新连接一次；若返回 HTTP 401（令牌已被消费），请在宿主机重新运行
+                    cpa-manager-plus initialize 获取新 Handoff
                   </span>
                   <button
                     type="button"
@@ -526,7 +585,9 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       ? 'Step 3 · 管理员初始化已完成'
                       : 'Step 2 · Fresh New 管理员密钥初始化'}
                   </span>
-                  <span className="badge badge-neutral">Revision #{operation.revision}</span>
+                  <span className="badge badge-neutral">
+                    {t('lastRead')} · Revision #{operation.revision}
+                  </span>
                 </div>
                 <h1 className="wizard-title">
                   {isAdminDone
@@ -548,11 +609,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                     data-testid="bootstrap-action-feedback"
                   >
                     <span className="alert-icon" aria-hidden="true">
-                      {feedback.tone === 'success'
-                        ? '✓'
-                        : feedback.tone === 'danger'
-                          ? '✕'
-                          : '!'}
+                      {feedback.tone === 'success' ? '✓' : feedback.tone === 'danger' ? '✕' : '!'}
                     </span>
                     <div className="alert-content">
                       <div className="alert-title" data-testid="feedback-title">
@@ -587,7 +644,9 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                   <div className="info-row">
                     <span className="info-key">会话建立方式</span>
                     <span className="info-val" data-testid="op-session-mode">
-                      {handoff?.resume ? '恢复会话（Resume Session）' : '首次认领交换（Claim Exchange）'}
+                      {handoff?.resume
+                        ? '恢复会话（Resume Session）'
+                        : '首次认领交换（Claim Exchange）'}
                     </span>
                   </div>
                   <div className="info-row">
@@ -617,9 +676,11 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                   <div className="info-row">
                     <span className="info-key">正式路由切流状态</span>
                     <span className="info-val" data-testid="op-routing-status">
-                      {operation.routing.committed
-                        ? `Committed (${operation.routing.target || 'console'})`
-                        : '未切换 · 当前位于独立受控 Bootstrap 入口'}
+                      {verifiedRoute
+                        ? t('routeVerifiedState')
+                        : operation.routing.committed
+                          ? `Committed (${operation.routing.target || 'console'})`
+                          : '未切换 · 当前位于独立受控 Bootstrap 入口'}
                     </span>
                   </div>
                 </div>
@@ -735,7 +796,10 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       </span>
                     </label>
 
-                    <div className="wizard-card-footer" style={{ marginTop: 18, padding: '16px 0 0' }}>
+                    <div
+                      className="wizard-card-footer"
+                      style={{ marginTop: 18, padding: '16px 0 0' }}
+                    >
                       <button
                         type="button"
                         className="btn btn-secondary"
@@ -768,8 +832,9 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                             : '已从服务端恢复管理员已初始化状态'}
                         </div>
                         <div className="alert-desc">
-                          内存中的明文密钥已清理。当前 Fresh Bootstrap 第一个真实用户操作已完成，服务端{' '}
-                          <code>adminInitialized = true</code>（Revision #{operation.revision}）。
+                          内存中的明文密钥已清理。当前 Fresh Bootstrap
+                          第一个真实用户操作已完成，服务端 <code>adminInitialized = true</code>
+                          （Revision #{operation.revision}）。
                         </div>
                       </div>
                     </div>
@@ -783,23 +848,78 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                           安全与范围边界提示（CPA 数据面保持 Fail-Closed）
                         </div>
                         <div className="alert-desc">
-                          管理员初始化完成不等同于 CPA 数据面就绪。在 S1-A
-                          鉴权安全验收完成前，<code>gatewayPending</code> 保持为{' '}
-                          <code>true</code>，CPA Gateway 不对公网开放数据面流量。
+                          管理员初始化完成不等同于 CPA
+                          数据面就绪。在数据面安全条件获准并通过验收前，<code>gatewayPending</code>{' '}
+                          保持为 <code>true</code>，CPA Gateway 不对公网开放数据面流量。
                         </div>
                       </div>
                     </div>
 
-                    <div className="wizard-card-footer" style={{ marginTop: 18, padding: '16px 0 0' }}>
+                    <form
+                      onSubmit={(event) => void handleEnableConsole(event)}
+                      data-testid="routing-form"
+                      style={{ marginTop: 24 }}
+                    >
+                      <h2>{t('routeTitle')}</h2>
+                      <label className="form-label" htmlFor="console-path">
+                        {t('pathLabel')}
+                      </label>
+                      <div className="input-wrap">
+                        <input
+                          id="console-path"
+                          className="form-input"
+                          data-testid="console-path"
+                          value={preparedTarget || routeTarget}
+                          onChange={(event) => setRouteTarget(event.target.value)}
+                          disabled={!!preparedTarget || routingBusy || !!verifiedRoute}
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                      </div>
+                      <p className="form-hint">{t('pathHelp')}</p>
+                      {routingError && (
+                        <p role="alert" className="alert alert-warn">
+                          {routingError}
+                        </p>
+                      )}
+                      {verifiedRoute ? (
+                        <div role="status">
+                          <p>{t('routeReady')}</p>
+                          <a
+                            className="btn btn-primary"
+                            href={verifiedRoute}
+                            data-testid="continue-console"
+                          >
+                            {t('continue')}
+                          </a>
+                        </div>
+                      ) : (
+                        <button
+                          type="submit"
+                          className="btn btn-primary"
+                          data-testid="enable-console"
+                          disabled={routingBusy || refreshing}
+                        >
+                          {routingBusy ? t('activating') : t('activate')}
+                        </button>
+                      )}
+                    </form>
+
+                    <div
+                      className="wizard-card-footer"
+                      style={{ marginTop: 18, padding: '16px 0 0' }}
+                    >
                       <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                        可通过受控会话令牌随时核验服务端实时 Operation 状态
+                        {verifiedRoute
+                          ? t('loginHelp')
+                          : '可通过受控会话令牌随时核验服务端实时 Operation 状态'}
                       </span>
                       <button
                         type="button"
                         className="btn btn-secondary"
                         data-testid="refresh-operation-btn"
                         onClick={() => void handleRefreshOperation()}
-                        disabled={refreshing}
+                        disabled={refreshing || routingBusy || !!verifiedRoute}
                       >
                         {refreshing ? '正在刷新…' : '刷新操作状态'}
                       </button>

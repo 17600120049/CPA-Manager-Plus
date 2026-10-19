@@ -155,7 +155,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			result, err = h.Routing.ActivateAuthorized(r.Context(), request.Identity, func(record freshstore.Record) error { return h.Authority.ValidateSession(record, token) })
 		}
 		if err != nil {
-			w.WriteHeader(http.StatusConflict)
+			switch {
+			case errors.Is(err, fresh.ErrAuthority):
+				reject(w)
+			case errors.Is(err, freshrouting.ErrConflict), errors.Is(err, freshstore.ErrConflict):
+				w.WriteHeader(http.StatusConflict)
+			default:
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}
 			return
 		}
 		writeJSON(w, result)
