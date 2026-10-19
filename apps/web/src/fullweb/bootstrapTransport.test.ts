@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOOTSTRAP_UI, consumeHandoff, createBootstrapTransport } from './bootstrapTransport';
+import {
+  BOOTSTRAP_UI,
+  BootstrapTransportError,
+  consumeHandoff,
+  createBootstrapTransport,
+  validateFreshAdminKey,
+} from './bootstrapTransport';
 
 const identity = {
   admissionId: 'admission-a',
@@ -119,10 +125,66 @@ describe('bounded Bootstrap handoff and transport', () => {
     expect(transport).toHaveBeenCalledTimes(1);
   });
 
-  it('does not reflect server errors or secrets', async () => {
-    const client = createBootstrapTransport(
+  it('does not reflect server errors or secrets and classifies HTTP status codes', async () => {
+    const client403 = createBootstrapTransport(
       vi.fn().mockResolvedValue(new Response(handoff.token, { status: 403 }))
     );
-    await expect(client.start(handoff)).rejects.toThrow('Bootstrap request unavailable');
+    await expect(client403.start(handoff)).rejects.toMatchObject({
+      message: 'Bootstrap request unavailable',
+      kind: 'rejected',
+      status: 403,
+    });
+
+    const client400 = createBootstrapTransport(
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'session-secret', operation })))
+        .mockResolvedValueOnce(new Response('bad key', { status: 400 }))
+    );
+    await client400.start(handoff);
+    await expect(client400.commitAdminKey('commit-1', 'weak')).rejects.toMatchObject({
+      name: 'BootstrapTransportError',
+      kind: 'bad_request',
+      status: 400,
+    });
+  });
+
+  it('validates admin key complexity matching Manager security contract', () => {
+    expect(validateFreshAdminKey('').valid).toBe(false);
+    expect(validateFreshAdminKey('short-key-123').valid).toBe(false);
+    expect(validateFreshAdminKey('cpamp_0123456789abcdefABCDEFG withspace').valid).toBe(false);
+    expect(validateFreshAdminKey('aaaaaaaaaaaaaaaaaaaaaaaa').valid).toBe(false);
+    expect(validateFreshAdminKey('cpamp_0123456789abcdefABCDEFGH99')).toMatchObject({
+      valid: true,
+      hasForbiddenChar: false,
+    });
+  });
+
+  it('generates and commits admin key over authenticated Fresh session', async () => {
+    const generatedKey = 'cpamp_0123456789abcdefABCDEFGH99';
+    const committedOp = { ...operation, revision: 2, adminInitialized: true };
+    const transport = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'session-secret', operation })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ key: generatedKey })))
+      .mockResolvedValueOnce(new Response(JSON.stringify(committedOp)))
+      .mockResolvedValueOnce(new Response(JSON.stringify(committedOp)));
+
+    const client = createBootstrapTransport(transport);
+    await client.start(handoff);
+    expect(await client.generateAdminKey()).toBe(generatedKey);
+
+    const afterCommit = await client.commitAdminKey('commit-abc', generatedKey);
+    expect(afterCommit).toEqual(committedOp);
+    expect(JSON.parse(transport.mock.calls[2][1].body as string)).toEqual({
+      identity,
+      commitId: 'commit-abc',
+      key: generatedKey,
+    });
+
+    expect(await client.fetchOperation()).toEqual(committedOp);
+    expect(transport).toHaveBeenCalledTimes(4);
+    expect(new BootstrapTransportError('test', 'transport')).toBeInstanceOf(Error);
   });
 });
+
