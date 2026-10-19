@@ -6,6 +6,7 @@
     "keysUnavailable": "金鑰狀態暫時無法取得。請重新整理或核對原請求後再繼續。",
     "keysUnknown": "建立結果未知。請核對原請求；確認前不要另建金鑰或離開本頁。",
     "keysCheck": "核對結果",
+    "keysExitBlocked": "金鑰建立結果尚未確認。原請求確認前暫時無法登出。",
     "keysRetry": "重試原請求",
     "keysConfirmed": "已確認 Manager 持久化成功。建立時的明文已無法再次取得。",
     "keysCreated": "金鑰已儲存至 Manager",

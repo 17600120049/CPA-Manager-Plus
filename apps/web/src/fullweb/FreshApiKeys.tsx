@@ -28,10 +28,12 @@ export function FreshApiKeys({
   client,
   credential,
   onUnauthorized,
+  onCreationPending,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
   onUnauthorized: () => void;
+  onCreationPending: (pending: boolean) => void;
 }) {
   const [keys, setKeys] = useState<Key[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -104,6 +106,7 @@ export function FreshApiKeys({
           byte.toString(16).padStart(2, '0')
         ).join('');
       setPending(requestId);
+      onCreationPending(true);
       const result = await client.post<{ key: Key; createdSecret?: string }>(
         'api-keys',
         { requestId },
@@ -125,6 +128,7 @@ export function FreshApiKeys({
       setSecret(result.createdSecret || '');
       setConfirmed(true);
       setPending('');
+      onCreationPending(false);
     } catch (err) {
       if (alive.current) {
         // HTTP errors are also reconciled: a proxy failure can lose a committed reply.
@@ -148,6 +152,7 @@ export function FreshApiKeys({
       setKeys((previous) => [...(previous || []).filter((item) => item.id !== key.id), key]);
       setConfirmed(true);
       setPending('');
+      onCreationPending(false);
       setRetryAllowed(false);
     } catch (err) {
       if (alive.current) {

@@ -42,12 +42,16 @@ the administrator's copy of that secret, while its persisted identity remains
 verifiable. It must not be reported as a usable Runtime key.
 
 Submission is guarded in memory and by the unique persisted request ID.
-Creation has a 15-second transport timeout and is never automatically retried.
+Creation and original-request checks have a 15-second transport timeout and are
+never automatically retried. A timed-out check releases the UI for another check.
 On an unknown result the UI blocks new creation, checks the original operation,
 and permits an explicit retry with **the same request ID** only after a 404.
 Even if the original request subsequently commits, that retry cannot create a
 second identity or disclose the old plaintext. Do not leave an unresolved
 operation to start another one; browser journals are intentionally not persisted.
+Ordinary Console logout is blocked from submission until the original creation
+is confirmed, including while its result is unknown or being checked. Rejected
+Admin authority still clears the login state. Browser navigation is not blocked.
 
 Delete, replace, reveal, bulk operations and Runtime application are unavailable
 server-side, including deletion of the last client key. The known CPA keyless

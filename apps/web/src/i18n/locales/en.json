@@ -6,6 +6,7 @@
     "keysUnavailable": "Key state is unavailable. Refresh or check the original request before continuing.",
     "keysUnknown": "Creation result is unknown. Check the original request; do not create another key or leave this page until it is resolved.",
     "keysCheck": "Check result",
+    "keysExitBlocked": "Key creation has not been confirmed. Logout is unavailable until the original request is resolved.",
     "keysRetry": "Retry original request",
     "keysConfirmed": "Manager persistence confirmed. The creation secret is no longer available.",
     "keysCreated": "Key saved in Manager",

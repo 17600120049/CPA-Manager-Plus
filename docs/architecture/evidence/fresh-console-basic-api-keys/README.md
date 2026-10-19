@@ -56,6 +56,38 @@ The initial locale harness incorrectly attempted repeated non-configurable
 `navigator.language` overrides. Those harness errors were corrected by using
 separate browser contexts; the retained evidence is from the corrected run.
 
+## Review follow-up: F-01 and F-02
+
+The follow-up changes only Full Web failure recovery, translations and this
+contract/evidence. Manager API, SQLite and Runtime behavior are unchanged.
+
+- PASS: Full Web 151 tests, TypeScript, Lint (zero errors, four existing warnings),
+  full web/panel build, module-boundary/package staging checks and `git diff --check`.
+  Regressions cover a hanging reconciliation GET, another GET after its timeout
+  without another POST, same-turn logout, delayed creation response, unknown and
+  reconciling results, and rejected Admin authority followed by a fresh login.
+- PASS: rebuilt Full Web and cross-compiled embedded Manager on Linux/amd64 in
+  the same isolated Compose environment. Follow-up image:
+  `sha256:c03dfa14f4181a91ae31b94c016bb5263f3caaf2a352a0ad0e63ac4456de0623`.
+- PASS: Playwright held a real committed creation response. Logout stayed disabled
+  with the localized hint; releasing the response displayed the one-time secret
+  and enabled logout. The screenshot was taken before releasing plaintext.
+- PASS: a second real creation committed but its response was deliberately dropped.
+  Logout stayed disabled while unknown. The first reconciliation GET was held at
+  the browser transport boundary and timed out after 15,042 ms; the check button
+  became available again. A second GET confirmed the persisted result and enabled
+  logout, without another POST. Total: two deliberate creations, two checks.
+- PASS: browser local/session storage empty, zero application exceptions, and
+  `/v1/models` still 503. No CPA Runtime was started.
+- PASS: all four translated exit hints in 390x844 and 1440x1100, dark/light;
+  disabled logout and no horizontal overflow in all 16 combinations. These locale
+  checks abort POST before it reaches Manager; they are UI checks, not persistence
+  evidence. Sanitized screenshots: `en-mobile-pending.png` and
+  `zh-CN-desktop-pending.png`.
+- NOT RUN in this follow-up: local Go unit/race suites or the original complete
+  restart/SQLite/security matrix; the earlier evidence above remains historical.
+  No backend source changed. Browser navigation/closing the tab is not intercepted.
+
 ## NOT RUN / UNKNOWN / STOP
 
 - NOT RUN: actual CPA Runtime, data-plane activation/auth qualification, exposed

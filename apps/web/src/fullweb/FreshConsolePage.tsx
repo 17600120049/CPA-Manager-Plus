@@ -18,6 +18,8 @@ export function FreshConsolePage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [light, setLight] = useState(false);
+  const [creationPending, setCreationPending] = useState(false);
+  const creationPendingRef = useRef(false);
   const requestId = useRef(0);
   useEffect(() => {
     document.title = t('consoleTitle');
@@ -32,13 +34,24 @@ export function FreshConsolePage({
     document.documentElement.classList.toggle('light', light);
   }, [light]);
 
-  function logout() {
+  function reportCreationPending(pending: boolean) {
+    creationPendingRef.current = pending;
+    setCreationPending(pending);
+  }
+
+  function clearAuthentication() {
     requestId.current++;
+    reportCreationPending(false);
     setKey('');
     setCredential('');
     setOperation(null);
     setBusy(false);
     setError('');
+  }
+
+  function logout() {
+    if (creationPendingRef.current) return;
+    clearAuthentication();
   }
 
   async function readOperation(event?: FormEvent) {
@@ -74,8 +87,7 @@ export function FreshConsolePage({
         next.routing.operationId !== next.identity.operationId ||
         (operation && !sameIdentity(next.identity, operation.identity))
       ) {
-        setCredential('');
-        setOperation(null);
+        clearAuthentication();
         setError(t('invalidOperation'));
         return;
       }
@@ -84,8 +96,7 @@ export function FreshConsolePage({
     } catch (err) {
       if (currentRequest !== requestId.current) return;
       if (err instanceof PublicApiError && err.kind === 'authentication') {
-        setCredential('');
-        setOperation(null);
+        clearAuthentication();
         setError(t('authError'));
       } else {
         setError(t('unavailable'));
@@ -166,15 +177,26 @@ export function FreshConsolePage({
                     >
                       {t('refresh')}
                     </button>
-                    <button className="btn btn-secondary" onClick={logout}>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={logout}
+                      disabled={creationPending}
+                      aria-describedby={creationPending ? 'key-exit-pending' : undefined}
+                    >
                       {t('logout')}
                     </button>
                   </div>
+                  {creationPending && (
+                    <p id="key-exit-pending" role="status" className="alert alert-warn">
+                      {t('keysExitBlocked')}
+                    </p>
+                  )}
                   <FreshApiKeys
                     client={client}
                     credential={credential}
+                    onCreationPending={reportCreationPending}
                     onUnauthorized={() => {
-                      logout();
+                      clearAuthentication();
                       setError(t('authError'));
                     }}
                   />

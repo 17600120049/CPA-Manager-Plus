@@ -57,13 +57,17 @@ export function createPublicApiClient(
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (credential) headers.Authorization = `Bearer ${credential.value}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const controller = body !== undefined ? new AbortController() : undefined;
+    const controller =
+      body !== undefined || resource.startsWith('api-keys/requests/')
+        ? new AbortController()
+        : undefined;
     const timer = controller ? setTimeout(() => controller.abort(), 15000) : undefined;
     try {
       const response = await transport(target.href, {
         method: body === undefined ? 'GET' : 'POST',
         headers,
-        ...(body !== undefined ? { body: JSON.stringify(body), signal: controller!.signal } : {}),
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        ...(controller ? { signal: controller.signal } : {}),
         mode: 'same-origin',
         credentials: 'omit',
         redirect: 'error',

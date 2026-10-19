@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FreshConsolePage } from './FreshConsolePage';
 import { createPublicApiClient } from './publicApi';
 import type { FreshOperation } from './bootstrapTransport';
+import { fullWebText as t } from '../i18n/fullweb';
 
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
 const operation: FreshOperation = {
@@ -32,6 +33,7 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal('window', { location: new URL('https://manager.example/console') });
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb) });
     vi.stubGlobal('document', {
       documentElement: { classList: { toggle: vi.fn<typeof fetch>() } },
     });
@@ -53,7 +55,11 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
   const input = () => renderer.root.findByType('input');
   const buttons = () => renderer.root.findAllByType('button');
   const view = () => JSON.stringify(renderer.toJSON());
-  async function mount(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
+  async function mount(
+    fetchMock: ReturnType<typeof vi.fn<typeof fetch>>,
+    keyFetch: typeof fetch = async () =>
+      Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
+  ) {
     await act(async () => {
       renderer = create(
         <FreshConsolePage
@@ -61,11 +67,7 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
           client={createPublicApiClient(
             () => context,
             (url, init) =>
-              String(url).endsWith('/api-keys')
-                ? Promise.resolve(
-                    Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
-                  )
-                : fetchMock(url, init)
+              String(url).includes('/api-keys') ? keyFetch(url, init) : fetchMock(url, init)
           )}
         />
       );
@@ -178,4 +180,99 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     expect(input().props.value).toBe('');
     expect(view()).not.toContain(operation.identity.operationId);
   });
+
+  it.each(['creation reply', 'reconciliation'])(
+    'blocks ordinary logout until %s confirms the pending key operation',
+    async (confirmation) => {
+      let resolve!: (value: Response) => void;
+      let reject!: (reason: Error) => void;
+      const pending = new Promise<Response>((done, fail) => {
+        resolve = done;
+        reject = fail;
+      });
+      let resolveCheck!: (value: Response) => void;
+      const pendingCheck = new Promise<Response>((done) => {
+        resolveCheck = done;
+      });
+      const savedKey = {
+        id: 'a'.repeat(32),
+        requestId: 'b'.repeat(32),
+        maskedPreview: 'cpamp_sk_…cccc',
+        createdAtMs: 1234,
+        managerState: 'persisted',
+        runtimeState: 'not_applied',
+      };
+      const secret = 'cpamp_sk_' + 'c'.repeat(64);
+      const keyFetch = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
+        )
+        .mockReturnValueOnce(pending)
+        .mockReturnValueOnce(pendingCheck);
+      await mount(vi.fn<typeof fetch>().mockResolvedValue(Response.json(operation)), keyFetch);
+      await login();
+      const logout = buttons()[2];
+      await act(async () => {
+        buttons()[3].props.onClick();
+        // A same-turn invocation must also respect the guard before React rerenders.
+        logout.props.onClick();
+      });
+      expect(buttons()[2].props.disabled).toBe(true);
+      expect(view()).toContain(t('keysExitBlocked'));
+      expect(view()).toContain(operation.identity.operationId);
+      if (confirmation === 'creation reply') {
+        await act(async () => resolve(Response.json({ key: savedKey, createdSecret: secret })));
+        expect(view()).toContain(secret);
+      } else {
+        await act(async () => reject(new Error('lost reply')));
+        await act(async () => buttons()[2].props.onClick());
+        expect(view()).toContain(t('keysUnknown'));
+        expect(buttons()[2].props.disabled).toBe(true);
+        await act(async () =>
+          buttons()
+            .find((button) => button.props.children === t('keysCheck'))!
+            .props.onClick()
+        );
+        expect(buttons()[2].props.disabled).toBe(true);
+        await act(async () => resolveCheck(Response.json(savedKey)));
+        expect(view()).toContain(t('keysConfirmed'));
+        expect(view()).not.toContain(secret);
+      }
+      expect(buttons()[2].props.disabled).toBe(false);
+      expect(view()).not.toContain(t('keysExitBlocked'));
+      expect(keyFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+      await act(async () => buttons()[2].props.onClick());
+      expect(input().props.value).toBe('');
+      expect(view()).not.toContain(secret);
+      expect(localStorage.setItem).not.toHaveBeenCalled();
+      expect(sessionStorage.setItem).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([401, 403])(
+    'still retires rejected Admin authority during creation (%s)',
+    async (status) => {
+      const keyFetch = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
+        )
+        .mockResolvedValueOnce(new Response('', { status }))
+        .mockResolvedValueOnce(
+          Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
+        );
+      await mount(
+        vi.fn<typeof fetch>().mockImplementation(async () => Response.json(operation)),
+        keyFetch
+      );
+      await login();
+      await act(async () => buttons()[3].props.onClick());
+      expect(input().props.value).toBe('');
+      expect(view()).toContain(t('authError'));
+      await login();
+      expect(buttons()[2].props.disabled).toBe(false);
+      expect(view()).not.toContain(t('keysExitBlocked'));
+    }
+  );
 });

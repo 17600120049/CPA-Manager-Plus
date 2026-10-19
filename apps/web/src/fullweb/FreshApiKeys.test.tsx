@@ -37,6 +37,7 @@ describe('Fresh client key persistence UI', () => {
   });
   afterEach(async () => {
     if (renderer) await act(async () => renderer.unmount());
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
   const view = () => JSON.stringify(renderer.toJSON());
@@ -49,6 +50,7 @@ describe('Fresh client key persistence UI', () => {
           client={createPublicApiClient(() => context, fetchMock)}
           credential="admin-test-only"
           onUnauthorized={unauthorized}
+          onCreationPending={vi.fn()}
         />
       );
     });
@@ -130,6 +132,36 @@ describe('Fresh client key persistence UI', () => {
     await click(t('keysRetry'));
     expect(fetchMock.mock.calls[1][1]?.body).toBe(fetchMock.mock.calls[3][1]?.body);
     expect(view()).toContain(t('keysConfirmed'));
+  });
+
+  it('releases a hanging result check after its timeout and allows another check without a POST', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(empty())
+      .mockRejectedValueOnce(new Error('lost creation reply'))
+      .mockImplementationOnce(
+        (_url, options) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(new Error('timed out')));
+          })
+      )
+      .mockResolvedValueOnce(Response.json(key));
+    await mount(fetchMock);
+    await click(t('keysCreate'));
+    await click(t('keysCheck'));
+    expect(button(t('keysCheck')).props.disabled).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(fetchMock.mock.calls[2][1]?.signal?.aborted).toBe(true);
+    expect(button(t('keysCheck')).props.disabled).toBe(false);
+    expect(view()).toContain(t('keysUnknown'));
+    expect(view()).not.toContain(t('keysConfirmed'));
+    await click(t('keysCheck'));
+    expect(view()).toContain(t('keysConfirmed'));
+    expect(fetchMock.mock.calls[2][0]).toBe(fetchMock.mock.calls[3][0]);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 
   it.each([401, 403])('retires Admin authority after %s', async (status) => {
