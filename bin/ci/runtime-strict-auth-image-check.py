@@ -20,6 +20,9 @@ VERSION = "8.0.13-cpamp-strict-auth.1"
 
 
 def main():
+    # Assertions enforce the image identity contract; optimized Python removes them.
+    if sys.flags.optimize:
+        raise SystemExit("image verification requires assertions; do not use -O or PYTHONOPTIMIZE")
     if len(sys.argv) != 2:
         raise SystemExit("usage: runtime-strict-auth-image-check.py LOCAL_IMAGE")
     image = json.loads(subprocess.check_output(
