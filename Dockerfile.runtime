@@ -44,6 +44,27 @@ RUN set -eu; \
       "$executable_sha256" > /out/cpa-artifact.json; \
     chmod 0444 /out/cpa-artifact.json
 
+FROM --platform=$BUILDPLATFORM alpine:3.21 AS cpa-strict-auth-verify
+
+ARG TARGETOS
+ARG TARGETARCH
+# Supplied only by --build-context strict-auth-input=/controlled/local/directory.
+# No private repository access or binary is required by the default build.
+COPY --from=strict-auth-input /cli-proxy-api /out/cli-proxy-api
+RUN set -eu; \
+    test "$TARGETOS/$TARGETARCH" = "linux/amd64"; \
+    executable_sha256="0adcfa2283438cdb041e78074eae89321ca5986e5dc5d1da399b8def3ca22150"; \
+    source_commit="1fbb56551218bc7eadad1598d6009e9248447cf6"; \
+    upstream_commit="d7914afdedca7af95ee974a42453dc49fc1388ce"; \
+    version="8.0.13-cpamp-strict-auth.1"; \
+    printf '%s  %s\n' "$executable_sha256" /out/cli-proxy-api | sha256sum -c -; \
+    chmod 0755 /out/cli-proxy-api; \
+    printf '{"schemaVersion":1,"engine":"cpa","version":"%s","artifactId":"sha256:%s"}\n' \
+      "$version" "$executable_sha256" > /out/cpa-artifact.json; \
+    printf '{"schemaVersion":1,"variant":"cpamp-strict-auth","version":"%s","sourceCommit":"%s","upstreamCommit":"%s","executableSha256":"%s","inputMode":"verified-local-binary"}\n' \
+      "$version" "$source_commit" "$upstream_commit" "$executable_sha256" > /out/cpa-provenance.json; \
+    chmod 0444 /out/cpa-artifact.json /out/cpa-provenance.json
+
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS supervisor-build
 
 ARG TARGETOS
@@ -85,6 +106,13 @@ CMD ["/usr/local/bin/cpamp-runtime-supervisor"]
 FROM runtime-base AS v8-amd64-candidate
 COPY --from=cpa-v8-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
 COPY --from=cpa-v8-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
+COPY docker/runtime/config.v8.seed.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
+
+# Private, nonproduction input only; see bin/ci/runtime-strict-auth-smoke.md.
+FROM runtime-base AS v8-amd64-strict-auth-candidate
+COPY --from=cpa-strict-auth-verify /out/cli-proxy-api /usr/local/bin/cli-proxy-api
+COPY --from=cpa-strict-auth-verify /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
+COPY --from=cpa-strict-auth-verify /out/cpa-provenance.json /usr/local/share/cpamp/runtime/cpa-provenance.json
 COPY docker/runtime/config.v8.seed.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
 
 # Preserve the existing default v7 amd64/arm64 bundle and seed.
