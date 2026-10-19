@@ -21,6 +21,29 @@ function browserOrigin(origin = 'https://manager.example:18317') {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('canonical Full Web Public API transport', () => {
+  it.each(['GET', 'PUT'])('bounds saved-setting %s without retries', async (method) => {
+    browserOrigin();
+    vi.useFakeTimers();
+    try {
+      const transport = vi.fn<typeof fetch>(
+        (_url, options) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(new Error('private detail')));
+          })
+      );
+      const client = createPublicApiClient(() => context, transport);
+      const pending =
+        method === 'GET'
+          ? client.get('settings/update-channel', credential)
+          : client.put('settings/update-channel', { channel_preference: 'stable' }, credential);
+      const assertion = expect(pending).rejects.toMatchObject({ kind: 'network' });
+      await vi.advanceTimersByTimeAsync(15000);
+      await assertion;
+      expect(transport).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('bounds a create timeout without retrying or reflecting transport secrets', async () => {
     browserOrigin();
     vi.useFakeTimers();

@@ -1,0 +1,24 @@
+{
+  "base": "d5bece3b39c150739da28d177ee53c84856720ac",
+  "profile": "private disposable linux/amd64, not a release artifact",
+  "managerBinarySha256": "69e04887d627f8c473b10444ffe099cdf788eb7d26d226ebd20d2d6d392e392b",
+  "ingressBinarySha256": "459fcc7956df98e4d6323aa615fe24c55db623ad1bd7f76c4d8765d17009b9d4",
+  "managerHostImage": "sha256:34d0c09631af5eb9ab1cd3e6ad8cafa29228d24317fca0670a0240806e3b22c2",
+  "runtimeImage": "sha256:075b6822a17a4cee76904055a1c684ee0e321256960a035ddfa27afefb257314",
+  "sourceSha256": {
+    "apps/manager-server/cmd/cpa-manager-plus/fresh.go": "62ef22403b6379363ce2d0575654d52355dbd89866d59de93bc2e831a35d939f",
+    "apps/manager-server/cmd/cpa-manager-plus/fresh_updates.go": "75fb957cdc0bf58a38a5cd463ef7af7af469b2a980ebf473eef5181e8f39390a",
+    "apps/manager-server/internal/service/updatecheck/service.go": "c714bfd6981b98be6b168bc7a5fe40ec29e0c952325b485fa5b90f423f2c045a",
+    "apps/web/src/fullweb/FreshConsolePage.tsx": "d00fa49d3c923f503590da1950d38de441eeef3197438fafe0fd627e26a35267",
+    "apps/web/src/fullweb/FreshUpdateChannel.tsx": "1f70fdf4a0b7da773c296b60043276d06167a79134f4f11146d154f7b0b8b7f6",
+    "apps/web/src/fullweb/publicApi.ts": "944294d71c10966c4a3af4a001637dd33996ec5ef730505c5244dd66357406aa",
+    "apps/web/src/i18n/locales/en.json": "c9e1f8b91b95ac743b403fc1d7e10d2a4ce8f80dc08914f08e8f39bcdcd1f0b7",
+    "apps/web/src/i18n/locales/ru.json": "230531cc1c299d896dd1c339343f13a2c086af562d1fcedf14a0eea9e7006a0a",
+    "apps/web/src/i18n/locales/zh-CN.json": "a1a11ad8cd7f745540db77b3d63804ed2ea39f1bb7d2fe9edaee9b153b9e497b",
+    "apps/web/src/i18n/locales/zh-TW.json": "8d071b853edd9b14fde975069272583889a336993c2cb6278208cdfc8bdca240"
+  },
+  "sqliteFinalPreference": "auto",
+  "otherSettingsUnchanged": true,
+  "gatewayPending": true,
+  "clientKeyCount": 0
+}

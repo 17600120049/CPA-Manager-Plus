@@ -26,7 +26,8 @@ export function createPublicApiClient(
   async function request<T>(
     resource: string,
     credential?: FullWebCredential,
-    body?: unknown
+    body?: unknown,
+    method = body === undefined ? 'GET' : 'POST'
   ): Promise<T> {
     const context = readContext();
     const canonical = resolveRoutingContext({
@@ -58,13 +59,15 @@ export function createPublicApiClient(
     if (credential) headers.Authorization = `Bearer ${credential.value}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const controller =
-      body !== undefined || resource.startsWith('api-keys/requests/')
+      body !== undefined ||
+      resource.startsWith('api-keys/requests/') ||
+      resource === 'settings/update-channel'
         ? new AbortController()
         : undefined;
     const timer = controller ? setTimeout(() => controller.abort(), 15000) : undefined;
     try {
       const response = await transport(target.href, {
-        method: body === undefined ? 'GET' : 'POST',
+        method,
         headers,
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         ...(controller ? { signal: controller.signal } : {}),
@@ -90,5 +93,7 @@ export function createPublicApiClient(
       request<T>(resource, credential),
     post: <T = unknown>(resource: string, body: unknown, credential: FullWebCredential) =>
       request<T>(resource, credential, body),
+    put: <T = unknown>(resource: string, body: unknown, credential: FullWebCredential) =>
+      request<T>(resource, credential, body, 'PUT'),
   };
 }
