@@ -87,6 +87,13 @@ COPY --from=cpa-v8-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
 COPY --from=cpa-v8-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
 COPY docker/runtime/config.v8.seed.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
 
+# Private Embedded Fresh network-isolation experiment; this is not a release target.
+# CPA binds loopback and the companion Ingress shares its network namespace.
+FROM runtime-base AS v8-amd64-loopback-proof
+COPY --from=cpa-v8-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
+COPY --from=cpa-v8-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
+COPY docker/runtime/config.v8.loopback-proof.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
+
 # Preserve the existing default v7 amd64/arm64 bundle and seed.
 FROM runtime-base AS runtime
 COPY --from=cpa-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api

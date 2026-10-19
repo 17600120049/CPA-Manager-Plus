@@ -1,0 +1,30 @@
+# Private Fresh client-auth isolation proof ONLY, not an official CPA patch.
+# CPA binds loopback; the companion Ingress shares its network namespace.
+# Gateway stays Pending until a separate Manager-owned per-request auth proof.
+config-version: 8
+
+server:
+  host: '127.0.0.1'
+  port: 8317
+
+management:
+  allow-remote: false
+  secret-key: ''
+  disable-control-panel: true
+  disable-auto-update-panel: true
+
+access:
+  api-keys: []
+
+oauth:
+  auth-dir: '/runtime/gateway/auth'
+
+plugins:
+  enabled: false
+  dir: '/runtime/gateway/plugins'
+
+observability:
+  logs:
+    logging-to-file: false
+  usage:
+    usage-statistics-enabled: false
