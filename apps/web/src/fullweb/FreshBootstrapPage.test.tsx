@@ -286,4 +286,144 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(fetchMock.mock.calls[2][0]).toContain('/.well-known/cpamp-bootstrap/api/v2/operation');
     expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('已初始化');
   });
+
+  it('resets confirmedSaved when adminKey is edited after confirmation and blocks unconfirmed submission', async () => {
+    const keyA = 'cpamp_9876543210abcdefABCDEFGH12';
+    const keyB = 'cpamp_9876543210abcdefABCDEFGH99';
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'session-token-1', operation: pendingOperation }))
+      );
+
+    const transport = createBootstrapTransport(fetchMock);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={handoff} transport={transport} />);
+    });
+
+    const input = findByTestId(renderer.root, 'admin-key-input');
+    const checkbox = findByTestId(renderer.root, 'confirm-key-saved-checkbox');
+    const form = findByTestId(renderer.root, 'admin-init-form');
+
+    await act(async () => {
+      input.props.onChange({ target: { value: keyA } });
+    });
+    await act(async () => {
+      checkbox.props.onChange({ target: { checked: true } });
+    });
+    expect(findByTestId(renderer.root, 'confirm-key-saved-checkbox').props.checked).toBe(true);
+
+    // Editing keyA -> keyB must invalidate confirmedSaved
+    await act(async () => {
+      input.props.onChange({ target: { value: keyB } });
+    });
+    expect(findByTestId(renderer.root, 'confirm-key-saved-checkbox').props.checked).toBe(false);
+
+    // Submitting without re-checking must be blocked locally
+    await act(async () => {
+      form.props.onSubmit({ preventDefault: vi.fn() });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(textOf(findByTestId(renderer.root, 'feedback-title'))).toContain(
+      '请先确认已妥善保存管理员密钥'
+    );
+    expect(textOf(findByTestId(renderer.root, 'feedback-detail'))).toContain(
+      '服务端仅保存不可逆密钥校验值，不保存明文'
+    );
+    expect(textOf(renderer.root)).not.toContain('Argon2id');
+  });
+
+  it('explains single retry and HTTP 401 re-initialization when initial claim exchange encounters a transport error', async () => {
+    const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError('network down'));
+    const transport = createBootstrapTransport(fetchMock);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={handoff} transport={transport} />);
+    });
+
+    expect(textOf(findByTestId(renderer.root, 'init-error-detail'))).toContain(
+      '若服务端已消费本次一次性 Claim Token 并返回 HTTP 401，请在宿主机重新执行 cpa-manager-plus initialize'
+    );
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-authority-error'))).toContain(
+      '可尝试重新连接一次；若返回 HTTP 401（令牌已被消费）'
+    );
+  });
+
+  it('defines every CSS class used by FreshBootstrapPage in carrier.css without mismatched selectors', async () => {
+    const fs = (
+      globalThis as unknown as {
+        process: {
+          getBuiltinModule: (id: string) => { readFileSync: (path: URL, encoding: string) => string };
+        };
+      }
+    ).process.getBuiltinModule('node:fs');
+    const carrierCss = fs.readFileSync(new URL('./carrier.css', import.meta.url), 'utf8');
+    const definedClasses = new Set(
+      Array.from(carrierCss.matchAll(/\.([a-zA-Z0-9_-]+)/g), (m) => m[1])
+    );
+    expect(definedClasses.has('cpamp-shell')).toBe(false);
+
+    const renderedClasses = new Set<string>();
+    const collectClasses = (root: ReactTestInstance) => {
+      for (const node of root.findAll((n) => typeof n.props?.className === 'string')) {
+        for (const cls of String(node.props.className).split(/\s+/)) {
+          if (cls) renderedClasses.add(cls);
+        }
+      }
+    };
+
+    // 1. no_handoff state
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+    });
+    collectClasses(renderer.root);
+
+    // 2. init_error state
+    await act(async () => {
+      renderer = create(
+        <FreshBootstrapPage
+          handoff={handoff}
+          transport={createBootstrapTransport(vi.fn().mockRejectedValueOnce(new TypeError('down')))}
+        />
+      );
+    });
+    collectClasses(renderer.root);
+
+    // 3. ready pending + completed states
+    const committedOperation = { ...pendingOperation, revision: 2, adminInitialized: true };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'session-token-1', operation: pendingOperation }))
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(committedOperation)));
+    await act(async () => {
+      renderer = create(
+        <FreshBootstrapPage handoff={handoff} transport={createBootstrapTransport(fetchMock)} />
+      );
+    });
+    collectClasses(renderer.root);
+
+    const input = findByTestId(renderer.root, 'admin-key-input');
+    const checkbox = findByTestId(renderer.root, 'confirm-key-saved-checkbox');
+    const form = findByTestId(renderer.root, 'admin-init-form');
+    await act(async () => {
+      input.props.onChange({ target: { value: 'cpamp_9876543210abcdefABCDEFGH12' } });
+    });
+    await act(async () => {
+      checkbox.props.onChange({ target: { checked: true } });
+    });
+    collectClasses(renderer.root);
+    await act(async () => {
+      form.props.onSubmit({ preventDefault: vi.fn() });
+    });
+    collectClasses(renderer.root);
+
+    for (const cls of renderedClasses) {
+      expect(definedClasses.has(cls), `Missing CSS class .${cls} in carrier.css`).toBe(true);
+    }
+  });
 });

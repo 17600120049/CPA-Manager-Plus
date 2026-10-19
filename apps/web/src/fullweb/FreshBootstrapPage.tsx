@@ -42,7 +42,9 @@ function describeBootstrapError(
         detail:
           stage === 'commit'
             ? '无法连接至 Manager Bootstrap 服务端。当前密钥与幂等提交标识（commitId）已保留在内存中，请检查网络或服务状态后点击“提交并完成管理员初始化”安全重试，或点击“同步服务端状态”确认是否已生效。'
-            : '无法连接至 Manager Bootstrap 服务端，请确认本地受控容器或服务进程正在运行后重试。',
+            : stage === 'start'
+              ? '无法连接至 Manager Bootstrap 服务端。您可尝试重新连接一次；若服务端已消费本次一次性 Claim Token 并返回 HTTP 401，请在宿主机重新执行 cpa-manager-plus initialize 获取新的 Handoff 链接。'
+              : '无法连接至 Manager Bootstrap 服务端，请确认本地受控容器或服务进程正在运行后重试。',
       };
     }
     if (err.kind === 'rejected' || err.kind === 'authority') {
@@ -154,6 +156,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   function handleKeyInputChange(nextValue: string) {
     setAdminKey(nextValue);
     setCommitId(createCommitId());
+    setConfirmedSaved(false);
     setFeedback(null);
   }
 
@@ -247,7 +250,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
       setFeedback({
         tone: 'warn',
         title: '请先确认已妥善保存管理员密钥',
-        detail: '勾选确认框后方可提交，提交成功后服务端仅保存 Argon2id 哈希且不再返回明文。',
+        detail: '勾选确认框后方可提交，提交成功后服务端仅保存不可逆密钥校验值，不保存明文。',
       });
       return;
     }
@@ -499,7 +502,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
               {handoff && (initErrorKind === 'transport' || initErrorKind === 'unavailable') && (
                 <div className="wizard-card-footer">
                   <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                    网络恢复后可直接重试当前 Handoff 令牌
+                    可尝试重新连接一次；若返回 HTTP 401（令牌已被消费），请在宿主机重新运行 cpa-manager-plus initialize 获取新 Handoff
                   </span>
                   <button
                     type="button"
@@ -532,7 +535,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 </h1>
                 <p className="wizard-desc">
                   {isAdminDone
-                    ? '当前 Fresh 安装实例已完成管理员凭据绑定。服务端仅保存 Argon2id 不可逆哈希，后续状态查询与控制操作均受该安装身份约束。'
+                    ? '当前 Fresh 安装实例已完成管理员凭据绑定。服务端仅保存不可逆密钥校验值，不保存明文，后续状态查询与控制操作均受该安装身份约束。'
                     : '首次认领会话已建立。请通过 UI 生成或输入高强度管理员密钥并提交至 Manager 后端完成绑定，无需从容器日志读取随机初始密码。'}
                 </p>
               </div>
@@ -728,8 +731,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       />
                       <span className="checkbox-text">
                         <strong>我已复制并妥善保存该管理员密钥。</strong>
-                        我理解提交后 Manager 服务端仅存储 Argon2id
-                        单向哈希，明文密钥不会保存在浏览器中，也无法再次从服务端查看。
+                        我理解提交后服务端仅保存不可逆密钥校验值，不保存明文，明文密钥不会保存在浏览器中，也无法再次从服务端查看。
                       </span>
                     </label>
 
