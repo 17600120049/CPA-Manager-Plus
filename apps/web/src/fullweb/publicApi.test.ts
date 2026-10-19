@@ -21,6 +21,33 @@ function browserOrigin(origin = 'https://manager.example:18317') {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('canonical Full Web Public API transport', () => {
+  it('bounds a create timeout without retrying or reflecting transport secrets', async () => {
+    browserOrigin();
+    vi.useFakeTimers();
+    try {
+      const transport = vi.fn<typeof fetch>(
+        (_url, options) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(new Error('private detail')));
+          })
+      );
+      const pending = createPublicApiClient(() => context, transport).post(
+        'api-keys',
+        { requestId: 'a'.repeat(32) },
+        credential
+      );
+      const assertion = expect(pending).rejects.toMatchObject({
+        kind: 'network',
+        message: 'Public API network',
+      });
+      await vi.advanceTimersByTimeAsync(15000);
+      await assertion;
+      expect(transport).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('uses the same canonical non-root base and explicit in-memory credential', async () => {
     browserOrigin();
     const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ technical: true }));

@@ -1,0 +1,149 @@
+{
+  "variants": [
+    {
+      "locale": "zh-CN",
+      "viewport": "desktop",
+      "theme": "dark",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "客户端 API 密钥",
+      "screenshot": "docs/architecture/evidence/fresh-console-basic-api-keys/zh-CN-desktop-dark.png"
+    },
+    {
+      "locale": "zh-CN",
+      "viewport": "desktop",
+      "theme": "light",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "客户端 API 密钥",
+      "screenshot": null
+    },
+    {
+      "locale": "zh-CN",
+      "viewport": "mobile",
+      "theme": "dark",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "客户端 API 密钥",
+      "screenshot": null
+    },
+    {
+      "locale": "zh-CN",
+      "viewport": "mobile",
+      "theme": "light",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "客户端 API 密钥",
+      "screenshot": null
+    },
+    {
+      "locale": "en",
+      "viewport": "desktop",
+      "theme": "dark",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "Client API keys",
+      "screenshot": null
+    },
+    {
+      "locale": "en",
+      "viewport": "desktop",
+      "theme": "light",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "Client API keys",
+      "screenshot": null
+    },
+    {
+      "locale": "en",
+      "viewport": "mobile",
+      "theme": "dark",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "Client API keys",
+      "screenshot": null
+    },
+    {
+      "locale": "en",
+      "viewport": "mobile",
+      "theme": "light",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "Client API keys",
+      "screenshot": "docs/architecture/evidence/fresh-console-basic-api-keys/en-mobile-light.png"
+    },
+    {
+      "locale": "zh-TW",
+      "viewport": "desktop",
+      "theme": "dark",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "用戶端 API 金鑰",
+      "screenshot": null
+    },
+    {
+      "locale": "zh-TW",
+      "viewport": "desktop",
+      "theme": "light",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "用戶端 API 金鑰",
+      "screenshot": null
+    },
+    {
+      "locale": "zh-TW",
+      "viewport": "mobile",
+      "theme": "dark",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "用戶端 API 金鑰",
+      "screenshot": null
+    },
+    {
+      "locale": "zh-TW",
+      "viewport": "mobile",
+      "theme": "light",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "用戶端 API 金鑰",
+      "screenshot": null
+    },
+    {
+      "locale": "ru",
+      "viewport": "desktop",
+      "theme": "dark",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "Клиентские API-ключи",
+      "screenshot": null
+    },
+    {
+      "locale": "ru",
+      "viewport": "desktop",
+      "theme": "light",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "Клиентские API-ключи",
+      "screenshot": null
+    },
+    {
+      "locale": "ru",
+      "viewport": "mobile",
+      "theme": "dark",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "Клиентские API-ключи",
+      "screenshot": null
+    },
+    {
+      "locale": "ru",
+      "viewport": "mobile",
+      "theme": "light",
+      "horizontalOverflow": false,
+      "keyRows": 2,
+      "heading": "Клиентские API-ключи",
+      "screenshot": null
+    }
+  ],
+  "applicationExceptions": 0
+}

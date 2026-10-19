@@ -1038,6 +1038,13 @@ func Migrate(db *sql.DB) error {
 			created_at_ms integer not null,
 			updated_at_ms integer not null
 		)`,
+		`create table if not exists fresh_client_api_keys (
+			request_id text primary key,
+			api_key_id text not null unique references gateway_api_key_identities(id),
+			secret_ciphertext text not null,
+			secret_hash text not null unique,
+			masked_preview text not null
+		)`,
 		`create table if not exists gateway_quota_policies (
 			id text not null primary key check(length(id) = 32 and id not glob '*[^0-9a-f]*'),
 			revision integer not null check(typeof(revision) = 'integer' and revision >= 1),

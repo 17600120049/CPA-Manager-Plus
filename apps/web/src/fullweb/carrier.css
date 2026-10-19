@@ -105,6 +105,37 @@ html.light {
   box-sizing: border-box;
 }
 
+.console-keys {
+  margin-top: 24px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+}
+.console-keys-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.console-key-list {
+  padding: 0;
+  list-style: none;
+}
+.console-key-list li,
+.console-key-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+.console-key-list code,
+.console-key-result code {
+  overflow-wrap: anywhere;
+}
+
 body {
   margin: 0;
   min-width: 320px;

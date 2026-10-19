@@ -58,7 +58,15 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       renderer = create(
         <FreshConsolePage
           context={context}
-          client={createPublicApiClient(() => context, fetchMock)}
+          client={createPublicApiClient(
+            () => context,
+            (url, init) =>
+              String(url).endsWith('/api-keys')
+                ? Promise.resolve(
+                    Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
+                  )
+                : fetchMock(url, init)
+          )}
         />
       );
     });

@@ -1,0 +1,153 @@
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FreshApiKeys } from './FreshApiKeys';
+import { createPublicApiClient } from './publicApi';
+import { fullWebText as t } from '../i18n/fullweb';
+
+const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
+const key = {
+  id: 'a'.repeat(32),
+  requestId: 'b'.repeat(32),
+  maskedPreview: 'cpamp_sk_…cccc',
+  createdAtMs: 1234,
+  managerState: 'persisted',
+  runtimeState: 'not_applied',
+};
+const secret = 'cpamp_sk_' + 'c'.repeat(64);
+const empty = () => Response.json({ keys: [], gatewayPending: true, revocationAvailable: false });
+
+describe('Fresh client key persistence UI', () => {
+  let renderer: ReactTestRenderer;
+  const unauthorized = vi.fn();
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    unauthorized.mockClear();
+    vi.stubGlobal('window', { location: new URL('https://manager.example/console') });
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb) });
+    vi.stubGlobal('localStorage', {
+      setItem: vi.fn(() => {
+        throw new Error('forbidden');
+      }),
+    });
+    vi.stubGlobal('sessionStorage', {
+      setItem: vi.fn(() => {
+        throw new Error('forbidden');
+      }),
+    });
+  });
+  afterEach(async () => {
+    if (renderer) await act(async () => renderer.unmount());
+    vi.unstubAllGlobals();
+  });
+  const view = () => JSON.stringify(renderer.toJSON());
+  const button = (text: string) =>
+    renderer.root.findAllByType('button').find((item) => item.props.children === text)!;
+  async function mount(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
+    await act(async () => {
+      renderer = create(
+        <FreshApiKeys
+          client={createPublicApiClient(() => context, fetchMock)}
+          credential="admin-test-only"
+          onUnauthorized={unauthorized}
+        />
+      );
+    });
+  }
+  async function click(text: string) {
+    await act(async () => button(text).props.onClick());
+  }
+
+  it('uses real Public API, shows creation secret once, preserves identity and never persists browser secrets', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(Response.json({ key, createdSecret: secret }, { status: 201 }));
+    await mount(fetchMock);
+    expect(view()).toContain(t('keysEmpty'));
+    await click(t('keysCreate'));
+    expect(view()).toContain(secret);
+    expect(view()).toContain(key.id);
+    expect(view()).toContain(t('keysStaged'));
+    expect(button(t('keysCreate')).props.disabled).toBe(true);
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe('https://manager.example/console/api/v2/api-keys');
+    expect(init).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ requestId: key.requestId }),
+      credentials: 'omit',
+      redirect: 'error',
+      cache: 'no-store',
+      headers: { Authorization: 'Bearer admin-test-only', 'Content-Type': 'application/json' },
+    });
+    expect(String(url)).not.toContain('admin-test-only');
+    await click(t('keysDismiss'));
+    expect(view()).not.toContain(secret);
+    expect(view()).toContain(key.maskedPreview);
+    expect(localStorage.setItem).not.toHaveBeenCalled();
+    expect(sessionStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('blocks double submission, reconciles lost reply with GET and never resends creation', async () => {
+    let reject!: (reason: Error) => void;
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(empty())
+      .mockReturnValueOnce(
+        new Promise<Response>((_resolve, fail) => {
+          reject = fail;
+        })
+      )
+      .mockResolvedValueOnce(Response.json(key));
+    await mount(fetchMock);
+    await act(async () => {
+      button(t('keysCreate')).props.onClick();
+      button(t('keysCreate')).props.onClick();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => reject(new Error('private transport error')));
+    expect(view()).toContain(t('keysUnknown'));
+    expect(view()).not.toContain('private transport error');
+    expect(button(t('keysCreate')).props.disabled).toBe(true);
+    await click(t('keysCheck'));
+    expect(fetchMock.mock.calls[2][0]).toContain('/api-keys/requests/' + key.requestId);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    expect(view()).toContain(t('keysConfirmed'));
+    expect(view()).not.toContain(secret);
+  });
+
+  it('retries only the same request after a not-found reconciliation and does not report unknown as success', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(Response.json({ key }));
+    await mount(fetchMock);
+    await click(t('keysCreate'));
+    expect(view()).not.toContain(t('keysConfirmed'));
+    await click(t('keysCheck'));
+    expect(view()).toContain(t('keysUnknown'));
+    await click(t('keysRetry'));
+    expect(fetchMock.mock.calls[1][1]?.body).toBe(fetchMock.mock.calls[3][1]?.body);
+    expect(view()).toContain(t('keysConfirmed'));
+  });
+
+  it.each([401, 403])('retires Admin authority after %s', async (status) => {
+    await mount(vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status })));
+    expect(unauthorized).toHaveBeenCalledTimes(1);
+    expect(button(t('keysCreate')).props.disabled).toBe(true);
+  });
+
+  it('does not treat malformed or Gateway-effective state as a valid list', async () => {
+    await mount(
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          Response.json({ keys: [key], gatewayPending: false, revocationAvailable: true })
+        )
+    );
+    expect(view()).not.toContain(key.id);
+    expect(button(t('keysCreate')).props.disabled).toBe(true);
+    expect(view()).toContain(t('keysUnavailable'));
+  });
+});

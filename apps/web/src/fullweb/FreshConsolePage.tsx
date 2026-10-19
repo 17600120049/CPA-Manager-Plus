@@ -3,6 +3,7 @@ import { fullWebText as t } from '../i18n/fullweb';
 import { sameIdentity, type FreshOperation } from './bootstrapTransport';
 import { createPublicApiClient, PublicApiError } from './publicApi';
 import type { RoutingContext } from './routingContext';
+import { FreshApiKeys } from './FreshApiKeys';
 
 export function FreshConsolePage({
   context,
@@ -169,6 +170,14 @@ export function FreshConsolePage({
                       {t('logout')}
                     </button>
                   </div>
+                  <FreshApiKeys
+                    client={client}
+                    credential={credential}
+                    onUnauthorized={() => {
+                      logout();
+                      setError(t('authError'));
+                    }}
+                  />
                 </div>
               )}
             </div>
