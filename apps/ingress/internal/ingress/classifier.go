@@ -179,7 +179,7 @@ func routeCandidates(value string) []string {
 
 func privateRoutingCandidate(candidates []string) bool {
 	for _, value := range candidates {
-		for _, private := range []string{FreshRoutingControlPath, FreshRoutingAuthorityPath} {
+		for _, private := range []string{FreshRoutingControlPath, FreshRoutingAuthorityPath, "/internal/fresh-client-key-stage/probe"} {
 			if value == private || strings.HasPrefix(value, private+"/") {
 				return true
 			}

@@ -1,9 +1,13 @@
 package ingress
 
 import (
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -152,5 +156,75 @@ func TestClassifierControlMatcherIsReplaceable(t *testing.T) {
 	}
 	if got := classifier.Classify("/health"); got != RouteGateway {
 		t.Fatalf("transitional route leaked into replacement matcher: %v", got)
+	}
+}
+
+func TestFreshPrivateStagedKeyProbeNeverRoutesToGateway(t *testing.T) {
+	classifier := NewTransitionalClassifier()
+	for _, target := range []string{
+		"/internal/fresh-client-key-stage/probe",
+		"/internal%2ffresh-client-key-stage%2fprobe",
+		"/internal%252ffresh-client-key-stage%252fprobe",
+		"/internal/fresh-client-key-stage/probe/extra",
+	} {
+		request := httptest.NewRequest(http.MethodPost, target, nil)
+		request.Header.Set("Authorization", "Bearer staged-secret")
+		if got := classifier.ClassifyRequest(request); got != RouteDeny {
+			t.Fatalf("private key proof leaked to Gateway: %s => %v", target, got)
+		}
+	}
+}
+
+// Exercise actual HTTP transport routing, not only classifier decisions.
+// Neither mode may send the private probe to Manager or the raw CPA proxy.
+func TestPrivateStagedKeyProbeIsDeniedOnPublicIngressTCP(t *testing.T) {
+	var managerHits, gatewayHits atomic.Int32
+	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		managerHits.Add(1)
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer manager.Close()
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		gatewayHits.Add(1)
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer gateway.Close()
+	managerURL, _ := url.Parse(manager.URL)
+	gatewayURL, _ := url.Parse(gateway.URL)
+	logger := log.New(io.Discard, "", 0)
+	for _, mode := range []struct {
+		name    string
+		handler http.Handler
+	}{
+		{"legacy", NewHandler(NewTransitionalClassifier(), managerURL, gatewayURL, logger)},
+		{"fresh", NewFreshHandler(&FreshRoutes{}, managerURL, gatewayURL, logger, nil)},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			ingress := httptest.NewServer(mode.handler)
+			defer ingress.Close()
+			for _, path := range []string{
+				"/internal/fresh-client-key-stage/probe",
+				"/internal%2ffresh-client-key-stage%2fprobe",
+				"/internal%252ffresh-client-key-stage%252fprobe",
+				"/internal/fresh-client-key-stage/probe/extra",
+			} {
+				req, err := http.NewRequest(http.MethodPost, ingress.URL+path, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Authorization", "Bearer synthetic-staged-key")
+				response, err := ingress.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_ = response.Body.Close()
+				if response.StatusCode != http.StatusNotFound {
+					t.Fatalf("public ingress %s returned %d, want deny 404", path, response.StatusCode)
+				}
+			}
+			if managerHits.Load() != 0 || gatewayHits.Load() != 0 {
+				t.Fatalf("private probe forwarded in %s mode: manager=%d gateway=%d", mode.name, managerHits.Load(), gatewayHits.Load())
+			}
+		})
 	}
 }

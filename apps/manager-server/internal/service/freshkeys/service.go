@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
@@ -108,4 +110,37 @@ func (s *Service) Create(ctx context.Context, requestID string) (Result, bool, e
 		return Result{Key: key}, false, err
 	}
 	return Result{Key: public(v), CreatedSecret: secret}, true, nil
+}
+
+// MatchStagedSecret verifies a Manager-staged credential against the existing
+// canonical records. This result is NOT Runtime-effective Client authentication:
+// callers must never use it alone to forward a model request to CPA.
+func (s *Service) MatchStagedSecret(ctx context.Context, candidate string) (bool, error) {
+	if s == nil || s.repo == nil || s.protector == nil {
+		return false, errors.New("staged client key authority unavailable")
+	}
+	records, err := s.repo.List(ctx)
+	if err != nil {
+		return false, err
+	}
+	// The candidate shape matches secrets minted by Create. No caller input
+	// is interpolated into SQL or emitted in a response/log.
+	shape := len(candidate) == 73 && strings.HasPrefix(candidate, "cpamp_sk_")
+	sum := sha256.Sum256([]byte(candidate))
+	matched := 0
+	for _, record := range records {
+		secret, err := s.protector.UnprotectString(record.Ciphertext)
+		if err != nil || len(secret) != 73 || digest(secret) != record.Hash ||
+			record.Preview != "cpamp_sk_…"+secret[len(secret)-4:] {
+			return false, errors.New("staged client key authority corrupt")
+		}
+		stored, err := hex.DecodeString(record.Hash)
+		if err != nil || len(stored) != len(sum) {
+			return false, errors.New("staged client key digest invalid")
+		}
+		if record.Identity.Lifecycle == identity.LifecycleActive {
+			matched |= subtle.ConstantTimeCompare(sum[:], stored)
+		}
+	}
+	return shape && matched == 1, nil
 }

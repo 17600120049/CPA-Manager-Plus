@@ -132,3 +132,74 @@ func TestFreshClientKeysAdminPersistenceAndStops(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivateStagedKeyProofIsOptInLoopbackOnlyAndNeverGatewayAuthorized(t *testing.T) {
+	paths := legacypreflight.DefaultPaths(filepath.Join(t.TempDir(), "manager.sqlite"))
+	paths.Config = filepath.Join(filepath.Dir(paths.Database), "config.json")
+	opened, err := fresh.Open(t.Context(), paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	app := newFreshApplication(opened, config.Config{}, nil)
+	result, created, err := app.keys.Create(t.Context(), strings.Repeat("c", 32))
+	if err != nil || !created {
+		t.Fatal("create", err)
+	}
+
+	call := func(path, method, remoteAddr, authorization string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, nil)
+		req.RemoteAddr = remoteAddr
+		if authorization != "" {
+			req.Header.Set("Authorization", authorization)
+		}
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+		if strings.Contains(rec.Body.String(), result.CreatedSecret) {
+			t.Fatal("private proof leaked secret")
+		}
+		if rec.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("private proof must not cache")
+		}
+		return rec
+	}
+	url := privateStagedKeyProofPath
+	valid := "Bearer " + result.CreatedSecret
+	if got := call(url, "POST", "127.0.0.1:1442", valid); got.Code != 404 {
+		t.Fatalf("proof enabled by default: %d", got.Code)
+	}
+	t.Setenv("CPAMP_PRIVATE_CLIENT_AUTH_PROOF", "1")
+	for _, remote := range []string{"192.0.2.1:1442", "invalid", "cpamp-manager:1442"} {
+		if got := call(url, "POST", remote, valid); got.Code != 404 {
+			t.Fatalf("nonloopback proof leaked: %d", got.Code)
+		}
+	}
+	for _, invalid := range []string{url + "?secret=1", "/internal/fresh-client-key-stage/%70robe"} {
+		if got := call(invalid, "POST", "127.0.0.1:1442", valid); got.Code != 404 {
+			t.Fatalf("noncanonical proof accepted %s: %d", invalid, got.Code)
+		}
+	}
+	if got := call(url, "GET", "127.0.0.1:1442", valid); got.Code != 405 {
+		t.Fatalf("method accepted: %d", got.Code)
+	}
+	for _, value := range []string{"", "Bearer wrong", "Bearer " + strings.Repeat("0", 73)} {
+		if got := call(url, "POST", "127.0.0.1:1442", value); got.Code != 401 {
+			t.Fatalf("bad credential accepted: %d", got.Code)
+		}
+	}
+	for _, addr := range []string{"127.0.0.1:1442", "[::1]:1442"} {
+		got := call(url, "POST", addr, valid)
+		if got.Code != 200 || !strings.Contains(got.Body.String(), `"managerStagedKeyMatched":true`) ||
+			!strings.Contains(got.Body.String(), `"runtimeEffective":false`) ||
+			!strings.Contains(got.Body.String(), `"gatewayAuthorized":false`) {
+			t.Fatalf("staged match misrepresented Runtime authority: %d %s", got.Code, got.Body.String())
+		}
+	}
+	if _, err := opened.DB.Exec("update fresh_client_api_keys set secret_hash=?", strings.Repeat("0", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if got := call(url, "POST", "127.0.0.1:1442", valid); got.Code != 503 {
+		t.Fatalf("corrupt authority did not fail closed: %d", got.Code)
+	}
+}

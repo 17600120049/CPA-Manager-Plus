@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	identityrepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/identitystore"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
 	repo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
@@ -118,5 +119,77 @@ func TestPersistRestartReconcileAndConcurrentCreation(t *testing.T) {
 	}
 	if _, err = service.List(ctx); err == nil {
 		t.Fatal("plaintext fallback accepted")
+	}
+}
+
+func TestMatchStagedSecretDoesNotGrantRuntimeAuthorization(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "fresh-keys.sqlite")
+	db, err := sqlite.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	p, err := security.NewProtector([]byte("fresh-private-key-proof"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(repo.New(db), p)
+	for _, candidate := range []string{"", "bad", "cpamp_sk_" + strings.Repeat("0", 64)} {
+		ok, err := svc.MatchStagedSecret(ctx, candidate)
+		if err != nil || ok {
+			t.Fatalf("zero-key accepted %q: %v", candidate, err)
+		}
+	}
+	first, created, err := svc.Create(ctx, strings.Repeat("a", 32))
+	if err != nil || !created {
+		t.Fatal("cannot create staged key", err)
+	}
+	last := "0"
+	if strings.HasSuffix(first.CreatedSecret, "0") {
+		last = "1"
+	}
+	for _, v := range []struct {
+		secret string
+		want   bool
+	}{
+		{first.CreatedSecret, true},
+		{first.CreatedSecret[:len(first.CreatedSecret)-1] + last, false},
+		{"cpamp_sk_" + strings.Repeat("0", 64), false},
+		{"", false},
+	} {
+		ok, err := svc.MatchStagedSecret(ctx, v.secret)
+		if err != nil || ok != v.want {
+			t.Fatalf("staged match mismatch: got %v, want %v; err %v", ok, v.want, err)
+		}
+	}
+	// Only an active canonical identity may match. A previously valid secret
+	// must stop matching after each supported non-active lifecycle transition.
+	for _, lifecycle := range []identity.Lifecycle{identity.LifecycleMissing, identity.LifecycleSuperseded} {
+		if _, err := db.ExecContext(ctx,
+			"update gateway_api_key_identities set lifecycle=?, revision=revision+1 where id=?",
+			lifecycle, first.Key.ID,
+		); err != nil {
+			t.Fatalf("set %s key lifecycle: %v", lifecycle, err)
+		}
+		if ok, err := svc.MatchStagedSecret(ctx, first.CreatedSecret); err != nil || ok {
+			t.Fatalf("%s key matched staged proof: %v, %v", lifecycle, ok, err)
+		}
+	}
+	if ok, err := New(repo.New(db), nil).MatchStagedSecret(ctx, first.CreatedSecret); err == nil || ok {
+		t.Fatal("missing protector allowed a key")
+	}
+	wrong, err := security.NewProtector([]byte("wrong-private-key-proof"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := New(repo.New(db), wrong).MatchStagedSecret(ctx, first.CreatedSecret); err == nil || ok {
+		t.Fatal("wrong protector accepted a key")
+	}
+	if _, err := db.Exec("update fresh_client_api_keys set secret_hash=?", strings.Repeat("0", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := svc.MatchStagedSecret(ctx, first.CreatedSecret); err == nil || ok {
+		t.Fatal("tampered hash was not fail-closed")
 	}
 }

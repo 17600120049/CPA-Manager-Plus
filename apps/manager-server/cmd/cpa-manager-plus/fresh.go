@@ -140,6 +140,10 @@ func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.routingAuthority(w, r)
 		return
 	}
+	if r != nil && r.URL != nil && r.URL.Path == privateStagedKeyProofPath {
+		a.privateStagedKeyProof(w, r)
+		return
+	}
 	protect := routing.ProtectFixedBootstrap(http.HandlerFunc(a.canonical), a.fixed)
 	httpapi.ProtectBrandResources(protect).ServeHTTP(w, r)
 }
