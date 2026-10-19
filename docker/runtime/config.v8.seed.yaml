@@ -1,0 +1,31 @@
+# CPA v8.0.13 bootstrap only: no product, client or provider credentials.
+# Empty access.api-keys permits unauthenticated data-plane requests. Keep this
+# candidate private; Gateway remains pending and Beta ingress needs C1/security.
+config-version: 8
+
+server:
+  host: "0.0.0.0"
+  port: 8317
+
+management:
+  allow-remote: false
+  secret-key: ""
+  disable-control-panel: true
+  disable-auto-update-panel: true
+
+# Client authentication; provider api-keys belong to separate upstream sections.
+access:
+  api-keys: []
+
+oauth:
+  auth-dir: "/runtime/gateway/auth"
+
+plugins:
+  enabled: false
+  dir: "/runtime/gateway/plugins"
+
+observability:
+  logs:
+    logging-to-file: false
+  usage:
+    usage-statistics-enabled: false
