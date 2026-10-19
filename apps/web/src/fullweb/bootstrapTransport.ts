@@ -1,5 +1,6 @@
 // Bounded pre-canonical carrier. It has no CPA/Admin transport and persists no
 // secrets. This module belongs to the existing Full Web entry graph.
+import { validControlBasePath } from './routingContext';
 export const BOOTSTRAP_ROOT = '/.well-known/cpamp-bootstrap';
 export const BOOTSTRAP_UI = `${BOOTSTRAP_ROOT}/ui`;
 const API = `${BOOTSTRAP_ROOT}/api/v2/`;
@@ -161,7 +162,7 @@ export function validateFreshAdminKey(key: string): AdminKeyValidationResult {
   };
 }
 
-function sameIdentity(a: FreshIdentity | undefined, b: FreshIdentity | undefined): boolean {
+export function sameIdentity(a: FreshIdentity | undefined, b: FreshIdentity | undefined): boolean {
   if (!a || !b) return false;
   return (
     a.admissionId === b.admissionId &&
@@ -344,6 +345,125 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
       }
       operation = next;
       return next;
+    },
+    async prepareRouting(target: string): Promise<FreshOperation> {
+      if (
+        !operation?.adminInitialized ||
+        !validControlBasePath(target) ||
+        (operation.routing.target && operation.routing.target !== target)
+      ) {
+        throw new BootstrapTransportError('Routing target unavailable', 'bad_request');
+      }
+      const next = await request<FreshOperation>('routing/prepare', {
+        identity: operation.identity,
+        target,
+      });
+      if (
+        !sameIdentity(next?.identity, operation.identity) ||
+        !next.adminInitialized ||
+        next.routing?.target !== target ||
+        next.routing.operationId !== operation.identity.operationId ||
+        !Number.isSafeInteger(next.routing.revision) ||
+        next.routing.revision! <= 0
+      ) {
+        throw new BootstrapTransportError('Routing response unavailable', 'response');
+      }
+      operation = next;
+      return next;
+    },
+    async activateRouting(): Promise<string> {
+      if (
+        !operation?.adminInitialized ||
+        !validControlBasePath(operation.routing.target) ||
+        operation.routing.operationId !== operation.identity.operationId ||
+        !Number.isSafeInteger(operation.routing.revision) ||
+        operation.routing.revision! <= 0
+      ) {
+        throw new BootstrapTransportError('Routing authority unavailable', 'authority');
+      }
+      const prepared = operation;
+      let activationError: BootstrapTransportError | undefined;
+      try {
+        const next = await request<FreshOperation>('routing/activate', {
+          identity: prepared.identity,
+        });
+        if (
+          !sameIdentity(next?.identity, prepared.identity) ||
+          !next.adminInitialized ||
+          next.routing?.target !== prepared.routing.target ||
+          next.routing.operationId !== prepared.routing.operationId ||
+          next.routing.revision !== prepared.routing.revision ||
+          next.routing.committed !== true ||
+          next.routing.stage !== 'committed'
+        ) {
+          throw new BootstrapTransportError('Routing response unavailable', 'mismatch');
+        }
+        operation = next;
+      } catch (err) {
+        // Commit retires the fixed carrier. A lost reply can therefore be
+        // followed by 404, even though retrying the original operation worked.
+        if (
+          !(err instanceof BootstrapTransportError) ||
+          !['transport', 'not_found', 'unavailable', 'response'].includes(err.kind)
+        )
+          throw err;
+        activationError = err;
+      }
+      // No Fresh/Admin credential is ever sent to this public verification
+      // leaf. Its path is the server-persisted prepare checkpoint, not input.
+      let response: Response;
+      try {
+        response = await transport(
+          new URL(prepared.routing.target! + '/api/v2/bootstrap/identity', window.location.origin)
+            .href,
+          {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            mode: 'same-origin',
+            credentials: 'omit',
+            redirect: 'error',
+            cache: 'no-store',
+          }
+        );
+      } catch {
+        throw new BootstrapTransportError('Routing verification unavailable', 'transport');
+      }
+      if (!response.ok)
+        throw new BootstrapTransportError(
+          'Routing verification unavailable',
+          classifyStatus(response.status),
+          response.status
+        );
+      let state: {
+        installationId: string;
+        generation: string;
+        operationId: string;
+        revision: number;
+        target: string;
+        committed: boolean;
+      };
+      try {
+        state = await response.json();
+      } catch {
+        throw new BootstrapTransportError('Routing verification unavailable', 'response');
+      }
+      if (
+        !state ||
+        response.headers.get('X-CPAMP-Route-Owner') !== 'manager' ||
+        state.installationId !== prepared.identity.installationId ||
+        state.generation !== prepared.identity.generation ||
+        state.operationId !== prepared.identity.operationId ||
+        state.revision !== prepared.routing.revision ||
+        state.target !== prepared.routing.target
+      ) {
+        throw new BootstrapTransportError('Routing verification incomplete', 'mismatch');
+      }
+      if (state.committed !== true)
+        throw (
+          activationError ??
+          new BootstrapTransportError('Routing verification incomplete', 'mismatch')
+        );
+      return state.target;
     },
     request,
     clear() {

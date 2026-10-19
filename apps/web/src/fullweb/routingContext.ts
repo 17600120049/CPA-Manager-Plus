@@ -39,18 +39,23 @@ const canonicalBasePath = (value: unknown): value is string =>
     .slice(1)
     .every((part) => part !== '' && part !== '.' && part !== '..');
 
+// Shape checking only; this never grants verified routing authority.
+export function validControlBasePath(value: unknown): value is string {
+  return (
+    canonicalBasePath(value) &&
+    !RESERVED_CONTROL_PATHS.some(
+      (reserved) =>
+        value === reserved || value.startsWith(reserved + '/') || reserved.startsWith(value + '/')
+    )
+  );
+}
+
 export function resolveRoutingContext(snapshot: unknown): RoutingContext | null {
   if (!snapshot || typeof snapshot !== 'object') return null;
   const projection = snapshot as Record<string, unknown>;
   if (
     projection.state !== 'verified_effective' ||
-    !canonicalBasePath(projection.verifiedEffectiveControlBasePath) ||
-    RESERVED_CONTROL_PATHS.some((reserved) => {
-      const base = projection.verifiedEffectiveControlBasePath as string;
-      return (
-        base === reserved || base.startsWith(reserved + '/') || reserved.startsWith(base + '/')
-      );
-    }) ||
+    !validControlBasePath(projection.verifiedEffectiveControlBasePath) ||
     !Number.isSafeInteger(projection.revision) ||
     (projection.revision as number) <= 0
   ) {

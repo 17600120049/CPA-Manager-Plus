@@ -32,9 +32,7 @@ function findByTestId(root: ReactTestInstance, testId: string): ReactTestInstanc
 }
 
 function textOf(node: ReactTestInstance): string {
-  return node.children
-    .map((child) => (typeof child === 'string' ? child : textOf(child)))
-    .join('');
+  return node.children.map((child) => (typeof child === 'string' ? child : textOf(child))).join('');
 }
 
 describe('FreshBootstrapPage product preview workflow', () => {
@@ -355,7 +353,9 @@ describe('FreshBootstrapPage product preview workflow', () => {
     const fs = (
       globalThis as unknown as {
         process: {
-          getBuiltinModule: (id: string) => { readFileSync: (path: URL, encoding: string) => string };
+          getBuiltinModule: (id: string) => {
+            readFileSync: (path: URL, encoding: string) => string;
+          };
         };
       }
     ).process.getBuiltinModule('node:fs');
@@ -377,7 +377,9 @@ describe('FreshBootstrapPage product preview workflow', () => {
     // 1. no_handoff state
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+      renderer = create(
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
+      );
     });
     collectClasses(renderer.root);
 
@@ -425,5 +427,111 @@ describe('FreshBootstrapPage product preview workflow', () => {
     for (const cls of renderedClasses) {
       expect(definedClasses.has(cls), `Missing CSS class .${cls} in carrier.css`).toBe(true);
     }
+  });
+
+  it('enables only a server-committed verified route and clears Fresh authority before continuing', async () => {
+    const prepared = {
+      ...pendingOperation,
+      adminInitialized: true,
+      revision: 3,
+      routing: {
+        target: '/console',
+        operationId: identity.operationId,
+        revision: 1,
+        stage: 'intent_persisted',
+        committed: false,
+      },
+    };
+    const committed = {
+      ...prepared,
+      revision: 6,
+      routing: { ...prepared.routing, stage: 'committed', committed: true },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          token: 'session',
+          operation: { ...prepared, routing: { committed: false } },
+        })
+      )
+      .mockResolvedValueOnce(Response.json(prepared))
+      .mockResolvedValueOnce(Response.json(committed))
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            installationId: identity.installationId,
+            generation: identity.generation,
+            operationId: identity.operationId,
+            revision: 1,
+            target: '/console',
+            committed: true,
+          },
+          { headers: { 'X-CPAMP-Route-Owner': 'manager' } }
+        )
+      );
+    const transport = createBootstrapTransport(fetchMock);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={handoff} transport={transport} />);
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'continue-console' })).toHaveLength(0);
+    await act(async () =>
+      findByTestId(renderer.root, 'routing-form').props.onSubmit({ preventDefault: vi.fn() })
+    );
+    expect(findByTestId(renderer.root, 'continue-console').props.href).toBe('/console');
+    expect(findByTestId(renderer.root, 'console-path').props.disabled).toBe(true);
+    await expect(transport.fetchOperation()).rejects.toMatchObject({ kind: 'authority' });
+  });
+
+  it('reconciles lost prepare responses and locks the persisted target without claiming success', async () => {
+    const initial = { ...pendingOperation, adminInitialized: true };
+    const prepared = {
+      ...initial,
+      revision: 3,
+      routing: {
+        target: '/console',
+        operationId: identity.operationId,
+        revision: 1,
+        stage: 'intent_persisted',
+        committed: false,
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ token: 'session', operation: initial }))
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(Response.json(prepared))
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            installationId: identity.installationId,
+            generation: identity.generation,
+            operationId: identity.operationId,
+            revision: 1,
+            target: '/console',
+            committed: false,
+          },
+          { headers: { 'X-CPAMP-Route-Owner': 'manager' } }
+        )
+      )
+      .mockResolvedValueOnce(Response.json(prepared));
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <FreshBootstrapPage handoff={handoff} transport={createBootstrapTransport(fetchMock)} />
+      );
+    });
+    await act(async () =>
+      findByTestId(renderer.root, 'routing-form').props.onSubmit({ preventDefault: vi.fn() })
+    );
+    expect(findByTestId(renderer.root, 'console-path').props.disabled).toBe(true);
+    await act(async () =>
+      findByTestId(renderer.root, 'routing-form').props.onSubmit({ preventDefault: vi.fn() })
+    );
+    expect(fetchMock.mock.calls[3][0]).toContain('/routing/activate');
+    expect(renderer.root.findAllByProps({ 'data-testid': 'continue-console' })).toHaveLength(0);
+    expect(JSON.stringify(renderer.toJSON())).toContain('503');
   });
 });

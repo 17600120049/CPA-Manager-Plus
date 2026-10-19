@@ -51,6 +51,16 @@
   -webkit-font-smoothing: antialiased;
 }
 
+.console-state {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+.console-state dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 html.light {
   --bg-canvas: #f1f5f9;
   --bg-surface: #ffffff;

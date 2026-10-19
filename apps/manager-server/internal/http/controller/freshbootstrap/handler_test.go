@@ -16,6 +16,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshrouting"
 )
 
 func TestFixedTransportClaimSessionMethodsAliasesAndOversizedBodies(t *testing.T) {
@@ -105,6 +106,13 @@ func TestFixedTransportClaimSessionMethodsAliasesAndOversizedBodies(t *testing.T
 	if w = request("GET", bootstrap.FixedBootstrapAPIPath+"operation", "Fresh "+session.Token, ""); w.Code != 200 {
 		t.Fatal("session not accepted")
 	}
+	driver := &routingTestDriver{}
+	fixed.Routing = freshrouting.New(st, driver)
+	h = routing.ProtectFixedBootstrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { gatewayHits++ }), fixed)
+	prepareBody, _ := json.Marshal(map[string]any{"identity": id, "target": "/console"})
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"routing/prepare", "Fresh "+session.Token, string(prepareBody)); w.Code != 409 {
+		t.Fatal("uninitialized Admin prepared routing", w.Code)
+	}
 	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"operation", "Fresh "+session.Token, ""); w.Code != 405 {
 		t.Fatal("method bypass")
 	}
@@ -135,4 +143,47 @@ func TestFixedTransportClaimSessionMethodsAliasesAndOversizedBodies(t *testing.T
 	if gatewayHits != 0 {
 		t.Fatal("fixed transport fell through to Gateway")
 	}
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"routing/prepare", "Fresh wrong-session", string(prepareBody)); w.Code != 401 {
+		t.Fatal("wrong session prepared routing", w.Code)
+	}
+	invalidBody, _ := json.Marshal(map[string]any{"identity": id, "target": "/v1"})
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"routing/prepare", "Fresh "+session.Token, string(invalidBody)); w.Code != 409 {
+		t.Fatal("reserved target status", w.Code)
+	}
+	driver.inspectErr = freshrouting.ErrBlocked
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"routing/prepare", "Fresh "+session.Token, string(prepareBody)); w.Code != 503 {
+		t.Fatal("Ingress outage misclassified as conflict", w.Code)
+	}
+	driver.inspectErr = nil
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"routing/prepare", "Fresh "+session.Token, string(prepareBody)); w.Code != 200 {
+		t.Fatal("prepare retry", w.Code)
+	}
+	driver.verifyErr = freshrouting.ErrUnverified
+	activateBody, _ := json.Marshal(map[string]any{"identity": id})
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"routing/activate", "Fresh "+session.Token, string(activateBody)); w.Code != 503 {
+		t.Fatal("failed public verification misclassified", w.Code)
+	}
+	record, _ := st.Load(t.Context())
+	if record.Operation.Routing.Committed {
+		t.Fatal("unverified route committed")
+	}
+	driver.state.Generation = "foreign"
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"routing/activate", "Fresh "+session.Token, string(activateBody)); w.Code != 409 {
+		t.Fatal("foreign owner status", w.Code)
+	}
 }
+
+type routingTestDriver struct {
+	state      freshrouting.State
+	inspectErr error
+	verifyErr  error
+}
+
+func (d *routingTestDriver) Inspect(context.Context) (freshrouting.State, error) {
+	return d.state, d.inspectErr
+}
+func (d *routingTestDriver) Apply(_ context.Context, state freshrouting.State) error {
+	d.state = state
+	return nil
+}
+func (d *routingTestDriver) Verify(context.Context, freshrouting.State) error { return d.verifyErr }

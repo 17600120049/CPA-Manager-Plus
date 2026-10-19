@@ -61,6 +61,7 @@ export function createPublicApiClient(
           mode: 'same-origin',
           credentials: 'omit',
           redirect: 'error',
+          cache: 'no-store',
         });
       } catch {
         throw new PublicApiError('network');

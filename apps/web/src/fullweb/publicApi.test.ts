@@ -34,6 +34,7 @@ describe('canonical Full Web Public API transport', () => {
         mode: 'same-origin',
         credentials: 'omit',
         redirect: 'error',
+        cache: 'no-store',
       }
     );
   });
@@ -120,6 +121,7 @@ describe('canonical Full Web Public API transport', () => {
         mode: 'same-origin',
         credentials: 'omit',
         redirect: 'error',
+        cache: 'no-store',
       });
 
       transport.mockClear();
