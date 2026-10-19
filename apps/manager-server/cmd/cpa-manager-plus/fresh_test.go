@@ -102,6 +102,16 @@ func TestFreshHostInitializeActivatesExistingReadOnlyListenerAndResumes(t *testi
 	if freshRequest(t, server.addr, "claim/exchange", "", claim, &session) != http.StatusOK {
 		t.Fatal("claim exchange failed")
 	}
+	weakCommit := fresh.AdminCommitRequest{Identity: session.Operation.Identity, CommitID: "weak-commit", Key: "too-short"}
+	if status := freshRequest(t, server.addr, "admin/commit", session.Token, weakCommit, nil); status != http.StatusBadRequest {
+		t.Fatalf("weak admin key commit status = %d, want 400", status)
+	}
+	var generated struct {
+		Key string `json:"key"`
+	}
+	if freshRequest(t, server.addr, "admin/generate", session.Token, nil, &generated) != http.StatusOK || !strings.HasPrefix(generated.Key, "cpamp_") {
+		t.Fatal("admin key generation failed")
+	}
 	key := "Cpamp_Fresh_Manual_Admin_Secret_839216"
 	commit := fresh.AdminCommitRequest{Identity: session.Operation.Identity, CommitID: "lost-response-commit", Key: key}
 	var op bootstrap.FreshOperation

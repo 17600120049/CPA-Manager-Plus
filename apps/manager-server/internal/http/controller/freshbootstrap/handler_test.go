@@ -111,6 +111,27 @@ func TestFixedTransportClaimSessionMethodsAliasesAndOversizedBodies(t *testing.T
 	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"admin/generate", "Fresh "+session.Token, ""); w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("generated secret was not bounded")
 	}
+	var generated struct {
+		Key string `json:"key"`
+	}
+	if json.Unmarshal(w.Body.Bytes(), &generated) != nil || generated.Key == "" {
+		t.Fatal("missing generated admin key")
+	}
+	weakCommit, _ := json.Marshal(fresh.AdminCommitRequest{Identity: id, CommitID: "commit-1", Key: "weak"})
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"admin/commit", "Fresh "+session.Token, string(weakCommit)); w.Code != 400 {
+		t.Fatal("weak admin key was not rejected as 400", w.Code)
+	}
+	validCommit, _ := json.Marshal(fresh.AdminCommitRequest{Identity: id, CommitID: "commit-1", Key: generated.Key})
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"admin/commit", "Fresh "+session.Token, string(validCommit)); w.Code != 200 {
+		t.Fatal("valid admin commit failed", w.Code)
+	}
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"admin/commit", "Fresh "+session.Token, string(validCommit)); w.Code != 200 {
+		t.Fatal("idempotent admin commit replay failed", w.Code)
+	}
+	otherCommit, _ := json.Marshal(fresh.AdminCommitRequest{Identity: id, CommitID: "commit-2", Key: generated.Key})
+	if w = request("POST", bootstrap.FixedBootstrapAPIPath+"admin/commit", "Fresh "+session.Token, string(otherCommit)); w.Code != 401 {
+		t.Fatal("different commitId after initialization was not rejected", w.Code)
+	}
 	if gatewayHits != 0 {
 		t.Fatal("fixed transport fell through to Gateway")
 	}

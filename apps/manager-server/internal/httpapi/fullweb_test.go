@@ -118,6 +118,26 @@ func TestPackagedFullWebDist(t *testing.T) {
 			t.Fatal(ref[1], asset.Code, asset.Header())
 		}
 	}
+
+	bh := BootstrapWebHandler()
+	br := httptest.NewRequest("GET", "/.well-known/cpamp-bootstrap/ui", nil)
+	br.Header.Set("Accept", "text/html")
+	bw := httptest.NewRecorder()
+	bh.ServeHTTP(bw, br)
+	if bw.Code != 200 {
+		t.Fatalf("packaged Bootstrap HTML %d", bw.Code)
+	}
+	bRefs := regexp.MustCompile(`(?:src|href)="(/\.well-known/cpamp-bootstrap/assets/[^"]+)"`).FindAllStringSubmatch(bw.Body.String(), -1)
+	if len(bRefs) == 0 {
+		t.Fatal("packaged Bootstrap HTML has no hashed assets")
+	}
+	for _, ref := range bRefs {
+		asset := httptest.NewRecorder()
+		bh.ServeHTTP(asset, httptest.NewRequest("GET", ref[1], nil))
+		if asset.Code != 200 || asset.Body.Len() == 0 || strings.Contains(asset.Header().Get("Content-Type"), "text/html") || !strings.Contains(asset.Header().Get("Cache-Control"), "no-store") {
+			t.Fatal(ref[1], asset.Code, asset.Header())
+		}
+	}
 }
 
 // Optional local-only browser carrier using the same compiled embed. No
