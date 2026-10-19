@@ -16,11 +16,13 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/freshbootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
+	keyrepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshrouting"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshstrategy"
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
@@ -66,11 +68,13 @@ type freshApplication struct {
 	strategy  *freshstrategy.Service
 	protector *security.Protector
 	fixed     http.Handler
+	keys      *freshkeys.Service
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
 	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector}
+	a.keys = freshkeys.New(keyrepo.New(opened.DB), opened.Protector)
 	var runtime runtimeservice.RuntimeClient
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtime = runtimeservice.NewEmbeddedClientWithTokenSource(cfg.RuntimeURL, runtimeservice.NewFileRuntimeTokenSource(cfg.RuntimeTokenFile))
@@ -175,6 +179,9 @@ func (a *freshApplication) canonical(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) {
+	// Full Web's HTML/static wrapper sets no-cache. Restore the API boundary
+	// here before any authentication error or one-time secret response.
+	w.Header().Set("Cache-Control", "no-store")
 	record, err := a.store.Load(r.Context())
 	if err != nil {
 		http.NotFound(w, r)
@@ -198,6 +205,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	switch {
+	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):
+		a.clientKeys(w, r, op, resource)
 	case resource == "operation" && r.Method == http.MethodGet:
 		writeFreshJSON(w, op)
 	case resource == "strategy" && r.Method == http.MethodPost:
