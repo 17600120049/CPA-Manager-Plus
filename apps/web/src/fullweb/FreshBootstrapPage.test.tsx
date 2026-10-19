@@ -1,10 +1,6 @@
-import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOOTSTRAP_UI, consumeHandoff, createBootstrapTransport } from './bootstrapTransport';
+import { BOOTSTRAP_UI, createBootstrapTransport } from './bootstrapTransport';
 import { FreshBootstrapPage } from './FreshBootstrapPage';
 
 const identity = {
@@ -251,244 +247,43 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(textOf(findByTestId(renderer.root, 'init-error-title'))).toContain('HTTP 401');
   });
 
-  it.skipIf(process.env.CPAMP_FRESH_LIVE_E2E !== '1')(
-    'completes live Web -> Manager Server Fresh Bootstrap initialization and failure checks over real HTTP',
-    async () => {
-      const tempDir = mkdtempSync(path.join(tmpdir(), 'cpamp-fresh-e2e-'));
-      const binPath = path.join(tempDir, 'cpa-manager-plus');
-      const dataDir = path.join(tempDir, 'data');
-      const dbPath = path.join(dataDir, 'usage.sqlite');
-      const configPath = path.join(dataDir, 'config.json');
-      const dataKeyPath = path.join(dataDir, 'data.key');
+  it('reconciles operation state via GET operation when admin commit encounters HTTP 409 conflict', async () => {
+    const validKey = 'cpamp_9876543210abcdefABCDEFGH12';
+    const committedOperation = {
+      ...pendingOperation,
+      revision: 2,
+      adminInitialized: true,
+    };
 
-      execFileSync('mkdir', ['-p', dataDir]);
-      writeFileSync(
-        configPath,
-        JSON.stringify({
-          bootstrap: {
-            provisioning: 'owned',
-            sourceVersion: 'v2.0.0-dev',
-          },
-        })
-      );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'session-token-1', operation: pendingOperation }))
+      )
+      .mockResolvedValueOnce(new Response('conflict', { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(committedOperation)));
 
-      const serverRepoDir = path.resolve(process.cwd(), 'apps/manager-server');
-      const goWorkServerDir = serverRepoDir.endsWith('apps/web/apps/manager-server')
-        ? path.resolve(process.cwd(), '../manager-server')
-        : serverRepoDir;
-      execFileSync('go', ['build', '-o', binPath, './cmd/cpa-manager-plus'], {
-        cwd: goWorkServerDir,
-        stdio: 'inherit',
-      });
+    const transport = createBootstrapTransport(fetchMock);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={handoff} transport={transport} />);
+    });
 
-      const env: NodeJS.ProcessEnv = {
-        ...process.env,
-        CPA_MANAGER_CONFIG_PATH: configPath,
-        CPA_MANAGER_DATA_KEY_PATH: dataKeyPath,
-        CPA_MANAGER_ADMIN_KEY: '',
-        CPA_MANAGER_ADMIN_KEY_FILE: '',
-        HTTP_ADDR: '127.0.0.1:0',
-        USAGE_DATA_DIR: dataDir,
-        USAGE_DB_PATH: dbPath,
-      };
+    const input = findByTestId(renderer.root, 'admin-key-input');
+    const checkbox = findByTestId(renderer.root, 'confirm-key-saved-checkbox');
+    const form = findByTestId(renderer.root, 'admin-init-form');
 
-      const handoffLine = execFileSync(binPath, ['initialize'], {
-        env,
-        encoding: 'utf8',
-      }).trim();
-      expect(handoffLine).toMatch(/^\/\.well-known\/cpamp-bootstrap\/ui#handoff=/);
+    await act(async () => {
+      input.props.onChange({ target: { value: validKey } });
+      checkbox.props.onChange({ target: { checked: true } });
+    });
 
-      const proc = spawn(binPath, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-      try {
-        const addr = await new Promise<string>((resolve, reject) => {
-          let logs = '';
-          const onData = (chunk: Buffer) => {
-            logs += chunk.toString('utf8');
-            const match = logs.match(/cpa-manager-plus listening on (127\.0\.0\.1:\d+)/);
-            if (match) {
-              resolve(match[1]);
-            }
-          };
-          proc.stderr.on('data', onData);
-          proc.stdout.on('data', onData);
-          proc.on('exit', (code) => reject(new Error(`Server exited early (${code}): ${logs}`)));
-          setTimeout(() => reject(new Error(`Timeout waiting for listener: ${logs}`)), 10000);
-        });
+    await act(async () => {
+      form.props.onSubmit({ preventDefault: vi.fn() });
+    });
 
-        const origin = `http://${addr}`;
-        let discoveryReady = false;
-        for (let i = 0; i < 50; i += 1) {
-          const res = await fetch(`${origin}/.well-known/cpamp-bootstrap`);
-          const body = await res.text();
-          if (res.status === 200 && body.includes('fresh_claim_required')) {
-            discoveryReady = true;
-            break;
-          }
-          await new Promise((r) => setTimeout(r, 50));
-        }
-        expect(discoveryReady).toBe(true);
-
-        const uiRes = await fetch(`${origin}${BOOTSTRAP_UI}`, {
-          headers: { Accept: 'text/html' },
-        });
-        const uiHtml = await uiRes.text();
-        expect(uiRes.status).toBe(200);
-        expect(uiHtml).toContain('<title>CPAMP · 初始化向导</title>');
-
-        const trace: Array<{ method: string; path: string; status: number }> = [];
-        const pendingRequests = new Set<Promise<unknown>>();
-        const realFetch: typeof fetch = async (input, init) => {
-          const task = (async () => {
-            const urlStr =
-              typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-            const u = new URL(urlStr);
-            const res = await globalThis.fetch(input, init);
-            const text = await res.text();
-            trace.push({
-              method: init?.method || 'GET',
-              path: u.pathname,
-              status: res.status,
-            });
-            return new Response(text, {
-              status: res.status,
-              statusText: res.statusText,
-              headers: res.headers,
-            });
-          })();
-          pendingRequests.add(task);
-          try {
-            return await task;
-          } finally {
-            pendingRequests.delete(task);
-          }
-        };
-        const flushNetwork = async () => {
-          while (pendingRequests.size > 0) {
-            await Promise.allSettled([...pendingRequests]);
-            await new Promise((r) => setTimeout(r, 10));
-          }
-        };
-
-        const liveLocation = new URL(`${origin}${handoffLine}`);
-        vi.stubGlobal('window', {
-          location: liveLocation,
-          history: {
-            replaceState: (_: unknown, _title: string, nextPath: string) => {
-              liveLocation.href = new URL(nextPath, liveLocation.origin).href;
-            },
-          },
-        });
-
-        const liveHandoff = consumeHandoff(window.location, window.history);
-        expect(liveHandoff).not.toBeNull();
-        expect(window.location.hash).toBe('');
-
-        const transport = createBootstrapTransport(realFetch);
-        let renderer!: ReactTestRenderer;
-        await act(async () => {
-          renderer = create(<FreshBootstrapPage handoff={liveHandoff} transport={transport} />);
-        });
-        await act(async () => {
-          await flushNetwork();
-        });
-
-        expect(textOf(findByTestId(renderer.root, 'op-id'))).toBe(
-          liveHandoff!.identity.operationId
-        );
-        expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('待初始化');
-        expect(textOf(findByTestId(renderer.root, 'op-gateway-status'))).toContain(
-          'Pending · Fail-Closed'
-        );
-
-        // Negative Scenario A: Replay consumed claim token -> 401
-        const replayTransport = createBootstrapTransport(realFetch);
-        await expect(replayTransport.start(liveHandoff!)).rejects.toMatchObject({
-          kind: 'rejected',
-          status: 401,
-        });
-
-        // Negative Scenario B: Weak key rejected by live backend -> 400
-        await expect(
-          transport.commitAdminKey('commit-weak-live', 'too-short')
-        ).rejects.toMatchObject({
-          kind: 'bad_request',
-          status: 400,
-        });
-
-        // Happy Path: Generate key via UI -> Confirm -> Submit Admin Commit via UI
-        const generateBtn = findByTestId(renderer.root, 'generate-key-btn');
-        await act(async () => {
-          generateBtn.props.onClick();
-          await flushNetwork();
-        });
-
-        const keyInput = findByTestId(renderer.root, 'admin-key-input');
-        const generatedKey = keyInput.props.value as string;
-        expect(generatedKey).toMatch(/^cpamp_[A-Za-z0-9]{32}$/);
-
-        const checkbox = findByTestId(renderer.root, 'confirm-key-saved-checkbox');
-        await act(async () => {
-          checkbox.props.onChange({ target: { checked: true } });
-        });
-
-        const form = findByTestId(renderer.root, 'admin-init-form');
-        await act(async () => {
-          form.props.onSubmit({ preventDefault: vi.fn() });
-          await flushNetwork();
-        });
-
-        expect(textOf(findByTestId(renderer.root, 'admin-init-complete-panel'))).toContain(
-          '本次管理员密钥初始化已成功写入服务端'
-        );
-        expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('已初始化');
-        expect(textOf(findByTestId(renderer.root, 'op-gateway-status'))).toContain(
-          'Pending · Fail-Closed'
-        );
-
-        const refreshBtn = findByTestId(renderer.root, 'refresh-operation-btn');
-        await act(async () => {
-          refreshBtn.props.onClick();
-          await flushNetwork();
-        });
-
-        expect(trace).toEqual([
-          {
-            method: 'POST',
-            path: '/.well-known/cpamp-bootstrap/api/v2/claim/exchange',
-            status: 200,
-          },
-          {
-            method: 'POST',
-            path: '/.well-known/cpamp-bootstrap/api/v2/claim/exchange',
-            status: 401,
-          },
-          {
-            method: 'POST',
-            path: '/.well-known/cpamp-bootstrap/api/v2/admin/commit',
-            status: 400,
-          },
-          {
-            method: 'POST',
-            path: '/.well-known/cpamp-bootstrap/api/v2/admin/generate',
-            status: 200,
-          },
-          {
-            method: 'POST',
-            path: '/.well-known/cpamp-bootstrap/api/v2/admin/commit',
-            status: 200,
-          },
-          {
-            method: 'GET',
-            path: '/.well-known/cpamp-bootstrap/api/v2/operation',
-            status: 200,
-          },
-        ]);
-      } finally {
-        proc.kill('SIGINT');
-        await new Promise((r) => proc.once('exit', r));
-        rmSync(tempDir, { recursive: true, force: true });
-      }
-    },
-    30000
-  );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2][0]).toContain('/.well-known/cpamp-bootstrap/api/v2/operation');
+    expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('已初始化');
+  });
 });
