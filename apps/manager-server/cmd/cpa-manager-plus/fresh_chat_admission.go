@@ -19,7 +19,8 @@ const privateChatAdmissionPath = "/internal/fresh-chat-admission"
 // Fresh AND Legacy Ingress classify this namespace as deny before proxying.
 func (a *freshApplication) privateChatAdmission(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	if os.Getenv("CPAMP_PRIVATE_S2A_CHAT") != "1" || a.keyApply == nil || !privateProofLoopback(r.RemoteAddr) ||
+	s2a, s2b := os.Getenv("CPAMP_PRIVATE_S2A_CHAT") == "1", os.Getenv("CPAMP_PRIVATE_S2B_CHAT") == "1"
+	if s2a == s2b || a.keyApply == nil || !privateProofLoopback(r.RemoteAddr) ||
 		r.Method != http.MethodPost || r.URL.EscapedPath() != privateChatAdmissionPath || r.URL.RawQuery != "" || r.URL.ForceQuery ||
 		r.Header.Get("Content-Type") != "application/json" || len(r.Header.Values("Authorization")) != 1 {
 		w.WriteHeader(404)

@@ -18,9 +18,11 @@ import (
 type chatVerdict struct {
 	RequestBinding string `json:"requestBinding"`
 	ExpiresAtMS    int64  `json:"expiresAtMs"`
+	Model          string `json:"model,omitempty"`
 }
 type privateChat struct {
 	manager, gateway string
+	model            string
 	client           *http.Client
 	transport        *http.Transport
 }
@@ -31,6 +33,25 @@ func (h *Handler) EnablePrivateChat(manager, gateway *url.URL) {
 	if manager.String() == "http://127.0.0.1:18319" && gateway.String() == "http://127.0.0.1:8317" {
 		h.chat = newPrivateChat(manager.String(), gateway.String())
 	}
+}
+
+// EnablePrivateS2BChat fixes one model at trusted process startup. There is no
+// request-driven target/model discovery and no change to S2-A's synthetic model.
+func (h *Handler) EnablePrivateS2BChat(manager, gateway *url.URL, model string) bool {
+	if model == "" || model == "s1-proof-model" || len(model) > 128 {
+		return false
+	}
+	for _, c := range model {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_' || c == '/') {
+			return false
+		}
+	}
+	h.EnablePrivateChat(manager, gateway)
+	if h.chat == nil {
+		return false
+	}
+	h.chat.model = model
+	return true
 }
 
 func newPrivateChat(manager, gateway string) *privateChat {
@@ -53,7 +74,7 @@ func newPrivateChat(manager, gateway string) *privateChat {
 		}
 		return &admittedConn{Conn: conn, until: attempt.until, wrote: &attempt.wrote}, nil
 	}
-	return &privateChat{manager: manager + PrivateChatAdmissionPath, gateway: gateway + chatPath,
+	return &privateChat{manager: manager + PrivateChatAdmissionPath, gateway: gateway + chatPath, model: "s1-proof-model",
 		client: &http.Client{Transport: direct, Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, transport: upstream}
 }
 
@@ -89,7 +110,7 @@ func (h *privateChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	deny := func() { http.Error(w, "gateway pending configuration", 503) }
 	controller := http.NewResponseController(w)
 	_ = controller.SetReadDeadline(time.Now().Add(2 * time.Second))
-	body, err := readChat(r)
+	body, err := readChatModel(r, h.model)
 	_ = controller.SetReadDeadline(time.Time{})
 	if err != nil {
 		deny()
@@ -128,7 +149,11 @@ func (h *privateChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.DisallowUnknownFields()
 	valid := readErr == nil && len(data) <= 1024 && response.StatusCode == 200 && response.Header.Get("Content-Type") == "application/json" &&
 		d.Decode(&verdict) == nil && d.Decode(new(any)) == io.EOF
-	if !valid || verdict.RequestBinding != binding || verdict.ExpiresAtMS <= time.Now().UnixMilli() || verdict.ExpiresAtMS > time.Now().Add(time.Second).UnixMilli() {
+	expectedModel := h.model
+	if expectedModel == "s1-proof-model" {
+		expectedModel = ""
+	}
+	if !valid || verdict.Model != expectedModel || verdict.RequestBinding != binding || verdict.ExpiresAtMS <= time.Now().UnixMilli() || verdict.ExpiresAtMS > time.Now().Add(time.Second).UnixMilli() {
 		deny()
 		return
 	}

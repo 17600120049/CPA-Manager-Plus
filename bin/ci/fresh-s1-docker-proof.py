@@ -64,14 +64,22 @@ def main():
     token, management = secrets.token_hex(32), secrets.token_hex(32)
     runtime, probe = name + "-runtime", name + "-probe"
     full = "--preflight" not in sys.argv[2:]
-    s2a = "--s2a" in sys.argv[2:]
-    expiry = "--s2a-expiry" in sys.argv[2:]
+    s2b = "--s2b-offline" in sys.argv[2:]
+    s2a = "--s2a" in sys.argv[2:] or s2b
+    expiry = "--s2a-expiry" in sys.argv[2:] or "--s2b-offline-expiry" in sys.argv[2:]
+    if s2b:
+        from fresh_s2b_proof import fixture
+        provider_identity, provider_credential = fixture()
+        evidence.update(liveProvider="LIVE NOT RUN / HOLD", controlledExternalEgress="NOT RUN / HOLD", fixture="OFFLINE TLS STUB ONLY")
     prefix = os.environ.get("CPAMP_PROOF_IMAGE_PREFIX", "cpamp-s1")
     tag = os.environ.get("CPAMP_PROOF_IMAGE_TAG", "local")
     images = {kind: prefix+"-"+kind+":"+tag for kind in ("runtime", "manager", "ingress")}
     if s2a:
         from fresh_s2a_proof import source_paths as s2a_sources
         evidence["sourceSHA256"].update({p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in s2a_sources(ROOT)})
+    if s2b:
+        for p in ("bin/ci/fresh_s2b_proof.py", "apps/manager-server/internal/service/cpa/private_provider_seed.go"):
+            evidence["sourceSHA256"][p] = hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
 
     def record(**fields):
         evidence["events"].append({"utcMs": int(time.time()*1000), **fields})
@@ -115,12 +123,14 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
             volumes.append(volume)
         # Newly created volumes: no existing deployment is ever selected.
         run("runtime", metadata["Id"], "--network", name,
+            *(["--add-host", "s2b-provider.invalid:127.0.0.1"] if s2b else []),
             "-e", "CPAMP_RUNTIME_ADDR=127.0.0.1:9081",
             "-e", "CPAMP_RUNTIME_IDENTITY=embedded-auth-proof",
             "-e", "CPAMP_RUNTIME_TOKEN=" + token,
             "-v", volumes[0]+":/runtime", "-v", volumes[1]+":/run/cpamp/runtime-secret")
         # Trusted tool shares only the network, with no credentials/data mounts.
         run("probe", "python:3.13-alpine", "--network", "container:"+runtime,
+            *(["--tmpfs", "/tmp:rw,noexec,nosuid,size=4m"] if s2b else []),
             "--entrypoint", "sleep", "--cap-drop=ALL", "--security-opt", "no-new-privileges", "--read-only", args=("1800",))
         for _ in range(40):
             try:
@@ -136,8 +146,12 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
         # No child is running. Seed ONLY the task-created empty config, once.
         seed = (ROOT / "docker/runtime/config.v8.loopback-proof.yaml").read_text()
         seed = seed.replace("secret-key: ''", "secret-key: '"+management+"'")
-        if full:
+        if full and not s2b:
             seed += "\napi-keys:\n  openai-compatibility:\n    - name: s1-synthetic\n      base-url: http://127.0.0.1:18321/v1\n      keys:\n        - api-key: s1-synthetic-upstream-only\n      models:\n        - name: s1-proof-model\n          alias: s1-proof-model\n"
+        if s2b:
+            from fresh_s2b_proof import seed_config, start_offline_tls
+            seed = seed_config(management, provider_identity, provider_credential)
+            start_offline_tls(command, runtime, probe, provider_credential)
         command("docker", "exec", "-i", runtime, "sh", "-ec",
                 "test -z \"$(ls -A /runtime/gateway/auth)\"; cat > /runtime/gateway/config.yaml; chown 10001:10001 /runtime/gateway/config.yaml; chmod 600 /runtime/gateway/config.yaml", data=seed)
         if full:
@@ -151,8 +165,8 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
                 "-e", "CPAMP_UPDATE_CHECK_ENABLED=false", "-e", "CPAMP_PRIVATE_S1_PERMIT=/run/cpamp-s1/permit.json"]
             if s2a:
                 from fresh_s2a_proof import start_relay
-                start_relay(command, probe)
-                manager_env += ["-e", "CPAMP_PRIVATE_S2A_CHAT=1"]
+                start_relay(command, probe, replay_test=s2b)
+                manager_env += ["-e", ("CPAMP_PRIVATE_S2B_CHAT=1" if s2b else "CPAMP_PRIVATE_S2A_CHAT=1")]
             init = command("docker", "run", "--rm", "--network", "none", *manager_env,
                 "-v", volumes[2]+":/data", images["manager"], "initialize")
             payload = init.split("#handoff=")[1].strip()
@@ -162,7 +176,9 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
             run("ingress", images["ingress"], "--network", "container:"+runtime,
                 "-e", "CPAMP_INGRESS_ADDR=0.0.0.0:28471", "-e", "CPAMP_MANAGER_URL=http://127.0.0.1:18319",
                 "-e", "CPAMP_GATEWAY_URL=http://127.0.0.1:8317", "-e", "CPAMP_INGRESS_CONTROL_ADDR=127.0.0.1:9082",
-                "-e", "CPAMP_PRIVATE_S2A_CHAT="+("1" if s2a else "0"))
+                "-e", "CPAMP_PRIVATE_S2A_CHAT="+("1" if s2a and not s2b else "0"),
+                "-e", "CPAMP_PRIVATE_S2B_CHAT="+("1" if s2b else "0"),
+                "-e", "CPAMP_PRIVATE_S2B_MODEL="+(provider_identity["model"] if s2b else ""))
             bootstrap = "/.well-known/cpamp-bootstrap/api/v2/"
             for _ in range(40):
                 try:
@@ -208,7 +224,10 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
             # are redacted before any evidence is written.
             evidence["managementProjectionFields"]=sorted(projection.get("management",{}))
             projection.get("management",{}).pop("secret-key",None)
-            evidence["configProjectionWithoutManagementSecret"]=projection
+            if not s2b:
+                evidence["configProjectionWithoutManagementSecret"]=projection
+            else:
+                evidence["providerProjectionMatchesHostSeed"] = projection["api-keys"]["openai-compatibility"][0]["base-url"] == provider_identity["target"]
         inspect = json.loads(command("docker", "inspect", runtime))[0]
         assert not inspect["HostConfig"]["PortBindings"]
         ip = inspect["NetworkSettings"]["Networks"][name]["IPAddress"]
@@ -236,7 +255,8 @@ class H(http.server.BaseHTTPRequestHandler):
   self.send_response(200); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(b))); self.end_headers(); self.wfile.write(b)
 http.server.ThreadingHTTPServer(('127.0.0.1',18321),H).serve_forever()
 '''
-        command("docker","exec","-d",probe,"python3","-c",upstream)
+        if not s2b:
+            command("docker","exec","-d",probe,"python3","-c",upstream)
         time.sleep(0.3)
         def chat(port,key,expected,arrivals,stream=False):
             before=len(http(18321,"/events")[1])
@@ -251,15 +271,21 @@ http.server.ThreadingHTTPServer(('127.0.0.1',18321),H).serve_forever()
                 assert cpa_arrivals==(1 if port==8317 else arrivals),("CPA arrivals",cpa_arrivals)
             record(edge="private-cpa" if port==8317 else "ingress",credential="absent" if key is None else "wrong" if key=="wrong" else "valid",stream=stream,status=code,upstreamArrivals=after-before)
             assert code==expected and after-before==arrivals,(code,after-before)
-        for key in (None,"wrong"):
-            chat(8317,key,200,1)  # Empty official CPA access list permits both.
+        if not s2b:
+            for key in (None,"wrong"):
+                chat(8317,key,200,1)  # Empty official CPA access list permits both.
         code,created=http(28471,api+"api-keys","POST",{"requestId":secrets.token_hex(16)},admin)
         assert code==201
         secret=created["createdSecret"]; key_id=created["key"]["id"]
-        chat(8317,secret,200,1)
-        for key in (None,"wrong",secret):
-            chat(28471,key,503,0)
-            chat(28471,key,503,0,stream=True)
+        if not s2b:
+            chat(8317,secret,200,1)
+            for key in (None,"wrong",secret):
+                chat(28471,key,503,0)
+                chat(28471,key,503,0,stream=True)
+        else:
+            from fresh_s2b_proof import check
+            for label,key in (("zero-CPA-keys-absent",None),("zero-CPA-keys-wrong","wrong"),("canonical-staged-not-installed",secret)):
+                check(command,http,record,runtime,label,key)
         install_path=api+"api-keys/"+key_id+"/initial-install"
         for credential in (None,"wrong"):
             assert http(28471,install_path,"POST",{},credential)[0]==401
@@ -309,6 +335,8 @@ exit 1''')
         command("docker","run","--rm","--network",name,"python:3.13-alpine","python3","-c",
             "import socket,http.client; ip='"+ip+"'\nfor port in (8317,9081,18319,9082,18321):\n s=socket.socket(); s.settimeout(2); assert s.connect_ex((ip,port))!=0; s.close()\nc=http.client.HTTPConnection(ip,28471,timeout=3); c.request('GET','/v1/models'); assert c.getresponse().status==503")
         permit=dict(runId=name,generation=str(status["runtimeGeneration"]),managementKey=management,issuedAtMs=int(time.time()*1000),expiresAtMs=int(time.time()*1000)+(60000 if expiry else 180000))
+        if s2b:
+            permit["s2b"] = provider_identity
         command("docker","run","--rm","-i","--network","none","--entrypoint","sh","-v",volumes[3]+":/permit",images["manager"],"-ec","umask 077; cat > /permit/permit.json; chmod 600 /permit/permit.json",data=json.dumps(permit))
         record(hostAuthority="PASS",containers=containers,volumes=volumes,networkInternal=True,permitMountedReadOnly=True,managementCredential="unique ephemeral secret; CPA hash + Manager read-only permit only")
         code,state=http(28471,install_path,key=admin)
@@ -360,14 +388,21 @@ r=c.getresponse();print(json.dumps({'status':r.status,'headers':r.getheaders(),'
         for _ in range(20):
             if http(8317,"/v1/models")[0]==401:break
             time.sleep(0.25)
-        for key,expected,arrivals in ((None,401,0),("wrong",401,0),(secret,200,1)):
-            chat(8317,key,expected,arrivals)
-            chat(28471,key,200 if s2a and key==secret else 503,1 if s2a and key==secret else 0)
-            chat(28471,key,503,0,stream=True)
+        if not s2b:
+            for key,expected,arrivals in ((None,401,0),("wrong",401,0),(secret,200,1)):
+                chat(8317,key,expected,arrivals)
+                chat(28471,key,200 if s2a and key==secret else 503,1 if s2a and key==secret else 0)
+                chat(28471,key,503,0,stream=True)
         code,state=http(28471,install_path,key=admin)
         assert code==200 and state["runtimeState"]=="effective_observed"
         evidence["effectiveObservation"]=state
-        if s2a:
+        if s2b:
+            from fresh_s2b_proof import exercise as exercise_s2b
+            exercise_s2b(command,http,record,evidence,runtime,probe,name,secret,admin,api,expiry,permit,token)
+            if expiry:
+                evidence["result"] = "PASS_OFFLINE_S2B_EXPIRY_ONLY_LIVE_HOLD"
+                return
+        elif s2a:
             from fresh_s2a_proof import exercise
             exercise(command, http, record, evidence, name, probe, runtime, ip, token, secret, admin, api, permit, expiry)
             if expiry:
@@ -406,7 +441,7 @@ assert v['secret'] not in journal and json.loads(journal)['keyId']==v['id']
         for container in ((name+"-meter",) if s2a else ())+(probe,name+"-manager",name+"-ingress"):
             command("docker","restart",container)
         if s2a:
-            start_relay(command, probe)
+            start_relay(command, probe, replay_test=s2b)
         time.sleep(1)
         code,new_status=http(9081,"/v1/runtime/status",key=token)
         assert code==200 and new_status["runtimeGeneration"]!=status["runtimeGeneration"] and new_status["state"]=="offline"
@@ -423,10 +458,17 @@ assert v['secret'] not in journal and json.loads(journal)['keyId']==v['id']
         # The existing canonical strategy must keep its mismatch 409 as well.
         assert http(28471,api+"strategy","POST",{"identity":operation["identity"],"expectedRevision":operation["revision"],"strategy":"new_managed",**strategy_target},admin)[0]==409
         assert http(28471,"/v1/models")[0]==503
-        if s2a:
+        if s2b:
+            from fresh_s2a_proof import counts
+            from fresh_s2b_proof import BODY
+            before = counts(command,runtime)
+            assert http(28471,"/v1/chat/completions","POST",BODY,secret)[0] == 503
+            assert counts(command,runtime)["cpaChat"] == before["cpaChat"]
+            record(scenario="changed-generation-CPA-offline",status=503,cpaChatArrivals=0)
+        elif s2a:
             from fresh_s2a_proof import check_generation_denial
             check_generation_denial(command,http,record,runtime,secret)
-        evidence["result"]="PASS_PRIVATE_S2A_CHAT" if s2a else "PASS_PRIVATE_S1_GATEWAY_STOP"
+        evidence["result"]="PASS_OFFLINE_S2B_ONLY_LIVE_HOLD" if s2b else "PASS_PRIVATE_S2A_CHAT" if s2a else "PASS_PRIVATE_S1_GATEWAY_STOP"
     except Exception:
         evidence["result"]="STOP"
         raise

@@ -13,10 +13,11 @@ const initialInstallSetting = "fresh_s1_initial_key_install_v1"
 // A one-shot mutation journal, not a second secret or Key identity authority.
 // It is committed before any network write. Unknown attempts are never removed.
 type InitialInstall struct {
-	KeyID         string `json:"keyId"`
-	RunID         string `json:"runId"`
-	Generation    string `json:"generation"`
-	AttemptedAtMS int64  `json:"attemptedAtMs"`
+	KeyID              string `json:"keyId"`
+	RunID              string `json:"runId"`
+	Generation         string `json:"generation"`
+	AttemptedAtMS      int64  `json:"attemptedAtMs"`
+	ProviderSeedSHA256 string `json:"providerSeedSHA256,omitempty"`
 }
 
 func (r *Repository) ClaimInitialInstall(ctx context.Context, v InitialInstall) error {

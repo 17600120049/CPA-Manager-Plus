@@ -13,6 +13,9 @@ const privateSyntheticProvider = `{"openai-compatibility":[{"name":"s1-synthetic
 // Configured reads the CPA management projection. It cannot prove disk durability
 // or live data-plane authentication. The disposable host proof checks disk too.
 func (t *Transport) Configured(ctx context.Context, management, secret string) (bool, error) {
+	if t.providerSeed != nil && !t.providerConfigured(ctx, management, secret) {
+		return false, ErrSourceConflict
+	}
 	status, body, err := t.request(ctx, http.MethodGet, "/v8/management/config/access/api-keys", management, nil)
 	if err != nil || status != 200 {
 		return false, ErrProofUnavailable

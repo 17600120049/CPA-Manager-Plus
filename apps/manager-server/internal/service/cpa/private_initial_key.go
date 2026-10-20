@@ -38,6 +38,7 @@ type TargetProof struct {
 	SourceExclusive bool
 	Disposable      bool
 	ExpiresAtMS     int64
+	ProviderSeed    PrivateProviderSeed
 }
 
 // InstallResult never exposes secrets or asserts Runtime effectiveness.
@@ -50,10 +51,11 @@ type InstallResult struct {
 // Transport pins production requests to the private loopback CPA Management
 // endpoint. Tests can inject a private synthetic server inside this package.
 type Transport struct {
-	mu        sync.Mutex
-	client    *http.Client
-	endpoint  string
-	attempted bool
+	mu           sync.Mutex
+	client       *http.Client
+	endpoint     string
+	attempted    bool
+	providerSeed func() (PrivateProviderSeed, error)
 }
 
 func NewTransport() *Transport {
@@ -120,7 +122,12 @@ func (t *Transport) InstallOne(ctx context.Context, proof TargetProof, managemen
 		return unknown, ErrProofUnavailable
 	}
 	status, full, err := t.request(ctx, http.MethodGet, "/v8/management/config", managementKey, nil)
-	if err != nil || status != http.StatusOK || !emptyProofConfig(full) {
+	validSeed := emptyProofConfig(full) && proof.ProviderSeed == (PrivateProviderSeed{})
+	if t.providerSeed != nil {
+		seed, sourceErr := t.providerSeed()
+		validSeed = sourceErr == nil && seed == proof.ProviderSeed && privateProviderConfig(full, seed, "")
+	}
+	if err != nil || status != http.StatusOK || !validSeed {
 		return unknown, ErrSourceConflict
 	}
 	status, current, err := t.request(ctx, http.MethodGet, "/v8/management/config/access/api-keys", managementKey, nil)

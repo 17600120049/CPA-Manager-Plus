@@ -18,23 +18,28 @@ def source_paths(root):
     return paths
 
 
-def start_relay(command, probe):
+def start_relay(command, probe, replay_test=False):
     program = '''import http.server,http.client,json,time
-delay=0
+delay=0;replay=False;last=None
 class H(http.server.BaseHTTPRequestHandler):
  def log_message(self,*args): pass
  def do_GET(self): self.forward()
  def do_POST(self): self.forward()
  def do_PUT(self): self.forward()
  def forward(self):
-  global delay
+  global delay,replay,last
   b=self.rfile.read(int(self.headers.get('Content-Length',0)))
   if self.path=='/__s2a-proof-delay':
    delay=json.loads(b)['seconds'];self.send_response(204);self.end_headers();return
+  if REPLAY_TEST and self.path=='/__s2b-proof-replay':
+   replay=json.loads(b)['enabled'];self.send_response(204);self.end_headers();return
   try:
    c=http.client.HTTPConnection('127.0.0.1',18320,timeout=6)
    c.request(self.command,self.path,b,{k:v for k,v in self.headers.items() if k.lower() not in ('host','connection','content-length')})
    r=c.getresponse();data=r.read()
+   if REPLAY_TEST and self.path=='/internal/fresh-chat-admission' and r.status==200:
+    if replay and last is not None:data=last
+    else:last=data
    if self.path=='/internal/fresh-chat-admission': time.sleep(delay)
    self.send_response(r.status)
    for k,v in r.getheaders():
@@ -44,6 +49,7 @@ class H(http.server.BaseHTTPRequestHandler):
    self.send_response(503);self.end_headers()
 http.server.ThreadingHTTPServer(('127.0.0.1',18319),H).serve_forever()
 '''
+    program = "REPLAY_TEST="+repr(replay_test)+"\n"+program
     command("docker", "exec", "-d", probe, "python3", "-c", program)
 
 
@@ -202,12 +208,16 @@ assert c.getresponse().status==503
     record(scenario="untrusted-bridge-peer",privatePortsRefused=[8317,9081,9082,18319,18320,18321],status=503,cpaChatArrivals=0,upstreamArrivals=0)
 
 
-def exercise_raw(command,http,record,probe,runtime,secret):
-    b=json.dumps(BODY)
+def exercise_raw(command,http,record,probe,runtime,secret,body=BODY):
+    b=json.dumps(body)
     cases=[
         ("missing-stream",b.replace('"stream": false, ',''),CHAT,"POST",{},False,503),
         ("duplicate-stream",b.replace('"stream": false','"stream":false,"stream":false'),CHAT,"POST",{},False,503),
         ("duplicate-model",b.replace('"model":','"model":"other","model":'),CHAT,"POST",{},False,503),
+        ("unicode-folded-stream",b.replace('"stream": false','"stream":false,"\\u017ftream":false'),CHAT,"POST",{},False,503),
+        ("escaped-model-alias",b.replace('"model":','"m\\u006fdel":"other","model":'),CHAT,"POST",{},False,503),
+        ("duplicate-nested-role",b.replace('"role": "user"','"role":"user","role":"assistant"'),CHAT,"POST",{},False,503),
+        ("unpaired-surrogate",b.replace(json.dumps(body["messages"][0]["content"]),'"\\ud800"'),CHAT,"POST",{},False,503),
         ("trailing-json",b+'{}',CHAT,"POST",{},False,503),
         ("over-limit",' '*65537,CHAT,"POST",{},False,503),
         ("compressed",b,CHAT,"POST",{"Content-Encoding":"gzip"},False,503),

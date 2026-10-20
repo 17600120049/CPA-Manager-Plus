@@ -1,6 +1,6 @@
-// Package freshkeyapply owns the bounded, private S1 initial-install consumer.
+// Package freshkeyapply owns bounded private S1 install and S2 admission.
 // The host launcher owns isolation evidence; neither Admin JSON nor an environment
-// boolean is proof. No runtime model admission or general config writing exists.
+// boolean is proof. No general configuration writer exists.
 package freshkeyapply
 
 import (
@@ -9,6 +9,8 @@ import (
 	"os"
 	"runtime"
 	"time"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 )
 
 const PermitPath = "/run/cpamp-s1/permit.json"
@@ -17,11 +19,12 @@ const PermitPath = "/run/cpamp-s1/permit.json"
 // read-only into Manager after host verification. Host root/Docker remain trusted.
 // Its management secret is ephemeral host provisioning, never a Client Key store.
 type Permit struct {
-	RunID         string `json:"runId"`
-	Generation    string `json:"generation"`
-	ManagementKey string `json:"managementKey"`
-	IssuedAtMS    int64  `json:"issuedAtMs"`
-	ExpiresAtMS   int64  `json:"expiresAtMs"`
+	RunID         string                  `json:"runId"`
+	Generation    string                  `json:"generation"`
+	ManagementKey string                  `json:"managementKey"`
+	IssuedAtMS    int64                   `json:"issuedAtMs"`
+	ExpiresAtMS   int64                   `json:"expiresAtMs"`
+	S2B           cpa.PrivateProviderSeed `json:"s2b,omitempty"`
 }
 
 func loadPermit() (Permit, error) {
@@ -56,5 +59,13 @@ func loadPermit() (Permit, error) {
 
 func (p Permit) valid(now time.Time) bool {
 	n := now.UnixMilli()
+	s2b := os.Getenv("CPAMP_PRIVATE_S2B_CHAT") == "1"
+	if s2b {
+		if os.Getenv("CPAMP_PRIVATE_S2A_CHAT") == "1" || !p.S2B.Valid() {
+			return false
+		}
+	} else if p.S2B != (cpa.PrivateProviderSeed{}) {
+		return false
+	}
 	return len(p.RunID) >= 16 && p.Generation != "" && len(p.ManagementKey) == 64 && p.IssuedAtMS > 0 && p.IssuedAtMS <= n && p.ExpiresAtMS > n && p.ExpiresAtMS-p.IssuedAtMS <= 600000
 }
