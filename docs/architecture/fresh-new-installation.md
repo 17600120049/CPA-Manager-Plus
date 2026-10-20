@@ -31,7 +31,7 @@ Compose deployment; it is not a public-host or TLS qualification.
 
 Before initialization the service waits for Host admission. Discovery is
 read-only and does not authorize initialization or create an administrator.
-The Bootstrap UI may return 404 until Host admission has created the owned store.
+Before Host admission, the bounded Bootstrap UI may show read-only source guidance if the startup inspection listener is active. This UI never grants a Fresh claim, Upgrade/Adopt permission or writer; unknown/blocked sources remain fail-closed.
 
 ```sh
 docker compose stop cpamp-manager

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,7 @@ import (
 type startupHTTPHandler struct {
 	discovery         routingdomain.DiscoveryHandler
 	protected         http.Handler
+	readOnlyShell     http.Handler
 	projectionMu      sync.RWMutex
 	projection        bootstrap.PublicDiscovery
 	readOnlyDiscovery http.Handler
@@ -37,15 +39,42 @@ type startupHandlerTarget struct {
 }
 
 func newStartupHTTPHandler(result bootstrap.PublicDiscovery) *startupHTTPHandler {
-	h := &startupHTTPHandler{projection: result}
+	h := &startupHTTPHandler{projection: result, readOnlyShell: httpapi.BootstrapWebHandler()}
 	h.lifecycle.Store(routingdomain.DiscoveryActive)
 	h.discovery = routingdomain.DiscoveryHandler{
 		Lifecycle: h.discoveryLifecycle,
 		Active:    http.HandlerFunc(h.serveDiscovery),
 	}
-	h.protected = httpapi.ProtectBrandResources(routingdomain.ProtectFixedDiscovery(http.HandlerFunc(h.serveNonDiscovery), h.discovery))
+	h.protected = httpapi.ProtectBrandResources(routingdomain.ProtectFixedBootstrap(http.HandlerFunc(h.serveNonDiscovery), http.HandlerFunc(h.serveFixedBootstrap)))
 	h.next.Store(&startupHandlerTarget{handler: http.NotFoundHandler()})
 	return h
+}
+
+// The blocked/pre-ready operator may inspect the same bounded public discovery
+// in a read-only shell. No Bootstrap API, Admin or Upgrade writer is mounted.
+func (h *startupHTTPHandler) serveFixedBootstrap(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == bootstrap.FixedBootstrapDiscoveryPath {
+		h.discovery.ServeHTTP(w, r)
+		return
+	}
+	if h.ready.Load() || h.discoveryLifecycle() != routingdomain.DiscoveryActive ||
+		(r.Method != http.MethodGet && r.Method != http.MethodHead) ||
+		(r.URL.Path != bootstrap.FixedBootstrapUIPath &&
+			!strings.HasPrefix(r.URL.Path, bootstrap.FixedBootstrapAssetsPath)) {
+		http.NotFound(w, r)
+		return
+	}
+	h.projectionMu.RLock()
+	readOnly := h.readOnlyDiscovery != nil
+	h.projectionMu.RUnlock()
+	if !readOnly || h.readOnlyShell == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	h.readOnlyShell.ServeHTTP(w, r)
 }
 
 func (h *startupHTTPHandler) serveDiscovery(w http.ResponseWriter, r *http.Request) {

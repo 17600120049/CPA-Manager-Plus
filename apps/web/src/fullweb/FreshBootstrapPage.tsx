@@ -22,9 +22,10 @@ interface ActionFeedback {
   detail: string;
 }
 
-// Only owned Fresh exposes this UI route; other discovery states have no UI entry.
-// Public discovery is a read-only hint, never a claim or write authority.
-function publicDiscoveryGuidance(payload: unknown): ActionFeedback | null {
+// Public discovery never confers write authority. Non-Fresh statuses only
+// provide a Host-side preflight next step; they cannot enter the Fresh claim.
+type DiscoveryGuidance = ActionFeedback & { flow: 'fresh' | 'host' };
+function publicDiscoveryGuidance(payload: unknown): DiscoveryGuidance | null {
   if (!payload || typeof payload !== 'object') return null;
   const value = payload as Record<string, unknown>;
   if (value.contract_version !== 'cpamp.phase4-01.discovery.v1') return null;
@@ -37,9 +38,40 @@ function publicDiscoveryGuidance(payload: unknown): ActionFeedback | null {
   ) {
     return {
       tone: 'info',
+      flow: 'fresh',
       title: '检测到需要宿主机认领的 Fresh 初始化状态',
       detail:
         '此状态仅为只读识别结果。请从受信宿主机获取一次性 Handoff 链接；本页面不会自行创建或认领安装。',
+    };
+  }
+  if (
+    value.status === 'unsupported_upgrade' &&
+    value.mode === 'unsupported_upgrade' &&
+    value.auth_entry === 'admin_session' &&
+    value.reason === 'qualification_unavailable' &&
+    value.authentication_required === true
+  ) {
+    return {
+      tone: 'warn',
+      flow: 'host',
+      title: '检测到尚未获得升级资格的现有来源',
+      detail:
+        '只能在受信宿主机检查原始来源。当前无法进入 Fresh 初始化或 Upgrade 切换；预检成功也不代表获得导入或覆盖授权。',
+    };
+  }
+  if (
+    value.status === 'recovery_required' &&
+    value.mode === 'recovery' &&
+    value.auth_entry === 'host_intervention' &&
+    value.reason === 'recovery_host_intervention' &&
+    value.authentication_required === false
+  ) {
+    return {
+      tone: 'warn',
+      flow: 'host',
+      title: '检测到需要宿主机介入的恢复状态',
+      detail:
+        '来源不具备直接初始化资格。请先在受信宿主机进行只读预检，保护数据库、data.key 和已有备份；不得从此页面尝试 Fresh/Adopt/Upgrade 写入。',
     };
   }
   return null;
@@ -125,7 +157,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   const [operation, setOperation] = useState<FreshOperation | null>(null);
   const [initError, setInitError] = useState<ActionFeedback | null>(null);
   const [initErrorKind, setInitErrorKind] = useState<string | null>(null);
-  const [discoveryNote, setDiscoveryNote] = useState<ActionFeedback | null>(null);
+  const [discoveryNote, setDiscoveryNote] = useState<DiscoveryGuidance | null>(null);
 
   const [adminKey, setAdminKey] = useState('');
   const [commitId, setCommitId] = useState<string>(() => createCommitId());
@@ -512,10 +544,15 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 <div className="wizard-step-tag">
                   <span>Bootstrap Gate · 需要安装主机授权</span>
                 </div>
-                <h1 className="wizard-title">未检测到有效的 Fresh Bootstrap Handoff 凭证</h1>
+                <h1 className="wizard-title">
+                  {discoveryNote?.flow === 'host'
+                    ? '当前来源需要宿主机预检，不能直接 Fresh 初始化'
+                    : '未检测到有效的 Fresh Bootstrap Handoff 凭证'}
+                </h1>
                 <p className="wizard-desc">
-                  为遵循 CPAMP v2 零明文留存安全边界，一次性认领令牌（Claim
-                  Token）在进入页面时已立即从地址栏剥离，且不会写入浏览器任何本地存储。直接访问本路径或刷新页面后需重新获取授权入口。
+                  {discoveryNote?.flow === 'host'
+                    ? '公共 Discovery 仅提供来源类型提示，不读取或修改现有数据；后续操作必须在受信宿主机执行。'
+                    : '为遵循 CPAMP v2 零明文留存安全边界，一次性认领令牌（Claim Token）在进入页面时已立即从地址栏剥离，且不会写入浏览器任何本地存储。直接访问本路径或刷新页面后需重新获取授权入口。'}
                 </p>
               </div>
               <div className="wizard-card-body">
@@ -532,6 +569,20 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                   </div>
                 )}
 
+                {discoveryNote?.flow === 'host' ? (
+                  <div className="alert alert-warn" data-testid="host-preflight-instructions">
+                    <div className="alert-content">
+                      <div className="alert-title">下一步：在宿主机执行只读来源预检</div>
+                      <div className="alert-desc">
+                        把路径替换为真实来源数据库路径。此命令不会授权迁移，且不要在来源写入仍运行时声称已停止。
+                      </div>
+                      <div className="code-block" data-testid="host-preflight-command">
+                        cpa-manager-plus legacy-preflight --db /path/to/usage.sqlite --summary
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
                 <div className="alert alert-warn">
                   <span className="alert-icon" aria-hidden="true">
                     !
@@ -547,6 +598,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 <div className="code-block" data-testid="cli-handoff-command">
                   cpa-manager-plus initialize
                 </div>
+                  </>
+                )}
               </div>
             </section>
           )}

@@ -170,11 +170,19 @@ describe('FreshBootstrapPage product preview workflow', () => {
       'admin_session',
       'qualification_unavailable',
       true,
+      '检测到尚未获得升级资格的现有来源',
     ],
-    ['recovery_required', 'recovery', 'host_intervention', 'recovery_host_intervention', false],
+    [
+      'recovery_required',
+      'recovery',
+      'host_intervention',
+      'recovery_host_intervention',
+      false,
+      '检测到需要宿主机介入的恢复状态',
+    ],
   ])(
-    'does not misrepresent non-Fresh %s as reachable Fresh guidance',
-    async (status, mode, authEntry, reason, authRequired) => {
+    'shows only Host preflight for non-Fresh %s',
+    async (status, mode, authEntry, reason, authRequired, title) => {
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue(
@@ -196,11 +204,35 @@ describe('FreshBootstrapPage product preview workflow', () => {
           <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
         );
       });
-      expect(
-        renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
-      ).toHaveLength(0);
+      expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain(
+        title
+      );
+      expect(textOf(findByTestId(renderer.root, 'host-preflight-command'))).toBe(
+        'cpa-manager-plus legacy-preflight --db /path/to/usage.sqlite --summary'
+      );
+      expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+      expect(textOf(findByTestId(renderer.root, 'bootstrap-no-handoff'))).not.toContain(
+        'cpa-manager-plus initialize'
+      );
     }
   );
+
+  it('rejects mismatched non-Fresh discovery tuples and preserves the existing safe fallback', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      contract_version: 'cpamp.phase4-01.discovery.v1',
+      status: 'unsupported_upgrade',
+      mode: 'unsupported_upgrade',
+      auth_entry: 'fresh_claim',
+      reason: 'qualification_unavailable',
+      authentication_required: true,
+    }))));
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })).toHaveLength(0);
+  });
 
   it('completes real claim exchange, key generation, admin commit, and operation refresh', async () => {
     const generatedKey = 'cpamp_9876543210abcdefABCDEFGH12';
