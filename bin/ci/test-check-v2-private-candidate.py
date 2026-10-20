@@ -36,6 +36,21 @@ class AuditTest(unittest.TestCase):
                        return_value=json.dumps([{**value, **change}])), self.assertRaises(ValueError):
                 audit.inspect_image('example:wrong')
 
+    def test_audit_creates_from_inspected_id_not_mutable_tag(self):
+        image_id = 'sha256:' + 'a' * 64
+        with mock.patch.object(audit, 'inspect_image', return_value={'imageConfigId': image_id}), \
+             mock.patch.object(audit, 'command', return_value='container-id') as cmd, \
+             mock.patch.object(audit, 'extract_file', return_value='b' * 64):
+            from tempfile import TemporaryDirectory
+            with TemporaryDirectory() as td:
+                record = audit.audit_one('manager', 'mutable:latest', Path(td))
+        self.assertEqual(record['imageConfigId'], image_id)
+        self.assertEqual(record['files']['/usr/local/bin/cpa-manager-plus'], 'b' * 64)
+        create = [call.args for call in cmd.call_args_list if call.args[:2] == ('docker', 'create')]
+        self.assertEqual(len(create), 1)
+        self.assertEqual(create[0][-1], image_id)
+        self.assertNotIn('mutable:latest', create[0])
+
     def test_stopped_container_removed_on_cp_failure(self):
         with mock.patch.object(audit, 'inspect_image', return_value={'imageConfigId': 'sha256:' + 'a'*64}), \
              mock.patch.object(audit, 'command', return_value='123') as cmd, \
