@@ -218,6 +218,48 @@ describe('FreshBootstrapPage product preview workflow', () => {
     }
   );
 
+
+  it('shows read-only Host guidance for a canonical unavailable discovery on HTTP 503', async () => {
+    const unavailable = {
+      contract_version: 'cpamp.phase4-01.discovery.v1',
+      status: 'unavailable',
+      auth_entry: 'unavailable',
+      reason: 'observation_unavailable',
+      authentication_required: false,
+    };
+    const discovery = vi.fn().mockResolvedValue(Response.json(unavailable, { status: 503 }));
+    vi.stubGlobal('fetch', discovery);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+    });
+    const gate = textOf(findByTestId(renderer.root, 'bootstrap-no-handoff'));
+    expect(gate).toContain('来源状态暂无法确认');
+    expect(gate).not.toContain('cpa-manager-plus initialize');
+    expect(textOf(findByTestId(renderer.root, 'host-preflight-command'))).toBe(
+      'cpa-manager-plus legacy-preflight --db /path/to/usage.sqlite --summary'
+    );
+    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).not.toContain('Fresh New Preview');
+    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).toContain('Source Preflight · Read Only');
+    expect(discovery).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not infer read-only Host eligibility from an inconsistent 503 payload', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
+      contract_version: 'cpamp.phase4-01.discovery.v1',
+      status: 'unavailable',
+      mode: 'fresh',
+      auth_entry: 'unavailable',
+      reason: 'observation_unavailable',
+      authentication_required: false,
+    }, { status: 503 })));
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(0);
+  });
+
   it('rejects mismatched non-Fresh discovery tuples and preserves the existing safe fallback', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       contract_version: 'cpamp.phase4-01.discovery.v1',

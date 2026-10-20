@@ -120,6 +120,18 @@ jobs:
       - name: Check demo isolation
         run: npm run check:demo-isolation
 
+      # The packaged preflight entry depends on the real staged Full Web asset graph.
+      - name: Setup Go for packaged preflight check
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.24.x'
+          cache-dependency-path: apps/manager-server/go.sum
+
+      - name: Verify packaged read-only preflight HTTP transport
+        env:
+          CPAMP_FULLWEB_PACKAGED_TEST: '1'
+        run: go -C apps/manager-server test -count=1 -run '^TestReadOnlyStartupWizardPackagedTransport$' ./cmd/cpa-manager-plus
+
   manager-server:
     name: Manager Server
     needs: changes

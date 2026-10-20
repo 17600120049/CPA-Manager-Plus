@@ -74,6 +74,21 @@ function publicDiscoveryGuidance(payload: unknown): DiscoveryGuidance | null {
         '来源不具备直接初始化资格。请先在受信宿主机进行只读预检，保护数据库、data.key 和已有备份；不得从此页面尝试 Fresh/Adopt/Upgrade 写入。',
     };
   }
+  if (
+    value.status === 'unavailable' &&
+    (value.mode === undefined || value.mode === null) &&
+    value.auth_entry === 'unavailable' &&
+    value.reason === 'observation_unavailable' &&
+    value.authentication_required === false
+  ) {
+    return {
+      tone: 'warn',
+      flow: 'host',
+      title: '来源状态暂无法确认',
+      detail:
+        '来源只读检查未获得可信分类。请在受信宿主机排查；不能根据此状态认定为 Fresh，也不能据此执行初始化或迁移。',
+    };
+  }
   return null;
 }
 
@@ -267,7 +282,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     })
-      .then((response) => (response.ok ? response.json() : null))
+      .then((response) => (response.ok || response.status === 503 ? response.json() : null))
       .then((payload: unknown) => {
         if (active) setDiscoveryNote(publicDiscoveryGuidance(payload));
       })
@@ -483,9 +498,17 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
           </div>
           <div className="brand-text">
             <span className="brand-title">CPA Manager Plus</span>
-            <span className="brand-sub">v2 Fresh Bootstrap · 受控安装初始化入口</span>
+            <span className="brand-sub">
+              {phase === 'no_handoff' && discoveryNote?.flow === 'host'
+                ? 'v2 Source Preflight · 只读来源检查'
+                : 'v2 Fresh Bootstrap · 受控安装初始化入口'}
+            </span>
           </div>
-          <span className="badge badge-indigo">Fresh New Preview</span>
+          <span className="badge badge-indigo">
+            {phase === 'no_handoff' && discoveryNote?.flow === 'host'
+              ? 'Source Preflight · Read Only'
+              : 'Fresh New Preview'}
+          </span>
           {operation && (
             <span
               className={`badge ${operation.gatewayPending ? 'badge-amber' : 'badge-emerald'}`}
