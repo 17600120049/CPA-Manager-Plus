@@ -150,6 +150,10 @@ func writeFreshStrategyError(w http.ResponseWriter, err error) {
 
 func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if r != nil && r.URL != nil && r.URL.Path == privateChatAdmissionPath {
+		a.privateChatAdmission(w, r)
+		return
+	}
 	if r != nil && r.URL != nil && r.URL.Path == freshrouting.AuthorityPath && r.URL.EscapedPath() == r.URL.Path && r.URL.RawQuery == "" {
 		a.routingAuthority(w, r)
 		return

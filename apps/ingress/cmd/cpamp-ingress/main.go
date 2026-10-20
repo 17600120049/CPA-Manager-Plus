@@ -41,6 +41,9 @@ func main() {
 	fresh := &ingress.FreshRoutes{}
 	authority := managerFreshAuthority(cfg.managerURL)
 	handler := ingress.NewFreshHandler(fresh, cfg.managerURL, cfg.gatewayURL, logger, managerLegacyGateway(authority))
+	if os.Getenv("CPAMP_PRIVATE_S2A_CHAT") == "1" {
+		handler.EnablePrivateChat(cfg.managerURL, cfg.gatewayURL)
+	}
 	control := &http.Server{Addr: cfg.controlAddr, Handler: fresh.ControlHandler(authority), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 16}
 	server := &http.Server{
 		Addr:              cfg.addr,
