@@ -60,6 +60,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
         writeText: vi.fn().mockResolvedValue(undefined),
       },
     });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Discovery unavailable')));
   });
 
   afterEach(() => {
@@ -75,6 +76,99 @@ describe('FreshBootstrapPage product preview workflow', () => {
 
     const gate = findByTestId(renderer.root, 'bootstrap-no-handoff');
     expect(textOf(gate)).toContain('未检测到有效的 Fresh Bootstrap Handoff 凭证');
+    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
+      'cpa-manager-plus initialize'
+    );
+  });
+
+  it.each([
+    [
+      'fresh_claim_required',
+      'fresh',
+      'fresh_claim',
+      'fresh_claim_required',
+      true,
+      '检测到需要宿主机认领的 Fresh 初始化状态',
+    ],
+    [
+      'unsupported_upgrade',
+      'unsupported_upgrade',
+      'admin_session',
+      'qualification_unavailable',
+      true,
+      '现有数据源尚不具备直接升级资格',
+    ],
+    [
+      'recovery_required',
+      'recovery',
+      'host_intervention',
+      'recovery_host_intervention',
+      false,
+      '当前环境需要宿主机恢复或检查',
+    ],
+  ])(
+    'shows read-only public discovery status %s without claiming an operation',
+    async (status, mode, authEntry, reason, authRequired, title) => {
+      const discovery = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            contract_version: 'cpamp.phase4-01.discovery.v1',
+            status,
+            mode,
+            auth_entry: authEntry,
+            reason,
+            authentication_required: authRequired,
+          })
+        )
+      );
+      vi.stubGlobal('fetch', discovery);
+      const transport = createBootstrapTransport(vi.fn());
+      let renderer!: ReactTestRenderer;
+      await act(async () => {
+        renderer = create(<FreshBootstrapPage handoff={null} transport={transport} />);
+      });
+
+      expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain(title);
+      expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
+        'cpa-manager-plus initialize'
+      );
+      expect(discovery).toHaveBeenCalledTimes(1);
+      expect(discovery.mock.calls[0][0]).toBe('/.well-known/cpamp-bootstrap');
+      expect(discovery.mock.calls[0][1]).toMatchObject({
+        method: 'GET',
+        mode: 'same-origin',
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+      });
+      expect(discovery.mock.calls[0][1].headers).toEqual({ Accept: 'application/json' });
+    }
+  );
+
+  it('does not project inconsistent discovery as valid migration guidance', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            contract_version: 'cpamp.phase4-01.discovery.v1',
+            status: 'unsupported_upgrade',
+            mode: 'unsupported_upgrade',
+            auth_entry: 'admin_session',
+            reason: 'fresh_claim_required',
+            authentication_required: true,
+          })
+        )
+      )
+    );
+    const transport = createBootstrapTransport(vi.fn());
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={null} transport={transport} />);
+    });
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
+    ).toHaveLength(0);
     expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
       'cpa-manager-plus initialize'
     );
