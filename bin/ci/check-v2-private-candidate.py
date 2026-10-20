@@ -77,7 +77,8 @@ def audit_one(role, image, tmpdir):
     created = False
     try:
         # No docker start: create a stopped container to read packaged bytes.
-        command("docker", "create", "--pull=never", "--name", name, "--entrypoint", "/bin/true", record["imageConfigId"])
+        command("docker", "create", "--pull=never", "--platform", "linux/" + record["architecture"],
+                "--name", name, "--entrypoint", "/bin/true", record["imageConfigId"])
         created = True
         files = {}
         for i, path in enumerate(EXTRACT[role]):
