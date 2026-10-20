@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read-only inventory of three separately built local CPAMP v2 Linux/amd64 images.
 
-Only creates and removes stopped audit containers. It does not run image commands,
+Only creates and removes stopped audit containers. It does not start containers or execute image entrypoints,
 mount user volumes, publish ports, contact a registry, or authorize a release.
 This is *not* an immutable deployment manifest or a Full Web/NOTICE attestation.
 """
@@ -41,6 +41,8 @@ def inspect_image(ref):
     item = entries[0]
     if item.get("Os") != "linux" or item.get("Architecture") != "amd64":
         raise ValueError(f"unexpected image platform: {ref}")
+    if (item.get("Config") or {}).get("Volumes"):
+        raise ValueError(f"image declares volumes; do not allocate anonymous audit volumes: {ref}")
     image_id = item.get("Id", "")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
         raise ValueError(f"invalid image config ID: {ref}")
@@ -85,7 +87,7 @@ def audit_one(role, image, tmpdir):
         return record
     finally:
         if created:
-            command("docker", "rm", "-f", name)
+            command("docker", "rm", "-f", "-v", name)
 
 
 def main():
