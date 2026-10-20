@@ -75,7 +75,9 @@ class AuditTest(unittest.TestCase):
             with TemporaryDirectory() as td, self.assertRaises(ValueError):
                 audit.audit_one('manager', 'example:test', Path(td))
             self.assertEqual(cmd.call_args_list[-1].args[:3], ('docker', 'rm', '-f'))
-            self.assertEqual(cmd.call_args_list[0].args[:3], ('docker', 'create', '--name'))
+            self.assertEqual(cmd.call_args_list[0].args[:2], ('docker', 'create'))
+            self.assertIn('--pull=never', cmd.call_args_list[0].args)
+            self.assertIn('--name', cmd.call_args_list[0].args)
 
 
 if __name__ == '__main__':
