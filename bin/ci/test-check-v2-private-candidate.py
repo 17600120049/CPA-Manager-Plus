@@ -14,24 +14,32 @@ spec.loader.exec_module(audit)
 
 class AuditTest(unittest.TestCase):
     def test_artifact_requires_exact_pinned_v8(self):
-        v = {'schemaVersion': 1, 'engine': 'cpa', 'version': '8.0.13',
-             'artifactId': 'sha256:' + audit.CPA_EXECUTABLE_SHA256}
-        self.assertEqual(audit.check_artifact(json.dumps(v)), v)
-        for field, bad in [('version', '7.3.3'), ('artifactId', 'sha256:deadbeef'),
-                           ('engine', 'cpamp'), ('schemaVersion', 2),
-                           ('schemaVersion', True), ('schemaVersion', 1.0)]:
-            broken = v.copy()
-            broken[field] = bad
-            with self.subTest(field=field), self.assertRaises(ValueError):
-                audit.check_artifact(json.dumps(broken))
+        for architecture, pinned_sha in audit.CPA_EXECUTABLE_SHA256.items():
+            v = {'schemaVersion': 1, 'engine': 'cpa', 'version': '8.0.13',
+                 'artifactId': 'sha256:' + pinned_sha}
+            with self.subTest(architecture=architecture):
+                self.assertEqual(audit.check_artifact(json.dumps(v), architecture), v)
+            other = next(arch for arch in audit.CPA_EXECUTABLE_SHA256 if arch != architecture)
+            with self.subTest(architecture=architecture, mismatch=other), self.assertRaises(ValueError):
+                audit.check_artifact(json.dumps(v), other)
+            for field, bad in [('version', '7.3.3'), ('artifactId', 'sha256:deadbeef'),
+                               ('engine', 'cpamp'), ('schemaVersion', 2),
+                               ('schemaVersion', True), ('schemaVersion', 1.0)]:
+                broken = v.copy()
+                broken[field] = bad
+                with self.subTest(architecture=architecture, field=field), self.assertRaises(ValueError):
+                    audit.check_artifact(json.dumps(broken), architecture)
 
     def test_platform_and_image_id_fail_closed(self):
         value = {'Os': 'linux', 'Architecture': 'amd64', 'Id': 'sha256:' + 'a' * 64,
                  'RepoDigests': ['test/image@sha256:' + 'b' * 64]}
-        with mock.patch.object(audit, 'command', return_value=json.dumps([value])):
-            r = audit.inspect_image('example:test')
-            self.assertEqual(r['imageConfigId'], value['Id'])
-        for change in ({'Architecture': 'arm64'}, {'Os': 'windows'},
+        for architecture in ('amd64', 'arm64'):
+            with self.subTest(architecture=architecture), mock.patch.object(
+                    audit, 'command', return_value=json.dumps([{**value, 'Architecture': architecture}])):
+                r = audit.inspect_image('example:test')
+                self.assertEqual(r['imageConfigId'], value['Id'])
+                self.assertEqual(r['architecture'], architecture)
+        for change in ({'Architecture': 'riscv64'}, {'Os': 'windows'},
                        {'Id': 'sha256:unverified'}, {'Config': {'Volumes': {'/data': {}}}}):
             with self.subTest(change=change), mock.patch.object(audit, 'command',
                        return_value=json.dumps([{**value, **change}])), self.assertRaises(ValueError):
@@ -39,7 +47,7 @@ class AuditTest(unittest.TestCase):
 
     def test_audit_creates_from_inspected_id_not_mutable_tag(self):
         image_id = 'sha256:' + 'a' * 64
-        with mock.patch.object(audit, 'inspect_image', return_value={'imageConfigId': image_id}), \
+        with mock.patch.object(audit, 'inspect_image', return_value={'imageConfigId': image_id, 'architecture': 'amd64'}), \
              mock.patch.object(audit, 'command', return_value='container-id') as cmd, \
              mock.patch.object(audit, 'extract_file', return_value='b' * 64):
             from tempfile import TemporaryDirectory
@@ -69,7 +77,7 @@ class AuditTest(unittest.TestCase):
                     audit.extract_file('stopped-container', '/usr/local/bin/cpa-manager-plus', destination)
 
     def test_stopped_container_removed_on_cp_failure(self):
-        with mock.patch.object(audit, 'inspect_image', return_value={'imageConfigId': 'sha256:' + 'a'*64}), \
+        with mock.patch.object(audit, 'inspect_image', return_value={'imageConfigId': 'sha256:' + 'a'*64, 'architecture': 'amd64'}), \
              mock.patch.object(audit, 'command', return_value='123') as cmd, \
              mock.patch.object(audit, 'extract_file', side_effect=ValueError('missing binary')):
             from tempfile import TemporaryDirectory
@@ -79,6 +87,41 @@ class AuditTest(unittest.TestCase):
             self.assertEqual(cmd.call_args_list[0].args[:2], ('docker', 'create'))
             self.assertIn('--pull=never', cmd.call_args_list[0].args)
             self.assertIn('--name', cmd.call_args_list[0].args)
+
+
+    def test_matching_arm64_triplet_writes_only_partial_evidence(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as td:
+            destination = Path(td) / 'candidate.json'
+            argv = ['check-v2-private-candidate.py', '--source-commit', 'a' * 40,
+                    '--manager-image', 'manager:v8', '--ingress-image', 'ingress:v8',
+                    '--runtime-image', 'runtime:v8', '--output', str(destination)]
+            def fake_audit(role, image, tmpdir):
+                return {'architecture': 'arm64', 'imageConfigId': 'sha256:' + 'b'*64, 'files': {}}
+            with mock.patch.object(audit.sys, 'argv', argv), mock.patch.object(
+                    audit, 'audit_one', side_effect=fake_audit) as audited:
+                audit.main()
+            evidence = json.loads(destination.read_text())
+            self.assertEqual(audited.call_count, 3)
+            self.assertEqual(evidence['platform'], 'linux/arm64')
+            self.assertEqual(evidence['pinnedCPAExecutableSHA256'], audit.CPA_EXECUTABLE_SHA256['arm64'])
+            self.assertEqual(evidence['result'], 'PARTIAL_BINARY_IDENTITY_ONLY_NOT_RELEASE_QUALIFIED')
+
+    def test_mixed_architecture_triplet_rejected_before_evidence_written(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as td:
+            destination = Path(td) / 'candidate.json'
+            argv = ['check-v2-private-candidate.py', '--source-commit', 'a' * 40,
+                    '--manager-image', 'manager:v8', '--ingress-image', 'ingress:v8',
+                    '--runtime-image', 'runtime:v8', '--output', str(destination)]
+            architectures = {'manager': 'arm64', 'ingress': 'amd64', 'runtime': 'arm64'}
+            def fake_audit(role, image, tmpdir):
+                return {'architecture': architectures[role], 'imageConfigId': 'sha256:' + 'b'*64, 'files': {}}
+            with mock.patch.object(audit.sys, 'argv', argv), mock.patch.object(
+                    audit, 'audit_one', side_effect=fake_audit):
+                with self.assertRaisesRegex(ValueError, 'matching architecture'):
+                    audit.main()
+            self.assertFalse(destination.exists())
 
 
 if __name__ == '__main__':
