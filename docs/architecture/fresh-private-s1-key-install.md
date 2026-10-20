@@ -10,6 +10,11 @@ The separately authorized [private S2-A consumer](fresh-private-s2a-chat-admissi
 can now opt into one exact nonstreaming synthetic Chat route in a new disposable
 proof. Without that additional opt-in, the S1 Ingress 503 behavior is unchanged.
 
+The separate default-off [B0/B1 profile](fresh-private-config-authority.md)
+adds Host-owned source admission, durable full-file receipts and stopped-writer
+recovery. Its limited restart behavior does not rebind old S1 generations or
+change the standalone S1 profile described here.
+
 ## Authority and operation
 
 The existing Manager `gateway_api_key_identities` / `fresh_client_api_keys`

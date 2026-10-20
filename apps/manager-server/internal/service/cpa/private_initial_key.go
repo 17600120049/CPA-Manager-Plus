@@ -51,11 +51,12 @@ type InstallResult struct {
 // Transport pins production requests to the private loopback CPA Management
 // endpoint. Tests can inject a private synthetic server inside this package.
 type Transport struct {
-	mu           sync.Mutex
-	client       *http.Client
-	endpoint     string
-	attempted    bool
-	providerSeed func() (PrivateProviderSeed, error)
+	configurationAuthority *privateConfigClient
+	mu                     sync.Mutex
+	client                 *http.Client
+	endpoint               string
+	attempted              bool
+	providerSeed           func() (PrivateProviderSeed, error)
 }
 
 func NewTransport() *Transport {
@@ -70,7 +71,7 @@ func NewTransport() *Transport {
 		Transport:     direct,
 		Timeout:       5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}, endpoint: "http://" + privateCPAAddress}
+	}, endpoint: "http://" + privateCPAAddress, configurationAuthority: newPrivateConfigClient()}
 }
 
 func (t *Transport) request(ctx context.Context, method, path, managementKey string, payload []byte) (int, []byte, error) {
@@ -142,7 +143,16 @@ func (t *Transport) InstallOne(ctx context.Context, proof TargetProof, managemen
 	if proof.ExpiresAtMS <= time.Now().UnixMilli() {
 		return unknown, ErrProofUnavailable
 	}
+	intent, err := t.beginInitialConfiguration(ctx, proof, stagedSecret)
+	if err != nil {
+		return unknown, err
+	}
 	t.attempted = true
+	// Durable reservation may outlive the S1 permit while storage or transport
+	// is slow. Leave its original intention unknown; never PUT after expiry.
+	if proof.ExpiresAtMS <= time.Now().UnixMilli() {
+		return unknown, ErrApplyUnknown
+	}
 	status, _, err = t.request(ctx, http.MethodPut, "/v8/management/config/access/api-keys", managementKey, payload)
 	if err != nil || status != http.StatusOK {
 		return unknown, ErrApplyUnknown
@@ -154,6 +164,9 @@ func (t *Transport) InstallOne(ctx context.Context, proof TargetProof, managemen
 	var list []string
 	if json.Unmarshal(written, &list) != nil || len(list) != 1 || list[0] != stagedSecret {
 		return unknown, ErrApplyUnknown
+	}
+	if err := t.commitConfiguration(ctx, intent); err != nil {
+		return unknown, err
 	}
 	// Config readback is not a live CPA authentication acknowledgment.
 	return InstallResult{CPAConfigured: true, RuntimeState: "effect_unknown", GatewayAuthorized: false}, nil

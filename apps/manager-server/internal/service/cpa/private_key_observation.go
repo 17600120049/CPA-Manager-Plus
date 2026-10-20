@@ -13,6 +13,21 @@ const privateSyntheticProvider = `{"openai-compatibility":[{"name":"s1-synthetic
 // Configured reads the CPA management projection. It cannot prove disk durability
 // or live data-plane authentication. The disposable host proof checks disk too.
 func (t *Transport) Configured(ctx context.Context, management, secret string) (bool, error) {
+	if t.configurationAuthority != nil {
+		_, observed, e := t.configuration(ctx, "observe")
+		if e != nil {
+			return false, e
+		}
+		if observed.State == "unknown" && observed.Operation.Scope == "initial-key" &&
+			observed.Operation.ID == "s1-"+hashBytes([]byte(secret)) && observed.Operation.KeySHA256 == hashBytes([]byte(secret)) {
+			if e := t.reconcilePrivateConfiguration(ctx, observed.Operation.ID); e != nil {
+				return false, e
+			}
+		}
+		if _, e := t.committedConfiguration(ctx); e != nil {
+			return false, e
+		}
+	}
 	if t.providerSeed != nil && !t.providerConfigured(ctx, management, secret) {
 		return false, ErrSourceConflict
 	}

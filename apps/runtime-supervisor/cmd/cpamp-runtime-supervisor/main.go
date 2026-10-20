@@ -34,15 +34,16 @@ const (
 )
 
 type config struct {
-	addr                string
-	runtimeIdentity     string
-	runtimeGeneration   uint64
-	token               string
-	journalPath         string
-	cpaExecutable       string
-	cpaArtifactManifest string
-	cpaAddr             string
-	cpaIdentity         *cpaprocess.ChildIdentity
+	privateConfiguration bool
+	addr                 string
+	runtimeIdentity      string
+	runtimeGeneration    uint64
+	token                string
+	journalPath          string
+	cpaExecutable        string
+	cpaArtifactManifest  string
+	cpaAddr              string
+	cpaIdentity          *cpaprocess.ChildIdentity
 }
 
 type generationSource func() (uint64, error)
@@ -60,6 +61,9 @@ func main() {
 }
 
 func loadConfig(getenv func(string) string, nextGeneration generationSource) (config, error) {
+	if flag := getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY"); flag != "" && flag != "1" {
+		return config{}, errors.New("CPAMP_PRIVATE_CONFIG_AUTHORITY must be unset or 1")
+	}
 	addr := strings.TrimSpace(getenv("CPAMP_RUNTIME_ADDR"))
 	if addr == "" {
 		addr = defaultRuntimeAddr
@@ -101,15 +105,16 @@ func loadConfig(getenv func(string) string, nextGeneration generationSource) (co
 		}
 	}
 	return config{
-		addr:                addr,
-		runtimeIdentity:     identity,
-		runtimeGeneration:   generation,
-		token:               token,
-		journalPath:         journalPath,
-		cpaExecutable:       executable,
-		cpaArtifactManifest: artifactManifest,
-		cpaAddr:             cpaAddr,
-		cpaIdentity:         cpaIdentity,
+		privateConfiguration: getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1",
+		addr:                 addr,
+		runtimeIdentity:      identity,
+		runtimeGeneration:    generation,
+		token:                token,
+		journalPath:          journalPath,
+		cpaExecutable:        executable,
+		cpaArtifactManifest:  artifactManifest,
+		cpaAddr:              cpaAddr,
+		cpaIdentity:          cpaIdentity,
 	}, nil
 }
 
@@ -143,7 +148,11 @@ func randomRuntimeGeneration() (uint64, error) {
 }
 
 func run(ctx context.Context, cfg config) (err error) {
-	handler, err := newRuntimeHandler(ctx, cfg)
+	constructor := newRuntimeHandler
+	if cfg.privateConfiguration {
+		constructor = newPrivateRuntimeHandler
+	}
+	handler, err := constructor(ctx, cfg)
 	if err != nil {
 		return err
 	}
