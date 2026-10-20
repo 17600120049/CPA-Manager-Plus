@@ -1,0 +1,127 @@
+{
+  "result": "PASS",
+  "project": "cpamp-fresh-new-17d712703deb",
+  "checks": [
+    {
+      "name": "first boot waits for Host initialize without creating database or data key",
+      "result": "PASS"
+    },
+    {
+      "name": "expired Handoff is rejected with Host recovery guidance (offline expiry fixture)",
+      "result": "PASS"
+    },
+    {
+      "name": "wrong Handoff installation identity is rejected without consuming the valid claim",
+      "result": "PASS"
+    },
+    {
+      "name": "real browser claims once, removes fragment and rejects consumed Handoff",
+      "result": "PASS"
+    },
+    {
+      "name": "missing/weak Admin Key rejected; server-generated Key commits once despite lost response",
+      "result": "PASS"
+    },
+    {
+      "name": "routing failure retains intent; lost activation reply reconciles exact public identity",
+      "result": "PASS"
+    },
+    {
+      "name": "Console rejects missing/wrong Admin Key and accepts the installed Admin Key",
+      "result": "PASS"
+    },
+    {
+      "name": "POST /console/api/v2/strategy",
+      "status": 200
+    },
+    {
+      "name": "POST /console/api/v2/complete",
+      "status": 200
+    },
+    {
+      "name": "official default CPA v8 target staged, started through existing strategy, and installation completed after lost Start reply",
+      "result": "PASS"
+    },
+    {
+      "name": "zero Client Keys: all tested Gateway paths remain Pending; peer cannot reach CPA port",
+      "result": "PASS"
+    },
+    {
+      "name": "Manager/Runtime/Ingress restart preserves identity, completion, routing, data key and saved setting; Admin relogin works",
+      "result": "PASS"
+    },
+    {
+      "name": "stale Runtime generation returns 409 managed_target_identity_mismatch without rebinding or retry",
+      "result": "PASS"
+    },
+    {
+      "name": "explicit Host lifecycle Start restores the new Runtime generation without rewriting installation provenance",
+      "result": "PASS"
+    },
+    {
+      "name": "completed installation rejects repeated initialize; admin/authority/settings and identity/key files unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "empty-existing-db cannot be admitted as Fresh; source bytes and modes unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "unknown-db cannot be admitted as Fresh; source bytes and modes unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "legacy-settings cannot be admitted as Fresh; source bytes and modes unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "incomplete-marker cannot be admitted as Fresh; source bytes and modes unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "no browser storage, uncaught browser errors or secrets in service logs",
+      "result": "PASS"
+    }
+  ],
+  "pageErrors": [],
+  "notRun": [
+    "Real Provider/model traffic, public Gateway, other four journeys, arm64, power-loss and production rollback",
+    "Natural ten-minute claim expiry (expired server timestamp is injected offline only in this disposable fixture)"
+  ],
+  "images": {
+    "cpamp-runtime": "sha256:9f6fd0fba422ec496fcc2a243392b94d0de6492b7b60468dbaa680c27fde35cd",
+    "cpamp-manager": "sha256:b0944d7010b97b80c71c875255757ae2a3cc93f5f6ac950add63e93e1f1f36f0",
+    "cpamp-ingress": "sha256:ec013170b93e0bbf778ee3b3898bfcc7c8289aca014d033cc118f628dfb2446a"
+  },
+  "source": "linux/amd64",
+  "gitHead": "5ae3ea874fe241cda093402ca7aefa99ca516b8a",
+  "diffSha256": "0899c411d1749be5936ed764d251676fd1344dd7e0d3a9d08d16e56131e06c51",
+  "sourceFiles": {
+    "apps/web/src/fullweb/FreshBootstrapPage.test.tsx": "e6238c8cdb8018ab209bfe6b7d60faeff48c5b5db74b6b1ac34dee0cb5a11f16",
+    "apps/web/src/fullweb/FreshBootstrapPage.tsx": "1b5cf1eff63feccc89d5bff917a04034eed5608df9c315a6a9f68373e2305f35",
+    "apps/web/src/fullweb/FreshConsolePage.tsx": "63fd07e87b42e1029a25e3558b0f1f71d266229055341ab9717ff1dd8b504748",
+    "apps/web/src/fullweb/bootstrapTransport.test.ts": "5934ce93ae6508e28c74e714b89fbcc512c31ef1330116664ce892fb94c5cb2d",
+    "apps/web/src/fullweb/bootstrapTransport.ts": "b8b7b5b818514676918426733e7b3e0d181e3b19121008b1402030d6aacae9cc",
+    "apps/web/src/fullweb/publicApi.ts": "159ae8b25c346a070a3b4027531397d34cf4e793a37ac0da15c36d6513cbf4d1",
+    "apps/web/src/i18n/locales/en.json": "c3da85c7d30a09de4805476f935e50b146be183536320a7a79d977a8177e8579",
+    "apps/web/src/i18n/locales/ru.json": "edabbb77faf2848352684a687c79e18f5c02b96714051ce1e98ebdb1f1b82a6d",
+    "apps/web/src/i18n/locales/zh-CN.json": "a50174642fcc7e431c489df05c4a0dd2fc18db64d1517a219ec645edadd4c02f",
+    "apps/web/src/i18n/locales/zh-TW.json": "8a1e94fbc0c79dc8e9ec8d9e8f776d656c1ae404279bc94d2c0ce9f4635dba0d",
+    "apps/web/src/fullweb/FreshManagedRuntime.test.tsx": "ec53b9b3aa6458457604f4156902b662139514fdc5538cc396fdfc2c610d91b1",
+    "apps/web/src/fullweb/FreshManagedRuntime.tsx": "c04b81c61a1c7750dd9874b12507bd9dab40d547a83ba95d7f6e6ff32ce19906",
+    "apps/web/src/fullweb/runtimeGeneration.test.ts": "5d3a2ea209add46061f99fd53133de7752ac2eba918453a4fe40c64e10d9925c",
+    "apps/web/src/fullweb/runtimeGeneration.ts": "8f24cbe65d3296cc2dbd64c50179ccba65320819f4aa12275a4c9b36d525151a",
+    "bin/ci/fresh-new-installation.mjs": "49246aac7176b39672adbd86fc5ec8566812a81b430182ac5ea5801e5b473de3"
+  },
+  "origin": "http://127.0.0.1:59947",
+  "strategyGenerations": [
+    "3605978250975095704",
+    "3605978250975095704"
+  ],
+  "operationId": "fresh-752cc38b7c776d4bd0c9be9c0ffb93e4",
+  "runtimeAfterRestart": {
+    "state": "offline",
+    "generationChanged": true
+  },
+  "cleanup": "PASS"
+}

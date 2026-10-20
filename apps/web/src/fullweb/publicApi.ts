@@ -1,4 +1,5 @@
 import { readRoutingContext, resolveRoutingContext, type RoutingContext } from './routingContext';
+import { parseRuntimeJSON, runtimeRequestJSON } from './runtimeGeneration';
 
 export type PublicApiErrorKind = 'routing_unavailable' | 'network' | 'http' | 'authentication';
 
@@ -69,7 +70,9 @@ export function createPublicApiClient(
       const response = await transport(target.href, {
         method,
         headers,
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        ...(body !== undefined
+          ? { body: resource === 'strategy' ? runtimeRequestJSON(body) : JSON.stringify(body) }
+          : {}),
         ...(controller ? { signal: controller.signal } : {}),
         mode: 'same-origin',
         credentials: 'omit',
@@ -80,7 +83,11 @@ export function createPublicApiClient(
         throw new PublicApiError('authentication', response.status);
       }
       if (!response.ok) throw new PublicApiError('http', response.status);
-      return (await response.json()) as T;
+      return (
+        ['operation', 'strategy', 'complete'].includes(resource)
+          ? parseRuntimeJSON(await response.text())
+          : await response.json()
+      ) as T;
     } catch (err) {
       if (err instanceof PublicApiError) throw err;
       throw new PublicApiError('network');

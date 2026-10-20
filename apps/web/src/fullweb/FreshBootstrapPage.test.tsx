@@ -76,7 +76,9 @@ describe('FreshBootstrapPage product preview workflow', () => {
 
     const gate = findByTestId(renderer.root, 'bootstrap-no-handoff');
     expect(textOf(gate)).toContain('未检测到有效的 Fresh Bootstrap Handoff 凭证');
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })).toHaveLength(0);
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
+    ).toHaveLength(0);
     expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
       'cpa-manager-plus initialize'
     );
@@ -162,22 +164,43 @@ describe('FreshBootstrapPage product preview workflow', () => {
   });
 
   it.each([
-    ['unsupported_upgrade', 'unsupported_upgrade', 'admin_session', 'qualification_unavailable', true],
+    [
+      'unsupported_upgrade',
+      'unsupported_upgrade',
+      'admin_session',
+      'qualification_unavailable',
+      true,
+    ],
     ['recovery_required', 'recovery', 'host_intervention', 'recovery_host_intervention', false],
-  ])('does not misrepresent non-Fresh %s as reachable Fresh guidance', async (
-    status, mode, authEntry, reason, authRequired
-  ) => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      contract_version: 'cpamp.phase4-01.discovery.v1',
-      status, mode, auth_entry: authEntry, reason,
-      authentication_required: authRequired,
-    }))));
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
-    });
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })).toHaveLength(0);
-  });
+  ])(
+    'does not misrepresent non-Fresh %s as reachable Fresh guidance',
+    async (status, mode, authEntry, reason, authRequired) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              contract_version: 'cpamp.phase4-01.discovery.v1',
+              status,
+              mode,
+              auth_entry: authEntry,
+              reason,
+              authentication_required: authRequired,
+            })
+          )
+        )
+      );
+      let renderer!: ReactTestRenderer;
+      await act(async () => {
+        renderer = create(
+          <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
+        );
+      });
+      expect(
+        renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
+      ).toHaveLength(0);
+    }
+  );
 
   it('completes real claim exchange, key generation, admin commit, and operation refresh', async () => {
     const generatedKey = 'cpamp_9876543210abcdefABCDEFGH12';
@@ -246,7 +269,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(fetchMock.mock.calls[3][0]).toContain('/.well-known/cpamp-bootstrap/api/v2/operation');
   });
 
-  it('preserves identical commitId across network error retries and blocks invalid keys locally', async () => {
+  it('reads actual state after a lost commit response without repeating the write and blocks invalid keys locally', async () => {
     const validKey = 'cpamp_9876543210abcdefABCDEFGH12';
     const committedOperation = {
       ...pendingOperation,
@@ -296,20 +319,97 @@ describe('FreshBootstrapPage product preview workflow', () => {
     await act(async () => {
       form.props.onSubmit({ preventDefault: vi.fn() });
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(textOf(findByTestId(renderer.root, 'feedback-title'))).toContain('网络连接异常');
-
-    const firstCommitBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
-
-    // Retry submit without changing key -> sends exact same commitId
-    await act(async () => {
-      form.props.onSubmit({ preventDefault: vi.fn() });
-    });
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    const secondCommitBody = JSON.parse(fetchMock.mock.calls[2][1].body as string);
-    expect(secondCommitBody.commitId).toBe(firstCommitBody.commitId);
+    expect(fetchMock.mock.calls[2][1].method).toBe('GET');
     expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('已初始化');
+
+    expect(renderer.root.findAllByProps({ 'data-testid': 'admin-init-form' })).toHaveLength(0);
   });
+
+  it.each(['transport', 'response', 'unavailable'])(
+    'locks an unknown %s commit until a successful state read and preserves the retry identity',
+    async (failure) => {
+      const validKey = 'cpamp_9876543210abcdefABCDEFGH12';
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json({ token: 'session-token-1', operation: pendingOperation })
+        );
+      if (failure === 'transport') fetchMock.mockRejectedValueOnce(new TypeError('lost response'));
+      else
+        fetchMock.mockResolvedValueOnce(
+          new Response(failure === 'response' ? 'invalid JSON' : '', {
+            status: failure === 'response' ? 200 : 503,
+          })
+        );
+      fetchMock
+        .mockRejectedValueOnce(new TypeError('state unavailable'))
+        .mockResolvedValueOnce(Response.json(pendingOperation))
+        .mockResolvedValueOnce(
+          Response.json({ ...pendingOperation, revision: 3, adminInitialized: true })
+        );
+      let renderer!: ReactTestRenderer;
+      await act(async () => {
+        renderer = create(
+          <FreshBootstrapPage handoff={handoff} transport={createBootstrapTransport(fetchMock)} />
+        );
+      });
+      await act(async () => {
+        findByTestId(renderer.root, 'admin-key-input').props.onChange({
+          target: { value: validKey },
+        });
+      });
+      await act(async () => {
+        findByTestId(renderer.root, 'confirm-key-saved-checkbox').props.onChange({
+          target: { checked: true },
+        });
+      });
+      await act(async () => {
+        findByTestId(renderer.root, 'admin-init-form').props.onSubmit({ preventDefault: vi.fn() });
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      for (const id of [
+        'admin-key-input',
+        'generate-key-btn',
+        'confirm-key-saved-checkbox',
+        'commit-admin-btn',
+      ]) {
+        expect(findByTestId(renderer.root, id).props.disabled).toBe(true);
+      }
+      expect(textOf(findByTestId(renderer.root, 'admin-commit-unresolved'))).toContain(
+        '勿删除数据卷'
+      );
+      await act(async () => {
+        findByTestId(renderer.root, 'admin-key-input').props.onChange({
+          target: { value: 'different-key' },
+        });
+        findByTestId(renderer.root, 'generate-key-btn').props.onClick();
+        findByTestId(renderer.root, 'admin-init-form').props.onSubmit({ preventDefault: vi.fn() });
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(findByTestId(renderer.root, 'admin-key-input').props.value).toBe(validKey);
+      await act(async () => {
+        findByTestId(renderer.root, 'refresh-operation-btn').props.onClick();
+      });
+      expect(findByTestId(renderer.root, 'commit-admin-btn').props.disabled).toBe(false);
+      expect(findByTestId(renderer.root, 'admin-key-input').props.disabled).toBe(true);
+      expect(findByTestId(renderer.root, 'generate-key-btn').props.disabled).toBe(true);
+      await act(async () => {
+        findByTestId(renderer.root, 'admin-init-form').props.onSubmit({ preventDefault: vi.fn() });
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+      expect(fetchMock.mock.calls.map((call) => call[1].method)).toEqual([
+        'POST',
+        'POST',
+        'GET',
+        'GET',
+        'POST',
+      ]);
+      expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toEqual(
+        JSON.parse(fetchMock.mock.calls[1][1].body)
+      );
+    }
+  );
 
   it('resumes an already initialized operation directly without claim exchange', async () => {
     const resumedOperation = {

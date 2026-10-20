@@ -5,6 +5,7 @@ import { createPublicApiClient, PublicApiError } from './publicApi';
 import type { RoutingContext } from './routingContext';
 import { FreshApiKeys } from './FreshApiKeys';
 import { FreshUpdateChannel } from './FreshUpdateChannel';
+import { FreshManagedRuntime } from './FreshManagedRuntime';
 
 const defaultClient = createPublicApiClient();
 
@@ -23,6 +24,8 @@ export function FreshConsolePage({
   const [light, setLight] = useState(false);
   const [creationPending, setCreationPending] = useState(false);
   const creationPendingRef = useRef(false);
+  const [installationPending, setInstallationPending] = useState(false);
+  const installationPendingRef = useRef(false);
   const requestId = useRef(0);
   useEffect(() => {
     document.title = t('consoleTitle');
@@ -45,6 +48,8 @@ export function FreshConsolePage({
   function clearAuthentication() {
     requestId.current++;
     reportCreationPending(false);
+    installationPendingRef.current = false;
+    setInstallationPending(false);
     setKey('');
     setCredential('');
     setOperation(null);
@@ -53,14 +58,14 @@ export function FreshConsolePage({
   }
 
   function logout() {
-    if (creationPendingRef.current) return;
+    if (creationPendingRef.current || installationPendingRef.current) return;
     clearAuthentication();
   }
 
   async function readOperation(event?: FormEvent) {
     event?.preventDefault();
     const candidate = credential || key;
-    if (busy || !candidate) return;
+    if (busy || installationPendingRef.current || !candidate) return;
     const currentRequest = ++requestId.current;
     setKey('');
     setBusy(true);
@@ -142,7 +147,7 @@ export function FreshConsolePage({
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck={false}
-                      disabled={busy}
+                      disabled={busy || installationPending}
                     />
                   </div>
                   <p>{t('loginHelp')}</p>
@@ -183,7 +188,7 @@ export function FreshConsolePage({
                     <button
                       className="btn btn-secondary"
                       onClick={logout}
-                      disabled={creationPending}
+                      disabled={creationPending || installationPending}
                       aria-describedby={creationPending ? 'key-exit-pending' : undefined}
                     >
                       {t('logout')}
@@ -192,6 +197,11 @@ export function FreshConsolePage({
                   {creationPending && (
                     <p id="key-exit-pending" role="status" className="alert alert-warn">
                       {t('keysExitBlocked')}
+                    </p>
+                  )}
+                  {installationPending && (
+                    <p role="status" className="alert alert-warn">
+                      {t('installUnknown')}
                     </p>
                   )}
                   <FreshApiKeys
@@ -207,6 +217,21 @@ export function FreshConsolePage({
                   <FreshUpdateChannel
                     client={client}
                     credential={credential}
+                    onUnauthorized={() => {
+                      clearAuthentication();
+                      setError(t('authError'));
+                    }}
+                  />
+                  <FreshManagedRuntime
+                    key={`runtime-${credential}`}
+                    client={client}
+                    credential={credential}
+                    operation={operation}
+                    onOperation={setOperation}
+                    onPending={(pending) => {
+                      installationPendingRef.current = pending;
+                      setInstallationPending(pending);
+                    }}
                     onUnauthorized={() => {
                       clearAuthentication();
                       setError(t('authError'));

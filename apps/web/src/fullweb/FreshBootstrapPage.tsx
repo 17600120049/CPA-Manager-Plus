@@ -38,7 +38,8 @@ function publicDiscoveryGuidance(payload: unknown): ActionFeedback | null {
     return {
       tone: 'info',
       title: '检测到需要宿主机认领的 Fresh 初始化状态',
-      detail: '此状态仅为只读识别结果。请从受信宿主机获取一次性 Handoff 链接；本页面不会自行创建或认领安装。',
+      detail:
+        '此状态仅为只读识别结果。请从受信宿主机获取一次性 Handoff 链接；本页面不会自行创建或认领安装。',
     };
   }
   return null;
@@ -65,7 +66,7 @@ function describeBootstrapError(
         title: '网络连接异常（Bootstrap Transport Unavailable）',
         detail:
           stage === 'commit'
-            ? '无法连接至 Manager Bootstrap 服务端。当前密钥与幂等提交标识（commitId）已保留在内存中，请检查网络或服务状态后点击“提交并完成管理员初始化”安全重试，或点击“同步服务端状态”确认是否已生效。'
+            ? '提交结果尚未确认，当前密钥与幂等提交标识（commitId）已保留在内存中。请检查网络或服务状态后点击“同步服务端状态”；确认服务端仍未初始化后才可重试。请勿刷新页面或更换密钥。'
             : stage === 'start'
               ? '无法连接至 Manager Bootstrap 服务端。您可尝试重新连接一次；若服务端已消费本次一次性 Claim Token 并返回 HTTP 401，请在宿主机重新执行 cpa-manager-plus initialize 获取新的 Handoff 链接。'
               : '无法连接至 Manager Bootstrap 服务端，请确认本地受控容器或服务进程正在运行后重试。',
@@ -133,6 +134,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
 
   const [generating, setGenerating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [commitUnresolved, setCommitUnresolved] = useState(false);
+  const [candidateSubmitted, setCandidateSubmitted] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
   const [commitCompletedInSession, setCommitCompletedInSession] = useState(false);
@@ -257,6 +260,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   }, [handoff, executeStart]);
 
   function handleKeyInputChange(nextValue: string) {
+    if (submitting || refreshing || commitUnresolved || candidateSubmitted) return;
     setAdminKey(nextValue);
     setCommitId(createCommitId());
     setConfirmedSaved(false);
@@ -264,7 +268,16 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   }
 
   async function handleGenerateKey() {
-    if (generating || submitting || !operation || operation.adminInitialized) return;
+    if (
+      generating ||
+      submitting ||
+      refreshing ||
+      commitUnresolved ||
+      candidateSubmitted ||
+      !operation ||
+      operation.adminInitialized
+    )
+      return;
     setGenerating(true);
     setFeedback(null);
     try {
@@ -318,6 +331,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
     try {
       const next = await transport.fetchOperation();
       setOperation(next);
+      setCommitUnresolved(false);
       if (next.adminInitialized) {
         setAdminKey('');
         setShowKey(false);
@@ -338,7 +352,15 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
 
   async function handleCommitAdmin(event: React.FormEvent) {
     event.preventDefault();
-    if (submitting || generating || !operation || operation.adminInitialized) return;
+    if (
+      submitting ||
+      generating ||
+      refreshing ||
+      commitUnresolved ||
+      !operation ||
+      operation.adminInitialized
+    )
+      return;
 
     const validation = validateFreshAdminKey(adminKey);
     if (!validation.valid) {
@@ -359,10 +381,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
     }
 
     setSubmitting(true);
+    setCommitUnresolved(true);
+    setCandidateSubmitted(true);
     setFeedback(null);
     try {
       const updated = await transport.commitAdminKey(commitId, adminKey);
       setOperation(updated);
+      setCommitUnresolved(false);
       setAdminKey('');
       setShowKey(false);
       setCommitCompletedInSession(true);
@@ -372,13 +397,17 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
         detail: `已通过幂等提交标识 ${commitId} 完成初始化，服务端状态已推进至 Revision #${updated.revision}。`,
       });
     } catch (err) {
-      if (
-        err instanceof BootstrapTransportError &&
-        (err.kind === 'conflict' || err.kind === 'rejected')
+      if (err instanceof BootstrapTransportError && err.kind === 'bad_request') {
+        setCommitUnresolved(false);
+        setCandidateSubmitted(false);
+      } else if (
+        !(err instanceof BootstrapTransportError) ||
+        !['mismatch', 'authority'].includes(err.kind)
       ) {
         try {
           const latest = await transport.fetchOperation();
           setOperation(latest);
+          setCommitUnresolved(false);
           if (latest.adminInitialized) {
             setAdminKey('');
             setShowKey(false);
@@ -750,6 +779,23 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                     data-testid="admin-init-form"
                     noValidate
                   >
+                    {commitUnresolved && (
+                      <p
+                        className="alert alert-warn"
+                        role="status"
+                        data-testid="admin-commit-unresolved"
+                      >
+                        初始化提交结果未知。请先同步服务端状态；确认前不能更换密钥或再次提交。
+                        若授权已过期，请保留已保存的密钥，在宿主机停止 Manager 后重新执行 initialize
+                        获取恢复链接，勿删除数据卷。
+                      </p>
+                    )}
+                    {candidateSubmitted && !commitUnresolved && (
+                      <p className="alert alert-info" role="status">
+                        已保留首次提交的密钥与
+                        commitId。即使当前读取为待初始化，仍只可重试原提交，不能更换密钥。
+                      </p>
+                    )}
                     <div className="form-group">
                       <div className="form-label">
                         <label htmlFor="fresh-admin-key-input">管理员主密钥（Admin Key）</label>
@@ -771,7 +817,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                           autoCorrect="off"
                           autoCapitalize="off"
                           spellCheck={false}
-                          disabled={submitting || generating}
+                          disabled={
+                            submitting ||
+                            generating ||
+                            refreshing ||
+                            commitUnresolved ||
+                            candidateSubmitted
+                          }
                         />
                         <div className="input-actions">
                           <button
@@ -779,7 +831,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                             className="btn-xs"
                             data-testid="toggle-key-visibility-btn"
                             onClick={() => setShowKey((prev) => !prev)}
-                            disabled={submitting || generating}
+                            disabled={
+                              submitting ||
+                              generating ||
+                              refreshing ||
+                              commitUnresolved ||
+                              candidateSubmitted
+                            }
                           >
                             {showKey ? '隐藏' : '显示'}
                           </button>
@@ -788,7 +846,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                             className="btn-xs"
                             data-testid="generate-key-btn"
                             onClick={() => void handleGenerateKey()}
-                            disabled={submitting || generating}
+                            disabled={
+                              submitting ||
+                              generating ||
+                              refreshing ||
+                              commitUnresolved ||
+                              candidateSubmitted
+                            }
                           >
                             {generating ? '生成中…' : '一键生成'}
                           </button>
@@ -847,7 +911,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         type="checkbox"
                         checked={confirmedSaved}
                         onChange={(e) => setConfirmedSaved(e.target.checked)}
-                        disabled={submitting || generating}
+                        disabled={
+                          submitting ||
+                          generating ||
+                          refreshing ||
+                          commitUnresolved ||
+                          candidateSubmitted
+                        }
                       />
                       <span className="checkbox-text">
                         <strong>我已复制并妥善保存该管理员密钥。</strong>
@@ -872,7 +942,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         type="submit"
                         className="btn btn-primary"
                         data-testid="commit-admin-btn"
-                        disabled={submitting || generating}
+                        disabled={submitting || generating || refreshing || commitUnresolved}
                       >
                         {submitting ? '正在提交初始化…' : '提交并完成管理员初始化'}
                       </button>
