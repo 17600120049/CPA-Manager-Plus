@@ -15,6 +15,7 @@ import (
 type Verdict struct {
 	RequestBinding string `json:"requestBinding"`
 	ExpiresAtMS    int64  `json:"expiresAtMs"`
+	Model          string `json:"model,omitempty"`
 }
 
 // Admit consumes the existing S1 authority with NEW observations for this call.
@@ -47,7 +48,7 @@ func (s *Service) Admit(ctx context.Context, candidate string, generation uint64
 	if err != nil || attempt == nil {
 		return deny, ErrUnavailable
 	}
-	if attempt.Generation != p.Generation || attempt.RunID != p.RunID {
+	if attempt.Generation != p.Generation || attempt.RunID != p.RunID || attempt.ProviderSeedSHA256 != p.S2B.Binding() {
 		return deny, ErrGeneration
 	}
 	err = s.keys.WithStagedSecret(ctx, attempt.KeyID, func(secret string) error {
@@ -85,5 +86,5 @@ func (s *Service) Admit(ctx context.Context, candidate string, generation uint64
 	if ctx.Err() != nil || time.Now().UnixMilli() >= until {
 		return deny, ErrUnavailable
 	}
-	return Verdict{RequestBinding: binding, ExpiresAtMS: until}, nil
+	return Verdict{RequestBinding: binding, ExpiresAtMS: until, Model: p.S2B.Model}, nil
 }

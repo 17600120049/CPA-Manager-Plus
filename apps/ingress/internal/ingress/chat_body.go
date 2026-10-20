@@ -20,6 +20,10 @@ var errChat = errors.New("private chat unavailable")
 // This private consumer accepts a complete, explicitly framed JSON body only.
 // It never streams a partially inspected body or forwards client hop/auth hints.
 func readChat(r *http.Request) ([]byte, error) {
+	return readChatModel(r, "s1-proof-model")
+}
+
+func readChatModel(r *http.Request, allowedModel string) ([]byte, error) {
 	if r.Method != http.MethodPost || r.URL.Path != chatPath || r.URL.EscapedPath() != chatPath ||
 		r.RequestURI != chatPath || r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.IsAbs() ||
 		r.ContentLength <= 0 || r.ContentLength > maxChatBytes || len(r.TransferEncoding) != 0 || len(r.Trailer) != 0 ||
@@ -49,7 +53,7 @@ func readChat(r *http.Request) ([]byte, error) {
 		return nil, errChat
 	}
 	var model string
-	if json.Unmarshal(root["model"], &model) != nil || model != "s1-proof-model" {
+	if allowedModel == "" || json.Unmarshal(root["model"], &model) != nil || model != allowedModel {
 		return nil, errChat
 	}
 	for name := range root {

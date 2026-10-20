@@ -3,6 +3,7 @@ package freshkeyapply
 import (
 	"context"
 	"errors"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -46,7 +47,11 @@ type Service struct {
 }
 
 func New(r *repo.Repository, keys *freshkeys.Service, runtime runtimeservice.RuntimeClient) *Service {
-	return &Service{repo: r, keys: keys, runtime: runtime, wire: cpa.NewTransport(), permit: loadPermit}
+	s := &Service{repo: r, keys: keys, runtime: runtime, wire: cpa.NewTransport(), permit: loadPermit}
+	if os.Getenv("CPAMP_PRIVATE_S2B_CHAT") == "1" {
+		s.wire = cpa.NewPrivateS2BTransport(func() (cpa.PrivateProviderSeed, error) { p, err := s.permit(); return p.S2B, err })
+	}
+	return s
 }
 
 func (s *Service) target(ctx context.Context, p Permit) (model.RuntimeObservedStatus, error) {
@@ -85,7 +90,7 @@ func (s *Service) Apply(ctx context.Context, id string, generation uint64) (Stat
 	}
 	err = s.keys.WithStagedSecret(ctx, id, func(secret string) error {
 		result.ManagerStaged = true
-		if err := s.repo.ClaimInitialInstall(ctx, repo.InitialInstall{KeyID: id, RunID: p.RunID, Generation: p.Generation, AttemptedAtMS: time.Now().UnixMilli()}); err != nil {
+		if err := s.repo.ClaimInitialInstall(ctx, repo.InitialInstall{KeyID: id, RunID: p.RunID, Generation: p.Generation, AttemptedAtMS: time.Now().UnixMilli(), ProviderSeedSHA256: p.S2B.Binding()}); err != nil {
 			return err
 		}
 		result.Attempted = true
@@ -93,7 +98,7 @@ func (s *Service) Apply(ctx context.Context, id string, generation uint64) (Stat
 		if _, err := s.target(ctx, p); err != nil {
 			return err
 		}
-		_, err := s.wire.InstallOne(ctx, cpa.TargetProof{Identity: string(target.Identity), Generation: uint64(target.Generation), ArtifactID: cpa.PrivateKeyArtifact, Ready: true, SourceExclusive: true, Disposable: true, ExpiresAtMS: p.ExpiresAtMS}, p.ManagementKey, secret)
+		_, err := s.wire.InstallOne(ctx, cpa.TargetProof{Identity: string(target.Identity), Generation: uint64(target.Generation), ArtifactID: cpa.PrivateKeyArtifact, Ready: true, SourceExclusive: true, Disposable: true, ExpiresAtMS: p.ExpiresAtMS, ProviderSeed: p.S2B}, p.ManagementKey, secret)
 		return err
 	})
 	if err != nil {
@@ -136,7 +141,7 @@ func (s *Service) observe(ctx context.Context, id string, generation uint64) (St
 	if attempt == nil || attempt.KeyID != id {
 		return result, nil
 	}
-	if attempt.Generation != p.Generation || attempt.RunID != p.RunID {
+	if attempt.Generation != p.Generation || attempt.RunID != p.RunID || attempt.ProviderSeedSHA256 != p.S2B.Binding() {
 		return result, ErrGeneration
 	}
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
