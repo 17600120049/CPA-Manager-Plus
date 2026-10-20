@@ -15,7 +15,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 )
 
-var ErrBlocked = errors.New("source inspection is blocked; see JSON report")
+var ErrBlocked = errors.New("source inspection is blocked; see preflight report")
 
 // Run only resolves source locations and inspects them. It never dispatches the
 // server, creates defaults, generates a key or opens the writable Store.
@@ -131,6 +131,7 @@ func writeOperatorSummary(w io.Writer, report legacypreflight.Report, inspection
 	if inspectionErr != nil || len(report.Blocked) != 0 {
 		// A blocked/unstable observation cannot be presented as an actionable
 		// Fresh or Upgrade classification, even if SourceKind looks familiar.
+		source = "Manager source classification unconfirmed"
 		next = "Inspection blocked or incomplete. Preserve source data; resolve Host ownership, integrity and prerequisites before any write."
 	}
 	_, err := fmt.Fprintf(w, "Source: %s\nUpgrade/Adopt authorization: %s\nNext step: %s\n", source, noGrant, next)

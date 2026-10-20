@@ -38,7 +38,8 @@ func TestSummaryLegacySourceIsReadOnlyAndDoesNotGrantUpgrade(t *testing.T) {
 	if !errors.Is(err, ErrBlocked) {
 		t.Fatalf("partial legacy source must remain blocked: %v", err)
 	}
-	if !strings.Contains(out.String(), "Existing legacy Manager database") ||
+	if !strings.Contains(out.String(), "Source: Manager source classification unconfirmed") ||
+		strings.Contains(out.String(), "Existing legacy Manager database") ||
 		!strings.Contains(out.String(), "Upgrade/Adopt authorization: NOT GRANTED") ||
 		!strings.Contains(out.String(), "Inspection blocked or incomplete.") {
 		t.Fatalf("unsafe or missing operator summary: %q", out.String())
@@ -63,8 +64,12 @@ func TestSummaryMissingSourceDoesNotSuggestFreshAdmission(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "not-created", "usage.sqlite")
 	var out, errOut bytes.Buffer
-	if err := Run(context.Background(), []string{"--db", path, "--summary"}, &out, &errOut); !errors.Is(err, ErrBlocked) {
+	err := Run(context.Background(), []string{"--db", path, "--summary"}, &out, &errOut)
+	if !errors.Is(err, ErrBlocked) {
 		t.Fatalf("missing source unexpectedly admitted: %v", err)
+	}
+	if err.Error() != "source inspection is blocked; see preflight report" {
+		t.Fatalf("summary mode reported wrong output format: %v", err)
 	}
 	if !strings.Contains(out.String(), "Specified Manager database not found") ||
 		!strings.Contains(out.String(), "Missing data alone does not authorize") ||
@@ -90,15 +95,22 @@ func TestSummaryNeverTurnsBlockedOrUnknownIntoFreshPermission(t *testing.T) {
 		if !strings.Contains(out.String(), "Upgrade/Adopt authorization: NOT GRANTED") {
 			t.Fatalf("unsafe grant for %s: %s", report.SourceKind, out.String())
 		}
-		if report.SourceKind == "fresh" && !strings.Contains(out.String(), "Inspection blocked or incomplete.") {
-			t.Fatalf("blocked Fresh still received setup advice: %s", out.String())
+		if report.SourceKind == "fresh" && (!strings.Contains(out.String(), "Inspection blocked or incomplete.") ||
+			!strings.Contains(out.String(), "Source: Manager source classification unconfirmed") ||
+			strings.Contains(out.String(), "No existing Manager database observed")) {
+			t.Fatalf("blocked Fresh still received setup advice or classification: %s", out.String())
+		}
+		if report.SourceKind == "native-v2" && !strings.Contains(out.String(), "Existing native v2 Manager database") {
+			t.Fatalf("nonblocked native-v2 lost its source classification: %s", out.String())
 		}
 	}
 	var out bytes.Buffer
 	if err := writeOperatorSummary(&out, service.Report{SourceKind: "legacy-manager"}, errors.New("OWNED_SECRET_example")); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out.String(), "OWNED_SECRET") || !strings.Contains(out.String(), "Inspection blocked") {
+	if strings.Contains(out.String(), "OWNED_SECRET") || !strings.Contains(out.String(), "Inspection blocked") ||
+		!strings.Contains(out.String(), "Source: Manager source classification unconfirmed") ||
+		strings.Contains(out.String(), "Existing legacy Manager database") {
 		t.Fatal("raw error leaked or not treated as blocked")
 	}
 }
