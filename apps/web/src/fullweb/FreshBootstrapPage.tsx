@@ -22,6 +22,52 @@ interface ActionFeedback {
   detail: string;
 }
 
+// Public discovery is a read-only hint, never a claim or write authority.
+function publicDiscoveryGuidance(payload: unknown): ActionFeedback | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = payload as Record<string, unknown>;
+  if (value.contract_version !== 'cpamp.phase4-01.discovery.v1') return null;
+  if (
+    value.status === 'fresh_claim_required' &&
+    value.mode === 'fresh' &&
+    value.auth_entry === 'fresh_claim' &&
+    value.reason === 'fresh_claim_required' &&
+    value.authentication_required === true
+  ) {
+    return {
+      tone: 'info',
+      title: '检测到需要宿主机认领的 Fresh 初始化状态',
+      detail: '此状态仅为只读识别结果。请从受信宿主机获取一次性 Handoff 链接；本页面不会自行创建或认领安装。',
+    };
+  }
+  if (
+    value.status === 'unsupported_upgrade' &&
+    value.mode === 'unsupported_upgrade' &&
+    value.auth_entry === 'admin_session' &&
+    value.reason === 'qualification_unavailable' &&
+    value.authentication_required === true
+  ) {
+    return {
+      tone: 'warn',
+      title: '现有数据源尚不具备直接升级资格',
+      detail: '不要使用 Fresh 初始化覆盖原数据。需要管理员和宿主机完成来源、备份与兼容性验证后才能继续升级。',
+    };
+  }
+  if (
+    value.status === 'recovery_required' &&
+    value.mode === 'recovery' &&
+    value.auth_entry === 'host_intervention' &&
+    value.reason === 'recovery_host_intervention'
+  ) {
+    return {
+      tone: 'warn',
+      title: '当前环境需要宿主机恢复或检查',
+      detail: '请保留现有数据与备份，由宿主机管理员确认异常来源。只读识别不会执行修复、迁移或重新初始化。',
+    };
+  }
+  return null;
+}
+
 let commitSeq = 0;
 
 function createCommitId(): string {
@@ -102,6 +148,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   const [operation, setOperation] = useState<FreshOperation | null>(null);
   const [initError, setInitError] = useState<ActionFeedback | null>(null);
   const [initErrorKind, setInitErrorKind] = useState<string | null>(null);
+  const [discoveryNote, setDiscoveryNote] = useState<ActionFeedback | null>(null);
 
   const [adminKey, setAdminKey] = useState('');
   const [commitId, setCommitId] = useState<string>(() => createCommitId());
@@ -197,6 +244,29 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
     },
     [transport]
   );
+
+  useEffect(() => {
+    if (handoff) return;
+    let active = true;
+    void fetch('/.well-known/cpamp-bootstrap', {
+      method: 'GET',
+      mode: 'same-origin',
+      credentials: 'omit',
+      redirect: 'error',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: unknown) => {
+        if (active) setDiscoveryNote(publicDiscoveryGuidance(payload));
+      })
+      .catch(() => {
+        // The host-issued Handoff path remains usable if discovery fails.
+      });
+    return () => {
+      active = false;
+    };
+  }, [handoff]);
 
   useEffect(() => {
     if (!handoff) {
@@ -444,6 +514,19 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 </p>
               </div>
               <div className="wizard-card-body">
+                {discoveryNote && (
+                  <div
+                    className={`alert alert-${discoveryNote.tone === 'info' ? 'info' : 'warn'}`}
+                    data-testid="bootstrap-discovery-guidance"
+                    role="status"
+                  >
+                    <div className="alert-content">
+                      <div className="alert-title">{discoveryNote.title}</div>
+                      <div className="alert-desc">{discoveryNote.detail}</div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="alert alert-warn">
                   <span className="alert-icon" aria-hidden="true">
                     !
