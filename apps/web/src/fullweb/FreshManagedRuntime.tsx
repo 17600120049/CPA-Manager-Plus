@@ -159,7 +159,7 @@ export function FreshManagedRuntime({
         return;
       }
       const stopped = err instanceof PublicApiError && err.status === 409;
-      if (stopped) setConflict(true);
+      if (stopped && write) setConflict(true);
       setError(t(stopped ? 'installConflict' : 'installUnavailable'));
       try {
         if (!write) throw err;
@@ -169,9 +169,12 @@ export function FreshManagedRuntime({
         if (!alive.current) return;
         if (readError instanceof PublicApiError && readError.kind === 'authentication')
           onUnauthorized();
-        else {
+        else if (write) {
           setUnknown(true);
           onPending(true);
+        } else {
+          // A failed read alone is not an ambiguous write.
+          onPending(unknown);
         }
       }
     } finally {
