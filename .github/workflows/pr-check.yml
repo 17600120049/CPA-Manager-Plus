@@ -77,6 +77,11 @@ jobs:
           done < "${changed_files}"
           node bin/ci/classify-pr-checks.mjs --null < "${changed_files}" >> "${GITHUB_OUTPUT}"
 
+      - name: Test private candidate image audit (offline)
+        run: |
+          python3 -m py_compile bin/ci/check-v2-private-candidate.py bin/ci/test-check-v2-private-candidate.py
+          python3 bin/ci/test-check-v2-private-candidate.py -v
+
   frontend:
     name: Frontend
     needs: changes
