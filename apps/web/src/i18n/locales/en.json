@@ -1,5 +1,17 @@
 {
   "fullweb": {
+    "installTitle": "Finish Fresh New installation",
+    "installHelp": "Use the trusted host Runtime observation from the installation guide. Save the target, start the packaged Runtime, then finish installation. Model Gateway remains Pending.",
+    "installObservation": "Host Runtime status (JSON)",
+    "installObservationInvalid": "Paste a valid host observation containing Runtime identity, generation and artifactId.",
+    "installNotStarted": "Runtime target has not been saved",
+    "installStage": "Save Runtime target",
+    "installStart": "Start saved Runtime",
+    "installFinish": "Finish installation",
+    "installComplete": "Installation completed",
+    "installConflict": "Installation stopped (HTTP 409). The saved target or generation conflicts with current state. Ask the host operator to reconcile it; do not change the identity or automatically retry.",
+    "installUnavailable": "The installation result could not be confirmed. Read the server state before another action.",
+    "installUnknown": "An installation operation is pending or its result is unknown. Keep this page open and refresh the installation state before leaving or writing again.",
     "keysUnnamed": "Unnamed key",
     "keysDetails": "Key details",
     "keysName": "Name",

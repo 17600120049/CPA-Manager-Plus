@@ -1,5 +1,17 @@
 {
   "fullweb": {
+    "installTitle": "完成 Fresh New 安裝",
+    "installHelp": "依安裝指南從受信宿主機讀取 Runtime 狀態，儲存目標、啟動已封裝的 Runtime，再完成安裝。模型 Gateway 仍維持 Pending。",
+    "installObservation": "宿主機讀取的 Runtime 狀態（JSON）",
+    "installObservationInvalid": "請貼上包含 Runtime 身分、世代和 artifactId 的有效宿主機狀態。",
+    "installNotStarted": "尚未儲存 Runtime 目標",
+    "installStage": "儲存 Runtime 目標",
+    "installStart": "啟動已儲存的 Runtime",
+    "installFinish": "完成安裝",
+    "installComplete": "安裝已完成",
+    "installConflict": "安裝已停止（HTTP 409）。已儲存的目標或世代與目前狀態衝突，請由宿主機操作者核對；不要更換身分或自動重試。",
+    "installUnavailable": "暫時無法確認安裝結果，請先讀取伺服器狀態再操作。",
+    "installUnknown": "安裝操作進行中或結果未知。請保留本頁面，重新整理安裝狀態後再離開或繼續寫入。",
     "keysUnnamed": "未命名金鑰",
     "keysDetails": "金鑰詳情",
     "keysName": "名稱",

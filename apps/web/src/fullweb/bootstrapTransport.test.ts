@@ -160,6 +160,28 @@ describe('bounded Bootstrap handoff and transport', () => {
     });
   });
 
+  it.each([
+    { adminInitialized: undefined },
+    { adminInitialized: 'false' },
+    { revision: 0 },
+    { revision: 0.5 },
+    { gatewayPending: false },
+    { routing: null },
+  ])(
+    'rejects malformed authoritative state without unlocking an unknown commit: %j',
+    async (patch) => {
+      const transport = vi
+        .fn()
+        .mockResolvedValueOnce(Response.json({ token: 'session-secret', operation }))
+        .mockResolvedValueOnce(Response.json({ ...operation, ...patch }))
+        .mockResolvedValueOnce(Response.json(operation));
+      const client = createBootstrapTransport(transport);
+      await client.start(handoff);
+      await expect(client.fetchOperation()).rejects.toMatchObject({ kind: 'response' });
+      await expect(client.fetchOperation()).resolves.toEqual(operation);
+    }
+  );
+
   it('generates and commits admin key over authenticated Fresh session', async () => {
     const generatedKey = 'cpamp_0123456789abcdefABCDEFGH99';
     const committedOp = { ...operation, revision: 2, adminInitialized: true };

@@ -1,6 +1,7 @@
 // Bounded pre-canonical carrier. It has no CPA/Admin transport and persists no
 // secrets. This module belongs to the existing Full Web entry graph.
 import { validControlBasePath } from './routingContext';
+import { parseRuntimeJSON, runtimeRequestJSON, type RuntimeGeneration } from './runtimeGeneration';
 export const BOOTSTRAP_ROOT = '/.well-known/cpamp-bootstrap';
 export const BOOTSTRAP_UI = `${BOOTSTRAP_ROOT}/ui`;
 const API = `${BOOTSTRAP_ROOT}/api/v2/`;
@@ -25,7 +26,7 @@ export interface FreshStrategyCheckpoint {
   strategy?: string;
   targetIdentity?: string;
   targetArtifactId?: string;
-  targetGeneration?: number;
+  targetGeneration?: RuntimeGeneration;
   stage?: string;
 }
 
@@ -181,6 +182,27 @@ function classifyStatus(status: number): BootstrapErrorKind {
   return 'unavailable';
 }
 
+function validOperationState(next: FreshOperation | undefined, previous?: FreshOperation): boolean {
+  return (
+    !!next &&
+    typeof next.adminInitialized === 'boolean' &&
+    next.gatewayPending === true &&
+    Number.isSafeInteger(next.revision) &&
+    next.revision > 0 &&
+    (!previous ||
+      (next.revision >= previous.revision &&
+        (!previous.adminInitialized || next.adminInitialized))) &&
+    typeof next.routing?.committed === 'boolean' &&
+    (!next.routing.committed ||
+      (next.adminInitialized &&
+        next.routing.stage === 'committed' &&
+        validControlBasePath(next.routing.target) &&
+        next.routing.operationId === next.identity.operationId &&
+        Number.isSafeInteger(next.routing.revision) &&
+        next.routing.revision! > 0))
+  );
+}
+
 // Remove the fragment before decoding or making a request, including malformed
 // handoffs. Errors deliberately contain neither input nor request bodies.
 export function consumeHandoff(
@@ -254,7 +276,9 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
       response = await transport(target.href, {
         method: methods[resource],
         headers,
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(body === undefined
+          ? {}
+          : { body: resource === 'strategy' ? runtimeRequestJSON(body) : JSON.stringify(body) }),
         mode: 'same-origin',
         credentials: 'omit',
         redirect: 'error',
@@ -271,7 +295,7 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
       );
     }
     try {
-      return (await response.json()) as T;
+      return parseRuntimeJSON(await response.text()) as T;
     } catch {
       throw new BootstrapTransportError(
         'Bootstrap response unavailable',
@@ -311,6 +335,11 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
         operation = undefined;
         throw new BootstrapTransportError('Bootstrap authority mismatch', 'mismatch');
       }
+      if (!validOperationState(operation)) {
+        token = undefined;
+        operation = undefined;
+        throw new BootstrapTransportError('Bootstrap response unavailable', 'response');
+      }
       return operation;
     },
     async fetchOperation(): Promise<FreshOperation> {
@@ -319,6 +348,9 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
         token = undefined;
         operation = undefined;
         throw new BootstrapTransportError('Bootstrap authority mismatch', 'mismatch');
+      }
+      if (!validOperationState(next, operation)) {
+        throw new BootstrapTransportError('Bootstrap response unavailable', 'response');
       }
       operation = next;
       return next;
@@ -340,7 +372,12 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
         key,
       };
       const next = await request<FreshOperation>('admin/commit', payload);
-      if (!next || !sameIdentity(next.identity, operation.identity) || !next.adminInitialized) {
+      if (
+        !next ||
+        !sameIdentity(next.identity, operation.identity) ||
+        !validOperationState(next, operation) ||
+        next.adminInitialized !== true
+      ) {
         throw new BootstrapTransportError('Bootstrap response unavailable', 'response');
       }
       operation = next;
