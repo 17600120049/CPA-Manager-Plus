@@ -45,6 +45,18 @@ export function FreshConsolePage({
     setCreationPending(pending);
   }
 
+  function acceptOperation(next: FreshOperation) {
+    setOperation((current) => {
+      // Keep newer durable state if an earlier Console read completes later.
+      if (
+        current &&
+        (!sameIdentity(next.identity, current.identity) || next.revision < current.revision)
+      )
+        return current;
+      return next;
+    });
+  }
+
   function clearAuthentication() {
     requestId.current++;
     reportCreationPending(false);
@@ -100,7 +112,7 @@ export function FreshConsolePage({
         return;
       }
       setCredential(candidate);
-      setOperation(next);
+      acceptOperation(next);
     } catch (err) {
       if (currentRequest !== requestId.current) return;
       if (err instanceof PublicApiError && err.kind === 'authentication') {
@@ -227,7 +239,7 @@ export function FreshConsolePage({
                     client={client}
                     credential={credential}
                     operation={operation}
-                    onOperation={setOperation}
+                    onOperation={acceptOperation}
                     onPending={(pending) => {
                       installationPendingRef.current = pending;
                       setInstallationPending(pending);
