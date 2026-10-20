@@ -59,7 +59,8 @@ def extract_file(container, path, destination):
 
 def check_artifact(content):
     value = json.loads(content)
-    if (type(value) is not dict or value.get("schemaVersion") != 1 or
+    if (type(value) is not dict or type(value.get("schemaVersion")) is not int or
+            value.get("schemaVersion") != 1 or
             value.get("engine") != "cpa" or value.get("version") != CPA_VERSION or
             value.get("artifactId") != "sha256:" + CPA_EXECUTABLE_SHA256):
         raise ValueError("CPA artifact manifest does not identify pinned official v8.0.13")

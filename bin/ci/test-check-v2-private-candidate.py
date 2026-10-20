@@ -18,7 +18,8 @@ class AuditTest(unittest.TestCase):
              'artifactId': 'sha256:' + audit.CPA_EXECUTABLE_SHA256}
         self.assertEqual(audit.check_artifact(json.dumps(v)), v)
         for field, bad in [('version', '7.3.3'), ('artifactId', 'sha256:deadbeef'),
-                           ('engine', 'cpamp'), ('schemaVersion', 2)]:
+                           ('engine', 'cpamp'), ('schemaVersion', 2),
+                           ('schemaVersion', True), ('schemaVersion', 1.0)]:
             broken = v.copy()
             broken[field] = bad
             with self.subTest(field=field), self.assertRaises(ValueError):
