@@ -45,6 +45,42 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 			return
 		}
 		writeFreshJSON(w, key)
+	case strings.HasPrefix(resource, "api-keys/") && strings.Count(resource, "/") == 1 && (r.Method == http.MethodGet || r.Method == http.MethodPut):
+		id := strings.TrimPrefix(resource, "api-keys/")
+		var key freshkeys.Key
+		var err error
+		if r.Method == http.MethodGet {
+			key, err = a.keys.Detail(r.Context(), id)
+		} else {
+			if r.Header.Get("Content-Type") != "application/json" {
+				w.WriteHeader(http.StatusUnsupportedMediaType)
+				return
+			}
+			var request struct {
+				Name         *string `json:"name"`
+				NameRevision *int64  `json:"nameRevision"`
+			}
+			d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
+			d.DisallowUnknownFields()
+			var trailing any
+			if d.Decode(&request) != nil || request.Name == nil || request.NameRevision == nil || d.Decode(&trailing) != io.EOF {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			key, err = a.keys.Rename(r.Context(), id, *request.Name, *request.NameRevision)
+		}
+		switch {
+		case errors.Is(err, freshkeys.ErrRequest):
+			w.WriteHeader(http.StatusBadRequest)
+		case errors.Is(err, freshkeys.ErrNotFound):
+			w.WriteHeader(http.StatusNotFound)
+		case errors.Is(err, freshkeys.ErrConflict):
+			w.WriteHeader(http.StatusConflict)
+		case err != nil:
+			w.WriteHeader(http.StatusServiceUnavailable)
+		default:
+			writeFreshJSON(w, key)
+		}
 	case resource == "api-keys" && r.Method == http.MethodPost:
 		if r.Header.Get("Content-Type") != "application/json" {
 			w.WriteHeader(http.StatusUnsupportedMediaType)

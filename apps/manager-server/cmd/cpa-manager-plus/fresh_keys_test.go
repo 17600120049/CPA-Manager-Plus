@@ -84,6 +84,33 @@ func TestFreshClientKeysAdminPersistenceAndStops(t *testing.T) {
 			t.Fatal("invalid protected read")
 		}
 	}
+	detailPath := "api-keys/" + string(result.Key.ID)
+	for _, token := range []string{"", "wrong-admin", "expired-session-token"} {
+		for _, method := range []string{"GET", "PUT"} {
+			if got := call(method, detailPath, token, `{"name":"blocked","nameRevision":1}`); got.Code != 401 {
+				t.Fatal("unauthorized detail/rename", got.Code)
+			}
+		}
+	}
+	if got := call("PUT", detailPath, strategyTestAdmin, `{"name":"Production client","nameRevision":1}`); got.Code != 200 || strings.Contains(got.Body.String(), result.CreatedSecret) {
+		t.Fatal("rename failed", got.Code)
+	}
+	if got := call("PUT", detailPath, strategyTestAdmin, `{"name":"duplicate","nameRevision":1}`); got.Code != 409 {
+		t.Fatal("duplicate save accepted")
+	}
+	for _, invalid := range []string{`{}`, `{"name":null,"nameRevision":2}`, `{"name":"x"}`, `{"name":"x","nameRevision":0}`, `{"name":"x","nameRevision":2,"secret":"forbidden"}`, `{"name":"x","nameRevision":2} {}`} {
+		if got := call("PUT", detailPath, strategyTestAdmin, invalid); got.Code != 400 {
+			t.Fatal("invalid rename accepted", got.Code)
+		}
+	}
+	for _, wrongID := range []string{id, strings.Repeat("d", 32)} {
+		if got := call("PUT", "api-keys/"+wrongID, strategyTestAdmin, `{"name":"wrong","nameRevision":1}`); got.Code != 404 {
+			t.Fatal("wrong canonical ID accepted", got.Code)
+		}
+	}
+	if got := call("GET", "api-keys/bad", strategyTestAdmin, ""); got.Code != 400 {
+		t.Fatal("invalid canonical ID accepted")
+	}
 	replay := call("POST", "api-keys", strategyTestAdmin, body)
 	if replay.Code != 200 || strings.Contains(replay.Body.String(), "createdSecret") {
 		t.Fatal("replay disclosed secret")
@@ -121,6 +148,12 @@ func TestFreshClientKeysAdminPersistenceAndStops(t *testing.T) {
 	list := call("GET", "api-keys", strategyTestAdmin, "")
 	if list.Code != 200 || !strings.Contains(list.Body.String(), string(result.Key.ID)) || strings.Contains(list.Body.String(), result.CreatedSecret) {
 		t.Fatal("restart lost redacted result")
+	}
+	for _, resource := range []string{detailPath, "api-keys/requests/" + id} {
+		got := call("GET", resource, strategyTestAdmin, "")
+		if got.Code != 200 || !strings.Contains(got.Body.String(), `"name":"Production client"`) || !strings.Contains(got.Body.String(), `"nameRevision":2`) || strings.Contains(got.Body.String(), result.CreatedSecret) {
+			t.Fatal("restart lost renamed metadata", got.Code)
+		}
 	}
 	for _, strategy := range []bootstrap.CPAStrategy{bootstrap.ConnectExternal, bootstrap.AdoptExisting} {
 		blocked := after.Operation

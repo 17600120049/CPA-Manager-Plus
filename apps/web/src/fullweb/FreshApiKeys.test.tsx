@@ -12,6 +12,8 @@ const key = {
   createdAtMs: 1234,
   managerState: 'persisted',
   runtimeState: 'not_applied',
+  name: '',
+  nameRevision: 1,
 };
 const secret = 'cpamp_sk_' + 'c'.repeat(64);
 const empty = () => Response.json({ keys: [], gatewayPending: true, revocationAvailable: false });
