@@ -85,6 +85,25 @@ func TestFreshClientKeysAdminPersistenceAndStops(t *testing.T) {
 		}
 	}
 	detailPath := "api-keys/" + string(result.Key.ID)
+	installPath := detailPath + "/initial-install"
+	for _, token := range []string{"", "wrong-admin"} {
+		for _, method := range []string{"GET", "POST"} {
+			if got := call(method, installPath, token, `{}`); got.Code != 401 {
+				t.Fatal("unauthenticated install endpoint", got.Code)
+			}
+		}
+	}
+	for _, body := range []string{`null`, `{"sourceExclusive":true}`, `{"runtimeIdentity":"embedded-auth-proof"}`, `{"generation":1}`, `{"secret":"not-accepted"}`, `{} {}`} {
+		if got := call("POST", installPath, strategyTestAdmin, body); got.Code != 400 {
+			t.Fatal("accepted client proof/input", got.Code)
+		}
+	}
+	if got := call("POST", installPath, strategyTestAdmin, `{}`); got.Code != 409 {
+		t.Fatal("default environment allowed install", got.Code)
+	}
+	if got := call("GET", installPath, strategyTestAdmin, ""); got.Code != 200 || !strings.Contains(got.Body.String(), `"installAvailable":false`) || strings.Contains(got.Body.String(), result.CreatedSecret) {
+		t.Fatal("unsafe default install status")
+	}
 	for _, token := range []string{"", "wrong-admin", "expired-session-token"} {
 		for _, method := range []string{"GET", "PUT"} {
 			if got := call(method, detailPath, token, `{"name":"blocked","nameRevision":1}`); got.Code != 401 {

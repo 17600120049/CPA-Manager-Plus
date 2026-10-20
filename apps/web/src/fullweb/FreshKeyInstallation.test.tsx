@@ -1,0 +1,127 @@
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FreshKeyInstallation } from './FreshKeyInstallation';
+import { createPublicApiClient } from './publicApi';
+import { fullWebText as t } from '../i18n/fullweb';
+
+const id = 'a'.repeat(32);
+const context = { basePath: '/control', apiBase: '/control/api/v2', revision: 1 };
+const pending = {
+  keyId: id,
+  managerStaged: true,
+  cpaConfigured: false,
+  runtimeState: 'effect_unknown',
+  runtimeGeneration: '7',
+  observedFromMs: 0,
+  observedUntilMs: 0,
+  expiresAtMs: 0,
+  ingressAuthorized: false,
+  installAvailable: true,
+  attempted: false,
+};
+describe('private S1 installation', () => {
+  let renderer: ReactTestRenderer;
+  const unauthorized = vi.fn();
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.stubGlobal('window', { location: new URL('https://manager.example/control') });
+    unauthorized.mockClear();
+  });
+  afterEach(async () => {
+    if (renderer) await act(async () => renderer.unmount());
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  async function mount(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
+    await act(async () => {
+      renderer = create(
+        <FreshKeyInstallation
+          id={id}
+          client={createPublicApiClient(() => context, fetchMock)}
+          credential="admin-only"
+          onUnauthorized={unauthorized}
+          disabled={false}
+        />
+      );
+    });
+  }
+  async function click(label: string) {
+    await act(async () =>
+      renderer.root
+        .findAllByType('button')
+        .find((b) => b.props.children === label)!
+        .props.onClick()
+    );
+  }
+  const view = () => JSON.stringify(renderer.toJSON());
+
+  it('sends only canonical ID and empty JSON, never retries an unknown write', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(pending))
+      .mockRejectedValueOnce(new Error('lost'))
+      .mockResolvedValueOnce(
+        Response.json({ ...pending, attempted: true, installAvailable: false })
+      );
+    await mount(fetchMock);
+    await click(t('keysCheckInstallation'));
+    await click(t('keysInstallOne'));
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://manager.example/control/api/v2/api-keys/' + id + '/initial-install'
+    );
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'POST',
+      body: '{}',
+      cache: 'no-store',
+      headers: { Authorization: 'Bearer admin-only' },
+    });
+    expect(view()).toContain(t('keysInstallUnknown'));
+    expect(view()).not.toContain(t('keysInstallOne'));
+    await click(t('keysCheckInstallation'));
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    expect(view()).toContain(t('keysIngressPending'));
+  });
+
+  it('expires a live observation without a write or reload', async () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    await mount(
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          ...pending,
+          cpaConfigured: true,
+          attempted: true,
+          installAvailable: false,
+          runtimeState: 'effective_observed',
+          observedFromMs: now - 1000,
+          observedUntilMs: now,
+          expiresAtMs: now + 5000,
+        })
+      )
+    );
+    await click(t('keysCheckInstallation'));
+    expect(view()).toContain(t('keysLiveObserved'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5001);
+    });
+    expect(view()).not.toContain(t('keysLiveObserved'));
+    expect(view()).toContain(t('keysLiveUnknown'));
+  });
+
+  it('rejects an Ingress grant or unbounded effective evidence', async () => {
+    await mount(
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json({ ...pending, ingressAuthorized: true }))
+    );
+    await click(t('keysCheckInstallation'));
+    expect(view()).toContain(t('keysInstallUnavailable'));
+    expect(view()).not.toContain(t('keysInstallOne'));
+  });
+
+  it('retires Admin authentication after denial', async () => {
+    await mount(vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status: 401 })));
+    await click(t('keysCheckInstallation'));
+    expect(unauthorized).toHaveBeenCalledOnce();
+  });
+});

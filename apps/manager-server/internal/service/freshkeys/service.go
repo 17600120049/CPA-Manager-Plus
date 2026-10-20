@@ -93,12 +93,20 @@ func (s *Service) List(ctx context.Context) ([]Key, error) {
 		return nil, err
 	}
 	keys := make([]Key, 0, len(records))
+	attempt, err := s.repo.InitialInstall(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for _, v := range records {
 		secret, err := s.protector.UnprotectString(v.Ciphertext)
 		if err != nil || digest(secret) != v.Hash || len(secret) != 73 || v.Preview != "cpamp_sk_…"+secret[len(secret)-4:] {
 			return nil, errors.New("staged client secret unavailable")
 		}
-		keys = append(keys, public(v))
+		key := public(v)
+		if attempt != nil && attempt.KeyID == string(key.ID) {
+			key.RuntimeState = "effect_unknown"
+		}
+		keys = append(keys, key)
 	}
 	return keys, nil
 }
@@ -182,4 +190,28 @@ func (s *Service) MatchStagedSecret(ctx context.Context, candidate string) (bool
 		}
 	}
 	return shape && matched == 1, nil
+}
+
+// WithStagedSecret is an internal server-side consumer of the canonical encrypted
+// record. No HTTP response may contain the secret passed to consume.
+func (s *Service) WithStagedSecret(ctx context.Context, rawID string, consume func(string) error) error {
+	key, err := s.Detail(ctx, rawID)
+	if err != nil {
+		return err
+	}
+	records, err := s.repo.List(ctx)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		if record.Identity.ID != key.ID {
+			continue
+		}
+		secret, err := s.protector.UnprotectString(record.Ciphertext)
+		if err != nil || digest(secret) != record.Hash || record.Identity.Lifecycle != identity.LifecycleActive {
+			return errors.New("staged client secret unavailable")
+		}
+		return consume(secret)
+	}
+	return ErrNotFound
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { validKey, type Key } from './freshKeyMetadata';
+import { FreshKeyInstallation } from './FreshKeyInstallation';
 
 export function FreshKeyDetails({
   id,
@@ -174,6 +175,13 @@ export function FreshKeyDetails({
               {t('keysSaveName')}
             </button>
           </form>
+          <FreshKeyInstallation
+            id={id}
+            client={client}
+            credential={credential}
+            onUnauthorized={onUnauthorized}
+            disabled={busy || unknown || dirty}
+          />
         </>
       )}
       <button className="btn btn-secondary" disabled={busy} onClick={() => void read()}>

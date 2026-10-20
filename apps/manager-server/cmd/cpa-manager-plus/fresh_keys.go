@@ -18,6 +18,8 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 		return
 	}
 	switch {
+	case strings.HasSuffix(resource, "/initial-install") && strings.Count(resource, "/") == 2:
+		a.initialClientKey(w, r, op, strings.TrimSuffix(strings.TrimPrefix(resource, "api-keys/"), "/initial-install"))
 	case resource == "api-keys" && r.Method == http.MethodGet:
 		keys, err := a.keys.List(r.Context())
 		if err != nil {

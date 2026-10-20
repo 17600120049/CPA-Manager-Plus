@@ -23,6 +23,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshrouting"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshstrategy"
@@ -72,6 +73,7 @@ type freshApplication struct {
 	protector *security.Protector
 	fixed     http.Handler
 	keys      *freshkeys.Service
+	keyApply  *freshkeyapply.Service
 	updates   *updatecheck.Service
 }
 
@@ -85,6 +87,11 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	var runtime runtimeservice.RuntimeClient
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtime = runtimeservice.NewEmbeddedClientWithTokenSource(cfg.RuntimeURL, runtimeservice.NewFileRuntimeTokenSource(cfg.RuntimeTokenFile))
+	}
+	// The private host launcher alone mounts the short-lived permit. The default
+	// v7 profile and existing environments never opt into this consumer.
+	if os.Getenv("CPAMP_PRIVATE_S1_PERMIT") == freshkeyapply.PermitPath && cfg.RuntimeURL == "http://127.0.0.1:9081" && cfg.CPAUpstreamURL == "http://127.0.0.1:8317" {
+		a.keyApply = freshkeyapply.New(keyrepo.New(opened.DB), a.keys, runtime)
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.

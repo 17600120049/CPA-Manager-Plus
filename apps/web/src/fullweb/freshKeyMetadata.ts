@@ -4,7 +4,7 @@ export interface Key {
   maskedPreview: string;
   createdAtMs: number;
   managerState: 'persisted';
-  runtimeState: 'not_applied';
+  runtimeState: 'not_applied' | 'effect_unknown';
   name: string;
   nameRevision: number;
 }
@@ -18,7 +18,7 @@ export function validKey(value: Key): boolean {
     Number.isSafeInteger(value.createdAtMs) &&
     value.createdAtMs > 0 &&
     value.managerState === 'persisted' &&
-    value.runtimeState === 'not_applied' &&
+    ['not_applied', 'effect_unknown'].includes(value.runtimeState) &&
     typeof value.name === 'string' &&
     [...value.name].length <= 120 &&
     Number.isSafeInteger(value.nameRevision) &&

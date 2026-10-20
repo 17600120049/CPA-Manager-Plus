@@ -1,6 +1,4 @@
-// Package freshkeyapply contains the bounded private CPA key-install transport.
-// It does not grant Gateway admission, runtime effectiveness, or production writes.
-package freshkeyapply
+package cpa
 
 import (
 	"bytes"
@@ -39,11 +37,12 @@ type TargetProof struct {
 	Ready           bool
 	SourceExclusive bool
 	Disposable      bool
+	ExpiresAtMS     int64
 }
 
 // InstallResult never exposes secrets or asserts Runtime effectiveness.
 type InstallResult struct {
-	ConfigPersisted   bool   `json:"configPersisted"`
+	CPAConfigured     bool   `json:"cpaConfigured"`
 	RuntimeState      string `json:"runtimeState"`
 	GatewayAuthorized bool   `json:"gatewayAuthorized"`
 }
@@ -51,9 +50,10 @@ type InstallResult struct {
 // Transport pins production requests to the private loopback CPA Management
 // endpoint. Tests can inject a private synthetic server inside this package.
 type Transport struct {
-	mu       sync.Mutex
-	client   *http.Client
-	endpoint string
+	mu        sync.Mutex
+	client    *http.Client
+	endpoint  string
+	attempted bool
 }
 
 func NewTransport() *Transport {
@@ -76,7 +76,9 @@ func (t *Transport) request(ctx context.Context, method, path, managementKey str
 	if err != nil {
 		return 0, nil, ErrProofUnavailable
 	}
-	req.Header.Set("Authorization", "Bearer "+managementKey)
+	if managementKey != "" {
+		req.Header.Set("Authorization", "Bearer "+managementKey)
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Encoding", "identity")
 	req.Header.Set("Cache-Control", "no-store")
@@ -107,7 +109,11 @@ func (t *Transport) InstallOne(ctx context.Context, proof TargetProof, managemen
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.attempted {
+		return unknown, ErrApplyUnknown
+	}
 	if t.client == nil || !proof.Disposable || !proof.SourceExclusive || !proof.Ready ||
+		proof.ExpiresAtMS <= time.Now().UnixMilli() ||
 		proof.Generation == 0 || proof.Identity != privateRuntimeIdentity || proof.ArtifactID != privateCPAArtifact ||
 		len(managementKey) < 32 || len(managementKey) > 72 || len(stagedSecret) != 73 ||
 		stagedSecret[:9] != "cpamp_sk_" || !validHex(stagedSecret[9:]) || !printable(managementKey) {
@@ -126,6 +132,10 @@ func (t *Transport) InstallOne(ctx context.Context, proof TargetProof, managemen
 		return unknown, ErrProofUnavailable
 	}
 	// After the PUT attempt, failed/unknown outcomes remain unknown: no retry.
+	if proof.ExpiresAtMS <= time.Now().UnixMilli() {
+		return unknown, ErrProofUnavailable
+	}
+	t.attempted = true
 	status, _, err = t.request(ctx, http.MethodPut, "/v8/management/config/access/api-keys", managementKey, payload)
 	if err != nil || status != http.StatusOK {
 		return unknown, ErrApplyUnknown
@@ -139,13 +149,25 @@ func (t *Transport) InstallOne(ctx context.Context, proof TargetProof, managemen
 		return unknown, ErrApplyUnknown
 	}
 	// Config readback is not a live CPA authentication acknowledgment.
-	return InstallResult{ConfigPersisted: true, RuntimeState: "effect_unknown", GatewayAuthorized: false}, nil
+	return InstallResult{CPAConfigured: true, RuntimeState: "effect_unknown", GatewayAuthorized: false}, nil
 }
 
 func emptyProofConfig(data []byte) bool {
 	var root map[string]json.RawMessage
-	if json.Unmarshal(data, &root) != nil || len(root) != 7 {
+	if json.Unmarshal(data, &root) != nil || (len(root) != 7 && len(root) != 8) {
 		return false
+	}
+	if len(root) == 8 {
+		// Only this fixed loopback synthetic provider may accompany the seed.
+		var actual, expected any
+		if json.Unmarshal(root["api-keys"], &actual) != nil || json.Unmarshal([]byte(privateSyntheticProvider), &expected) != nil {
+			return false
+		}
+		a, _ := json.Marshal(actual)
+		b, _ := json.Marshal(expected)
+		if !bytes.Equal(a, b) {
+			return false
+		}
 	}
 	for _, name := range []string{"config-version", "server", "management", "access", "oauth", "plugins", "observability"} {
 		if _, ok := root[name]; !ok {
@@ -184,7 +206,7 @@ func emptyProofConfig(data []byte) bool {
 	}
 	for name, expected := range map[string]bool{"allow-remote": false, "disable-control-panel": true, "disable-auto-update-panel": true} {
 		var value bool
-		if json.Unmarshal(management[name], &value) != nil || value != expected {
+		if (!bytes.Equal(management[name], []byte("true")) && !bytes.Equal(management[name], []byte("false"))) || json.Unmarshal(management[name], &value) != nil || value != expected {
 			return false
 		}
 	}
@@ -192,7 +214,7 @@ func emptyProofConfig(data []byte) bool {
 	var plugins map[string]json.RawMessage
 	var pluginDir string
 	if json.Unmarshal(root["plugins"], &plugins) != nil || len(plugins) != 2 ||
-		json.Unmarshal(plugins["enabled"], &enabled) != nil || enabled ||
+		!bytes.Equal(plugins["enabled"], []byte("false")) || json.Unmarshal(plugins["enabled"], &enabled) != nil || enabled ||
 		json.Unmarshal(plugins["dir"], &pluginDir) != nil || pluginDir != "/runtime/gateway/plugins" {
 		return false
 	}
@@ -217,9 +239,13 @@ func emptyProofConfig(data []byte) bool {
 		if json.Unmarshal(obs[sub], &nested) != nil || len(nested) != 1 {
 			return false
 		}
+		name := map[string]string{"logs": "logging-to-file", "usage": "usage-statistics-enabled"}[sub]
+		if !bytes.Equal(nested[name], []byte("false")) {
+			return false
+		}
 	}
-	_, hasKey := management["secret-key"]
-	return hasKey
+	var secret string
+	return json.Unmarshal(management["secret-key"], &secret) == nil && len(secret) > 0
 }
 func emptyStringList(data []byte) bool {
 	var v []string
