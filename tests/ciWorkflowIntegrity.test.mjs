@@ -148,15 +148,40 @@ describe('GitHub Actions workflow integrity', () => {
     );
   });
 
-  it('runs Runtime14, Runtime17, Runtime18, and Runtime19 E2E in order after the focused Docker smoke', () => {
+  it('runs default v8 checks before explicit historical v7 Runtime regressions', () => {
     const dockerJob = jobBlock(readWorkflow('pr-check.yml'), 'docker-build');
+    const lifecycleCondition = "if: needs.changes.outputs.runtime_lifecycle == 'true'";
+    const lifecycleSteps = dockerJob
+      .split(/^      - name: /m)
+      .slice(1)
+      .filter((step) => step.includes(lifecycleCondition));
+
+    expect(lifecycleSteps.map((step) => step.split('\n')[0])).toEqual([
+      'Build native smoke images',
+      'Run normal default CPA v8 Compose smoke',
+      'Reject unsupported CPA v8 architecture without fallback',
+      'Select explicit v7 compatibility image for historical regressions',
+      'Run single-public-port Runtime smoke',
+      'Run Runtime failure-behavior E2E',
+      'Run Runtime activation and rollback E2E',
+      'Run Runtime secret and state segmentation E2E',
+      'Run Runtime Phase1 exit E2E',
+    ]);
+    expect(lifecycleSteps[0]).toContain('run: docker compose build');
+    expect(lifecycleSteps[1]).toContain('python3 bin/ci/runtime-v8-default-smoke.py');
+    expect(lifecycleSteps[2]).toContain('--platform linux/riscv64 --target cpa-v8-download');
+    expect(lifecycleSteps[2]).toContain(
+      'unsupported official CPA v8 target: linux/riscv64 (no v7 fallback)'
+    );
+    expect(lifecycleSteps[3]).toContain(
+      'run: docker compose -f docker-compose.yml -f bin/ci/runtime-v7-compatibility.compose.yml build cpamp-runtime'
+    );
     const focusedSmoke = dockerJob.indexOf('run: bin/ci/runtime12-docker-smoke.sh');
     const failureE2E = dockerJob.indexOf('run: bin/ci/runtime14-failure-e2e.sh');
     const activationE2E = dockerJob.indexOf('run: bin/ci/runtime17-activation-e2e.sh');
     const segmentationE2E = dockerJob.indexOf('run: bin/ci/runtime18-secret-state-e2e.sh');
     const exitE2E = dockerJob.indexOf('run: bin/ci/runtime19-phase1-exit-e2e.sh');
 
-    expect(dockerJob.match(/if: needs\.changes\.outputs\.runtime_lifecycle == 'true'/g)).toHaveLength(6);
     expect(focusedSmoke).toBeGreaterThan(-1);
     expect(failureE2E).toBeGreaterThan(focusedSmoke);
     expect(activationE2E).toBeGreaterThan(failureE2E);
