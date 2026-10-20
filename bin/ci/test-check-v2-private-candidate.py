@@ -59,7 +59,22 @@ class AuditTest(unittest.TestCase):
         self.assertEqual(len(create), 1)
         self.assertEqual(create[0][-1], image_id)
         self.assertIn('--pull=never', create[0])
+        self.assertEqual(create[0][create[0].index('--platform') + 1], 'linux/amd64')
         self.assertNotIn('mutable:latest', create[0])
+
+    def test_arm64_stopped_container_uses_inspected_platform(self):
+        image_id = 'sha256:' + 'a' * 64
+        with mock.patch.object(audit, 'inspect_image', return_value={
+                'imageConfigId': image_id, 'architecture': 'arm64'}), \
+             mock.patch.object(audit, 'command', return_value='container-id') as cmd, \
+             mock.patch.object(audit, 'extract_file', return_value='b' * 64):
+            from tempfile import TemporaryDirectory
+            with TemporaryDirectory() as td:
+                audit.audit_one('manager', 'example:arm64', Path(td))
+        create = [call.args for call in cmd.call_args_list if call.args[:2] == ('docker', 'create')]
+        self.assertEqual(len(create), 1)
+        self.assertEqual(create[0][create[0].index('--platform') + 1], 'linux/arm64')
+        self.assertEqual(create[0][-1], image_id)
 
     def test_extract_file_rejects_symlink_to_host_file(self):
         from tempfile import TemporaryDirectory
