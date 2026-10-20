@@ -52,7 +52,7 @@ def inspect_image(ref):
 
 def extract_file(container, path, destination):
     command("docker", "cp", f"{container}:{path}", str(destination))
-    if not destination.is_file():
+    if destination.is_symlink() or not destination.is_file():
         raise ValueError(f"missing regular file {path}")
     return hashlib.sha256(destination.read_bytes()).hexdigest()
 
@@ -72,7 +72,7 @@ def audit_one(role, image, tmpdir):
     created = False
     try:
         # No docker start: create a stopped container to read packaged bytes.
-        command("docker", "create", "--name", name, "--entrypoint", "/bin/true", record["imageConfigId"])
+        command("docker", "create", "--pull=never", "--name", name, "--entrypoint", "/bin/true", record["imageConfigId"])
         created = True
         files = {}
         for i, path in enumerate(EXTRACT[role]):

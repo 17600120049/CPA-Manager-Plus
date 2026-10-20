@@ -49,7 +49,23 @@ class AuditTest(unittest.TestCase):
         create = [call.args for call in cmd.call_args_list if call.args[:2] == ('docker', 'create')]
         self.assertEqual(len(create), 1)
         self.assertEqual(create[0][-1], image_id)
+        self.assertIn('--pull=never', create[0])
         self.assertNotIn('mutable:latest', create[0])
+
+    def test_extract_file_rejects_symlink_to_host_file(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as td:
+            base = Path(td)
+            host_file = base / 'host-secret'
+            host_file.write_bytes(b'not packaged in image')
+            destination = base / 'extracted'
+            def fake_docker_copy(*args):
+                self.assertEqual(args[:2], ('docker', 'cp'))
+                destination.symlink_to(host_file)
+                return ''
+            with mock.patch.object(audit, 'command', side_effect=fake_docker_copy):
+                with self.assertRaisesRegex(ValueError, 'missing regular file'):
+                    audit.extract_file('stopped-container', '/usr/local/bin/cpa-manager-plus', destination)
 
     def test_stopped_container_removed_on_cp_failure(self):
         with mock.patch.object(audit, 'inspect_image', return_value={'imageConfigId': 'sha256:' + 'a'*64}), \
