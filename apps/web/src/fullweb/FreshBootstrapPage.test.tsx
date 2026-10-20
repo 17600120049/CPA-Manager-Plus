@@ -132,7 +132,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
     }
   );
 
-  it('does not project inconsistent discovery as valid migration guidance', async () => {
+  it('does not project inconsistent Fresh discovery as valid guidance', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -142,7 +142,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
             status: 'fresh_claim_required',
             mode: 'fresh',
             auth_entry: 'fresh_claim',
-            reason: 'fresh_claim_required',
+            reason: 'qualification_unavailable',
             authentication_required: true,
           })
         )
