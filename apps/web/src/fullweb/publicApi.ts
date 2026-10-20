@@ -60,7 +60,7 @@ export function createPublicApiClient(
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const controller =
       body !== undefined ||
-      resource.startsWith('api-keys/requests/') ||
+      resource.startsWith('api-keys/') ||
       resource === 'settings/update-channel'
         ? new AbortController()
         : undefined;

@@ -10,6 +10,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
 	repo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
@@ -18,6 +20,7 @@ import (
 
 var ErrRequest = errors.New("invalid creation request")
 var ErrNotFound = errors.New("creation result not found")
+var ErrConflict = repo.ErrConflict
 
 type Key struct {
 	ID            identity.APIKeyID `json:"id"`
@@ -26,6 +29,8 @@ type Key struct {
 	CreatedAtMS   int64             `json:"createdAtMs"`
 	ManagerState  string            `json:"managerState"`
 	RuntimeState  string            `json:"runtimeState"`
+	Name          string            `json:"name"`
+	NameRevision  int64             `json:"nameRevision"`
 }
 type Result struct {
 	Key           Key    `json:"key"`
@@ -39,7 +44,41 @@ type Service struct {
 func New(r *repo.Repository, p *security.Protector) *Service { return &Service{r, p} }
 func ValidRequestID(id string) bool                          { _, err := identity.ParseAPIKeyID(id); return err == nil }
 func public(v repo.Record) Key {
-	return Key{v.Identity.ID, v.RequestID, v.Preview, v.Identity.CreatedAtMS, "persisted", "not_applied"}
+	return Key{v.Identity.ID, v.RequestID, v.Preview, v.Identity.CreatedAtMS, "persisted", "not_applied", v.Name, v.NameRevision}
+}
+
+func (s *Service) Detail(ctx context.Context, rawID string) (Key, error) {
+	id, err := identity.ParseAPIKeyID(rawID)
+	if err != nil {
+		return Key{}, ErrRequest
+	}
+	keys, err := s.List(ctx)
+	if err != nil {
+		return Key{}, err
+	}
+	for _, key := range keys {
+		if key.ID == id {
+			return key, nil
+		}
+	}
+	return Key{}, ErrNotFound
+}
+
+func (s *Service) Rename(ctx context.Context, rawID, name string, revision int64) (Key, error) {
+	name = strings.TrimSpace(name)
+	if !utf8.ValidString(name) || utf8.RuneCountInString(name) > 120 || strings.ContainsFunc(name, unicode.IsControl) || revision < 1 {
+		return Key{}, ErrRequest
+	}
+	key, err := s.Detail(ctx, rawID)
+	if err != nil {
+		return Key{}, err
+	}
+	if err := s.repo.Rename(ctx, key.ID, name, revision); err != nil {
+		return Key{}, err
+	}
+	// Return the committed operation's metadata, not a later writer's readback.
+	key.Name, key.NameRevision = name, revision+1
+	return key, nil
 }
 func digest(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
@@ -100,7 +139,7 @@ func (s *Service) Create(ctx context.Context, requestID string) (Result, bool, e
 		return Result{}, false, err
 	}
 	now := time.Now().UnixMilli()
-	v := repo.Record{RequestID: requestID, Identity: identity.APIKeyIdentity{ID: id, Revision: identity.InitialRevision, Lifecycle: identity.LifecycleActive, CreatedAtMS: now, UpdatedAtMS: now}, Ciphertext: ciphertext, Hash: digest(secret), Preview: "cpamp_sk_…" + secret[len(secret)-4:]}
+	v := repo.Record{RequestID: requestID, Identity: identity.APIKeyIdentity{ID: id, Revision: identity.InitialRevision, Lifecycle: identity.LifecycleActive, CreatedAtMS: now, UpdatedAtMS: now}, Ciphertext: ciphertext, Hash: digest(secret), Preview: "cpamp_sk_…" + secret[len(secret)-4:], NameRevision: 1}
 	created, err := s.repo.Create(ctx, v)
 	if err != nil {
 		return Result{}, false, err

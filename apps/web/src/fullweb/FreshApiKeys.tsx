@@ -1,28 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
-
-interface Key {
-  id: string;
-  requestId: string;
-  maskedPreview: string;
-  createdAtMs: number;
-  managerState: 'persisted';
-  runtimeState: 'not_applied';
-}
-
-function validKey(value: Key): boolean {
-  return (
-    !!value &&
-    /^[a-f0-9]{32}$/.test(value.id) &&
-    /^[a-f0-9]{32}$/.test(value.requestId) &&
-    /^cpamp_sk_…[a-f0-9]{4}$/.test(value.maskedPreview) &&
-    Number.isSafeInteger(value.createdAtMs) &&
-    value.createdAtMs > 0 &&
-    value.managerState === 'persisted' &&
-    value.runtimeState === 'not_applied'
-  );
-}
+import { FreshKeyDetails } from './FreshKeyDetails';
+import { validKey, type Key } from './freshKeyMetadata';
 
 export function FreshApiKeys({
   client,
@@ -42,6 +22,9 @@ export function FreshApiKeys({
   const [retryAllowed, setRetryAllowed] = useState(false);
   const [secret, setSecret] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [selected, setSelected] = useState('');
+  const [detailPending, setDetailPending] = useState(false);
+  const detailPendingRef = useRef(false);
   const alive = useRef(true);
   const inFlight = useRef(false);
   const auth = { kind: 'admin' as const, value: credential };
@@ -59,7 +42,7 @@ export function FreshApiKeys({
   }
 
   async function refresh() {
-    if (inFlight.current) return;
+    if (inFlight.current || selected || detailPendingRef.current) return;
     inFlight.current = true;
     setBusy(true);
     setError('');
@@ -93,7 +76,14 @@ export function FreshApiKeys({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function createKey() {
-    if (inFlight.current || secret || (pending && !retryAllowed)) return;
+    if (
+      inFlight.current ||
+      selected ||
+      detailPendingRef.current ||
+      secret ||
+      (pending && !retryAllowed)
+    )
+      return;
     inFlight.current = true;
     setBusy(true);
     setError('');
@@ -172,7 +162,9 @@ export function FreshApiKeys({
         <button
           className="btn btn-primary"
           onClick={() => void createKey()}
-          disabled={busy || !!secret || !!pending || keys === null || !!error}
+          disabled={
+            busy || !!selected || detailPending || !!secret || !!pending || keys === null || !!error
+          }
         >
           {t('keysCreate')}
         </button>
@@ -215,6 +207,13 @@ export function FreshApiKeys({
         <ul className="console-key-list">
           {keys.map((key) => (
             <li key={key.id}>
+              <button
+                className="btn btn-secondary"
+                disabled={busy || !!selected || detailPending || !!pending || !!secret}
+                onClick={() => setSelected(key.id)}
+              >
+                {key.name || t('keysUnnamed')} — {t('keysDetails')}
+              </button>
               <strong>{key.maskedPreview}</strong>
               <span>
                 {t('keysIdentity')}: <code>{key.id}</code>
@@ -224,8 +223,30 @@ export function FreshApiKeys({
           ))}
         </ul>
       )}
+      {selected && (
+        <FreshKeyDetails
+          key={selected}
+          id={selected}
+          client={client}
+          credential={credential}
+          onUnauthorized={onUnauthorized}
+          onPending={(value) => {
+            detailPendingRef.current = value;
+            setDetailPending(value);
+            onCreationPending(value);
+          }}
+          onSaved={(key) =>
+            setKeys((previous) => (previous || []).map((item) => (item.id === key.id ? key : item)))
+          }
+          onClose={() => setSelected('')}
+        />
+      )}
       <p>{t('keysRevokeUnavailable')}</p>
-      <button className="btn btn-secondary" disabled={busy} onClick={() => void refresh()}>
+      <button
+        className="btn btn-secondary"
+        disabled={busy || !!selected || detailPending}
+        onClick={() => void refresh()}
+      >
         {t('refresh')}
       </button>
     </section>

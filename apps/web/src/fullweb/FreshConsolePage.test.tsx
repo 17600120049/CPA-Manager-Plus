@@ -177,6 +177,70 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     expect(view()).not.toContain(operation.identity.operationId);
   });
 
+  it('blocks logout during an unknown rename and unlocks only after reading current persisted details', async () => {
+    const record = {
+      id: 'a'.repeat(32),
+      requestId: 'b'.repeat(32),
+      maskedPreview: 'cpamp_sk_…cccc',
+      name: '',
+      nameRevision: 1,
+      createdAtMs: 1234,
+      managerState: 'persisted',
+      runtimeState: 'not_applied',
+    };
+    let reject!: (error: Error) => void;
+    const keyFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ keys: [record], gatewayPending: true, revocationAvailable: false })
+      )
+      .mockResolvedValueOnce(Response.json(record))
+      .mockReturnValueOnce(
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        })
+      )
+      .mockResolvedValueOnce(Response.json({ ...record, name: 'saved', nameRevision: 2 }));
+    await mount(vi.fn<typeof fetch>().mockResolvedValue(Response.json(operation)), keyFetch);
+    await login();
+    const detail = renderer.root
+      .findAllByType('button')
+      .find(
+        (item) =>
+          Array.isArray(item.props.children) && item.props.children.includes(t('keysDetails'))
+      )!;
+    await act(async () => detail.props.onClick());
+    await act(async () =>
+      renderer.root.findByProps({ id: 'key-name' }).props.onChange({ target: { value: 'saved' } })
+    );
+    const logout = renderer.root
+      .findAllByType('button')
+      .find((item) => item.props.children === t('logout'))!;
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault: vi.fn() });
+      logout.props.onClick();
+    });
+    expect(view()).toContain(operation.identity.operationId);
+    expect(
+      renderer.root.findAllByType('button').find((item) => item.props.children === t('logout'))!
+        .props.disabled
+    ).toBe(true);
+    await act(async () => reject(new Error('lost rename response')));
+    expect(view()).toContain(t('keysNameUnknown'));
+    await act(async () =>
+      renderer.root
+        .findAllByType('button')
+        .find((item) => item.props.children === t('keysReadDetails'))!
+        .props.onClick()
+    );
+    expect(view()).toContain(t('keysNameChecked'));
+    expect(
+      renderer.root.findAllByType('button').find((item) => item.props.children === t('logout'))!
+        .props.disabled
+    ).toBe(false);
+    expect(keyFetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+  });
+
   it('does not restore an authenticated view after logout during a pending refresh', async () => {
     let resolve!: (value: Response) => void;
     const pending = new Promise<Response>((done) => {
@@ -215,6 +279,8 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
         id: 'a'.repeat(32),
         requestId: 'b'.repeat(32),
         maskedPreview: 'cpamp_sk_…cccc',
+        name: '',
+        nameRevision: 1,
         createdAtMs: 1234,
         managerState: 'persisted',
         runtimeState: 'not_applied',

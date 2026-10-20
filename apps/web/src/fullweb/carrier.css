@@ -135,6 +135,9 @@ html.light {
 .console-key-result code {
   overflow-wrap: anywhere;
 }
+.console-key-list button {
+  overflow-wrap: anywhere;
+}
 
 body {
   margin: 0;

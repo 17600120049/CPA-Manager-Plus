@@ -195,6 +195,7 @@ export function FreshConsolePage({
                     </p>
                   )}
                   <FreshApiKeys
+                    key={credential}
                     client={client}
                     credential={credential}
                     onCreationPending={reportCreationPending}

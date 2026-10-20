@@ -1313,7 +1313,33 @@ func Migrate(db *sql.DB) error {
 	if err := ensureDashboardHourlyRollupFormatVersion(db); err != nil {
 		return err
 	}
+	if err := ensureFreshKeyNameColumns(db); err != nil {
+		return err
+	}
 	return ensureModelPriceColumns(db)
+}
+
+func ensureFreshKeyNameColumns(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, column := range []struct{ name, ddl string }{
+		{"name", "name text not null default ''"},
+		{"name_revision", "name_revision integer not null default 1 check(typeof(name_revision) = 'integer' and name_revision >= 1)"},
+	} {
+		found, err := tableHasColumn(tx, "fresh_client_api_keys", column.name)
+		if err != nil {
+			return err
+		}
+		if !found {
+			if _, err := tx.Exec("alter table fresh_client_api_keys add column " + column.ddl); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 // Binding revision changes only when fields used by temporal identity mapping change.
