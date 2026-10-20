@@ -7,7 +7,8 @@ public_port="${CPAMP_SMOKE_PORT:-28317}"
 skip_build="${CPAMP_SMOKE_SKIP_BUILD:-false}"
 snapshot_root="$(mktemp -d "${TMPDIR:-/tmp}/cpamp-runtime13-smoke.XXXXXX")"
 initializer_name="${project}-cpamp-manager-init"
-compose=(docker compose --project-directory "${repo_root}" -p "${project}")
+# Explicit historical baseline; the normal Docker/Compose default is CPA v8.
+compose=(docker compose --project-directory "${repo_root}" -f "${repo_root}/docker-compose.yml" -f "${repo_root}/bin/ci/runtime-v7-compatibility.compose.yml" -p "${project}")
 
 cleanup() {
   docker rm -f "${initializer_name}" >/dev/null 2>&1 || true
@@ -166,7 +167,7 @@ if [ "$skip_build" != "true" ]; then
 fi
 docker run --rm \
   --env CPAMP_RUNTIME_TOKEN=runtime13-ci-test-only-transport-secret \
-  seakee/cpamp-runtime:latest \
+  cpamp-runtime:v7-compatibility-test \
   sh -ec 'test "$(cat /run/cpamp/runtime-secret/token)" = "$CPAMP_RUNTIME_TOKEN"'
 
 # Phase4-01 ordinary Fresh startup is deliberately read-only. Prove the

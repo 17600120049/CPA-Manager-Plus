@@ -7,7 +7,8 @@ public_port="${CPAMP_RUNTIME19_PORT:-32317}"
 skip_build="${CPAMP_RUNTIME19_SKIP_BUILD:-false}"
 initializer_name="${project}-cpamp-manager-init"
 snapshot_root="$(mktemp -d "${TMPDIR:-/tmp}/cpamp-runtime19-exit.XXXXXX")"
-compose=(docker compose --project-directory "${repo_root}" -p "${project}")
+# Explicit historical baseline; the normal Docker/Compose default is CPA v8.
+compose=(docker compose --project-directory "${repo_root}" -f "${repo_root}/docker-compose.yml" -f "${repo_root}/bin/ci/runtime-v7-compatibility.compose.yml" -p "${project}")
 
 paused_manager=""
 

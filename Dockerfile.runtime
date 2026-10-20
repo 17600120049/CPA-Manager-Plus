@@ -22,17 +22,24 @@ RUN set -eu; \
       "$cpa_version" "$binary_sha256" > /out/cpa-artifact.json; \
     chmod 0444 /out/cpa-artifact.json
 
-# Explicit opt-in candidate only. The default final target retains the v7
-# contract, including arm64. No version/hash override is accepted for this pin.
+# Official v8 pin shared by the default bundle and private amd64 proofs.
+# No version/hash override is accepted for this pin.
 FROM --platform=$BUILDPLATFORM alpine:3.21 AS cpa-v8-download
 
 ARG TARGETOS
 ARG TARGETARCH
 RUN set -eu; \
-    test "$TARGETOS/$TARGETARCH" = "linux/amd64"; \
-    asset_name="CLIProxyAPI_8.0.13_linux_amd64.tar.gz"; \
-    archive_sha256="50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"; \
-    executable_sha256="b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"; \
+    test "$TARGETOS" = "linux"; \
+    case "$TARGETARCH" in \
+      amd64) asset_arch="amd64"; \
+        archive_sha256="50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"; \
+        executable_sha256="b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41" ;; \
+      arm64) asset_arch="aarch64"; \
+        archive_sha256="f7ff98a128075ea8437dadd58a88f429a401e452a42ef7119304139185f5344f"; \
+        executable_sha256="9dfe80b79f8466b4e56d51d71869ce759021942a9279e43dbea92eda21b994d7" ;; \
+      *) echo "unsupported official CPA v8 target: $TARGETOS/$TARGETARCH (no v7 fallback)" >&2; exit 1 ;; \
+    esac; \
+    asset_name="CLIProxyAPI_8.0.13_linux_${asset_arch}.tar.gz"; \
     apk add --no-cache ca-certificates wget; \
     wget -qO "/tmp/${asset_name}" "https://github.com/router-for-me/CLIProxyAPI/releases/download/v8.0.13/${asset_name}"; \
     printf '%s  %s\n' "$archive_sha256" "/tmp/${asset_name}" | sha256sum -c -; \
@@ -81,8 +88,10 @@ ENTRYPOINT ["/usr/local/bin/cpamp-runtime-entrypoint"]
 CMD ["/usr/local/bin/cpamp-runtime-supervisor"]
 
 # Build with --platform linux/amd64 --target v8-amd64-candidate.
-# This isolated bundle does not change Compose, release or support defaults.
+# Preserve the independently selected private candidate and seed.
 FROM runtime-base AS v8-amd64-candidate
+ARG TARGETARCH
+RUN test "$TARGETARCH" = "amd64"
 COPY --from=cpa-v8-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
 COPY --from=cpa-v8-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
 COPY docker/runtime/config.v8.seed.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
@@ -90,12 +99,23 @@ COPY docker/runtime/config.v8.seed.yaml /usr/local/share/cpamp/runtime/config.se
 # Private Embedded Fresh network-isolation experiment; this is not a release target.
 # CPA binds loopback and the companion Ingress shares its network namespace.
 FROM runtime-base AS v8-amd64-loopback-proof
+ARG TARGETARCH
+RUN test "$TARGETARCH" = "amd64"
 COPY --from=cpa-v8-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
 COPY --from=cpa-v8-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
 COPY docker/runtime/config.v8.loopback-proof.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
 
-# Preserve the existing default v7 amd64/arm64 bundle and seed.
-FROM runtime-base AS runtime
+# Historical lifecycle regressions only; never selected by normal Compose.
+FROM runtime-base AS v7-compatibility
 COPY --from=cpa-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
 COPY --from=cpa-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
 COPY docker/runtime/config.seed.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
+
+# Normal v2 build: official CPA v8, isolated bootstrap, no data migration.
+FROM runtime-base AS runtime
+COPY --from=cpa-v8-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
+COPY --from=cpa-v8-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
+COPY docker/runtime/config.v8.default.seed.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
+COPY docker/runtime/v8-entrypoint.sh /usr/local/bin/cpamp-runtime-v8-entrypoint
+ENTRYPOINT ["/usr/local/bin/cpamp-runtime-v8-entrypoint"]
+CMD ["/usr/local/bin/cpamp-runtime-supervisor"]

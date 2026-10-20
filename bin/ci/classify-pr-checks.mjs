@@ -125,6 +125,8 @@ const triggersRuntimeLifecycle = (filePath) =>
   startsWithPath(filePath, 'apps/runtime-supervisor') ||
   startsWithPath(filePath, 'apps/ingress') ||
   startsWithPath(filePath, 'docker/runtime') ||
+  filePath === 'bin/ci/runtime-v8-default-smoke.py' ||
+  filePath === 'bin/ci/runtime-v7-compatibility.compose.yml' ||
   filePath.startsWith('bin/ci/runtime12-') ||
   filePath.startsWith('bin/ci/runtime14-') ||
   filePath.startsWith('bin/ci/runtime17-') ||
@@ -150,6 +152,8 @@ const triggersDocker = (filePath) =>
   startsWithPath(filePath, 'apps/runtime-supervisor') ||
   startsWithPath(filePath, 'apps/ingress') ||
   startsWithPath(filePath, 'docker') ||
+  filePath === 'bin/ci/runtime-v8-default-smoke.py' ||
+  filePath === 'bin/ci/runtime-v7-compatibility.compose.yml' ||
   filePath.startsWith('bin/ci/runtime12-') ||
   filePath.startsWith('bin/ci/runtime14-') ||
   filePath.startsWith('bin/ci/runtime17-') ||

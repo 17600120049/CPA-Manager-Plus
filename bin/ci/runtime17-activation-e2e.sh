@@ -6,7 +6,8 @@ project="${CPAMP_RUNTIME17_PROJECT:-cpamp-runtime17-${RANDOM}-$$}"
 public_port="${CPAMP_RUNTIME17_PORT:-30317}"
 skip_build="${CPAMP_RUNTIME17_SKIP_BUILD:-false}"
 initializer_name="${project}-cpamp-manager-init"
-compose=(docker compose --project-directory "${repo_root}" -p "${project}")
+# Explicit historical baseline; the normal Docker/Compose default is CPA v8.
+compose=(docker compose --project-directory "${repo_root}" -f "${repo_root}/docker-compose.yml" -f "${repo_root}/bin/ci/runtime-v7-compatibility.compose.yml" -p "${project}")
 
 cleanup() {
   docker rm -f "${initializer_name}" >/dev/null 2>&1 || true
