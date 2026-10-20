@@ -1,0 +1,30 @@
+# Normal v2 bootstrap: official CPA v8, no client/provider credentials.
+# CPA's empty-key behavior is permissive. Keep it loopback-only while the
+# normal Compose Gateway remains Pending; this is not public admission.
+config-version: 8
+
+server:
+  host: "127.0.0.1"
+  port: 8317
+
+management:
+  allow-remote: false
+  secret-key: ""
+  disable-control-panel: true
+  disable-auto-update-panel: true
+
+access:
+  api-keys: []
+
+oauth:
+  auth-dir: "/runtime/gateway/auth"
+
+plugins:
+  enabled: false
+  dir: "/runtime/gateway/plugins"
+
+observability:
+  logs:
+    logging-to-file: false
+  usage:
+    usage-statistics-enabled: false
