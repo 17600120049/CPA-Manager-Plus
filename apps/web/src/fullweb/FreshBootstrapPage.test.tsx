@@ -67,21 +67,65 @@ describe('FreshBootstrapPage product preview workflow', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows host authorization gate when handoff is absent or already consumed on refresh', async () => {
-    const transport = createBootstrapTransport(vi.fn());
+
+  it('never flashes initialize while source discovery is pending', async () => {
+    let resolveDiscovery!: (value: Response) => void;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Promise<Response>((resolve) => {
+      resolveDiscovery = resolve;
+    })));
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={transport} />);
+      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
     });
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('正在读取来源状态');
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'aria-label': 'Fresh Bootstrap 进度' })).toHaveLength(0);
+    await act(async () => {
+      resolveDiscovery(Response.json({
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'recovery_required',
+        mode: 'recovery',
+        auth_entry: 'host_intervention',
+        reason: 'recovery_host_intervention',
+        authentication_required: false,
+      }));
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'host-preflight-command'))).toContain('legacy-preflight');
+  });
 
-    const gate = findByTestId(renderer.root, 'bootstrap-no-handoff');
-    expect(textOf(gate)).toContain('未检测到有效的 Fresh Bootstrap Handoff 凭证');
-    expect(
-      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
-    ).toHaveLength(0);
-    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
-      'cpa-manager-plus initialize'
-    );
+  it('shows initialize only after a canonical Fresh discovery response', async () => {
+    let resolveDiscovery!: (value: Response) => void;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Promise<Response>((resolve) => {
+      resolveDiscovery = resolve;
+    })));
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    await act(async () => {
+      resolveDiscovery(Response.json({
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'fresh_claim_required',
+        mode: 'fresh',
+        auth_entry: 'fresh_claim',
+        reason: 'fresh_claim_required',
+        authentication_required: true,
+      }));
+    });
+    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe('cpa-manager-plus initialize');
+  });
+
+  it('does not suggest Fresh initialization when discovery fails', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+    });
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-no-handoff'))).toContain('来源状态无法确认');
+    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('来源状态无法确认');
   });
 
   it.each([
@@ -158,9 +202,8 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(
       renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
     ).toHaveLength(0);
-    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
-      'cpa-manager-plus initialize'
-    );
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('来源状态无法确认');
   });
 
   it.each([
@@ -275,6 +318,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
     });
     expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(0);
     expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
   });
 
   it('completes real claim exchange, key generation, admin commit, and operation refresh', async () => {

@@ -173,6 +173,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   const [initError, setInitError] = useState<ActionFeedback | null>(null);
   const [initErrorKind, setInitErrorKind] = useState<string | null>(null);
   const [discoveryNote, setDiscoveryNote] = useState<DiscoveryGuidance | null>(null);
+  const [discoveryChecked, setDiscoveryChecked] = useState(false);
 
   const [adminKey, setAdminKey] = useState('');
   const [commitId, setCommitId] = useState<string>(() => createCommitId());
@@ -284,10 +285,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
     })
       .then((response) => (response.ok || response.status === 503 ? response.json() : null))
       .then((payload: unknown) => {
-        if (active) setDiscoveryNote(publicDiscoveryGuidance(payload));
+        if (!active) return;
+        setDiscoveryNote(publicDiscoveryGuidance(payload));
+        setDiscoveryChecked(true);
       })
       .catch(() => {
-        // The host-issued Handoff path remains usable if discovery fails.
+        // An unverified source must not receive Fresh setup guidance.
+        if (active) setDiscoveryChecked(true);
       });
     return () => {
       active = false;
@@ -499,13 +503,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
           <div className="brand-text">
             <span className="brand-title">CPA Manager Plus</span>
             <span className="brand-sub">
-              {phase === 'no_handoff' && discoveryNote?.flow === 'host'
+              {phase === 'no_handoff' && discoveryNote?.flow !== 'fresh'
                 ? 'v2 Source Preflight · 只读来源检查'
                 : 'v2 Fresh Bootstrap · 受控安装初始化入口'}
             </span>
           </div>
           <span className="badge badge-indigo">
-            {phase === 'no_handoff' && discoveryNote?.flow === 'host'
+            {phase === 'no_handoff' && discoveryNote?.flow !== 'fresh'
               ? 'Source Preflight · Read Only'
               : 'Fresh New Preview'}
           </span>
@@ -536,7 +540,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
 
       <main className="bootstrap-main">
         <div className="wizard-container">
-          {!(phase === 'no_handoff' && discoveryNote?.flow === 'host') && (
+          {!(phase === 'no_handoff' && discoveryNote?.flow !== 'fresh') && (
             <div className="stepper" aria-label="Fresh Bootstrap 进度">
               <div
                 className={`step-item ${
@@ -568,20 +572,26 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
               <div className="wizard-card-header">
                 <div className="wizard-step-tag">
                   <span>
-                    {discoveryNote?.flow === 'host'
-                      ? 'Source Preflight · 只读来源检查'
-                      : 'Bootstrap Gate · 需要安装主机授权'}
+                    {discoveryNote?.flow === 'fresh'
+                       ? 'Bootstrap Gate · 需要安装主机授权'
+                       : 'Source Preflight · 只读来源检查'}
                   </span>
                 </div>
                 <h1 className="wizard-title">
                   {discoveryNote?.flow === 'host'
-                    ? '当前来源需要宿主机预检，不能直接 Fresh 初始化'
-                    : '未检测到有效的 Fresh Bootstrap Handoff 凭证'}
+                     ? '当前来源需要宿主机预检，不能直接 Fresh 初始化'
+                     : discoveryNote?.flow === 'fresh'
+                       ? '未检测到有效的 Fresh Bootstrap Handoff 凭证'
+                       : discoveryChecked
+                         ? '来源状态无法确认，禁止直接初始化'
+                         : '正在确认来源状态，禁止直接初始化'}
                 </h1>
                 <p className="wizard-desc">
                   {discoveryNote?.flow === 'host'
-                    ? '公共 Discovery 仅提供来源类型提示，不读取或修改现有数据；后续操作必须在受信宿主机执行。'
-                    : '为遵循 CPAMP v2 零明文留存安全边界，一次性认领令牌（Claim Token）在进入页面时已立即从地址栏剥离，且不会写入浏览器任何本地存储。直接访问本路径或刷新页面后需重新获取授权入口。'}
+                     ? '公共 Discovery 仅提供来源类型提示，不读取或修改现有数据；后续操作必须在受信宿主机执行。'
+                     : discoveryNote?.flow === 'fresh'
+                       ? '一次性认领令牌在进入页面时已从地址栏剥离，且不会写入浏览器本地存储；请从受信宿主机重新获取 Handoff。'
+                       : '尚未取得可信的 Fresh 来源分类；请检查宿主机上的来源与服务状态，不能依据当前页面执行初始化或迁移。'}
                 </p>
               </div>
               <div className="wizard-card-body">
@@ -610,24 +620,33 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       </div>
                     </div>
                   </div>
-                ) : (
+                ) : discoveryNote?.flow === 'fresh' ? (
                   <>
-                <div className="alert alert-warn">
-                  <span className="alert-icon" aria-hidden="true">
-                    !
-                  </span>
-                  <div className="alert-content">
-                    <div className="alert-title">如何获取或恢复 Bootstrap 授权链接？</div>
-                    <div className="alert-desc">
-                      请在部署容器或受控宿主机终端运行初始化命令，使用输出的带{' '}
-                      <code>#handoff=...</code> 片段的完整 URL 重新打开本页面：
+                    <div className="alert alert-warn">
+                      <span className="alert-icon" aria-hidden="true">!</span>
+                      <div className="alert-content">
+                        <div className="alert-title">如何获取或恢复 Bootstrap 授权链接？</div>
+                        <div className="alert-desc">
+                          请在受信宿主机运行初始化命令，并使用输出的带{' '}
+                          <code>#handoff=...</code> 片段的完整 URL 重新打开本页面：
+                        </div>
+                      </div>
+                    </div>
+                    <div className="code-block" data-testid="cli-handoff-command">
+                      cpa-manager-plus initialize
+                    </div>
+                  </>
+                ) : (
+                  <div className="alert alert-warn" data-testid="bootstrap-discovery-unconfirmed" role="status">
+                    <div className="alert-content">
+                      <div className="alert-title">
+                        {discoveryChecked ? '来源状态无法确认' : '正在读取来源状态'}
+                      </div>
+                      <div className="alert-desc">
+                        不提供 Fresh 初始化命令；请在受信宿主机确认来源、日志与服务状态。未知结果不会授予任何写入权限。
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="code-block" data-testid="cli-handoff-command">
-                  cpa-manager-plus initialize
-                </div>
-                  </>
                 )}
               </div>
             </section>

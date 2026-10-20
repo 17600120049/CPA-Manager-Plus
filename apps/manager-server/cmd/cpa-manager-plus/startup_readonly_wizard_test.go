@@ -1,16 +1,22 @@
 package main
 
 import (
+	"bytes"
+	"database/sql"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	bootstrap "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
+	_ "modernc.org/sqlite"
 )
 
 // Read-only startup does not grant a Bootstrap API or let aliases escape into
@@ -69,18 +75,27 @@ func TestReadOnlyStartupWizardPackagedTransport(t *testing.T) {
 	if os.Getenv("CPAMP_FULLWEB_PACKAGED_TEST") != "1" {
 		t.Skip("requires a staged Full Web bundle")
 	}
-	mode := bootstrap.UnsupportedUpgrade
+	// Real blocked legacy SQLite fixture: the Manager must inspect it without
+	// running migrations, creating locks or manufacturing Fresh authority.
+	dir := t.TempDir()
+	database := filepath.Join(dir, "usage.sqlite")
+	db, err := sql.Open("sqlite", database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`pragma journal_mode = delete; create table settings(key text primary key,value text); create table usage_events(id integer primary key)`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(database)
+	if err != nil {
+		t.Fatal(err)
+	}
 	h := newStartupHTTPHandler(bootstrapdiscovery.Unavailable())
-	h.projectionMu.Lock()
-	h.readOnlyDiscovery = bootstrapdiscovery.Handler{Discovery: bootstrap.PublicDiscovery{
-		ContractVersion: bootstrap.PublicDiscoveryContractVersion,
-		Status: bootstrap.PublicUnsupportedUpgrade,
-		Mode: &mode,
-		AuthenticationRequired: true,
-		AuthEntry: bootstrap.AuthEntryAdminSession,
-		Reason: bootstrap.ReasonQualificationUnavailable,
-	}}
-	h.projectionMu.Unlock()
+	h.EnableReadOnlyDiscovery(legacypreflight.DefaultPaths(database), legacypreflight.Options{}, 5*time.Second)
 	server := httptest.NewServer(h)
 	defer server.Close()
 
@@ -105,8 +120,10 @@ func TestReadOnlyStartupWizardPackagedTransport(t *testing.T) {
 		return response.Header, string(body)
 	}
 	_, discovery := request(http.MethodGet, bootstrap.FixedBootstrapDiscoveryPath, http.StatusOK)
-	if !strings.Contains(discovery, `"status":"unsupported_upgrade"`) || !strings.Contains(discovery, `"auth_entry":"admin_session"`) {
-		t.Fatalf("unexpected read-only classification: %s", discovery)
+	if !strings.Contains(discovery, `"status":"recovery_required"`) ||
+		!strings.Contains(discovery, `"auth_entry":"host_intervention"`) ||
+		strings.Contains(discovery, database) || strings.Contains(discovery, "usage_events") {
+		t.Fatalf("unexpected or sensitive blocked-source classification: %s", discovery)
 	}
 	headers, page := request(http.MethodGet, bootstrap.FixedBootstrapUIPath, http.StatusOK)
 	if !strings.Contains(headers.Get("Content-Type"), "text/html") ||
@@ -148,4 +165,12 @@ func TestReadOnlyStartupWizardPackagedTransport(t *testing.T) {
 	request(http.MethodGet, bootstrap.FixedBootstrapUIPath, http.StatusNotFound)
 	h.SetCompleted()
 	request(http.MethodGet, bootstrap.FixedBootstrapDiscoveryPath, http.StatusNotFound)
+	after, err := os.ReadFile(database)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("read-only HTTP inspection changed the source: %v", err)
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 1 || files[0].Name() != "usage.sqlite" {
+		t.Fatalf("read-only HTTP inspection created source files: %v, %v", files, err)
+	}
 }
