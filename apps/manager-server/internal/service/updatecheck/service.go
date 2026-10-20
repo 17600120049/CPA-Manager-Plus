@@ -70,32 +70,49 @@ func (s *Service) load(ctx context.Context) error {
 	if s.loaded {
 		return nil
 	}
-	data, err := s.store.LoadUpdateCheck(ctx)
+	st, err := s.readState(ctx)
 	if err != nil {
 		return err
-	}
-	st := State{SchemaVersion: 1, Preference: "auto", Releases: map[string]ReleaseInfo{}}
-	if len(data) > 0 {
-		if err = json.Unmarshal(data, &st); err != nil {
-			return errors.New("invalid persisted update state")
-		}
-		if st.SchemaVersion != 1 || !validPreference(st.Preference) || st.Releases == nil {
-			return errors.New("unsupported persisted update state")
-		}
-		if st.Index != nil {
-			if err = st.Index.Validate(); err != nil {
-				return err
-			}
-		}
-		for tag, info := range st.Releases {
-			if err = info.Validate(tag); err != nil {
-				return err
-			}
-		}
 	}
 	s.state = st
 	s.loaded = true
 	return nil
+}
+
+func (s *Service) readState(ctx context.Context) (State, error) {
+	data, err := s.store.LoadUpdateCheck(ctx)
+	if err != nil {
+		return State{}, err
+	}
+	st := State{SchemaVersion: 1, Preference: "auto", Releases: map[string]ReleaseInfo{}}
+	if len(data) > 0 {
+		if err = json.Unmarshal(data, &st); err != nil {
+			return State{}, errors.New("invalid persisted update state")
+		}
+		if st.SchemaVersion != 1 || !validPreference(st.Preference) || st.Releases == nil {
+			return State{}, errors.New("unsupported persisted update state")
+		}
+		if st.Index != nil {
+			if err = st.Index.Validate(); err != nil {
+				return State{}, err
+			}
+		}
+		for tag, info := range st.Releases {
+			if err = info.Validate(tag); err != nil {
+				return State{}, err
+			}
+		}
+	}
+	return st, nil
+}
+
+// SavedChannel reads SQLite, including after an unacknowledged write. It must
+// not replace downloaded-but-not-yet-persisted update metadata in the cache.
+func (s *Service) SavedChannel(ctx context.Context) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, err := s.readState(ctx)
+	return st.Preference, err
 }
 func (s *Service) save(ctx context.Context) error {
 	data, err := json.Marshal(s.state)
@@ -179,16 +196,41 @@ func (s *Service) SetChannel(ctx context.Context, p string) (Status, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.load(ctx); err != nil {
+	if err := s.persistChannelLocked(ctx, p); err != nil {
 		return Status{}, err
+	}
+	return s.checkLocked(ctx, true)
+}
+
+// PersistChannel saves only the preference. A successful result acknowledges
+// SQLite persistence, independently of remote update discovery. Legacy callers
+// retain SetChannel's immediate check; Fresh uses this bounded save operation.
+func (s *Service) PersistChannel(ctx context.Context, p string) (Status, error) {
+	if !validPreference(p) {
+		return Status{}, errors.New("invalid channel")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.persistChannelLocked(ctx, p); err != nil {
+		// Resolve even an uncertain SQLite acknowledgement from the store
+		// before another save/check can publish a cached preference.
+		s.loaded = false
+		return Status{}, err
+	}
+	return s.snapshot(), nil
+}
+
+func (s *Service) persistChannelLocked(ctx context.Context, p string) error {
+	if err := s.load(ctx); err != nil {
+		return err
 	}
 	old := s.state.Preference
 	s.state.Preference = p
 	if err := s.save(ctx); err != nil {
 		s.state.Preference = old
-		return Status{}, err
+		return err
 	}
-	return s.checkLocked(ctx, true)
+	return nil
 }
 func (s *Service) fetch(ctx context.Context, raw string, dst any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)

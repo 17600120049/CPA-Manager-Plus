@@ -58,7 +58,8 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
   async function mount(
     fetchMock: ReturnType<typeof vi.fn<typeof fetch>>,
     keyFetch: typeof fetch = async () =>
-      Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
+      Response.json({ keys: [], gatewayPending: true, revocationAvailable: false }),
+    settingFetch: typeof fetch = async () => Response.json({ channel_preference: 'auto' })
   ) {
     await act(async () => {
       renderer = create(
@@ -67,7 +68,11 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
           client={createPublicApiClient(
             () => context,
             (url, init) =>
-              String(url).includes('/api-keys') ? keyFetch(url, init) : fetchMock(url, init)
+              String(url).includes('/api-keys')
+                ? keyFetch(url, init)
+                : String(url).includes('/settings/update-channel')
+                  ? settingFetch(url, init)
+                  : fetchMock(url, init)
           )}
         />
       );
@@ -79,6 +84,18 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       await renderer.root.findByType('form').props.onSubmit({ preventDefault: vi.fn() });
     });
   }
+
+  it('retires Console Admin authority when the settings read rejects it', async () => {
+    await mount(
+      vi.fn<typeof fetch>().mockImplementation(async () => Response.json(operation)),
+      undefined,
+      async () => new Response('', { status: 401 })
+    );
+    await login();
+    expect(renderer.root.findAllByProps({ 'data-testid': 'console-operation' })).toHaveLength(0);
+    expect(input().props.value).toBe('');
+    expect(view()).toContain(t('authError'));
+  });
 
   it('authenticates with the protected canonical GET, refreshes real state, logs out and requires login on remount', async () => {
     const fetchMock = vi

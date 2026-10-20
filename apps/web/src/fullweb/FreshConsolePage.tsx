@@ -4,10 +4,13 @@ import { sameIdentity, type FreshOperation } from './bootstrapTransport';
 import { createPublicApiClient, PublicApiError } from './publicApi';
 import type { RoutingContext } from './routingContext';
 import { FreshApiKeys } from './FreshApiKeys';
+import { FreshUpdateChannel } from './FreshUpdateChannel';
+
+const defaultClient = createPublicApiClient();
 
 export function FreshConsolePage({
   context,
-  client = createPublicApiClient(),
+  client = defaultClient,
 }: {
   context: RoutingContext;
   client?: ReturnType<typeof createPublicApiClient>;
@@ -195,6 +198,14 @@ export function FreshConsolePage({
                     client={client}
                     credential={credential}
                     onCreationPending={reportCreationPending}
+                    onUnauthorized={() => {
+                      clearAuthentication();
+                      setError(t('authError'));
+                    }}
+                  />
+                  <FreshUpdateChannel
+                    client={client}
+                    credential={credential}
                     onUnauthorized={() => {
                       clearAuthentication();
                       setError(t('authError'));

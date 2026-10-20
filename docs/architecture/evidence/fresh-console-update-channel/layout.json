@@ -1,0 +1,181 @@
+{
+  "results": [
+    {
+      "locale": "zh-CN",
+      "viewportWidth": 1440,
+      "light": false,
+      "overflow": false,
+      "selectLeft": 376.5,
+      "selectRight": 1054.5,
+      "selectWidth": 678,
+      "title": "Manager 软件更新",
+      "storage": 0
+    },
+    {
+      "locale": "zh-CN",
+      "viewportWidth": 1440,
+      "light": true,
+      "overflow": false,
+      "selectLeft": 376.5,
+      "selectRight": 1054.5,
+      "selectWidth": 678,
+      "title": "Manager 软件更新",
+      "storage": 0
+    },
+    {
+      "locale": "zh-CN",
+      "viewportWidth": 390,
+      "light": false,
+      "overflow": false,
+      "selectLeft": 40,
+      "selectRight": 335,
+      "selectWidth": 295,
+      "title": "Manager 软件更新",
+      "storage": 0
+    },
+    {
+      "locale": "zh-CN",
+      "viewportWidth": 390,
+      "light": true,
+      "overflow": false,
+      "selectLeft": 40,
+      "selectRight": 335,
+      "selectWidth": 295,
+      "title": "Manager 软件更新",
+      "storage": 0
+    },
+    {
+      "locale": "en",
+      "viewportWidth": 1440,
+      "light": false,
+      "overflow": false,
+      "selectLeft": 376.5,
+      "selectRight": 1054.5,
+      "selectWidth": 678,
+      "title": "Manager updates",
+      "storage": 0
+    },
+    {
+      "locale": "en",
+      "viewportWidth": 1440,
+      "light": true,
+      "overflow": false,
+      "selectLeft": 376.5,
+      "selectRight": 1054.5,
+      "selectWidth": 678,
+      "title": "Manager updates",
+      "storage": 0
+    },
+    {
+      "locale": "en",
+      "viewportWidth": 390,
+      "light": false,
+      "overflow": false,
+      "selectLeft": 40,
+      "selectRight": 335,
+      "selectWidth": 295,
+      "title": "Manager updates",
+      "storage": 0
+    },
+    {
+      "locale": "en",
+      "viewportWidth": 390,
+      "light": true,
+      "overflow": false,
+      "selectLeft": 40,
+      "selectRight": 335,
+      "selectWidth": 295,
+      "title": "Manager updates",
+      "storage": 0
+    },
+    {
+      "locale": "zh-TW",
+      "viewportWidth": 1440,
+      "light": false,
+      "overflow": false,
+      "selectLeft": 376.5,
+      "selectRight": 1054.5,
+      "selectWidth": 678,
+      "title": "Manager 軟體更新",
+      "storage": 0
+    },
+    {
+      "locale": "zh-TW",
+      "viewportWidth": 1440,
+      "light": true,
+      "overflow": false,
+      "selectLeft": 376.5,
+      "selectRight": 1054.5,
+      "selectWidth": 678,
+      "title": "Manager 軟體更新",
+      "storage": 0
+    },
+    {
+      "locale": "zh-TW",
+      "viewportWidth": 390,
+      "light": false,
+      "overflow": false,
+      "selectLeft": 40,
+      "selectRight": 335,
+      "selectWidth": 295,
+      "title": "Manager 軟體更新",
+      "storage": 0
+    },
+    {
+      "locale": "zh-TW",
+      "viewportWidth": 390,
+      "light": true,
+      "overflow": false,
+      "selectLeft": 40,
+      "selectRight": 335,
+      "selectWidth": 295,
+      "title": "Manager 軟體更新",
+      "storage": 0
+    },
+    {
+      "locale": "ru",
+      "viewportWidth": 1440,
+      "light": false,
+      "overflow": false,
+      "selectLeft": 376.5,
+      "selectRight": 1054.5,
+      "selectWidth": 678,
+      "title": "Обновления Manager",
+      "storage": 0
+    },
+    {
+      "locale": "ru",
+      "viewportWidth": 1440,
+      "light": true,
+      "overflow": false,
+      "selectLeft": 376.5,
+      "selectRight": 1054.5,
+      "selectWidth": 678,
+      "title": "Обновления Manager",
+      "storage": 0
+    },
+    {
+      "locale": "ru",
+      "viewportWidth": 390,
+      "light": false,
+      "overflow": false,
+      "selectLeft": 40,
+      "selectRight": 335,
+      "selectWidth": 295,
+      "title": "Обновления Manager",
+      "storage": 0
+    },
+    {
+      "locale": "ru",
+      "viewportWidth": 390,
+      "light": true,
+      "overflow": false,
+      "selectLeft": 40,
+      "selectRight": 335,
+      "selectWidth": 295,
+      "title": "Обновления Manager",
+      "storage": 0
+    }
+  ],
+  "errors": []
+}

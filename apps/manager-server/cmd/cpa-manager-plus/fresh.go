@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
@@ -26,6 +27,8 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshrouting"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshstrategy"
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/updatecheck"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
 )
 
 // initialize is a host-owned offline operation. It admits the actual store and
@@ -69,12 +72,16 @@ type freshApplication struct {
 	protector *security.Protector
 	fixed     http.Handler
 	keys      *freshkeys.Service
+	updates   *updatecheck.Service
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
 	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector}
 	a.keys = freshkeys.New(keyrepo.New(opened.DB), opened.Protector)
+	// Reuse the existing settings authority without opening a Legacy app,
+	// collector, CPA client, or second SQLite connection.
+	a.updates = updatecheck.New(store.New(opened.DB), buildinfo.Version, buildinfo.SourceCommit, os.Getenv("CPAMP_UPDATE_CHECK_ENABLED") != "false")
 	var runtime runtimeservice.RuntimeClient
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtime = runtimeservice.NewEmbeddedClientWithTokenSource(cfg.RuntimeURL, runtimeservice.NewFileRuntimeTokenSource(cfg.RuntimeTokenFile))
@@ -209,6 +216,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	switch {
+	case resource == "settings/update-channel":
+		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):
 		a.clientKeys(w, r, op, resource)
 	case resource == "operation" && r.Method == http.MethodGet:
@@ -372,6 +381,7 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 	app := newFreshApplication(opened, cfg, freshDriver(cfg))
 	h.SetFreshHandler(app)
 	go restoreFreshRouting(ctx, app.routing)
+	go app.runFreshUpdateChecks(ctx)
 	return opened, nil
 }
 
