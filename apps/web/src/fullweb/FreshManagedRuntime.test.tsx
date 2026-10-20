@@ -121,6 +121,30 @@ describe('Fresh New existing Runtime strategy integration', () => {
     expect(ui.pending).toHaveBeenLastCalledWith(false);
   });
 
+  it('keeps installation and logout unlocked after a failed read-only refresh', async () => {
+    const get = vi.fn().mockRejectedValue(new PublicApiError('network'));
+    const post = vi.fn();
+    const ui = await mount(get, post, staged);
+    await ui.click('refresh-installation');
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(post).not.toHaveBeenCalled();
+    expect(ui.node('install-runtime').props.disabled).toBe(false);
+    expect(ui.pending).toHaveBeenLastCalledWith(false);
+    expect(ui.renderer.root.findAllByProps({ role: 'status' })).toHaveLength(0);
+  });
+
+  it('retains a prior ambiguous-write lock when a read-only refresh also fails', async () => {
+    const get = vi.fn().mockRejectedValue(new PublicApiError('network'));
+    const post = vi.fn().mockRejectedValue(new PublicApiError('network'));
+    const ui = await mount(get, post, staged);
+    await ui.click('install-runtime');
+    expect(ui.node('install-runtime').props.disabled).toBe(true);
+    await ui.click('refresh-installation');
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(ui.node('install-runtime').props.disabled).toBe(true);
+    expect(ui.pending).toHaveBeenLastCalledWith(true);
+  });
+
   it('reconciles a lost start response without another write', async () => {
     const get = vi.fn().mockResolvedValue(committed),
       post = vi.fn().mockRejectedValue(new PublicApiError('network'));
