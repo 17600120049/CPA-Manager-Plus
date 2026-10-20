@@ -29,9 +29,9 @@ These entries merit **explicit source-license/asset/output verification**, not a
 
 | Lock path suffix (`node_modules/` omitted) | Locked version | Declared license | `dev` |
 | --- | --- | --- | --- |
-| `echarts/node_modules/tslib` | `2.3.0` | `0BSD` | false |
-| `tslib` | `2.8.1` | `0BSD` | false |
-| `zrender/node_modules/tslib` | `2.3.0` | `0BSD` | false |
+| `echarts/node_modules/tslib` | `2.3.0` | `0BSD` | absent |
+| `tslib` | `2.8.1` | `0BSD` | absent |
+| `zrender/node_modules/tslib` | `2.3.0` | `0BSD` | absent |
 | `@typescript-eslint/typescript-estree/node_modules/minimatch` | `10.2.5` | `BlueOak-1.0.0` | true |
 | `browserslist/node_modules/caniuse-lite` | `1.0.30001759` | `CC-BY-4.0` | true |
 | `@iconify-json/simple-icons` | `1.2.88` | `CC0-1.0` | true |
