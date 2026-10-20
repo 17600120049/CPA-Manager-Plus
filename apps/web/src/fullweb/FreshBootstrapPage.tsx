@@ -527,6 +527,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                   </div>
                 )}
 
+                {discoveryNote?.tone !== 'warn' && (
+                  <>
                 <div className="alert alert-warn">
                   <span className="alert-icon" aria-hidden="true">
                     !
@@ -542,6 +544,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 <div className="code-block" data-testid="cli-handoff-command">
                   cpa-manager-plus initialize
                 </div>
+                  </>
+                )}
               </div>
             </section>
           )}
