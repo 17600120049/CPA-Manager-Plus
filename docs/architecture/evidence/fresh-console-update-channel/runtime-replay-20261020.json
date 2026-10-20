@@ -1,0 +1,202 @@
+{
+  "kind": "sanitized developer runtime replay, not independent acceptance",
+  "implementationHead": "74ca12f1dbffa045258471b9cceee6d6288c0fb5",
+  "dateUTC": "2026-10-20",
+  "provenance": "New bounded replay using the retained 2026-10-19 containers, data and final binaries. Records below were copied from actual shell stdout and Playwright Result fields, not reconstructed from the earlier acceptance prose.",
+  "sanitization": [
+    "Shell transport metadata omitted; stdout and exit status retained.",
+    "Playwright transport/code echo omitted; returned Result fields retained. Full login page text omitted.",
+    "Absolute task-worktree root replaced with <TASK_WORKTREE>.",
+    "Credentials, request headers, handoff claims, keys, auth records, full logs and raw database are not exported."
+  ],
+  "events": [
+    {
+      "phase": "retained environment baseline",
+      "exitCode": 0,
+      "stdout": "utc=2026-10-20T00:42:54.364894+00:00\nsource_head=74ca12f1dbffa045258471b9cceee6d6288c0fb5\ncpa-manager-plus-final_sha256=69e04887d627f8c473b10444ffe099cdf788eb7d26d226ebd20d2d6d392e392b\ncpamp-ingress_sha256=459fcc7956df98e4d6323aa615fe24c55db623ad1bd7f76c4d8765d17009b9d4\nSQL: SELECT json_extract(value,'$.channel_preference') FROM settings WHERE key='manager_update_check_v1';\nchannel_preference=auto\nSQL: SELECT COUNT(*) FROM fresh_client_api_keys;\nclient_key_rows=0\nunrelated_settings_rows=6\n"
+    },
+    {
+      "phase": "manager before restart",
+      "exitCode": 0,
+      "stdout": "ef0be78ed5aff882db19f26c3788d1a6aad50368c1c3a1680877d8ee5fa905ef 2026-10-20T00:42:29.101053583Z <TASK_WORKTREE>/bin/tmp/fresh-update-channel/20261019/data -> /data\n69e04887d627f8c473b10444ffe099cdf788eb7d26d226ebd20d2d6d392e392b  /usr/local/bin/cpa-manager-plus\n"
+    },
+    {
+      "phase": "real Admin login",
+      "result": {
+        "at": "2026-10-20T00:42:54.808Z",
+        "login": {
+          "method": "GET",
+          "path": "/console/api/v2/operation",
+          "status": 200
+        },
+        "channel": "auto"
+      },
+      "omittedResultFields": [
+        "text (full operation/page body)"
+      ]
+    },
+    {
+      "phase": "explicit save and browser reload/login",
+      "result": {
+        "save": {
+          "at": "2026-10-20T00:43:06.995Z",
+          "method": "PUT",
+          "path": "/console/api/v2/settings/update-channel",
+          "requestBody": {
+            "channel_preference": "stable"
+          },
+          "status": 200,
+          "cacheControl": "no-store",
+          "body": {
+            "channel_preference": "stable"
+          }
+        },
+        "reload": {
+          "at": "2026-10-20T00:43:07.107Z",
+          "loginRequired": true,
+          "channel": "stable"
+        }
+      }
+    },
+    {
+      "phase": "raw SQLite before restart",
+      "exitCode": 0,
+      "stdout": "utc=2026-10-20T00:43:07.653771+00:00\n[('manager_update_check_v1', 'stable')]\n"
+    },
+    {
+      "phase": "real Manager restart, original data bind",
+      "exitCode": 0,
+      "stdout": " Container cpamp-setting-20261019-manager-1  Restarting\n Container cpamp-setting-20261019-manager-1  Started\nef0be78ed5aff882db19f26c3788d1a6aad50368c1c3a1680877d8ee5fa905ef 2026-10-20T00:43:07.815179199Z <TASK_WORKTREE>/bin/tmp/fresh-update-channel/20261019/data -> /data\n"
+    },
+    {
+      "phase": "re-login after Manager restart",
+      "result": {
+        "at": "2026-10-20T00:43:19.008Z",
+        "afterManagerRestart": {
+          "loginRequired": true,
+          "method": "GET",
+          "path": "/console/api/v2/settings/update-channel",
+          "status": 200,
+          "body": {
+            "channel_preference": "stable"
+          },
+          "visibleChannel": "stable"
+        }
+      }
+    },
+    {
+      "phase": "raw SQLite after restart",
+      "exitCode": 0,
+      "stdout": "utc=2026-10-20T00:43:19.558360+00:00\n[('manager_update_check_v1', 'stable')]\n"
+    },
+    {
+      "phase": "restore original preference before response-loss probe",
+      "result": {
+        "at": "2026-10-20T00:43:19.648Z",
+        "method": "PUT",
+        "status": 200,
+        "body": {
+          "channel_preference": "auto"
+        },
+        "channel": "auto"
+      }
+    },
+    {
+      "phase": "committed PUT reply dropped, GET-only reconciliation",
+      "result": {
+        "at": "2026-10-20T00:43:33.140Z",
+        "events": [
+          {
+            "at": "2026-10-20T00:43:31.619Z",
+            "event": "real PUT completed at server; abort browser reply next",
+            "method": "PUT",
+            "requestBody": {
+              "channel_preference": "stable"
+            },
+            "serverStatus": 200,
+            "serverBody": {
+              "channel_preference": "stable"
+            }
+          },
+          {
+            "at": "2026-10-20T00:43:31.633Z",
+            "event": "reconciliation GET",
+            "method": "GET",
+            "status": 200,
+            "body": {
+              "channel_preference": "stable"
+            }
+          }
+        ],
+        "puts": 1,
+        "gets": 1,
+        "visibleChannel": "stable",
+        "message": "保存响应未确认。当前已保存频道已显示，请核对后再决定是否修改。",
+        "acknowledgedSaveVisible": 0,
+        "saveDisabled": true
+      },
+      "playwrightProbe": "async (page) => { const events=[]; let puts=0,gets=0; await page.route('**/api/v2/settings/update-channel',async route=>{const request=route.request(); if(request.method()==='PUT'){puts++; const response=await route.fetch(); events.push({at:new Date().toISOString(),event:'real PUT completed at server; abort browser reply next',method:'PUT',requestBody:request.postDataJSON(),serverStatus:response.status(),serverBody:await response.json()}); await route.abort('failed');}else{gets++; const response=await route.fetch(); events.push({at:new Date().toISOString(),event:'reconciliation GET',method:request.method(),status:response.status(),body:await response.json()}); await route.fulfill({response});}}); await page.locator('#update-channel').selectOption('stable'); await page.getByRole('button',{name:'保存频道',exact:true}).click(); const message='保存响应未确认。当前已保存频道已显示，请核对后再决定是否修改。'; await page.getByText(message,{exact:true}).waitFor(); await page.waitForTimeout(1500); const result={at:new Date().toISOString(),events,puts,gets,visibleChannel:await page.locator('#update-channel').inputValue(),message:await page.getByText(message,{exact:true}).innerText(),acknowledgedSaveVisible:await page.getByText('频道偏好已保存。',{exact:true}).count(),saveDisabled:await page.getByRole('button',{name:'保存频道',exact:true}).isDisabled()}; await page.unroute('**/api/v2/settings/update-channel'); if(puts!==1||gets!==1||result.visibleChannel!=='stable'||result.acknowledgedSaveVisible!==0)throw new Error(JSON.stringify(result)); return result; }"
+    },
+    {
+      "phase": "raw SQLite after dropped response",
+      "exitCode": 0,
+      "stdout": "utc=2026-10-20T00:43:34.194964+00:00\n[('manager_update_check_v1', 'stable')]\n"
+    },
+    {
+      "phase": "restore/reload and public Gateway Pending/503",
+      "error": "### Error\nSyntaxError: Unexpected token 'g', \"gateway pe\"... is not valid JSON"
+    },
+    {
+      "phase": "Gateway Pending and public endpoint denial, corrected text response parser",
+      "result": {
+        "at": "2026-10-20T00:44:01.261Z",
+        "afterRestoreAndReload": {
+          "channel": "auto"
+        },
+        "operation": {
+          "status": 200,
+          "adminInitialized": true,
+          "gatewayPending": true,
+          "productComplete": false
+        },
+        "probes": [
+          {
+            "at": "2026-10-20T00:44:01.259Z",
+            "method": "GET",
+            "path": "/v1/models",
+            "credential": "absent",
+            "status": 503,
+            "body": "gateway pending configuration\n"
+          },
+          {
+            "at": "2026-10-20T00:44:01.261Z",
+            "method": "GET",
+            "path": "/v1/models",
+            "credential": "synthetic-invalid",
+            "status": 503,
+            "body": "gateway pending configuration\n"
+          }
+        ],
+        "browserStorage": {
+          "local": 0,
+          "session": 0
+        }
+      }
+    },
+    {
+      "phase": "final SQLite restore, other settings and source identity",
+      "exitCode": 1,
+      "stdout": "utc=2026-10-20T00:44:17.969896+00:00\n[('manager_update_check_v1', 'auto')]\nall_unrelated_settings_including_updated_at_unchanged=False\nTraceback (most recent call last):\n  File \"<stdin>\", line 10, in <module>\nAssertionError\n"
+    },
+    {
+      "phase": "task containers stopped, data retained",
+      "exitCode": 0,
+      "stdout": " Container cpamp-setting-20261019-ingress-1  Stopping\n Container cpamp-setting-20261019-ingress-1  Stopped\n Container cpamp-setting-20261019-manager-1  Stopping\n Container cpamp-setting-20261019-manager-1  Stopped\n Container cpamp-setting-20261019-runtime-1  Stopping\n Container cpamp-setting-20261019-runtime-1  Stopped\nNAME                               IMAGE                                                                     COMMAND                  SERVICE   CREATED       STATUS                              PORTS\ncpamp-setting-20261019-ingress-1   sha256:34d0c09631af5eb9ab1cd3e6ad8cafa29228d24317fca0670a0240806e3b22c2   \"/usr/local/bin/cpam…\"   ingress   9 hours ago   Exited (0) Less than a second ago   \ncpamp-setting-20261019-manager-1   sha256:34d0c09631af5eb9ab1cd3e6ad8cafa29228d24317fca0670a0240806e3b22c2   \"/usr/local/bin/cpa-…\"   manager   9 hours ago   Exited (0) Less than a second ago   \ncpamp-setting-20261019-runtime-1   sha256:075b6822a17a4cee76904055a1c684ee0e321256960a035ddfa27afefb257314   \"/usr/local/bin/cpam…\"   runtime   9 hours ago   Exited (0) Less than a second ago   \n"
+    },
+    {
+      "phase": "final SQLite and source identity, value/timestamp comparison separated",
+      "exitCode": 0,
+      "stdout": "utc=2026-10-20T00:44:35.124199+00:00\n[('manager_update_check_v1', 'auto')]\nunrelated_settings_rows=6\nall_unrelated_setting_values_unchanged=True\ntimestamp_only_changes=[\"usage_monitoring_model_format_version\"]\nclient_key_rows=0\npinned_production_source_files=10\nall_pinned_production_source_hashes_match=True\n"
+    }
+  ]
+}

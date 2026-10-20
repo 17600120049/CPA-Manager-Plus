@@ -30,7 +30,7 @@ Observed:
 - Restarted the real Manager container, preserving its original SQLite
   directory; reloaded the browser, logged in and read `stable`.
 - Explicitly saved back to `auto`; HTTP 200 and raw SQLite readback agreed.
-- All six unrelated settings rows remained byte-for-byte unchanged.
+- All six unrelated setting values remained byte-for-byte unchanged.
 - The real background checker persisted a successful GitHub index check,
   revision 15; its timestamp survived preference saves.
 - Zero staged Client Keys. Missing, wrong and synthetic invalid model credentials
@@ -92,6 +92,73 @@ counted as acceptance passes.
 
 Task-local logs are under `bin/tmp/fresh-update-channel/20261019/` in the task
 worktree. They and test SQLite/key/claim files are deliberately untracked.
+
+## Bounded evidence replay after independent review
+
+Review [5579093498](https://github.com/seakee/CPA-Manager-Plus/pull/1015#pullrequestreview-5579093498)
+found no confirmed code defect at implementation HEAD
+`74ca12f1dbffa045258471b9cceee6d6288c0fb5`, but held runtime acceptance because
+the original process records were not available in the PR. The retained process
+log contained startup lines only. Instead of reconstructing historical output,
+a new bounded replay ran on **2026-10-20, 00:42–00:44 UTC**, using the same
+retained containers, SQLite directory and final binaries. No rebuild, Bootstrap
+reset, product change or full test/layout matrix rerun was needed.
+
+[Sanitized observed runtime records](runtime-replay-20261020.json) contain
+actual shell stdout/exit codes and selected Playwright Result fields. They show:
+
+1. Real Admin login, `auto → stable` through the Console, PUT 200 with
+   `no-store`, browser reload/re-login and saved `stable`.
+2. Direct SQLite `stable` read before and after `docker compose restart manager`;
+   the same container ID and `/data` bind, different process start timestamps,
+   and re-login GET 200 / visible `stable` after restart.
+3. Restore to `auto`, then a real `stable` PUT whose server response was 200.
+   Playwright `route.fetch()` reached the actual Manager, then `route.abort()`
+   dropped only its browser reply. Exactly **one PUT and one GET** occurred;
+   the GET returned the committed `stable`. The UI displayed the unconfirmed-save
+   message, with no acknowledged-save message. A separate SQLite read confirmed
+   `stable`. The exact interception probe is included in the record; neither
+   write nor reconciliation response was synthesized.
+4. Final restore/reload and direct SQLite read of `auto`, zero Client Key rows,
+   Admin operation `gatewayPending=true`, `productComplete=false`, and public
+   `/v1/models` returning **503** / `gateway pending configuration` for missing
+   and synthetic-invalid credentials. Browser storage remained empty.
+5. Host/container Manager binary SHA-256 matched the original artifact, all ten
+   production source hashes in `artifact.json` matched the implementation HEAD,
+   and task containers were stopped with data retained.
+
+The SQLite observations use a separate read-only connection, not the API/cache:
+
+```sql
+SELECT key, json_extract(value, '$.channel_preference')
+FROM settings WHERE key = 'manager_update_check_v1';
+SELECT COUNT(*) FROM fresh_client_api_keys;
+```
+
+Harness corrections are retained, not counted as product failures: the first
+Gateway parser assumed JSON although the denial is plain text; the corrected
+probe records the actual text. An additional assertion comparing entire
+unrelated settings rows across restart failed on one timestamp. All six
+**values** were unchanged; only `usage_monitoring_model_format_version.updated_at_ms`
+changed. The existing startup migration
+[`ensureUsageMonitoringProjectionIdentity`](../../../../apps/manager-server/internal/repository/sqlite/migrate.go)
+unconditionally upserts that marker with the current time. This replay therefore
+does not claim that unrelated row timestamps remain unchanged across restart.
+The final comparison records values and timestamp differences separately.
+
+The artifact omits credentials, request headers, auth/identity records, database
+files and full logs; the absolute worktree root is replaced with
+`<TASK_WORKTREE>`. Counts and enum readbacks are exported, not sensitive row
+contents. These are newly inspectable **developer** records, not an independent
+rerun or a merge approval. Independent evidence verification remains required;
+Draft / DO NOT MERGE and all existing out-of-scope gates remain in effect.
+
+Evidence-only follow-up checks: JSON parsing and observed-flow consistency,
+relative documentation links, targeted secret/path scan and `git diff --check`
+passed. `npx vitest run tests/docsContentIntegrity.test.mjs` passed (7 tests).
+The prior Go/race/Web/build/layout results above belong to the unchanged
+implementation; those full matrices were not rerun for this documentation-only
+follow-up.
 
 ## Required local review rounds
 
