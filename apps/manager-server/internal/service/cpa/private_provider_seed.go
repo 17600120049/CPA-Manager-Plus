@@ -170,5 +170,8 @@ func (t *Transport) providerConfigured(ctx context.Context, management, clientKe
 		return false
 	}
 	status, body, err := t.request(ctx, http.MethodGet, "/v8/management/config", management, nil)
+	if err == nil && status == 200 {
+		body, err = t.postInstallProjection(ctx, body)
+	}
 	return err == nil && status == 200 && privateProviderConfig(body, seed, clientKey)
 }
