@@ -23,14 +23,15 @@ var ErrNotFound = errors.New("creation result not found")
 var ErrConflict = repo.ErrConflict
 
 type Key struct {
-	ID            identity.APIKeyID `json:"id"`
-	RequestID     string            `json:"requestId"`
-	MaskedPreview string            `json:"maskedPreview"`
-	CreatedAtMS   int64             `json:"createdAtMs"`
-	ManagerState  string            `json:"managerState"`
-	RuntimeState  string            `json:"runtimeState"`
-	Name          string            `json:"name"`
-	NameRevision  int64             `json:"nameRevision"`
+	ID            identity.APIKeyID  `json:"id"`
+	RequestID     string             `json:"requestId"`
+	MaskedPreview string             `json:"maskedPreview"`
+	CreatedAtMS   int64              `json:"createdAtMs"`
+	ManagerState  string             `json:"managerState"`
+	RuntimeState  string             `json:"runtimeState"`
+	Name          string             `json:"name"`
+	NameRevision  int64              `json:"nameRevision"`
+	Lifecycle     identity.Lifecycle `json:"lifecycle"`
 }
 type Result struct {
 	Key           Key    `json:"key"`
@@ -44,7 +45,7 @@ type Service struct {
 func New(r *repo.Repository, p *security.Protector) *Service { return &Service{r, p} }
 func ValidRequestID(id string) bool                          { _, err := identity.ParseAPIKeyID(id); return err == nil }
 func public(v repo.Record) Key {
-	return Key{v.Identity.ID, v.RequestID, v.Preview, v.Identity.CreatedAtMS, "persisted", "not_applied", v.Name, v.NameRevision}
+	return Key{v.Identity.ID, v.RequestID, v.Preview, v.Identity.CreatedAtMS, "persisted", "not_applied", v.Name, v.NameRevision, v.Identity.Lifecycle}
 }
 
 func (s *Service) Detail(ctx context.Context, rawID string) (Key, error) {
@@ -97,13 +98,23 @@ func (s *Service) List(ctx context.Context) ([]Key, error) {
 	if err != nil {
 		return nil, err
 	}
+	operation, err := s.repo.LatestOperation(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for _, v := range records {
 		secret, err := s.protector.UnprotectString(v.Ciphertext)
 		if err != nil || digest(secret) != v.Hash || len(secret) != 73 || v.Preview != "cpamp_sk_…"+secret[len(secret)-4:] {
 			return nil, errors.New("staged client secret unavailable")
 		}
 		key := public(v)
+		if v.Identity.Lifecycle == identity.LifecycleSuperseded {
+			key.RuntimeState = "effect_unknown"
+		}
 		if attempt != nil && attempt.KeyID == string(key.ID) {
+			key.RuntimeState = "effect_unknown"
+		}
+		if operation != nil && (operation.KeeperID == string(key.ID) || operation.TargetID == string(key.ID)) {
 			key.RuntimeState = "effect_unknown"
 		}
 		keys = append(keys, key)
@@ -195,6 +206,15 @@ func (s *Service) MatchStagedSecret(ctx context.Context, candidate string) (bool
 // WithStagedSecret is an internal server-side consumer of the canonical encrypted
 // record. No HTTP response may contain the secret passed to consume.
 func (s *Service) WithStagedSecret(ctx context.Context, rawID string, consume func(string) error) error {
+	return s.withSecret(ctx, rawID, true, consume)
+}
+
+// WithRetainedSecret is exclusively for read-only revocation reconciliation.
+// Superseded identity history stays readable; it cannot grant authentication.
+func (s *Service) WithRetainedSecret(ctx context.Context, rawID string, consume func(string) error) error {
+	return s.withSecret(ctx, rawID, false, consume)
+}
+func (s *Service) withSecret(ctx context.Context, rawID string, active bool, consume func(string) error) error {
 	key, err := s.Detail(ctx, rawID)
 	if err != nil {
 		return err
@@ -208,7 +228,7 @@ func (s *Service) WithStagedSecret(ctx context.Context, rawID string, consume fu
 			continue
 		}
 		secret, err := s.protector.UnprotectString(record.Ciphertext)
-		if err != nil || digest(secret) != record.Hash || record.Identity.Lifecycle != identity.LifecycleActive {
+		if err != nil || digest(secret) != record.Hash || active && record.Identity.Lifecycle != identity.LifecycleActive {
 			return errors.New("staged client secret unavailable")
 		}
 		return consume(secret)

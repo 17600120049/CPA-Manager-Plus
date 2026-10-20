@@ -149,7 +149,7 @@ export function FreshKeyDetails({
       {record && (
         <>
           <strong>{record.maskedPreview}</strong>
-          <p>{t('keysPersisted')}</p>
+          <p>{t(record.lifecycle === 'superseded' ? 'keysRevokedHistory' : 'keysPersisted')}</p>
           <form onSubmit={(event) => void save(event)}>
             <label htmlFor="key-name" className="form-label">
               {t('keysName')}
@@ -175,13 +175,15 @@ export function FreshKeyDetails({
               {t('keysSaveName')}
             </button>
           </form>
-          <FreshKeyInstallation
-            id={id}
-            client={client}
-            credential={credential}
-            onUnauthorized={onUnauthorized}
-            disabled={busy || unknown || dirty}
-          />
+          {record.lifecycle !== 'superseded' && (
+            <FreshKeyInstallation
+              id={id}
+              client={client}
+              credential={credential}
+              onUnauthorized={onUnauthorized}
+              disabled={busy || unknown || dirty}
+            />
+          )}
         </>
       )}
       <button className="btn btn-secondary" disabled={busy} onClick={() => void read()}>

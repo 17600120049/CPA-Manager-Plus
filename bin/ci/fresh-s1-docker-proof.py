@@ -3,7 +3,9 @@
 
 Requires locally built cpamp-s1-{runtime,manager,ingress}:local images.
 Docker daemon/root and this serial launcher are the trusted host authority.
-No replace, revoke, clear, public Gateway, or generation recovery is performed.
+Only --ku selects the separately approved private revoke/necessary replacement
+slice. It requires explicit CPAMP_PROOF_KEY_WRITE_APPROVED=plan64-private. No
+clear, public Gateway, existing deployment or generation recovery is performed.
 """
 import base64
 import hashlib
@@ -64,8 +66,11 @@ def main():
     token, management = secrets.token_hex(32), secrets.token_hex(32)
     runtime, probe = name + "-runtime", name + "-probe"
     full = "--preflight" not in sys.argv[2:]
+    ku = "--ku" in sys.argv[2:]
+    if ku:
+        assert os.environ.get("CPAMP_PROOF_KEY_WRITE_APPROVED") == "plan64-private", "explicit private write approval missing"
     s2b = "--s2b-offline" in sys.argv[2:]
-    s2a = "--s2a" in sys.argv[2:] or s2b
+    s2a = "--s2a" in sys.argv[2:] or s2b or ku
     expiry = "--s2a-expiry" in sys.argv[2:] or "--s2b-offline-expiry" in sys.argv[2:]
     if s2b:
         from fresh_s2b_proof import fixture
@@ -74,6 +79,14 @@ def main():
     prefix = os.environ.get("CPAMP_PROOF_IMAGE_PREFIX", "cpamp-s1")
     tag = os.environ.get("CPAMP_PROOF_IMAGE_TAG", "local")
     images = {kind: prefix+"-"+kind+":"+tag for kind in ("runtime", "manager", "ingress")}
+    if ku:
+        p="apps/web/src/fullweb/carrier.css"
+        evidence["sourceSHA256"][p] = hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
+        for p in ("bin/ci/fresh_ku_proof.py", "bin/ci/fresh_ku_browser.py", "bin/ci/fresh-ku-browser.mjs", "apps/manager-server/cmd/cpa-manager-plus/fresh_key_operation.go", "apps/manager-server/internal/repository/freshkeys/operation.go", "apps/manager-server/internal/service/cpa/private_key_operation.go", "apps/web/src/fullweb/FreshKeyRevocation.tsx", "apps/web/src/fullweb/FreshApiKeys.tsx"):
+            evidence["sourceSHA256"][p] = hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
+        for locale in ("en", "zh-CN", "zh-TW", "ru"):
+            p="apps/web/src/i18n/locales/"+locale+".json"
+            evidence["sourceSHA256"][p] = hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
     if s2a:
         from fresh_s2a_proof import source_paths as s2a_sources
         evidence["sourceSHA256"].update({p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in s2a_sources(ROOT)})
@@ -163,6 +176,8 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
                 "-e", "CPAMP_RUNTIME_URL=http://127.0.0.1:9081", "-e", "CPAMP_RUNTIME_TOKEN_FILE=/run/cpamp/runtime-secret/token",
                 "-e", "CPAMP_INGRESS_CONTROL_URL=http://127.0.0.1:9082", "-e", "CPAMP_PUBLIC_ORIGIN=http://127.0.0.1:28471",
                 "-e", "CPAMP_UPDATE_CHECK_ENABLED=false", "-e", "CPAMP_PRIVATE_S1_PERMIT=/run/cpamp-s1/permit.json"]
+            if ku:
+                manager_env += ["-e", "CPAMP_PRIVATE_KEY_OPERATIONS=1"]
             if s2a:
                 from fresh_s2a_proof import start_relay
                 start_relay(command, probe, replay_test=s2b)
@@ -396,6 +411,11 @@ r=c.getresponse();print(json.dumps({'status':r.status,'headers':r.getheaders(),'
         code,state=http(28471,install_path,key=admin)
         assert code==200 and state["runtimeState"]=="effective_observed"
         evidence["effectiveObservation"]=state
+        if ku:
+            from fresh_ku_proof import exercise
+            exercise(command,http,record,evidence,name,probe,runtime,secret,key_id,admin,api,permit,volumes,containers,images,namespace_owner,out)
+            evidence["result"]="PASS_PRIVATE_KEY_REVOKE_REPLACE_OFFLINE_LIVE_HOLD"
+            return
         if s2b:
             from fresh_s2b_proof import exercise as exercise_s2b
             exercise_s2b(command,http,record,evidence,runtime,probe,name,secret,admin,api,expiry,permit,token)

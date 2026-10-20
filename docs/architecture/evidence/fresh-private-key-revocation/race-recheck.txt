@@ -1,0 +1,9 @@
+Changed Key/CPA/HTTP paths: go test -race
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply	24.115s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys	3.082s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa	(cached)
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/cmd/cpa-manager-plus	57.986s
+
+Expanded full Manager race first run: maintenancebundle timed out at 10m; all other packages passed.
+Isolated recheck: go test -race -p 1 -timeout 20m ./internal/service/maintenancebundle
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/maintenancebundle	812.717s

@@ -29,32 +29,39 @@ type Permit struct {
 
 func loadPermit() (Permit, error) {
 	var p Permit
-	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
-		return p, ErrUnavailable
+	if readHostPermit(PermitPath, &p) != nil || !p.valid(time.Now()) {
+		return Permit{}, ErrUnavailable
 	}
-	f, err := os.Open(PermitPath)
+	return p, nil
+}
+
+func readHostPermit(path string, destination any) error {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		return ErrUnavailable
+	}
+	f, err := os.Open(path)
 	if err != nil {
-		return p, ErrUnavailable
+		return ErrUnavailable
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > 4096 {
-		return p, ErrUnavailable
+		return ErrUnavailable
 	}
 	if !rootOwned(info) {
-		return p, ErrUnavailable
+		return ErrUnavailable
 	}
 	// The launcher uses a dedicated volume; reject symlink substitution too.
-	link, err := os.Lstat(PermitPath)
+	link, err := os.Lstat(path)
 	if err != nil || !os.SameFile(info, link) || link.Mode()&os.ModeSymlink != 0 {
-		return p, ErrUnavailable
+		return ErrUnavailable
 	}
 	d := json.NewDecoder(f)
 	d.DisallowUnknownFields()
-	if d.Decode(&p) != nil || d.Decode(&struct{}{}) != io.EOF || !p.valid(time.Now()) {
-		return Permit{}, ErrUnavailable
+	if d.Decode(destination) != nil || d.Decode(&struct{}{}) != io.EOF {
+		return ErrUnavailable
 	}
-	return p, nil
+	return nil
 }
 
 func (p Permit) valid(now time.Time) bool {

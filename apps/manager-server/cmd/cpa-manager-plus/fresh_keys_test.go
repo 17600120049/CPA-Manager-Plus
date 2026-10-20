@@ -69,6 +69,18 @@ func TestFreshClientKeysAdminPersistenceAndStops(t *testing.T) {
 		if got := call("GET", "api-keys/requests/"+id, token, ""); got.Code != 401 {
 			t.Fatal("unauthorized lookup")
 		}
+		for _, resource := range []string{"api-keys/" + id + "/revocation", "api-keys/operations/" + id + "/continue", "api-keys/operations/latest"} {
+			for _, method := range []string{"GET", "POST"} {
+				if got := call(method, resource, token, body); got.Code != 401 {
+					t.Fatal("unauthorized key operation", method, resource, got.Code)
+				}
+			}
+		}
+	}
+	for _, resource := range []string{"api-keys/" + id + "/revocation", "api-keys/operations/" + id + "/continue", "api-keys/operations/latest"} {
+		if got := call("POST", resource, strategyTestAdmin, body); got.Code != 409 {
+			t.Fatal("default profile must not enable KU", resource, got.Code)
+		}
 	}
 	created := call("POST", "api-keys", strategyTestAdmin, body)
 	if created.Code != 201 {

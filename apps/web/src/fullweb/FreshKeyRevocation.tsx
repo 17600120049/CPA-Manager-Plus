@@ -1,0 +1,327 @@
+import { useEffect, useRef, useState } from 'react';
+import { fullWebText as t } from '../i18n/fullweb';
+import { PublicApiError, type createPublicApiClient } from './publicApi';
+import type { Key } from './freshKeyMetadata';
+
+interface Operation {
+  id: string;
+  targetId: string;
+  keeperId: string;
+  mode: 'revoke' | 'replace';
+  outcome: 'pending' | 'unknown' | 'committed';
+  revision: number;
+  steps: {
+    name: 'add' | 'revoke';
+    state: 'unattempted' | 'attempted' | 'observed';
+    returned: boolean;
+  }[];
+}
+interface Result {
+  operation: Operation | null;
+  runtimeState: 'effect_unknown' | 'effective_observed';
+  expiresAtMs: number;
+  nextStep: '' | 'add' | 'revoke';
+}
+function validResult(r: Result): boolean {
+  const o = r?.operation;
+  return (
+    !!r &&
+    ['effect_unknown', 'effective_observed'].includes(r.runtimeState) &&
+    Number.isSafeInteger(r.expiresAtMs) &&
+    ['', 'add', 'revoke'].includes(r.nextStep) &&
+    (o === null ||
+      (!!o &&
+        [o.id, o.targetId, o.keeperId].every((v) => /^[a-f0-9]{32}$/.test(v)) &&
+        o.targetId !== o.keeperId &&
+        ['revoke', 'replace'].includes(o.mode) &&
+        ['pending', 'unknown', 'committed'].includes(o.outcome) &&
+        Number.isSafeInteger(o.revision) &&
+        o.revision > 0 &&
+        Array.isArray(o.steps) &&
+        o.steps.length === (o.mode === 'replace' ? 2 : 1) &&
+        o.steps.every(
+          (s, i) =>
+            s.name === (o.mode === 'replace' && i === 0 ? 'add' : 'revoke') &&
+            ['unattempted', 'attempted', 'observed'].includes(s.state) &&
+            typeof s.returned === 'boolean'
+        ) &&
+        (o.outcome !== 'committed' || o.steps.every((s) => s.state === 'observed'))))
+  );
+}
+
+export function FreshKeyRevocation({
+  keys,
+  client,
+  credential,
+  onUnauthorized,
+  onPending,
+  onChanged,
+  disabled,
+}: {
+  keys: Key[];
+  client: ReturnType<typeof createPublicApiClient>;
+  credential: string;
+  onUnauthorized: () => void;
+  onPending: (value: boolean) => void;
+  onChanged: () => void;
+  disabled: boolean;
+}) {
+  const [target, setTarget] = useState('');
+  const [keeper, setKeeper] = useState('');
+  const [mode, setMode] = useState<'revoke' | 'replace'>('revoke');
+  const [result, setResult] = useState<Result | null>(null);
+  const [request, setRequest] = useState<{
+    id: string;
+    target: string;
+    keeper: string;
+    mode: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [message, setMessage] = useState('');
+  const active = useRef(true);
+  const flight = useRef(false);
+  const auth = { kind: 'admin' as const, value: credential };
+  const available = keys.filter((k) => k.lifecycle !== 'superseded');
+
+  useEffect(() => {
+    active.current = true;
+    onPending(true);
+    void read();
+    return () => {
+      active.current = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function accept(value: Result, expected?: string, selection = request) {
+    if (
+      !validResult(value) ||
+      (expected && value.operation !== null && value.operation.id !== expected)
+    )
+      throw new Error();
+    if (
+      selection &&
+      value.operation &&
+      (value.operation.id !== selection.id ||
+        value.operation.targetId !== selection.target ||
+        value.operation.keeperId !== selection.keeper ||
+        value.operation.mode !== selection.mode)
+    )
+      throw new Error();
+    if (
+      result?.operation &&
+      ((!value.operation &&
+        (result.operation.outcome !== 'committed' ||
+          !expected ||
+          expected === result.operation.id)) ||
+        (value.operation &&
+          value.operation.id === result.operation.id &&
+          (value.operation.targetId !== result.operation.targetId ||
+            value.operation.keeperId !== result.operation.keeperId ||
+            value.operation.mode !== result.operation.mode ||
+            value.operation.revision < result.operation.revision ||
+            (result.operation.outcome === 'committed' && value.operation.outcome !== 'committed') ||
+            value.operation.steps.some((step, i) => {
+              const previous = result.operation!.steps[i];
+              const rank = { unattempted: 0, attempted: 1, observed: 2 };
+              return (
+                rank[step.state] < rank[previous.state] || (previous.returned && !step.returned)
+              );
+            }))))
+    )
+      throw new Error();
+    if (!active.current) return;
+    setResult(value);
+    setChecked(true);
+    setMessage('');
+    setRequest(null);
+    onPending(!!value.operation && value.operation.outcome !== 'committed');
+    if (value.operation?.outcome === 'committed') onChanged();
+  }
+  function failure(err: unknown) {
+    if (!active.current) return;
+    if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
+    else
+      setMessage(
+        t(
+          err instanceof PublicApiError && err.status === 409
+            ? 'keysOperationRejected'
+            : 'keysOperationUnknown'
+        )
+      );
+    setChecked(false);
+  }
+  async function run(action: () => Promise<Result>, expected?: string, selection = request) {
+    if (flight.current) return;
+    flight.current = true;
+    setBusy(true);
+    try {
+      accept(await action(), expected, selection);
+    } catch (err) {
+      failure(err);
+    } finally {
+      flight.current = false;
+      if (active.current) setBusy(false);
+    }
+  }
+  async function read() {
+    const id = request?.id || result?.operation?.id || 'latest';
+    await run(
+      () => client.get<Result>('api-keys/operations/' + id, auth),
+      id === 'latest' ? undefined : id
+    );
+  }
+  async function prepare() {
+    if (
+      disabled ||
+      !checked ||
+      request ||
+      (result?.operation && result.operation.outcome !== 'committed') ||
+      !target ||
+      !keeper ||
+      target === keeper
+    )
+      return;
+    if (!window.confirm(t('keysOperationConfirm'))) return;
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+      b.toString(16).padStart(2, '0')
+    ).join('');
+    const selection = { id, target, keeper, mode };
+    setRequest(selection);
+    setChecked(false);
+    onPending(true);
+    await run(
+      async () => {
+        const value = await client.post<Result>(
+          'api-keys/' + target + '/revocation',
+          { requestId: id, keeperId: keeper, mode },
+          auth
+        );
+        if (!value.operation) throw new Error();
+        return value;
+      },
+      id,
+      selection
+    );
+  }
+  async function proceed() {
+    const o = result?.operation;
+    if (disabled || !checked || !o || !result.nextStep || o.outcome === 'committed' || request)
+      return;
+    setChecked(false);
+    onPending(true);
+    await run(
+      () => client.post<Result>('api-keys/operations/' + o.id + '/continue', {}, auth),
+      o.id
+    );
+  }
+  const unresolved = !!request || (!!result?.operation && result.operation.outcome !== 'committed');
+  return (
+    <section className="console-key-result" aria-busy={busy}>
+      <h3>{t('keysRevokeTitle')}</h3>
+      <p>{t('keysOperationHelp')}</p>
+      {message && <p role="alert">{message}</p>}
+      {request && (
+        <p>
+          {t('keysOperationId')}: <code>{request.id}</code>
+        </p>
+      )}
+      {result?.operation && (
+        <div role="status">
+          <p>
+            {t('keysOperationId')}: <code>{result.operation.id}</code>
+          </p>
+          <p>
+            {t('keysOperationTarget')}: <code>{result.operation.targetId}</code>
+          </p>
+          <p>
+            {t('keysOperationKeeper')}: <code>{result.operation.keeperId}</code>
+          </p>
+          <p>
+            {t(
+              result.operation.outcome === 'committed'
+                ? 'keysOperationCommitted'
+                : 'keysOperationPending'
+            )}
+          </p>
+          {result.nextStep && (
+            <p>
+              {t(result.nextStep === 'add' ? 'keysOperationAddNext' : 'keysOperationRevokeNext')}
+            </p>
+          )}
+          <button
+            className="btn btn-primary"
+            disabled={disabled || busy || !checked || !result.nextStep || !!request}
+            onClick={() => void proceed()}
+          >
+            {t('keysOperationContinue')}
+          </button>
+        </div>
+      )}
+      <fieldset
+        className="form-group console-key-operation-fields"
+        disabled={disabled || busy || unresolved || !checked}
+      >
+        <label className="form-group">
+          {t('keysOperationTarget')}
+          <span className="input-wrap">
+            <select
+              className="form-input"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+            >
+              <option value="">{t('keysOperationSelect')}</option>
+              {available.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.name || t('keysUnnamed')} — {k.maskedPreview} ({k.id})
+                </option>
+              ))}
+            </select>
+          </span>
+        </label>
+        <label className="form-group">
+          {t('keysOperationKeeper')}
+          <span className="input-wrap">
+            <select
+              className="form-input"
+              value={keeper}
+              onChange={(e) => setKeeper(e.target.value)}
+            >
+              <option value="">{t('keysOperationSelect')}</option>
+              {available
+                .filter((k) => k.id !== target)
+                .map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.name || t('keysUnnamed')} — {k.maskedPreview} ({k.id})
+                  </option>
+                ))}
+            </select>
+          </span>
+        </label>
+        <label className="form-group">
+          {t('keysOperationMode')}
+          <span className="input-wrap">
+            <select
+              className="form-input"
+              value={mode}
+              onChange={(e) => setMode(e.target.value as 'revoke' | 'replace')}
+            >
+              <option value="revoke">{t('keysOperationRevoke')}</option>
+              <option value="replace">{t('keysOperationReplace')}</option>
+            </select>
+          </span>
+        </label>
+        <button
+          className="btn btn-primary"
+          disabled={!target || !keeper || target === keeper}
+          onClick={() => void prepare()}
+        >
+          {t('keysOperationPrepare')}
+        </button>
+      </fieldset>
+      <button className="btn btn-secondary" disabled={busy} onClick={() => void read()}>
+        {t('keysOperationCheck')}
+      </button>
+    </section>
+  );
+}
