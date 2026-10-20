@@ -9,6 +9,7 @@ import base64
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 import pathlib
 import secrets
 import subprocess
@@ -63,6 +64,14 @@ def main():
     token, management = secrets.token_hex(32), secrets.token_hex(32)
     runtime, probe = name + "-runtime", name + "-probe"
     full = "--preflight" not in sys.argv[2:]
+    s2a = "--s2a" in sys.argv[2:]
+    expiry = "--s2a-expiry" in sys.argv[2:]
+    prefix = os.environ.get("CPAMP_PROOF_IMAGE_PREFIX", "cpamp-s1")
+    tag = os.environ.get("CPAMP_PROOF_IMAGE_TAG", "local")
+    images = {kind: prefix+"-"+kind+":"+tag for kind in ("runtime", "manager", "ingress")}
+    if s2a:
+        from fresh_s2a_proof import source_paths as s2a_sources
+        evidence["sourceSHA256"].update({p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in s2a_sources(ROOT)})
 
     def record(**fields):
         evidence["events"].append({"utcMs": int(time.time()*1000), **fields})
@@ -95,7 +104,7 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
             return result["status"], None
 
     try:
-        metadata = json.loads(command("docker", "image", "inspect", "cpamp-s1-runtime:local"))[0]
+        metadata = json.loads(command("docker", "image", "inspect", images["runtime"]))[0]
         assert metadata["Os"] == "linux" and metadata["Architecture"] == "amd64"
         evidence["runtimeImageId"] = metadata["Id"]
         command("docker", "network", "create", "--internal", name)
@@ -132,20 +141,28 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
         command("docker", "exec", "-i", runtime, "sh", "-ec",
                 "test -z \"$(ls -A /runtime/gateway/auth)\"; cat > /runtime/gateway/config.yaml; chown 10001:10001 /runtime/gateway/config.yaml; chmod 600 /runtime/gateway/config.yaml", data=seed)
         if full:
-            manager_env = ["-e", "HTTP_ADDR=127.0.0.1:18319", "-e", "USAGE_DB_PATH=/data/usage.sqlite",
+            if s2a:
+                from fresh_s2a_proof import start_meter
+                start_meter(run, runtime)
+            manager_env = ["-e", "HTTP_ADDR=127.0.0.1:"+("18320" if s2a else "18319"), "-e", "USAGE_DB_PATH=/data/usage.sqlite",
                 "-e", "CPA_MANAGER_DATA_KEY_PATH=/data/data.key", "-e", "CPA_UPSTREAM_URL=http://127.0.0.1:8317",
                 "-e", "CPAMP_RUNTIME_URL=http://127.0.0.1:9081", "-e", "CPAMP_RUNTIME_TOKEN_FILE=/run/cpamp/runtime-secret/token",
                 "-e", "CPAMP_INGRESS_CONTROL_URL=http://127.0.0.1:9082", "-e", "CPAMP_PUBLIC_ORIGIN=http://127.0.0.1:28471",
                 "-e", "CPAMP_UPDATE_CHECK_ENABLED=false", "-e", "CPAMP_PRIVATE_S1_PERMIT=/run/cpamp-s1/permit.json"]
+            if s2a:
+                from fresh_s2a_proof import start_relay
+                start_relay(command, probe)
+                manager_env += ["-e", "CPAMP_PRIVATE_S2A_CHAT=1"]
             init = command("docker", "run", "--rm", "--network", "none", *manager_env,
-                "-v", volumes[2]+":/data", "cpamp-s1-manager:local", "initialize")
+                "-v", volumes[2]+":/data", images["manager"], "initialize")
             payload = init.split("#handoff=")[1].strip()
             handoff = json.loads(base64.urlsafe_b64decode(payload + "="*(-len(payload)%4)))
-            run("manager", "cpamp-s1-manager:local", "--network", "container:"+runtime, *manager_env,
+            run("manager", images["manager"], "--network", "container:"+runtime, *manager_env,
                 "-v", volumes[2]+":/data", "-v", volumes[1]+":/run/cpamp/runtime-secret:ro", "-v", volumes[3]+":/run/cpamp-s1:ro")
-            run("ingress", "cpamp-s1-ingress:local", "--network", "container:"+runtime,
+            run("ingress", images["ingress"], "--network", "container:"+runtime,
                 "-e", "CPAMP_INGRESS_ADDR=0.0.0.0:28471", "-e", "CPAMP_MANAGER_URL=http://127.0.0.1:18319",
-                "-e", "CPAMP_GATEWAY_URL=http://127.0.0.1:8317", "-e", "CPAMP_INGRESS_CONTROL_ADDR=127.0.0.1:9082")
+                "-e", "CPAMP_GATEWAY_URL=http://127.0.0.1:8317", "-e", "CPAMP_INGRESS_CONTROL_ADDR=127.0.0.1:9082",
+                "-e", "CPAMP_PRIVATE_S2A_CHAT="+("1" if s2a else "0"))
             bootstrap = "/.well-known/cpamp-bootstrap/api/v2/"
             for _ in range(40):
                 try:
@@ -223,8 +240,15 @@ http.server.ThreadingHTTPServer(('127.0.0.1',18321),H).serve_forever()
         time.sleep(0.3)
         def chat(port,key,expected,arrivals,stream=False):
             before=len(http(18321,"/events")[1])
+            if s2a:
+                from fresh_s2a_proof import cpa_chat_count
+                cpa_before=cpa_chat_count(command,runtime)
             code,_=http(port,"/v1/chat/completions","POST",{"model":"s1-proof-model","stream":stream,"messages":[{"role":"user","content":"disposable S1 proof"}]},key)
             after=len(http(18321,"/events")[1])
+            if s2a:
+                cpa_arrivals=cpa_chat_count(command,runtime)-cpa_before
+                record(scenario="s1-pre-post-install",edge="private-cpa" if port==8317 else "ingress",status=code,cpaChatArrivals=cpa_arrivals,upstreamArrivals=after-before)
+                assert cpa_arrivals==(1 if port==8317 else arrivals),("CPA arrivals",cpa_arrivals)
             record(edge="private-cpa" if port==8317 else "ingress",credential="absent" if key is None else "wrong" if key=="wrong" else "valid",stream=stream,status=code,upstreamArrivals=after-before)
             assert code==expected and after-before==arrivals,(code,after-before)
         for key in (None,"wrong"):
@@ -284,8 +308,8 @@ exit 1''')
         evidence["process"]=process
         command("docker","run","--rm","--network",name,"python:3.13-alpine","python3","-c",
             "import socket,http.client; ip='"+ip+"'\nfor port in (8317,9081,18319,9082,18321):\n s=socket.socket(); s.settimeout(2); assert s.connect_ex((ip,port))!=0; s.close()\nc=http.client.HTTPConnection(ip,28471,timeout=3); c.request('GET','/v1/models'); assert c.getresponse().status==503")
-        permit=dict(runId=name,generation=str(status["runtimeGeneration"]),managementKey=management,issuedAtMs=int(time.time()*1000),expiresAtMs=int(time.time()*1000)+180000)
-        command("docker","run","--rm","-i","--network","none","--entrypoint","sh","-v",volumes[3]+":/permit","cpamp-s1-manager:local","-ec","umask 077; cat > /permit/permit.json; chmod 600 /permit/permit.json",data=json.dumps(permit))
+        permit=dict(runId=name,generation=str(status["runtimeGeneration"]),managementKey=management,issuedAtMs=int(time.time()*1000),expiresAtMs=int(time.time()*1000)+(60000 if expiry else 180000))
+        command("docker","run","--rm","-i","--network","none","--entrypoint","sh","-v",volumes[3]+":/permit",images["manager"],"-ec","umask 077; cat > /permit/permit.json; chmod 600 /permit/permit.json",data=json.dumps(permit))
         record(hostAuthority="PASS",containers=containers,volumes=volumes,networkInternal=True,permitMountedReadOnly=True,managementCredential="unique ephemeral secret; CPA hash + Manager read-only permit only")
         code,state=http(28471,install_path,key=admin)
         assert code==200 and state["installAvailable"] and not state["attempted"]
@@ -338,11 +362,17 @@ r=c.getresponse();print(json.dumps({'status':r.status,'headers':r.getheaders(),'
             time.sleep(0.25)
         for key,expected,arrivals in ((None,401,0),("wrong",401,0),(secret,200,1)):
             chat(8317,key,expected,arrivals)
-            chat(28471,key,503,0)
+            chat(28471,key,200 if s2a and key==secret else 503,1 if s2a and key==secret else 0)
             chat(28471,key,503,0,stream=True)
         code,state=http(28471,install_path,key=admin)
         assert code==200 and state["runtimeState"]=="effective_observed"
         evidence["effectiveObservation"]=state
+        if s2a:
+            from fresh_s2a_proof import exercise
+            exercise(command, http, record, evidence, name, probe, runtime, ip, token, secret, admin, api, permit, expiry)
+            if expiry:
+                evidence["result"]="PASS_PRIVATE_S2A_EXPIRED_PERMIT_DENIED"
+                return
         # Read actual CPA disk state without storing or logging any key bytes.
         disk=command("docker","exec","--user","10001:10001",runtime,"cat","/runtime/gateway/config.yaml")
         assert disk.count(secret)==1
@@ -350,12 +380,14 @@ r=c.getresponse();print(json.dumps({'status':r.status,'headers':r.getheaders(),'
         storage_check='''import json,sqlite3,sys
 v=json.load(sys.stdin);db=sqlite3.connect('file:/data/usage.sqlite?mode=ro',uri=True)
 rows=db.execute('select api_key_id,secret_ciphertext from fresh_client_api_keys').fetchall()
-assert len(rows)==1 and rows[0][0]==v['id'] and v['secret'] not in rows[0][1] and len(rows[0][1])>len(v['secret'])
+assert len(rows)==v['expectedRows']
+selected=[row for row in rows if row[0]==v['id']]
+assert len(selected)==1 and v['secret'] not in selected[0][1] and len(selected[0][1])>len(v['secret'])
 assert db.execute('select count(*) from gateway_api_key_identities where id=?',(v['id'],)).fetchone()[0]==1
 journal=db.execute("select value from settings where key='fresh_s1_initial_key_install_v1'").fetchone()[0]
 assert v['secret'] not in journal and json.loads(journal)['keyId']==v['id']
 '''
-        command("docker","run","--rm","-i","--network","none","-v",volumes[2]+":/data:ro","python:3.13-alpine","python3","-c",storage_check,data=json.dumps({"id":key_id,"secret":secret}))
+        command("docker","run","--rm","-i","--network","none","-v",volumes[2]+":/data:ro","python:3.13-alpine","python3","-c",storage_check,data=json.dumps({"id":key_id,"secret":secret,"expectedRows":2 if s2a else 1}))
         record(managerDisk="canonical identity + encrypted staged secret + nonsecret mutation journal verified read-only")
         command("docker","restart",name+"-manager")
         for _ in range(40):
@@ -371,8 +403,10 @@ assert v['secret'] not in journal and json.loads(journal)['keyId']==v['id']
         command("docker","restart",runtime)
         # Explicitly reattach trusted namespace consumers; this is test setup,
         # not automatic recovery or a bypass of the stored Fresh generation.
-        for container in (probe,name+"-manager",name+"-ingress"):
+        for container in ((name+"-meter",) if s2a else ())+(probe,name+"-manager",name+"-ingress"):
             command("docker","restart",container)
+        if s2a:
+            start_relay(command, probe)
         time.sleep(1)
         code,new_status=http(9081,"/v1/runtime/status",key=token)
         assert code==200 and new_status["runtimeGeneration"]!=status["runtimeGeneration"] and new_status["state"]=="offline"
@@ -389,7 +423,10 @@ assert v['secret'] not in journal and json.loads(journal)['keyId']==v['id']
         # The existing canonical strategy must keep its mismatch 409 as well.
         assert http(28471,api+"strategy","POST",{"identity":operation["identity"],"expectedRevision":operation["revision"],"strategy":"new_managed",**strategy_target},admin)[0]==409
         assert http(28471,"/v1/models")[0]==503
-        evidence["result"]="PASS_PRIVATE_S1_GATEWAY_STOP"
+        if s2a:
+            from fresh_s2a_proof import check_generation_denial
+            check_generation_denial(command,http,record,runtime,secret)
+        evidence["result"]="PASS_PRIVATE_S2A_CHAT" if s2a else "PASS_PRIVATE_S1_GATEWAY_STOP"
     except Exception:
         evidence["result"]="STOP"
         raise

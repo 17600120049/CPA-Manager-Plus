@@ -1,0 +1,89 @@
+package freshkeyapply
+
+import (
+	"context"
+	"crypto/subtle"
+	"strconv"
+	"time"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
+)
+
+// Verdict is private, request-bound and never stored. It is not an effective
+// Key projection or a reusable capability. The caller supplies a fresh binding
+// of its random nonce, original Bearer and fully validated request bytes.
+type Verdict struct {
+	RequestBinding string `json:"requestBinding"`
+	ExpiresAtMS    int64  `json:"expiresAtMs"`
+}
+
+// Admit consumes the existing S1 authority with NEW observations for this call.
+// It neither reads the five-second UI observation nor installs/replaces a Key.
+func (s *Service) Admit(ctx context.Context, candidate string, generation uint64, binding string) (Verdict, error) {
+	deny := Verdict{}
+	if !identity.IsValidSHA256Hex(binding) || len(candidate) != 73 {
+		return deny, ErrUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	// Waiting for another S1 operation consumes this request's window too.
+	until := time.Now().Add(time.Second).UnixMilli()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ctx.Err() != nil {
+		return deny, ErrUnavailable
+	}
+	p, err := s.permit()
+	if err != nil {
+		return deny, ErrUnavailable
+	}
+	if p.Generation != strconv.FormatUint(generation, 10) {
+		return deny, ErrGeneration
+	}
+	if _, err := s.target(ctx, p); err != nil {
+		return deny, err
+	}
+	attempt, err := s.repo.InitialInstall(ctx)
+	if err != nil || attempt == nil {
+		return deny, ErrUnavailable
+	}
+	if attempt.Generation != p.Generation || attempt.RunID != p.RunID {
+		return deny, ErrGeneration
+	}
+	err = s.keys.WithStagedSecret(ctx, attempt.KeyID, func(secret string) error {
+		if subtle.ConstantTimeCompare([]byte(candidate), []byte(secret)) != 1 {
+			return ErrUnavailable
+		}
+		configured, err := s.wire.Configured(ctx, p.ManagementKey, secret)
+		if err != nil || !configured {
+			return ErrUnavailable
+		}
+		ok, err := s.wire.AuthSweep(ctx, secret)
+		if err != nil || !ok {
+			return ErrUnavailable
+		}
+		// Fence both the runtime and the single-key config after live auth.
+		if _, err := s.target(ctx, p); err != nil {
+			return err
+		}
+		configured, err = s.wire.Configured(ctx, p.ManagementKey, secret)
+		if err != nil || !configured {
+			return ErrUnavailable
+		}
+		return nil
+	})
+	if err != nil {
+		return deny, err
+	}
+	current, err := s.permit()
+	if err != nil || current != p || !current.valid(time.Now()) {
+		return deny, ErrUnavailable
+	}
+	if until > p.ExpiresAtMS {
+		until = p.ExpiresAtMS
+	}
+	if ctx.Err() != nil || time.Now().UnixMilli() >= until {
+		return deny, ErrUnavailable
+	}
+	return Verdict{RequestBinding: binding, ExpiresAtMS: until}, nil
+}

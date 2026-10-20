@@ -177,7 +177,7 @@ func TestFreshPrivateStagedKeyProbeNeverRoutesToGateway(t *testing.T) {
 
 // Exercise actual HTTP transport routing, not only classifier decisions.
 // Neither mode may send the private probe to Manager or the raw CPA proxy.
-func TestPrivateStagedKeyProbeIsDeniedOnPublicIngressTCP(t *testing.T) {
+func TestPrivateKeyConsumersAreDeniedOnPublicIngressTCP(t *testing.T) {
 	var managerHits, gatewayHits atomic.Int32
 	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		managerHits.Add(1)
@@ -207,6 +207,13 @@ func TestPrivateStagedKeyProbeIsDeniedOnPublicIngressTCP(t *testing.T) {
 				"/internal%2ffresh-client-key-stage%2fprobe",
 				"/internal%252ffresh-client-key-stage%252fprobe",
 				"/internal/fresh-client-key-stage/probe/extra",
+				PrivateChatAdmissionPath,
+				"/internal%2ffresh-chat-admission",
+				"/internal%252ffresh-chat-admission",
+				"/x/../internal/fresh-chat-admission",
+				"/internal/fresh-chat-admission%3fignored",
+				"/internal/fresh-chat-admission%3bignored",
+				"/internal/fresh-chat-admission%25252fignored",
 			} {
 				req, err := http.NewRequest(http.MethodPost, ingress.URL+path, nil)
 				if err != nil {

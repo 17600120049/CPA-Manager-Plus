@@ -6,6 +6,10 @@ and product [Draft #1017](https://github.com/seakee/CPA-Manager-Plus/pull/1017).
 It grants no public Gateway, release, default Compose, External, Upgrade or S2
 capability. All Ingress model requests remain **503**.
 
+The separately authorized [private S2-A consumer](fresh-private-s2a-chat-admission.md)
+can now opt into one exact nonstreaming synthetic Chat route in a new disposable
+proof. Without that additional opt-in, the S1 Ingress 503 behavior is unchanged.
+
 ## Authority and operation
 
 The existing Manager `gateway_api_key_identities` / `fresh_client_api_keys`

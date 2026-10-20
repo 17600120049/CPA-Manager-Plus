@@ -20,6 +20,7 @@ type Handler struct {
 	gateway       http.Handler
 	fresh         *FreshRoutes
 	legacyGateway func(context.Context) bool
+	chat          *privateChat
 }
 
 func NewFreshHandler(fresh *FreshRoutes, managerURL, gatewayURL *url.URL, logger *log.Logger, legacyGateway func(context.Context) bool) *Handler {
@@ -50,6 +51,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	default:
 		w.Header().Set("X-CPAMP-Route-Owner", "gateway")
+		if h.chat != nil {
+			h.chat.ServeHTTP(w, r)
+			return
+		}
 		// Fresh routing projections establish Control ownership only. Neither
 		// an absent projection (including after an Ingress restart) nor a
 		// committed one proves Gateway client-auth/effective-config safety.
