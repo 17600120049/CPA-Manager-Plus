@@ -28,11 +28,23 @@ def command(*args, data=None):
     return p.stdout.strip()
 
 
+def namespace_owner(obj):
+    # Docker accepts names, full IDs and unambiguous ID prefixes. Resolve them
+    # through Docker instead of guessing which spelling inspect preserves.
+    seen = set()
+    while obj["HostConfig"]["NetworkMode"].startswith("container:"):
+        assert obj["Id"] not in seen, "cyclic namespace reference; STOP"
+        seen.add(obj["Id"])
+        reference = obj["HostConfig"]["NetworkMode"].split(":", 1)[1]
+        obj = json.loads(command("docker", "inspect", reference))[0]
+    return obj["Id"]
+
+
 def main():
     out = pathlib.Path(sys.argv[1]).resolve()
     out.mkdir(parents=True, exist_ok=False)
     name = "cpamp-s1-" + secrets.token_hex(6)
-    containers, volumes = [], []
+    containers, volumes, fixtures = [], [], []
     evidence = {"result": "STOP", "run": name, "events": []}
     source_paths = [
         "apps/manager-server/cmd/cpa-manager-plus/fresh.go",
@@ -45,6 +57,7 @@ def main():
         "apps/web/src/fullweb/FreshKeyInstallation.tsx",
         "apps/web/src/fullweb/FreshKeyDetails.tsx",
         "apps/web/src/fullweb/freshKeyMetadata.ts",
+        "bin/ci/fresh-s1-docker-proof.py",
     ] + [str(p.relative_to(ROOT)) for p in sorted((ROOT/"apps/manager-server/internal/service/freshkeyapply").glob("*.go")) if not p.name.endswith("_test.go")]
     evidence["sourceSHA256"]={p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in source_paths}
     token, management = secrets.token_hex(32), secrets.token_hex(32)
@@ -208,11 +221,11 @@ http.server.ThreadingHTTPServer(('127.0.0.1',18321),H).serve_forever()
 '''
         command("docker","exec","-d",probe,"python3","-c",upstream)
         time.sleep(0.3)
-        def chat(port,key,expected,arrivals):
+        def chat(port,key,expected,arrivals,stream=False):
             before=len(http(18321,"/events")[1])
-            code,_=http(port,"/v1/chat/completions","POST",{"model":"s1-proof-model","messages":[{"role":"user","content":"disposable S1 proof"}]},key)
+            code,_=http(port,"/v1/chat/completions","POST",{"model":"s1-proof-model","stream":stream,"messages":[{"role":"user","content":"disposable S1 proof"}]},key)
             after=len(http(18321,"/events")[1])
-            record(edge="private-cpa" if port==8317 else "ingress",credential="absent" if key is None else "wrong" if key=="wrong" else "valid",status=code,upstreamArrivals=after-before)
+            record(edge="private-cpa" if port==8317 else "ingress",credential="absent" if key is None else "wrong" if key=="wrong" else "valid",stream=stream,status=code,upstreamArrivals=after-before)
             assert code==expected and after-before==arrivals,(code,after-before)
         for key in (None,"wrong"):
             chat(8317,key,200,1)  # Empty official CPA access list permits both.
@@ -220,7 +233,9 @@ http.server.ThreadingHTTPServer(('127.0.0.1',18321),H).serve_forever()
         assert code==201
         secret=created["createdSecret"]; key_id=created["key"]["id"]
         chat(8317,secret,200,1)
-        for key in (None,"wrong",secret): chat(28471,key,503,0)
+        for key in (None,"wrong",secret):
+            chat(28471,key,503,0)
+            chat(28471,key,503,0,stream=True)
         install_path=api+"api-keys/"+key_id+"/initial-install"
         for credential in (None,"wrong"):
             assert http(28471,install_path,"POST",{},credential)[0]==401
@@ -228,13 +243,30 @@ http.server.ThreadingHTTPServer(('127.0.0.1',18321),H).serve_forever()
         assert http(28471,install_path,"POST",{},admin)[0]==409
         assert http(28471,install_path,"POST",{"sourceExclusive":True,"runtimeGeneration":status["runtimeGeneration"]},admin)[0]==400
         # Verify mounts/namespace admission from Docker, never from an API flag.
+        if "--untrusted-name-join" in sys.argv[2:]:
+            fixture = name+"-untrusted-name-join"
+            command("docker","run","-d","--name",fixture,"--network","container:"+runtime,
+                    "--cap-drop=ALL","--security-opt","no-new-privileges","--read-only",
+                    "python:3.13-alpine","sleep","1800")
+            fixtures.append(fixture)  # Cleanup-owned, never a trusted consumer.
         all_containers=json.loads(command("docker","inspect",*containers))
         users=command("docker","ps","-aq").splitlines()
+        consumers=[]
         for obj in json.loads(command("docker","inspect",*users)):
             owned=obj["Name"].lstrip("/") in containers
             mounts={m["Name"] for m in obj.get("Mounts",[]) if m["Type"]=="volume"}
             if mounts.intersection(volumes): assert owned,"untrusted volume consumer"
-            if obj["HostConfig"]["NetworkMode"]=="container:"+inspect["Id"]: assert owned,"untrusted namespace consumer"
+            if namespace_owner(obj)==inspect["Id"]:
+                consumers.append(dict(container=obj["Name"].lstrip("/"),networkMode=obj["HostConfig"]["NetworkMode"],resolvedRuntimeId=inspect["Id"],trusted=owned))
+        evidence["runtimeNamespaceConsumers"]=consumers
+        untrusted=[obj for obj in consumers if not obj["trusted"]]
+        if untrusted:
+            # This branch precedes permit creation and every Client Key PUT.
+            assert http(28471,install_path,"POST",{},admin)[0]==409
+            assert http(8317,"/v8/management/config/access/api-keys",key=management)==(200,[])
+            assert command("docker","exec",name+"-manager","sh","-ec","test ! -e /run/cpamp-s1/permit.json; echo absent")=="absent"
+            record(namespaceGate="STOP",permitIssued=False,clientKeyPUTAttempted=False,emptyCPAKeys=True)
+            raise RuntimeError("untrusted runtime namespace consumer; STOP before permit/PUT")
         for obj in all_containers:
             assert not obj["HostConfig"]["Privileged"] and not obj["HostConfig"]["PortBindings"]
         evidence["containerImages"]={obj["Name"].lstrip("/"):obj["Image"] for obj in all_containers}
@@ -307,6 +339,7 @@ r=c.getresponse();print(json.dumps({'status':r.status,'headers':r.getheaders(),'
         for key,expected,arrivals in ((None,401,0),("wrong",401,0),(secret,200,1)):
             chat(8317,key,expected,arrivals)
             chat(28471,key,503,0)
+            chat(28471,key,503,0,stream=True)
         code,state=http(28471,install_path,key=admin)
         assert code==200 and state["runtimeState"]=="effective_observed"
         evidence["effectiveObservation"]=state
@@ -362,7 +395,7 @@ assert v['secret'] not in journal and json.loads(journal)['keyId']==v['id']
         raise
     finally:
         (out / "evidence.json").write_text(json.dumps(evidence, indent=2)+"\n")
-        for container in reversed(containers):
+        for container in reversed(containers+fixtures):
             command("docker", "rm", "-f", container)
         for volume in volumes:
             command("docker", "volume", "rm", volume)

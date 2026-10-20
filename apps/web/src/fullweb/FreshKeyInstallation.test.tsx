@@ -119,6 +119,60 @@ describe('private S1 installation', () => {
     expect(view()).not.toContain(t('keysInstallOne'));
   });
 
+  it('keeps the snapshot during a deferred GET while its live claim expires', async () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    let finish!: (response: Response) => void;
+    const deferred = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          ...pending,
+          cpaConfigured: true,
+          attempted: true,
+          installAvailable: false,
+          runtimeState: 'effective_observed',
+          observedFromMs: now - 1000,
+          observedUntilMs: now,
+          expiresAtMs: now + 5000,
+        })
+      )
+      .mockReturnValueOnce(deferred);
+    await mount(fetchMock);
+    await click(t('keysCheckInstallation'));
+    await click(t('keysCheckInstallation'));
+    expect(renderer.root.findByType('section').props['aria-busy']).toBe(true);
+    for (const label of [
+      'keysLoading',
+      'keysManagerStaged',
+      'keysCPAConfigured',
+      'keysLiveObserved',
+      'keysIngressPending',
+      'keysObservation',
+    ] as const) {
+      expect(view()).toContain(t(label));
+    }
+    expect(view()).toContain(new Date(now).toISOString());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5001);
+    });
+    expect(view()).not.toContain(t('keysLiveObserved'));
+    expect(view()).toContain(t('keysLiveUnknown'));
+    expect(view()).toContain(t('keysCPAConfigured'));
+    expect(view()).toContain(new Date(now).toISOString());
+    await act(async () => {
+      finish(Response.json({ ...pending, attempted: true, installAvailable: false }));
+    });
+    expect(renderer.root.findByType('section').props['aria-busy']).toBe(false);
+    expect(view()).not.toContain(t('keysLiveObserved'));
+    expect(view()).not.toContain(t('keysObservation'));
+    expect(view()).not.toContain(t('keysInstallOne'));
+    expect(fetchMock.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
+  });
+
   it('retires Admin authentication after denial', async () => {
     await mount(vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status: 401 })));
     await click(t('keysCheckInstallation'));

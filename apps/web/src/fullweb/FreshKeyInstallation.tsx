@@ -59,8 +59,10 @@ export function FreshKeyInstallation({
     inFlight.current = true;
     setBusy(true);
     setMessage('');
-    setState(null);
-    if (install) used.current = true;
+    if (install) {
+      setState(null);
+      used.current = true;
+    }
     const auth = { kind: 'admin' as const, value: credential };
     const resource = `api-keys/${id}/initial-install`;
     try {
@@ -98,6 +100,7 @@ export function FreshKeyInstallation({
       setState(value);
     } catch (err) {
       if (!active.current) return;
+      setExpired(true);
       if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
       else setMessage(t(install ? 'keysInstallUnknown' : 'keysInstallUnavailable'));
     } finally {
@@ -110,6 +113,7 @@ export function FreshKeyInstallation({
     <section aria-label={t('keysInstallTitle')} aria-busy={busy}>
       <h4>{t('keysInstallTitle')}</h4>
       <p>{t('keysInstallScope')}</p>
+      {busy && <p role="status">{t('keysLoading')}</p>}
       {message && <p role="status">{message}</p>}
       {state && (
         <>
@@ -117,7 +121,9 @@ export function FreshKeyInstallation({
           <p>{t(state.cpaConfigured ? 'keysCPAConfigured' : 'keysCPAUnknown')}</p>
           <p>
             {t(
-              state.runtimeState === 'effective_observed' && !expired
+              state.runtimeState === 'effective_observed' &&
+                !expired &&
+                state.expiresAtMs > Date.now()
                 ? 'keysLiveObserved'
                 : 'keysLiveUnknown'
             )}

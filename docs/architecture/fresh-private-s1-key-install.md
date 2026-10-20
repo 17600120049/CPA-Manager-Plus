@@ -112,6 +112,28 @@ initial installation, no-Key/wrong-Key/valid-Key results, Ingress nonarrival,
 disk persistence, Manager reload, duplicate-write denial and Runtime generation
 change. It never runs the older replace/clear-last-Key experimental probe.
 
+The namespace gate resolves Docker's `container:<reference>` through Docker
+inspection, including names, full IDs, ID prefixes and indirect namespace joins.
+Sanitized evidence records each consumer's observed `NetworkMode` and resolved
+Runtime ID. An unresolved reference prevents qualification. The explicit negative
+fixture creates an untrusted consumer using the Runtime's **name**:
+
+```sh
+python3 bin/ci/test_fresh_s1_docker_proof.py
+python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/s1/name-join-negative --untrusted-name-join
+# Expected: nonzero exit, result STOP, absent permit and empty CPA Key list.
+```
+
+Run the positive proof separately with a new output directory and new resources.
+Before and after installation, it also sends `stream=true` model requests through
+Ingress with absent, wrong and valid Keys; all must return **503** with zero
+synthetic upstream arrivals.
+
+During a read-only Full Web refresh, the previous snapshot and generation/window
+remain visible with a loading indicator. Its original expiry still retires any
+live-effective claim while GET is pending. A failed GET immediately retires that
+claim; POST continues to clear the snapshot and consume the UI's one-time action.
+
 Optional `--ui` pauses before installation and exposes a temporary host-loopback
 relay to **Ingress only**, for an authorized browser test. `ui.json` contains its
 URL. A task-local, in-memory synthetic Admin handoff at `/__s1-test-admin` supports

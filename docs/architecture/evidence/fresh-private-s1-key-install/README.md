@@ -1,5 +1,68 @@
 # Private Fresh S1 acceptance handoff
 
+## Review follow-up to `e97e36a3693ec9edc162335e4f8be520977bd846`
+
+The independent source/evidence review placed that HEAD on **HOLD** for P1
+(namespace reference normalization) and P2 (refresh snapshot continuity). These
+findings are fixed here; this follow-up remains developer-run evidence, not an
+independent Docker acceptance or permission to merge.
+
+- **P1:** Docker resolves every `container:<reference>` to its namespace owner,
+  including names, full IDs, short IDs and indirect joins. Unknown references
+  stop qualification. A focused Python regression covers those spellings. The
+  evidence records actual `NetworkMode` values and resolved Runtime IDs.
+- **P2:** GET keeps the previous snapshot/loading indicator and its existing
+  expiry timer. Failed GET immediately retires the live claim. POST still clears
+  the snapshot and cannot retry an unknown result. A deferred-GET regression
+  verifies all four facts/window survive while effective expires.
+
+New, separately destroyed Docker runs:
+
+```sh
+python3 bin/ci/test_fresh_s1_docker_proof.py
+python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/s1/review-name-join --untrusted-name-join
+# Expected nonzero exit: STOP before permit/PUT.
+python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/s1/review-positive --ui
+```
+
+[`untrusted-name-join.json`](untrusted-name-join.json), run
+`cpamp-s1-737048d7adb6`: the untrusted fixture was launched with
+`--network container:cpamp-s1-737048d7adb6-runtime`. This Docker daemon stored the
+observed mode as `container:<full-ID>`; the raw-name and short-ID representations
+are also covered by the resolver regression. The real gate detected the fixture,
+returned Admin **409**, confirmed the permit absent and CPA Key list empty, and
+exited **STOP** without issuing a permit or attempting a Client Key PUT.
+
+[`review-fixes-docker.json`](review-fixes-docker.json), run
+`cpamp-s1-a0aa8026ecf5`: **PASS_PRIVATE_S1_GATEWAY_STOP**. The positive proof used
+new volumes/network/containers and the rebuilt Manager image. Its source hashes
+include the launcher itself and match this implementation. The official binary,
+live process, host/volume/consumer checks, one-time install, disk persistence,
+Manager reload, repeated-install 409 and changed-generation 409 all passed.
+The CPA matrix remained **401 / 401 / 200** with **0 / 0 / 1** upstream arrivals.
+All six `stream=true` Ingress samples (three credentials before and after install)
+were **503 / zero upstream arrivals**; nonstream requests also remained 503/zero.
+
+Real Playwright used the rebuilt Full Web to install once, then held a real GET
+response for 6.5 seconds. All facts and the original generation/window remained
+visible; effective expired while GET was still pending, and the late expired
+response did not revive it. Browser storage stayed empty, no console errors or
+warnings were observed, and mobile had no overflow. See
+[desktop loading snapshot](zh-CN-refresh-loading.png) and
+[mobile expired snapshot while loading](zh-CN-refresh-expired.png).
+
+Current checks: **10 Full Web suites / 193 tests**, type check, lint (zero errors,
+four unchanged Accounts warnings), Python regression, Manager Docker build and
+packaged Full Web check passed. Go/Ingress source is unchanged from the original
+tested implementation below; exact-HEAD remote CI is checked separately at
+handoff. No new scope, Key authority or security framework was added.
+
+**HOLD / Draft / DO NOT MERGE.** The original host trust and unexecuted injection /
+locale / remote-host limitations below still apply. S2/public Gateway/release
+remain **STOP**.
+
+## Original `e97e36a3` evidence (historical)
+
 Implementation base: `aec7a0da2ed6bda960fc80607fc3cd5ea655ed79`, continuing
 [Draft #1017](https://github.com/seakee/CPA-Manager-Plus/pull/1017) against
 `v2@0a8c6029001872282fcaf07a2b1b377194bce477`.
