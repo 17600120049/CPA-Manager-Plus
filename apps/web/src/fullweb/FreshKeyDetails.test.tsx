@@ -141,10 +141,64 @@ describe('Canonical key detail and rename', () => {
       if (status === 503) {
         expect(view()).toContain(t('keysNameUnknown'));
         expect(pending.mock.calls[pending.mock.calls.length - 1]).toEqual([true]);
-      } else expect(pending.mock.calls[pending.mock.calls.length - 1]).toEqual([false]);
+      } else {
+        expect(pending.mock.calls[pending.mock.calls.length - 1]).toEqual([false]);
+        vi.mocked(window.confirm).mockReturnValueOnce(true);
+      }
       await read();
       expect(renderer.root.findByType('input').props.value).toBe('');
       expect(fetchMock).toHaveBeenCalledTimes(3);
+    }
+  );
+  it.each([400, 404, 409].flatMap((status) => ['not saved', ''].map((name) => ({ status, name }))))(
+    'confirms closing a rejected $status rename draft "$name"',
+    async ({ status, name }) => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json({ ...key, name: 'original' }))
+        .mockResolvedValueOnce(new Response('', { status }));
+      await mount(fetchMock);
+      await draft(name);
+      await submit();
+      expect(renderer.root.findAllByType('form')).toHaveLength(0);
+      expect(button(t('keysCloseDetails')).props.disabled).toBe(false);
+      await act(async () => button(t('keysCloseDetails')).props.onClick());
+      expect(window.confirm).toHaveBeenCalledWith(t('keysDiscardName'));
+      expect(close).not.toHaveBeenCalled();
+      vi.mocked(window.confirm).mockReturnValueOnce(true);
+      await act(async () => button(t('keysCloseDetails')).props.onClick());
+      expect(close).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    }
+  );
+  it.each(['not saved', ''])(
+    'protects a rejected draft "%s" until a confirmed reread succeeds',
+    async (name) => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json({ ...key, name: 'original' }))
+        .mockResolvedValueOnce(new Response('', { status: 409 }))
+        .mockResolvedValueOnce(new Response('', { status: 503 }))
+        .mockResolvedValueOnce(Response.json({ ...key, name: 'current', nameRevision: 2 }));
+      await mount(fetchMock);
+      await draft(name);
+      await submit();
+      await read();
+      expect(window.confirm).toHaveBeenCalledWith(t('keysDiscardName'));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      vi.mocked(window.confirm).mockReturnValueOnce(true);
+      await read();
+      expect(view()).toContain(t('keysUnavailable'));
+      await act(async () => button(t('keysCloseDetails')).props.onClick());
+      expect(close).not.toHaveBeenCalled();
+      vi.mocked(window.confirm).mockReturnValueOnce(true);
+      await read();
+      expect(renderer.root.findByType('input').props.value).toBe('current');
+      vi.mocked(window.confirm).mockClear();
+      await act(async () => button(t('keysCloseDetails')).props.onClick());
+      expect(window.confirm).not.toHaveBeenCalled();
+      expect(close).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
     }
   );
   it('rejects a mismatched canonical response and clears rejected authentication', async () => {

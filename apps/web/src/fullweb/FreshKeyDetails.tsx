@@ -24,12 +24,14 @@ export function FreshKeyDetails({
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [unknown, setUnknown] = useState(false);
+  const [rejectedDraft, setRejectedDraft] = useState(false);
   const [message, setMessage] = useState('');
   const inFlight = useRef(false);
   const active = useRef(true);
   const input = useRef<HTMLInputElement>(null);
   const auth = { kind: 'admin' as const, value: credential };
   const resource = 'api-keys/' + id;
+  const dirty = rejectedDraft || (record !== null && name.trim() !== record.name);
 
   // Each mounted record/session owns its replies. The parent keys this view by
   // canonical ID and unmounts the entire key page when authentication is cleared.
@@ -61,8 +63,7 @@ export function FreshKeyDetails({
   }
   async function read() {
     if (inFlight.current) return;
-    if (record && !unknown && name.trim() !== record.name && !window.confirm(t('keysDiscardName')))
-      return;
+    if (dirty && !unknown && !window.confirm(t('keysDiscardName'))) return;
     inFlight.current = true;
     setBusy(true);
     setMessage('');
@@ -71,6 +72,7 @@ export function FreshKeyDetails({
       if (!active.current) return;
       setRecord(value);
       setName(value.name);
+      setRejectedDraft(false);
       onSaved(value);
       if (unknown) setMessage(t('keysNameChecked'));
       setUnknown(false);
@@ -113,6 +115,7 @@ export function FreshKeyDetails({
       } else if (err instanceof PublicApiError && [400, 404, 409].includes(err.status || 0)) {
         // These local responses prove rejection. A fresh read is required
         // before another explicit save; preserve the draft until that check.
+        setRejectedDraft(true);
         setRecord(null);
         setMessage(t(err.status === 409 ? 'keysNameConflict' : 'keysNameRejected'));
         onPending(false);
@@ -127,7 +130,7 @@ export function FreshKeyDetails({
   }
   function close() {
     if (inFlight.current || unknown) return;
-    if (record && name.trim() !== record.name && !window.confirm(t('keysDiscardName'))) return;
+    if (dirty && !window.confirm(t('keysDiscardName'))) return;
     onClose();
   }
   return (

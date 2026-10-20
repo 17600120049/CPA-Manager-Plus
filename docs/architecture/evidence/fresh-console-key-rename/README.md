@@ -126,6 +126,34 @@ no product change was made for those harness failures.
 
 Overdesign / overdefense / overabstraction / scope expansion: **PASS**.
 
+## Review follow-up — rejected-draft discard protection
+
+Review `5580121996` on `cf9cb4f78c814b0edefae012346988101facea86`
+identified a P2 missed by the original draft-protection self-review: a rejected
+400/404/409 rename cleared the loaded record, so Close no longer confirmed
+discarding the retained draft. The same condition also bypassed confirmation
+on an explicit detail reread.
+
+A component-local rejected-draft flag now keeps both guards active, including
+when clearing an existing name. A successful reread resets it; a failed reread
+does not. The existing version-conflict requirement to reread before another
+save, unknown-outcome blocking, and record/session reply isolation are unchanged.
+No backend, identity, persistence or operation-journal change was required.
+
+Eight focused regression cases failed before the fix and passed afterward:
+400/404/409 followed by canceled/confirmed Close for nonempty and clear-name
+drafts, plus canceled/failed/successful reread for both draft forms. The latter
+also verifies that a successful reread restores clean closing and no PUT is
+replayed. Full Web now passes **188 tests**. Type check, lint (the same four
+pre-existing warnings), Full Web build and build-boundary guard passed again.
+
+Follow-up self-review checked (1) rejected/failed-read/successful-read transitions,
+(2) unknown outcomes and old-session behavior through the existing suite, and
+(3) the final three-file diff for unnecessary scope or abstractions. No further
+confirmed in-scope issue was found. Native integration and the full backend
+matrix were not repeated for this UI-only fix; their evidence above belongs to
+the original feature head. Independent acceptance must use the updated PR head.
+
 **NOT RUN:** new Linux/Docker deployment pairing, CPA Runtime/data-plane auth
 qualification, Runtime apply/replace/revoke, production, External, Upgrade,
 unrelated historical test matrices. The old #1007 Linux evidence is historical
