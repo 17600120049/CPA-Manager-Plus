@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only inventory of three separately built local CPAMP v2 Linux/amd64 images.
+"""Read-only inventory of three separately built local CPAMP v2 Linux/amd64 or Linux/arm64 images.
 
 Only creates and removes stopped audit containers. It does not start containers or execute image entrypoints,
 mount user volumes, publish ports, contact a registry, or authorize a release.
@@ -16,7 +16,10 @@ import tempfile
 import uuid
 from pathlib import Path
 
-CPA_EXECUTABLE_SHA256 = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
+CPA_EXECUTABLE_SHA256 = {
+    "amd64": "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
+    "arm64": "9dfe80b79f8466b4e56d51d71869ce759021942a9279e43dbea92eda21b994d7",
+}
 CPA_VERSION = "8.0.13"
 EXTRACT = {
     "manager": ("/usr/local/bin/cpa-manager-plus",),
@@ -39,7 +42,7 @@ def inspect_image(ref):
     if len(entries) != 1:
         raise ValueError(f"expected one image for {ref}")
     item = entries[0]
-    if item.get("Os") != "linux" or item.get("Architecture") != "amd64":
+    if item.get("Os") != "linux" or item.get("Architecture") not in CPA_EXECUTABLE_SHA256:
         raise ValueError(f"unexpected image platform: {ref}")
     if (item.get("Config") or {}).get("Volumes"):
         raise ValueError(f"image declares volumes; do not allocate anonymous audit volumes: {ref}")
@@ -47,6 +50,7 @@ def inspect_image(ref):
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
         raise ValueError(f"invalid image config ID: {ref}")
     return {"inputRef": ref, "imageConfigId": image_id,
+            "architecture": item["Architecture"],
             "repoDigestsObserved": sorted(item.get("RepoDigests") or [])}
 
 
@@ -57,12 +61,12 @@ def extract_file(container, path, destination):
     return hashlib.sha256(destination.read_bytes()).hexdigest()
 
 
-def check_artifact(content):
+def check_artifact(content, architecture):
     value = json.loads(content)
     if (type(value) is not dict or type(value.get("schemaVersion")) is not int or
             value.get("schemaVersion") != 1 or
             value.get("engine") != "cpa" or value.get("version") != CPA_VERSION or
-            value.get("artifactId") != "sha256:" + CPA_EXECUTABLE_SHA256):
+            value.get("artifactId") != "sha256:" + CPA_EXECUTABLE_SHA256[architecture]):
         raise ValueError("CPA artifact manifest does not identify pinned official v8.0.13")
     return value
 
@@ -73,7 +77,8 @@ def audit_one(role, image, tmpdir):
     created = False
     try:
         # No docker start: create a stopped container to read packaged bytes.
-        command("docker", "create", "--pull=never", "--name", name, "--entrypoint", "/bin/true", record["imageConfigId"])
+        command("docker", "create", "--pull=never", "--platform", "linux/" + record["architecture"],
+                "--name", name, "--entrypoint", "/bin/true", record["imageConfigId"])
         created = True
         files = {}
         for i, path in enumerate(EXTRACT[role]):
@@ -81,9 +86,9 @@ def audit_one(role, image, tmpdir):
             digest = extract_file(name, path, destination)
             files[path] = digest
             if path.endswith("cpa-artifact.json"):
-                check_artifact(destination.read_text(encoding="utf-8"))
+                check_artifact(destination.read_text(encoding="utf-8"), record["architecture"])
         record["files"] = files
-        if role == "runtime" and files["/usr/local/bin/cli-proxy-api"] != CPA_EXECUTABLE_SHA256:
+        if role == "runtime" and files["/usr/local/bin/cli-proxy-api"] != CPA_EXECUTABLE_SHA256[record["architecture"]]:
             raise ValueError("actual bundled CPA executable differs from pinned v8.0.13")
         return record
     finally:
@@ -109,12 +114,16 @@ def main():
                                 ("ingress", args.ingress_image),
                                 ("runtime", args.runtime_image))
         }
+    architectures = {item["architecture"] for item in images.values()}
+    if len(architectures) != 1:
+        raise ValueError("Manager, Ingress and Runtime images must use one matching architecture")
+    architecture = architectures.pop()
     evidence = {
         "schemaVersion": 1,
         "result": "PARTIAL_BINARY_IDENTITY_ONLY_NOT_RELEASE_QUALIFIED",
         "sourceCommitClaim": args.source_commit,
-        "platform": "linux/amd64",
-        "pinnedCPAExecutableSHA256": CPA_EXECUTABLE_SHA256,
+        "platform": "linux/" + architecture,
+        "pinnedCPAExecutableSHA256": CPA_EXECUTABLE_SHA256[architecture],
         "images": images,
         "notVerified": [
             "source-to-image build provenance or SourceCommit labels",
