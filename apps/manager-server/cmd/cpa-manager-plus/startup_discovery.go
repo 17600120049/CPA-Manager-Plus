@@ -45,7 +45,7 @@ func newStartupHTTPHandler(result bootstrap.PublicDiscovery) *startupHTTPHandler
 		Lifecycle: h.discoveryLifecycle,
 		Active:    http.HandlerFunc(h.serveDiscovery),
 	}
-	h.protected = httpapi.ProtectBrandResources(routingdomain.ProtectFixedBootstrap(http.HandlerFunc(h.serveNonDiscovery), http.HandlerFunc(h.serveFixedBootstrap)))
+	h.protected = httpapi.ProtectBrandResources(routingdomain.ProtectFixedDiscovery(http.HandlerFunc(h.serveNonDiscovery), http.HandlerFunc(h.serveFixedBootstrap)))
 	h.next.Store(&startupHandlerTarget{handler: http.NotFoundHandler()})
 	return h
 }
