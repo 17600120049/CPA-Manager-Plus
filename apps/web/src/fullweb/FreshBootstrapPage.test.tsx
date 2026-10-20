@@ -129,9 +129,16 @@ describe('FreshBootstrapPage product preview workflow', () => {
       });
 
       expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain(title);
-      expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
-        'cpa-manager-plus initialize'
-      );
+      const command = renderer.root.findAllByProps({
+        'data-testid': 'cli-handoff-command',
+      });
+      if (status === 'fresh_claim_required') {
+        expect(command).toHaveLength(1);
+        expect(textOf(command[0])).toBe('cpa-manager-plus initialize');
+      } else {
+        // Recovery or unsupported source must not suggest a Fresh write.
+        expect(command).toHaveLength(0);
+      }
       expect(discovery).toHaveBeenCalledTimes(1);
       expect(discovery.mock.calls[0][0]).toBe('/.well-known/cpamp-bootstrap');
       expect(discovery.mock.calls[0][1]).toMatchObject({
