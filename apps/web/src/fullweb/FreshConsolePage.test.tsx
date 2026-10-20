@@ -134,6 +134,56 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('ignores a stale Console refresh after a newer Runtime stage is observed', async () => {
+    let resolveRefresh!: (response: Response) => void;
+    const delayedRefresh = new Promise<Response>((done) => {
+      resolveRefresh = done;
+    });
+    const host = {
+      runtimeIdentity: 'owned-runtime',
+      runtimeGeneration: 3,
+      activeGatewayArtifact: { artifactId: 'sha256:' + 'a'.repeat(64) },
+    };
+    const staged: FreshOperation = {
+      ...operation,
+      revision: 7,
+      strategy: {
+        strategy: 'new_managed',
+        targetIdentity: host.runtimeIdentity,
+        targetGeneration: host.runtimeGeneration,
+        targetArtifactId: host.activeGatewayArtifact.artifactId,
+        stage: 'staged',
+      },
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(operation))
+      .mockReturnValueOnce(delayedRefresh)
+      .mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(Response.json(staged));
+    await mount(fetchMock);
+    await login();
+    await act(async () => buttons()[1].props.onClick());
+    await act(async () => {
+      renderer.root
+        .findByProps({ 'data-testid': 'runtime-observation' })
+        .props.onChange({ target: { value: JSON.stringify(host) } });
+    });
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'install-runtime' }).props.onClick();
+    });
+    const revision = () =>
+      renderer.root.findByProps({ 'data-testid': 'console-operation' }).findAllByType('dd')[1]
+        .props.children;
+    const stage = () => renderer.root.findByProps({ 'data-testid': 'install-stage' }).props.children;
+    expect(revision()).toBe(7);
+    expect(stage()).toBe('staged');
+    await act(async () => resolveRefresh(Response.json(operation)));
+    expect(revision()).toBe(7);
+    expect(stage()).toBe('staged');
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+  });
+
   it.each([401, 403, 503, 409])(
     'does not display operation for failed login (%s), or reflect server errors',
     async (status) => {
