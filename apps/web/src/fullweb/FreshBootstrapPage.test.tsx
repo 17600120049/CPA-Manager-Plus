@@ -207,6 +207,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
       expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain(
         title
       );
+      expect(renderer.root.findAllByProps({ 'aria-label': 'Fresh Bootstrap 进度' })).toHaveLength(0);
       expect(textOf(findByTestId(renderer.root, 'host-preflight-command'))).toBe(
         'cpa-manager-plus legacy-preflight --db /path/to/usage.sqlite --summary'
       );

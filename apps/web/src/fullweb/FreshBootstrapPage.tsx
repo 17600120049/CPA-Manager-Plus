@@ -513,36 +513,42 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
 
       <main className="bootstrap-main">
         <div className="wizard-container">
-          <div className="stepper" aria-label="Fresh Bootstrap 进度">
-            <div
-              className={`step-item ${
-                phase === 'ready' ? 'completed' : phase === 'connecting' ? 'active' : ''
-              }`}
-            >
-              <span className="step-dot">{phase === 'ready' ? '✓' : '1'}</span>
-              <span>Handoff 认领与会话绑定</span>
+          {!(phase === 'no_handoff' && discoveryNote?.flow === 'host') && (
+            <div className="stepper" aria-label="Fresh Bootstrap 进度">
+              <div
+                className={`step-item ${
+                  phase === 'ready' ? 'completed' : phase === 'connecting' ? 'active' : ''
+                }`}
+              >
+                <span className="step-dot">{phase === 'ready' ? '✓' : '1'}</span>
+                <span>Handoff 认领与会话绑定</span>
+              </div>
+              <div className={`step-line ${phase === 'ready' ? 'completed' : ''}`} />
+              <div
+                className={`step-item ${
+                  phase === 'ready' && !isAdminDone ? 'active' : isAdminDone ? 'completed' : ''
+                }`}
+              >
+                <span className="step-dot">{isAdminDone ? '✓' : '2'}</span>
+                <span>管理员密钥初始化</span>
+              </div>
+              <div className={`step-line ${isAdminDone ? 'completed' : ''}`} />
+              <div className={`step-item ${isAdminDone ? 'active' : ''}`}>
+                <span className="step-dot">3</span>
+                <span>Operation 状态确认（Gateway Fail-Closed）</span>
+              </div>
             </div>
-            <div className={`step-line ${phase === 'ready' ? 'completed' : ''}`} />
-            <div
-              className={`step-item ${
-                phase === 'ready' && !isAdminDone ? 'active' : isAdminDone ? 'completed' : ''
-              }`}
-            >
-              <span className="step-dot">{isAdminDone ? '✓' : '2'}</span>
-              <span>管理员密钥初始化</span>
-            </div>
-            <div className={`step-line ${isAdminDone ? 'completed' : ''}`} />
-            <div className={`step-item ${isAdminDone ? 'active' : ''}`}>
-              <span className="step-dot">3</span>
-              <span>Operation 状态确认（Gateway Fail-Closed）</span>
-            </div>
-          </div>
+          )}
 
           {phase === 'no_handoff' && (
             <section className="wizard-card" data-testid="bootstrap-no-handoff">
               <div className="wizard-card-header">
                 <div className="wizard-step-tag">
-                  <span>Bootstrap Gate · 需要安装主机授权</span>
+                  <span>
+                    {discoveryNote?.flow === 'host'
+                      ? 'Source Preflight · 只读来源检查'
+                      : 'Bootstrap Gate · 需要安装主机授权'}
+                  </span>
                 </div>
                 <h1 className="wizard-title">
                   {discoveryNote?.flow === 'host'
@@ -558,7 +564,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
               <div className="wizard-card-body">
                 {discoveryNote && (
                   <div
-                    className="alert alert-info"
+                    className={`alert ${discoveryNote.tone === 'warn' ? 'alert-warn' : 'alert-info'}`}
                     data-testid="bootstrap-discovery-guidance"
                     role="status"
                   >
