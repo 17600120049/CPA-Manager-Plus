@@ -31,7 +31,7 @@ class AuditTest(unittest.TestCase):
             r = audit.inspect_image('example:test')
             self.assertEqual(r['imageConfigId'], value['Id'])
         for change in ({'Architecture': 'arm64'}, {'Os': 'windows'},
-                       {'Id': 'sha256:unverified'}):
+                       {'Id': 'sha256:unverified'}, {'Config': {'Volumes': {'/data': {}}}}):
             with self.subTest(change=change), mock.patch.object(audit, 'command',
                        return_value=json.dumps([{**value, **change}])), self.assertRaises(ValueError):
                 audit.inspect_image('example:wrong')
