@@ -294,6 +294,22 @@ func TestRevokedHistoryDoesNotBecomeNeverAppliedAfterLaterOperations(t *testing.
 			t.Fatal("revoked history lost", key)
 		}
 	}
+	first := strings.Repeat("3", 32)
+	historical, err := s.CheckOperation(t.Context(), first, 7)
+	if err != nil || historical.Operation == nil || historical.Operation.Outcome != "committed" || historical.RuntimeState != "effect_unknown" || historical.NextStep != "" {
+		t.Fatal("historical operation lost its durable result", historical, err)
+	}
+	latest, err := s.CheckOperation(t.Context(), "latest", 7)
+	if err != nil || latest.Operation == nil || latest.RuntimeState != "effective_observed" {
+		t.Fatal("latest operation lost its live observation", latest, err)
+	}
+	if _, err = s.ContinueOperation(t.Context(), first, 7); !errors.Is(err, repo.ErrConflict) {
+		t.Fatal("old operation continued after another commit", err)
+	}
+	s.permit = func() (Permit, error) { return Permit{}, ErrUnavailable }
+	if history, e := s.CheckOperation(t.Context(), first, 7); e != nil || history.Operation == nil || history.RuntimeState != "effect_unknown" {
+		t.Fatal("historical read required current host grant", history, e)
+	}
 }
 
 func TestUnknownAttemptNeverRetriesOrAllowsNewOperation(t *testing.T) {

@@ -100,6 +100,56 @@ describe('Canonical revocation recovery UI', () => {
     expect(button('keysOperationContinue').props.disabled).toBe(false);
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
+  it('recovers original attempted journal from a 503 read without unlocking a write', async () => {
+    const attempted = {
+      ...operation,
+      outcome: 'unknown',
+      revision: 3,
+      steps: [{ name: 'add', state: 'attempted', returned: true }, operation.steps[1]],
+    };
+    const observed = {
+      ...attempted,
+      outcome: 'pending',
+      revision: 4,
+      steps: [{ name: 'add', state: 'observed', returned: true }, operation.steps[1]],
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            code: 'key_operation_unknown',
+            result: { operation: attempted, nextStep: '', runtimeState: 'effect_unknown', expiresAtMs: 0 },
+          },
+          { status: 503 }
+        )
+      )
+      .mockResolvedValueOnce(result(observed, 'revoke'));
+    await mount(fetchMock);
+    expect(JSON.stringify(view.toJSON())).toContain(id);
+    expect(button('keysOperationContinue').props.disabled).toBe(true);
+    expect(pending).toHaveBeenLastCalledWith(true);
+    await click('keysOperationCheck');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/operations/' + id);
+    expect(button('keysOperationContinue').props.disabled).toBe(false);
+    expect(fetchMock.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
+  });
+  it('retains the original journal on generation mismatch but disables continuation', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      Response.json(
+        {
+          code: 'key_operation_generation_mismatch',
+          result: { operation, nextStep: '', runtimeState: 'effect_unknown', expiresAtMs: 0 },
+        },
+        { status: 409 }
+      )
+    );
+    await mount(fetchMock);
+    expect(JSON.stringify(view.toJSON())).toContain(id);
+    expect(JSON.stringify(view.toJSON())).toContain(t('keysOperationRejected'));
+    expect(button('keysOperationContinue').props.disabled).toBe(true);
+    expect(pending).toHaveBeenLastCalledWith(true);
+  });
   it('never unlocks a durable operation on a null or regressed response', async () => {
     const known = {
       ...operation,

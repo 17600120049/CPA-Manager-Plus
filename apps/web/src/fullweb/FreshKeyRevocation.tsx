@@ -93,7 +93,7 @@ export function FreshKeyRevocation({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function accept(value: Result, expected?: string, selection = request) {
+  function accept(value: Result, expected?: string, selection = request, observed = true) {
     if (
       !validResult(value) ||
       (expected && value.operation !== null && value.operation.id !== expected)
@@ -132,23 +132,36 @@ export function FreshKeyRevocation({
       throw new Error();
     if (!active.current) return;
     setResult(value);
-    setChecked(true);
-    setMessage('');
+    setChecked(observed);
+    setMessage(observed ? '' : t('keysOperationUnknown'));
     setRequest(null);
-    onPending(!!value.operation && value.operation.outcome !== 'committed');
-    if (value.operation?.outcome === 'committed') onChanged();
+    onPending(!observed || (!!value.operation && value.operation.outcome !== 'committed'));
+    if (observed && value.operation?.outcome === 'committed') onChanged();
   }
-  function failure(err: unknown) {
+  function failure(err: unknown, expected?: string, selection = request) {
     if (!active.current) return;
-    if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
-    else
-      setMessage(
-        t(
-          err instanceof PublicApiError && err.status === 409
-            ? 'keysOperationRejected'
-            : 'keysOperationUnknown'
-        )
-      );
+    if (err instanceof PublicApiError && err.kind === 'authentication') {
+      onUnauthorized();
+      return;
+    }
+    if (err instanceof PublicApiError && err.operationResult !== undefined) {
+      try {
+        const recovered = err.operationResult as Result;
+        if (!recovered?.operation || recovered.runtimeState !== 'effect_unknown') throw new Error();
+        accept(recovered, expected, selection, false);
+        if (err.status === 409) setMessage(t('keysOperationRejected'));
+        return;
+      } catch {
+        // Invalid or regressed failed-response snapshots never unlock a write.
+      }
+    }
+    setMessage(
+      t(
+        err instanceof PublicApiError && err.status === 409
+          ? 'keysOperationRejected'
+          : 'keysOperationUnknown'
+      )
+    );
     setChecked(false);
   }
   async function run(action: () => Promise<Result>, expected?: string, selection = request) {
@@ -158,7 +171,7 @@ export function FreshKeyRevocation({
     try {
       accept(await action(), expected, selection);
     } catch (err) {
-      failure(err);
+      failure(err, expected, selection);
     } finally {
       flight.current = false;
       if (active.current) setBusy(false);

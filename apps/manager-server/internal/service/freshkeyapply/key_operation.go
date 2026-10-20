@@ -225,6 +225,23 @@ func (s *Service) CheckOperation(ctx context.Context, id string, generation uint
 
 func (s *Service) checkOperation(ctx context.Context, o *repo.Operation, generation uint64) (OperationResult, error) {
 	r := OperationResult{Operation: o, RuntimeState: "effect_unknown"}
+	if o.Outcome == "committed" {
+		latest, err := s.repo.LatestOperation(ctx)
+		if err != nil {
+			return r, err
+		}
+		if latest == nil {
+			return r, repo.ErrConflict
+		}
+		if latest.ID != o.ID {
+			if o.RunID != latest.RunID || o.Generation != latest.Generation || o.ProviderSeedSHA256 != latest.ProviderSeedSHA256 || o.Generation != strconv.FormatUint(generation, 10) {
+				return r, ErrGeneration
+			}
+			// Historical committed operations are durable records, not live
+			// effectiveness claims. Their former keeper may now be revoked.
+			return r, nil
+		}
+	}
 	p, err := s.operationTarget(ctx, generation)
 	if err != nil {
 		return r, err
@@ -326,12 +343,12 @@ func (s *Service) ContinueOperation(ctx context.Context, id string, generation u
 	if err != nil {
 		return r, err
 	}
-	if o.Outcome == "committed" {
-		return r, nil
-	}
 	latest, err := s.repo.LatestOperation(ctx)
 	if err != nil || latest == nil || latest.ID != id {
 		return r, repo.ErrConflict
+	}
+	if o.Outcome == "committed" {
+		return r, nil
 	}
 	index := -1
 	for i, step := range o.Steps {
