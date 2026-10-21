@@ -75,6 +75,7 @@ RUN apt-get update \
       --home-dir /runtime/gateway --shell /usr/sbin/nologin cpamp-cpa
 COPY --from=supervisor-build /out/cpamp-runtime-supervisor /usr/local/bin/cpamp-runtime-supervisor
 COPY LICENSE /usr/local/share/licenses/cpamp/LICENSE
+COPY bin/release/embedded-third-party-inventory.txt /usr/local/share/cpamp/release/third-party-inventory.txt
 COPY docker/runtime/entrypoint.sh /usr/local/bin/cpamp-runtime-entrypoint
 
 ENV CPAMP_RUNTIME_ADDR=0.0.0.0:9081 \
