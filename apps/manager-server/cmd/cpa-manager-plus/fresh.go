@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -71,6 +73,7 @@ type freshApplication struct {
 	authority   *fresh.Service
 	routing     *freshrouting.Service
 	strategy    *freshstrategy.Service
+	externalPermit func(bootstrap.FreshOperation) bool
 	protector   *security.Protector
 	fixed       http.Handler
 	keys        *freshkeys.Service
@@ -106,6 +109,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
 	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL})
+	a.externalPermit = privateFreshExternalAdmitted
 	a.fixed = freshbootstrap.Handler{Authority: a.authority, Routing: a.routing, Current: a.current,
 		Shell: httpapi.BootstrapWebHandler(), Strategy: http.HandlerFunc(a.fixedStrategy)}
 	return a
@@ -114,37 +118,6 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 func (a *freshApplication) current(ctx context.Context) (bootstrap.FreshOperation, error) {
 	r, err := a.store.Load(ctx)
 	return r.Operation, err
-}
-
-func (a *freshApplication) validateCommittedExternalReplay(ctx context.Context, op bootstrap.FreshOperation, request freshstrategy.Request) error {
-	if op.Strategy.Strategy != bootstrap.ConnectExternal || op.Strategy.Stage != "committed" || request.Strategy != bootstrap.ConnectExternal {
-		return nil
-	}
-	record, err := a.store.Load(ctx)
-	if err != nil {
-		return err
-	}
-	if record.Operation.Identity != op.Identity || record.Operation.Revision != op.Revision {
-		return &freshstrategy.Blocker{Code: "fresh_strategy_owner_conflict"}
-	}
-	if record.Connection == nil || a.protector == nil {
-		return &freshstrategy.Blocker{Code: "management_secret_storage_unavailable"}
-	}
-	baseURL, err := cpa.NormalizeV8BaseURL(request.BaseURL)
-	if err != nil {
-		return &freshstrategy.Blocker{Code: cpa.V8InvalidConnection.Error()}
-	}
-	if record.Connection.CPABaseURL != baseURL {
-		return &freshstrategy.Blocker{Code: "fresh_strategy_owner_conflict"}
-	}
-	persistedKey, err := a.protector.UnprotectString(record.Connection.ManagementKey)
-	if err != nil {
-		return &freshstrategy.Blocker{Code: "management_secret_storage_unavailable"}
-	}
-	if !security.EqualHMAC(persistedKey, request.ManagementKey) {
-		return &freshstrategy.Blocker{Code: "fresh_strategy_owner_conflict"}
-	}
-	return nil
 }
 
 func writeFreshStrategyError(w http.ResponseWriter, err error) {
@@ -248,6 +221,11 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 	case resource == "strategy" && r.Method == http.MethodPost:
 		a.executeStrategy(w, r, op)
 	case resource == "complete" && r.Method == http.MethodPost:
+		// External is a connection checkpoint, not an activated product.
+		if op.Strategy.Strategy == bootstrap.ConnectExternal {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
 		if op.ProductComplete {
 			writeFreshJSON(w, op)
 			return
@@ -291,7 +269,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384))
 	d.DisallowUnknownFields()
-	if d.Decode(&request) != nil || request.Identity != op.Identity || request.ExpectedRevision != op.Revision {
+	if d.Decode(&request) != nil || request.Identity != op.Identity {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -300,9 +278,62 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if err := a.validateCommittedExternalReplay(r.Context(), op, request.Request); err != nil {
-		writeFreshStrategyError(w, err)
+	if request.ExpectedRevision != op.Revision {
+		// A stale External CAS is a conflict, not an invalid user-supplied target.
+		if request.Strategy == bootstrap.ConnectExternal {
+			w.WriteHeader(http.StatusConflict)
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+		}
 		return
+	}
+	if request.Strategy == bootstrap.ConnectExternal {
+		// The A3 permit is independent of S1/H1 and is checked before any
+		// External CPA source access or Manager-side strategy persistence.
+		if a.externalPermit == nil || !a.externalPermit(op) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		// Including committed replay: GET lacks a request-specific receipt and
+		// must never make a second POST safe after a lost browser response.
+		if op.Strategy.Strategy != "" {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		baseURL, err := cpa.NormalizeV8BaseURL(request.BaseURL)
+		if err != nil {
+			writeFreshStrategyError(w, &freshstrategy.Blocker{Code: cpa.V8InvalidConnection.Error()})
+			return
+		}
+		digest := sha256.Sum256([]byte(baseURL))
+		target := "external:sha256:" + hex.EncodeToString(digest[:])
+		// Persist an exclusive durable attempt fence BEFORE contacting CPA.
+		// validated without a stored connection is an intentionally terminal
+		// Host-reconciliation state if the source read or reply is lost.
+		claimed, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
+			if record.Operation.Strategy.Strategy != "" {
+				return freshstore.ErrConflict
+			}
+			if token, fixed := freshbootstrap.SessionToken(r); fixed {
+				if err := a.authority.ValidateSession(*record, token); err != nil {
+					return err
+				}
+			}
+			record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+				Strategy: bootstrap.ConnectExternal, TargetIdentity: target,
+				TargetGeneration: 1, Stage: "validated",
+			}
+			return nil
+		})
+		if err != nil {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		op = claimed.Operation
+		if !a.externalPermit(op) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 	}
 	if request.Strategy == bootstrap.AdoptExisting {
 		record, err := a.store.Load(r.Context())
@@ -315,6 +346,11 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 	result, err := a.strategy.Execute(r.Context(), op, request.Request)
 	if err != nil {
 		writeFreshStrategyError(w, err)
+		return
+	}
+	if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(op) {
+		// A revoked/expired Host permit cannot complete a previously claimed attempt.
+		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
 	if token, fixed := freshbootstrap.SessionToken(r); fixed {

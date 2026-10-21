@@ -6,6 +6,7 @@ import type { RoutingContext } from './routingContext';
 import { FreshApiKeys } from './FreshApiKeys';
 import { FreshUpdateChannel } from './FreshUpdateChannel';
 import { FreshManagedRuntime } from './FreshManagedRuntime';
+import { FreshExternalConnection } from './FreshExternalConnection';
 import { FreshRetryConfiguration } from './FreshRetryConfiguration';
 
 const defaultClient = createPublicApiClient();
@@ -20,6 +21,7 @@ export function FreshConsolePage({
   const [key, setKey] = useState('');
   const [credential, setCredential] = useState('');
   const [operation, setOperation] = useState<FreshOperation | null>(null);
+  const [strategyChoice, setStrategyChoice] = useState<'new_managed' | 'connect_external' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [light, setLight] = useState(false);
@@ -72,6 +74,7 @@ export function FreshConsolePage({
     setKey('');
     setCredential('');
     setOperation(null);
+    setStrategyChoice(null);
     setBusy(false);
     setError('');
   }
@@ -260,21 +263,66 @@ export function FreshConsolePage({
                       setError(t('authError'));
                     }}
                   />
-                  <FreshManagedRuntime
-                    key={`runtime-${credential}`}
-                    client={client}
-                    credential={credential}
-                    operation={operation}
-                    onOperation={acceptOperation}
-                    onPending={(pending) => {
-                      installationPendingRef.current = pending;
-                      setInstallationPending(pending);
-                    }}
-                    onUnauthorized={() => {
-                      clearAuthentication();
-                      setError(t('authError'));
-                    }}
-                  />
+                  {!operation.strategy?.strategy && (
+                    <section className="info-card" data-testid="fresh-strategy-selection">
+                      <h2>{t('strategyChoiceTitle')}</h2>
+                      <p>{t('strategyChoiceHelp')}</p>
+                      <div className="wizard-card-footer">
+                        <button type="button" className="btn btn-secondary" data-testid="fresh-select-new"
+                          disabled={installationPending}
+                          aria-pressed={strategyChoice === 'new_managed'}
+                          onClick={() => {
+                            if (!installationPendingRef.current) setStrategyChoice('new_managed');
+                          }}>
+                          {t('strategyNewManaged')}
+                        </button>
+                        <button type="button" className="btn btn-secondary" data-testid="fresh-select-external"
+                          disabled={installationPending}
+                          aria-pressed={strategyChoice === 'connect_external'}
+                          onClick={() => {
+                            if (!installationPendingRef.current) setStrategyChoice('connect_external');
+                          }}>
+                          {t('strategyExternal')}
+                        </button>
+                      </div>
+                    </section>
+                  )}
+                  {(operation.strategy?.strategy === 'new_managed' ||
+                    (!operation.strategy?.strategy && strategyChoice === 'new_managed')) && (
+                    <FreshManagedRuntime
+                      key={`runtime-${credential}`}
+                      client={client}
+                      credential={credential}
+                      operation={operation}
+                      onOperation={acceptOperation}
+                      onPending={(pending) => {
+                        installationPendingRef.current = pending;
+                        setInstallationPending(pending);
+                      }}
+                      onUnauthorized={() => {
+                        clearAuthentication();
+                        setError(t('authError'));
+                      }}
+                    />
+                  )}
+                  {(operation.strategy?.strategy === 'connect_external' ||
+                    (!operation.strategy?.strategy && strategyChoice === 'connect_external')) && (
+                    <FreshExternalConnection
+                      key={`external-${credential}`}
+                      client={client}
+                      credential={credential}
+                      operation={operation}
+                      onOperation={acceptOperation}
+                      onPending={(pending) => {
+                        installationPendingRef.current = pending;
+                        setInstallationPending(pending);
+                      }}
+                      onUnauthorized={() => {
+                        clearAuthentication();
+                        setError(t('authError'));
+                      }}
+                    />
+                  )}
                   {retryNavigation > 0 && (
                     <FreshRetryConfiguration
                       navigationRequest={retryNavigation}

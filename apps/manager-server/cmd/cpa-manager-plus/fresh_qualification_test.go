@@ -98,6 +98,11 @@ func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.
 						t.Fatalf("HTTP %s accepted: %d", injected, response.Code)
 					}
 					delete(body, injected)
+				} else if item.strategy == bootstrap.ConnectExternal {
+					// A production-qualified CPA safe-read is not private A3 Host authority.
+					if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
+						t.Fatalf("External without A3 Host permit was admitted: %d %s", response.Code, response.Body.String())
+					}
 				} else {
 					var blocker freshstrategy.Blocker
 					if response.Code != http.StatusConflict || json.Unmarshal(response.Body.Bytes(), &blocker) != nil || blocker.Code != item.blocker {

@@ -320,6 +320,7 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     await mount(fetchMock);
     await login();
     await act(async () => buttons()[1].props.onClick());
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.onClick());
     await act(async () => {
       renderer.root
         .findByProps({ 'data-testid': 'runtime-observation' })
@@ -339,6 +340,48 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     expect(revision()).toBe(7);
     expect(stage()).toBe('staged');
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+  });
+
+  it('uses one strategy owner and blocks mode switching during an External POST', async () => {
+    let finish!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => { finish = resolve; });
+    const external = {
+      ...operation,
+      revision: operation.revision + 2,
+      strategy: {
+        strategy: 'connect_external',
+        targetIdentity: 'external:sha256:' + 'a'.repeat(64),
+        targetGeneration: 1,
+        stage: 'committed',
+      },
+    };
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(operation))
+      .mockReturnValueOnce(pending)
+      .mockResolvedValueOnce(Response.json(external));
+    await mount(fetchMock);
+    await login();
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'fresh-select-external' }).props.onClick()
+    );
+    expect(renderer.root.findAllByProps({ 'data-testid': 'runtime-observation' })).toHaveLength(0);
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'external-base-url' })
+        .props.onChange({ target: { value: 'http://cpa.private:8317' } })
+    );
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'external-management-key' })
+        .props.onChange({ target: { value: 'secret' } })
+    );
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'external-connect' }).props.onClick());
+    expect(renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.disabled).toBe(true);
+    expect(buttons().find((button) => button.props.children === t('logout'))?.props.disabled).toBe(true);
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.onClick());
+    expect(renderer.root.findAllByProps({ 'data-testid': 'runtime-observation' })).toHaveLength(0);
+    await act(async () => finish(Response.json(external)));
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'fresh-select-new' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
   });
 
   it.each([401, 403, 503, 409])(
