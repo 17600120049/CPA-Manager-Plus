@@ -17,12 +17,14 @@ func pahS0ResourceCandidate(value string) bool {
 		value = value[:index]
 	}
 	for _, candidate := range routeCandidates(value) {
-		normalized := strings.ToLower(path.Clean(strings.ReplaceAll(candidate, "\\", "/")))
-		if normalized == pahS0ResourcePrefix ||
-			strings.HasPrefix(normalized, pahS0ResourcePrefix+"/") ||
-			strings.HasPrefix(normalized, pahS0ResourcePrefix+"%") ||
-			strings.HasPrefix(normalized, pahS0ResourcePrefix+";") {
-			return true
+		raw := strings.ToLower(strings.ReplaceAll(candidate, "\\", "/"))
+		for _, normalized := range []string{raw, path.Clean(raw)} {
+			if normalized == pahS0ResourcePrefix ||
+				strings.HasPrefix(normalized, pahS0ResourcePrefix+"/") ||
+				strings.HasPrefix(normalized, pahS0ResourcePrefix+"%") ||
+				strings.HasPrefix(normalized, pahS0ResourcePrefix+";") {
+				return true
+			}
 		}
 	}
 	return false

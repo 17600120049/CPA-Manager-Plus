@@ -36,7 +36,7 @@ func TestPAHS0ResourceRouteOwner(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.method+" "+tc.target, func(t *testing.T) {
-			r := httptest.NewRequest(tc.method, "http://example.test"+tc.target, nil)
+			r := httptest.NewRequest(tc.method, tc.target, nil)
 			if got := c.ClassifyRequest(r); got != tc.want {
 				t.Fatalf("route=%d want=%d", got, tc.want)
 			}

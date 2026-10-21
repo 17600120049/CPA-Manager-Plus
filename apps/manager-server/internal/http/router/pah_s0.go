@@ -29,12 +29,14 @@ func pahS0ResourceRequest(r *http.Request) bool {
 		}
 		current := initial
 		for pass := 0; pass < 3; pass++ {
-			candidate := strings.ToLower(path.Clean(strings.ReplaceAll(current, "\\", "/")))
-			if candidate == pahS0ResourcePrefix ||
-				strings.HasPrefix(candidate, pahS0ResourcePrefix+"/") ||
-				strings.HasPrefix(candidate, pahS0ResourcePrefix+"%") ||
-				strings.HasPrefix(candidate, pahS0ResourcePrefix+";") {
-				return true
+			raw := strings.ToLower(strings.ReplaceAll(current, "\\", "/"))
+			for _, candidate := range []string{raw, path.Clean(raw)} {
+				if candidate == pahS0ResourcePrefix ||
+					strings.HasPrefix(candidate, pahS0ResourcePrefix+"/") ||
+					strings.HasPrefix(candidate, pahS0ResourcePrefix+"%") ||
+					strings.HasPrefix(candidate, pahS0ResourcePrefix+";") {
+					return true
+				}
 			}
 			decoded, err := url.PathUnescape(current)
 			if err != nil || decoded == current {
