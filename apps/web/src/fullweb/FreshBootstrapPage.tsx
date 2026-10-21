@@ -24,7 +24,7 @@ interface ActionFeedback {
 
 // Public discovery never confers write authority. Non-Fresh statuses only
 // provide a Host-side preflight next step; they cannot enter the Fresh claim.
-type DiscoveryGuidance = ActionFeedback & { flow: 'fresh' | 'host' };
+type DiscoveryGuidance = ActionFeedback & { flow: 'fresh' | 'host'; retryable?: true };
 function publicDiscoveryGuidance(payload: unknown): DiscoveryGuidance | null {
   if (!payload || typeof payload !== 'object') return null;
   const value = payload as Record<string, unknown>;
@@ -85,6 +85,7 @@ function publicDiscoveryGuidance(payload: unknown): DiscoveryGuidance | null {
       tone: 'warn',
       flow: 'host',
       title: '来源状态暂无法确认',
+      retryable: true,
       detail:
         '来源只读检查未获得可信分类。请在受信宿主机排查；不能根据此状态认定为 Fresh，也不能据此执行初始化或迁移。',
     };
@@ -657,7 +658,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                     </div>
                   </div>
                 )}
-                {discoveryChecked && !discoveryNote && (
+                {discoveryChecked && (!discoveryNote || discoveryNote.retryable) && (
                   <button
                     className="btn btn-secondary"
                     type="button"

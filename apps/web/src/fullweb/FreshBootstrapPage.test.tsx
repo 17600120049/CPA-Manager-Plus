@@ -160,6 +160,49 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(bootstrapTransport).not.toHaveBeenCalled();
   });
 
+  it('rechecks canonical 503 unavailable and remains read-only until Fresh is verified', async () => {
+    let resolveRecheck!: (response: Response) => void;
+    const publicDiscovery = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'unavailable',
+        auth_entry: 'unavailable',
+        reason: 'observation_unavailable',
+        authentication_required: false,
+      }, { status: 503 }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveRecheck = resolve; }));
+    const bootstrapTransport = vi.fn();
+    vi.stubGlobal('fetch', publicDiscovery);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(bootstrapTransport)} />
+      );
+    });
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain('来源状态暂无法确认');
+    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    await act(async () => findByTestId(renderer.root, 'bootstrap-recheck-discovery').props.onClick());
+    expect(publicDiscovery).toHaveBeenCalledTimes(2);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('正在读取来源状态');
+    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    expect(bootstrapTransport).not.toHaveBeenCalled();
+    await act(async () => {
+      resolveRecheck(Response.json({
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'fresh_claim_required',
+        mode: 'fresh',
+        auth_entry: 'fresh_claim',
+        reason: 'fresh_claim_required',
+        authentication_required: true,
+      }));
+    });
+    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe('cpa-manager-plus initialize');
+    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
+    expect(bootstrapTransport).not.toHaveBeenCalled();
+  });
+
   it('keeps an invalid source fail-closed during and after a read-only recheck', async () => {
     let resolveRecheck!: (response: Response) => void;
     const publicDiscovery = vi.fn<typeof fetch>()
@@ -326,6 +369,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
         'cpa-manager-plus legacy-preflight --db /path/to/usage.sqlite --summary'
       );
       expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+      expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
       expect(textOf(findByTestId(renderer.root, 'bootstrap-no-handoff'))).not.toContain(
         'cpa-manager-plus initialize'
       );
