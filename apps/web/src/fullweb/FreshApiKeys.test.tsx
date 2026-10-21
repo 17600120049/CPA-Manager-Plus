@@ -26,6 +26,9 @@ describe('Fresh client key persistence UI', () => {
     unauthorized.mockClear();
     vi.stubGlobal('window', { location: new URL('https://manager.example/console') });
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb) });
+    vi.stubGlobal('navigator', {
+      clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
     vi.stubGlobal('localStorage', {
       setItem: vi.fn(() => {
         throw new Error('forbidden');
@@ -73,6 +76,9 @@ describe('Fresh client key persistence UI', () => {
     expect(view()).toContain(key.id);
     expect(view()).toContain(t('keysStaged'));
     expect(button(t('keysCreate')).props.disabled).toBe(true);
+    await click(t('keysCopy'));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledExactlyOnceWith(secret);
+    expect(view()).toContain(t('keysCopied'));
     const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe('https://manager.example/console/api/v2/api-keys');
     expect(init).toMatchObject({
@@ -86,9 +92,83 @@ describe('Fresh client key persistence UI', () => {
     expect(String(url)).not.toContain('admin-test-only');
     await click(t('keysDismiss'));
     expect(view()).not.toContain(secret);
+    expect(view()).not.toContain(t('keysCopied'));
     expect(view()).toContain(key.maskedPreview);
     expect(localStorage.setItem).not.toHaveBeenCalled();
     expect(sessionStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('keeps the one-time key visible and reports failure when clipboard permission is denied', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('permission denied'));
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(Response.json({ key, createdSecret: secret }, { status: 201 }));
+    await mount(fetchMock);
+    await click(t('keysCreate'));
+    await click(t('keysCopy'));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(secret);
+    expect(view()).toContain(t('keysCopyFailed'));
+    expect(view()).toContain(secret);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await click(t('keysDismiss'));
+    expect(view()).not.toContain(secret);
+    expect(view()).not.toContain(t('keysCopyFailed'));
+  });
+
+
+  it.each(['success', 'failure'] as const)(
+    'ignores a delayed clipboard %s after the one-time secret is dismissed',
+    async (outcome) => {
+      let resolveCopy!: () => void;
+      let rejectCopy!: (reason: Error) => void;
+      const writeText = vi.fn(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            resolveCopy = resolve;
+            rejectCopy = reject;
+          })
+      );
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(empty())
+        .mockResolvedValueOnce(Response.json({ key, createdSecret: secret }, { status: 201 }));
+      await mount(fetchMock);
+      await click(t('keysCreate'));
+      await click(t('keysCopy'));
+      expect(writeText).toHaveBeenCalledExactlyOnceWith(secret);
+      expect(view()).toContain(secret);
+
+      await click(t('keysDismiss'));
+      expect(view()).not.toContain(secret);
+      await act(async () => {
+        if (outcome === 'success') resolveCopy();
+        else rejectCopy(new Error('permission denied'));
+      });
+      expect(view()).not.toContain(secret);
+      expect(view()).not.toContain(t('keysCopied'));
+      expect(view()).not.toContain(t('keysCopyFailed'));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it('keeps the one-time key available for manual copy when Clipboard API is unavailable', async () => {
+    vi.stubGlobal('navigator', {});
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(Response.json({ key, createdSecret: secret }, { status: 201 }));
+    await mount(fetchMock);
+    await click(t('keysCreate'));
+    await click(t('keysCopy'));
+    expect(view()).toContain(t('keysCopyFailed'));
+    expect(view()).toContain(secret);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await click(t('keysDismiss'));
+    expect(view()).not.toContain(secret);
+    expect(view()).not.toContain(t('keysCopyFailed'));
   });
 
   it('blocks double submission, reconciles lost reply with GET and never resends creation', async () => {

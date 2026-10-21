@@ -22,6 +22,7 @@ export function FreshApiKeys({
   const [pending, setPending] = useState('');
   const [retryAllowed, setRetryAllowed] = useState(false);
   const [secret, setSecret] = useState('');
+  const [copyFeedback, setCopyFeedback] = useState<'copied' | 'failed' | ''>('');
   const [confirmed, setConfirmed] = useState(false);
   const [selected, setSelected] = useState('');
   const [detailPending, setDetailPending] = useState(false);
@@ -30,6 +31,7 @@ export function FreshApiKeys({
   const detailPendingRef = useRef(false);
   const alive = useRef(true);
   const inFlight = useRef(false);
+  const copyAttempt = useRef(0);
   const auth = { kind: 'admin' as const, value: credential };
 
   useEffect(() => {
@@ -79,6 +81,25 @@ export function FreshApiKeys({
     void refresh();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  async function copyCreatedSecret() {
+    if (!secret) return;
+    const attempt = ++copyAttempt.current;
+    setCopyFeedback('');
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(secret);
+      if (alive.current && attempt === copyAttempt.current) setCopyFeedback('copied');
+    } catch {
+      if (alive.current && attempt === copyAttempt.current) setCopyFeedback('failed');
+    }
+  }
+
+  function dismissCreatedSecret() {
+    ++copyAttempt.current;
+    setCopyFeedback('');
+    setSecret('');
+  }
+
   async function createKey() {
     if (
       inFlight.current ||
@@ -94,6 +115,8 @@ export function FreshApiKeys({
     setError('');
     setConfirmed(false);
     setRetryAllowed(false);
+    ++copyAttempt.current;
+    setCopyFeedback('');
     try {
       const requestId =
         pending ||
@@ -206,7 +229,19 @@ export function FreshApiKeys({
           <h3>{t('keysCreated')}</h3>
           <p>{t('keysOnce')}</p>
           <code data-testid="created-client-secret">{secret}</code>
-          <button className="btn btn-secondary" onClick={() => setSecret('')}>
+          <button
+            className="btn btn-secondary"
+            data-testid="copy-created-client-secret"
+            onClick={() => void copyCreatedSecret()}
+          >
+            {t('keysCopy')}
+          </button>
+          {copyFeedback && (
+            <p role="status" data-testid="copy-created-client-secret-feedback">
+              {t(copyFeedback === 'copied' ? 'keysCopied' : 'keysCopyFailed')}
+            </p>
+          )}
+          <button className="btn btn-secondary" onClick={dismissCreatedSecret}>
             {t('keysDismiss')}
           </button>
         </div>
