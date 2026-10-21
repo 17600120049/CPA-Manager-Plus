@@ -283,7 +283,15 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     })
-      .then((response) => (response.ok || response.status === 503 ? response.json() : null))
+      .then(async (response) => {
+        if (response.status !== 200 && response.status !== 503) return null;
+        const payload: unknown = await response.json();
+        if (!payload || typeof payload !== 'object') return null;
+        // Public discovery uses 200 for classified sources and 503 only for
+        // unavailable. A mismatched HTTP status must never suggest Fresh setup.
+        const unavailable = (payload as Record<string, unknown>).status === 'unavailable';
+        return unavailable === (response.status === 503) ? payload : null;
+      })
       .then((payload: unknown) => {
         if (!active) return;
         setDiscoveryNote(publicDiscoveryGuidance(payload));

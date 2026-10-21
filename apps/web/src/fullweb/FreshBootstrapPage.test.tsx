@@ -303,6 +303,42 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(0);
   });
 
+  it.each([
+    [503, {
+      contract_version: 'cpamp.phase4-01.discovery.v1',
+      status: 'fresh_claim_required',
+      mode: 'fresh',
+      auth_entry: 'fresh_claim',
+      reason: 'fresh_claim_required',
+      authentication_required: true,
+    }],
+    [503, {
+      contract_version: 'cpamp.phase4-01.discovery.v1',
+      status: 'unsupported_upgrade',
+      mode: 'unsupported_upgrade',
+      auth_entry: 'admin_session',
+      reason: 'qualification_unavailable',
+      authentication_required: true,
+    }],
+    [200, {
+      contract_version: 'cpamp.phase4-01.discovery.v1',
+      status: 'unavailable',
+      auth_entry: 'unavailable',
+      reason: 'observation_unavailable',
+      authentication_required: false,
+    }],
+  ])('rejects inconsistent HTTP %i and discovery status without suggesting setup', async (status, payload) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(payload, { status })));
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('来源状态无法确认');
+  });
+
   it('rejects mismatched non-Fresh discovery tuples and preserves the existing safe fallback', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       contract_version: 'cpamp.phase4-01.discovery.v1',
