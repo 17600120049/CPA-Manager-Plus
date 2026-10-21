@@ -7,9 +7,15 @@ if [[ $# -ne 1 ]]; then
   exit 2
 fi
 output="$1"
-if [[ "$output" != /* ]] || [[ -e "$output" && -n "$(ls -A "$output")" ]]; then
+if [[ "$output" != /* ]]; then
   echo "Use an absolute empty output directory outside the repository." >&2
   exit 2
+fi
+if [[ -e "$output" ]]; then
+  if [[ ! -d "$output" ]] || [[ -n "$(find "$output" -mindepth 1 -print -quit)" ]]; then
+    echo "STOP: OCI output directory must be empty." >&2
+    exit 2
+  fi
 fi
 # Never allow the output to enter Docker build context on subsequent roles.
 python3 - "$PWD" "$output" <<'PY'

@@ -50,6 +50,8 @@ export function resolveAliases(infos, withdrawn) {
   return { channels, aliases };
 }
 export function verifyImage(inspected, info) {
+  if (parseVersion(info.release.version).core[0] !== '1')
+    throw new Error('Unqualified v2 Embedded image: legacy Manager-only alias STOP');
   const { manifest, image } = inspected;
   const configs = Object.values(image || {});
   const platforms = manifest?.manifests || [];

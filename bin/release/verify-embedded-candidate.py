@@ -220,6 +220,7 @@ def inspect(path, role, source_sha, event, root_license, seed):
                     "invalid Full Web file-set evidence")
         return {
             "archive": path.name,
+            "archiveSHA256": "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest(),
             "ociLayoutIndexDigest": digest(raw_index),
             "platformManifestDigest": manifest_id,
             "imageConfigDigest": config_id,
@@ -245,8 +246,10 @@ def verify(paths, source_sha, event, root):
         "candidateVersionClaim": CANDIDATE_VERSION,
         "platform": "linux/amd64",
         "images": result,
-        "officialCPA": {"version": "8.0.13", "archiveSHA256": CPA_ARCHIVE_SHA,
-                        "executableSHA256": CPA_SHA},
+        "officialCPA": {
+            "version": "8.0.13", "dockerBuildPinArchiveSHA256": CPA_ARCHIVE_SHA,
+            "verifiedFinalImageExecutableSHA256": CPA_SHA,
+        },
         "notVerified": [
             "trusted production producer identity or independent registry readback",
             "Manager binary source stamp and independently exercised Web/API compatibility (compile-time Web embed test only)",

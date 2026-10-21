@@ -57,6 +57,7 @@ describe('R1-1 local-only OCI candidate contracts', () => {
       arm64: { config: { Labels: labels } },
     } };
     expect(verifyImage(inspected, info)).toBe(manifest.digest);
+    expect(() => verifyImage(inspected, { ...info, release: { ...info.release, version: 'v2.0.0' } })).toThrow(/v2 Embedded/);
     expect(() => verifyImage({
       ...inspected, manifest: { ...manifest, manifests: [manifest.manifests[0]] },
     }, info)).toThrow();
