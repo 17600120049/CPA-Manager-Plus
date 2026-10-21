@@ -172,7 +172,7 @@
     "retryReconcile": "對帳原操作",
     "retryReadUnavailable": "無法讀取重試設定。成功重新讀取前禁止儲存。",
     "retryReadConflict": "重試設定被來源或操作衝突鎖定。儲存已禁止。",
-    "retrySaveRejected": "儲存於接受前已被拒絕。請重新讀取設定後再編輯。",
+    "retrySaveRejected": "本次儲存請求未被接受。可以檢查並修改輸入後再次儲存，或重新讀取設定。",
     "retrySaveUnknown": "儲存結果未知。請保留原 Request ID 並查詢或對帳；不會傳送新的 PUT。",
     "retrySaved": "已儲存到 Manager。實際生效仍未知。",
     "retrySavedReadUnknown": "儲存已記錄，但無法重新讀取目前欄位。實際生效仍未知。",

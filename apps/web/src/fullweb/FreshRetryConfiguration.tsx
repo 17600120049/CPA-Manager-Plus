@@ -420,6 +420,8 @@ export function FreshRetryConfiguration({
       pendingIdRef.current = id;
       setPendingId(id);
     }
+    // A new intent must not display the previous operation's terminal result.
+    setOperation(null);
     // Protect the original ID before dispatch, including same-turn logout.
     setPendingState(true);
     setMessage('');
@@ -680,12 +682,12 @@ export function FreshRetryConfiguration({
           <h3>{t('retryOperationTitle')}</h3>
           <p>
             {t('retryOperationId')}:{' '}
-            <code data-testid="retry-operation-id">{operation?.requestId || pendingId}</code>
+            <code data-testid="retry-operation-id">{pendingId || operation?.requestId}</code>
           </p>
           {operation ? (
             <p>
               {t('retryOperationState')}:{' '}
-              {operation.state === 'unknown'
+              {operationUnknown || operation.state === 'unknown'
                 ? t('retryOperationUnknown')
                 : operation.state === 'recovered'
                   ? t('retryOperationRecovered')

@@ -395,6 +395,101 @@ describe('Full Web request retry editor', () => {
     expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
   });
 
+  it.each(['network', '409', '503', '400'])(
+    'isolates a second save from the previous persisted operation after %s',
+    async (failure) => {
+      const firstId = 'ab'.repeat(16);
+      const secondId = 'cd'.repeat(16);
+      let allocated = 0;
+      vi.stubGlobal('crypto', {
+        getRandomValues: (bytes: Uint8Array) => bytes.fill(allocated++ === 0 ? 0xab : 0xcd),
+      });
+      const first = operation('persisted', 3, firstId);
+      const recovered = operation('recovered', 0, secondId);
+      const latestExpected = { ...expected, revision: 3, sha256: 'b'.repeat(64) };
+      let finishSecond!: () => void;
+      const transport = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(retryView()))
+        .mockResolvedValueOnce(operationResponse(first))
+        .mockResolvedValueOnce(
+          Response.json(retryView({ value: 3, expected: latestExpected, operation: first }))
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve, reject) => {
+              finishSecond = () => {
+                if (failure === 'network') reject(new Error('private lost response detail'));
+                else
+                  resolve(
+                    Response.json(
+                      { code: failure === '400' ? 'invalid_retry_request' : 'journal_unknown' },
+                      { status: Number(failure) }
+                    )
+                  );
+              };
+            })
+        )
+        .mockResolvedValueOnce(operationResponse(operation('unknown', 0, secondId)))
+        .mockResolvedValueOnce(operationResponse(recovered))
+        .mockResolvedValueOnce(Response.json(retryView({ value: 7, operation: recovered })));
+      await mount(transport);
+      await change('3');
+      await click('retry-save');
+      expect(button('retry-operation-id').props.children).toBe(firstId);
+      expect(button('retry-operation').findAllByType('p')[1].children).toContain(
+        t('retryOperationPersisted')
+      );
+      await change('0');
+      await click('retry-save');
+      expect(renderer.root.findAllByProps({ 'data-testid': 'retry-operation-id' })).toHaveLength(0);
+      expect(pendingEvents[pendingEvents.length - 1]).toBe(true);
+      expect(button('retry-save').props.disabled).toBe(true);
+      await act(async () => {
+        finishSecond();
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+      const puts = transport.mock.calls.filter(([, init]) => init?.method === 'PUT');
+      expect(puts).toHaveLength(2);
+      expect(JSON.parse(String(puts[1][1]?.body))).toEqual({
+        requestId: secondId,
+        value: 0,
+        expected: latestExpected,
+      });
+      if (failure === '400') {
+        expect(renderer.root.findAllByProps({ 'data-testid': 'retry-operation' })).toHaveLength(0);
+        expect(JSON.stringify(renderer.toJSON())).toContain(t('retrySaveRejected'));
+        expect(pendingEvents[pendingEvents.length - 1]).toBe(false);
+        expect(button('retry-save').props.disabled).toBe(false);
+        return;
+      }
+      expect(button('retry-operation-id').props.children).toBe(secondId);
+      const unknownResult = button('retry-operation').findAllByType('p')[1].children.join('');
+      expect(unknownResult).toContain(t('retryOperationUnknown'));
+      expect(unknownResult).not.toContain(t('retryOperationPersisted'));
+      expect(JSON.stringify(renderer.toJSON())).not.toContain('private lost response detail');
+      expect(pendingEvents[pendingEvents.length - 1]).toBe(true);
+      expect(button('retry-save').props.disabled).toBe(true);
+      await click('retry-check-operation');
+      expect(button('retry-operation-id').props.children).toBe(secondId);
+      expect(transport.mock.calls[4][0]).toBe(
+        `https://manager.example${context.apiBase}/gateway/retry/operations/${secondId}`
+      );
+      expect(transport.mock.calls[4][1]?.method).toBe('GET');
+      await click('retry-reconcile');
+      expect(transport.mock.calls[5][0]).toBe(
+        `https://manager.example${context.apiBase}/gateway/retry/operations/${secondId}/reconcile`
+      );
+      expect(transport.mock.calls[5][1]?.method).toBe('POST');
+      expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(2);
+      expect(button('retry-operation-id').props.children).toBe(secondId);
+      expect(input().props.value).toBe('7');
+      expect(JSON.stringify(renderer.toJSON())).toContain(t('retryRecovered'));
+      expect(JSON.stringify(renderer.toJSON())).toContain(t('retryEffectiveUnknown'));
+      expect(pendingEvents[pendingEvents.length - 1]).toBe(false);
+    }
+  );
+
   it('checks and reconciles the original unknown operation, then reloads the actual recovered value', async () => {
     const recovered = operation('recovered', 3);
     const transport = vi

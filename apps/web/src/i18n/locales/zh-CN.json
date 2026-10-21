@@ -172,7 +172,7 @@
     "retryReconcile": "对账原操作",
     "retryReadUnavailable": "无法读取重试配置。成功重新读取前禁止保存。",
     "retryReadConflict": "重试配置被来源或操作冲突锁定。保存已禁止。",
-    "retrySaveRejected": "保存在被接受前已被拒绝。请重新读取配置后再编辑。",
+    "retrySaveRejected": "本次保存请求未被接受。可以检查并修改输入后再次保存，或重新读取配置。",
     "retrySaveUnknown": "保存结果未知。请保留原 Request ID 并查询或对账；不会发送新的 PUT。",
     "retrySaved": "已保存到 Manager。实际生效仍未知。",
     "retrySavedReadUnknown": "保存已记录，但无法重新读取当前字段。实际生效仍未知。",

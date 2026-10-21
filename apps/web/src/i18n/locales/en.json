@@ -172,7 +172,7 @@
     "retryReconcile": "Reconcile original operation",
     "retryReadUnavailable": "The retry configuration could not be read. Saving is blocked until a fresh read succeeds.",
     "retryReadConflict": "The retry configuration is locked by a source or operation conflict. Saving is blocked.",
-    "retrySaveRejected": "The save was rejected before it could be accepted. Reload the configuration before editing again.",
+    "retrySaveRejected": "This save request was not accepted. You can review and edit the input before saving again, or reload the configuration.",
     "retrySaveUnknown": "The save result is unknown. Keep the original Request ID and check or reconcile it; no new PUT will be sent.",
     "retrySaved": "Saved in Manager. Live effect remains unknown.",
     "retrySavedReadUnknown": "The save was recorded, but the current field could not be reloaded. Live effect remains unknown.",
