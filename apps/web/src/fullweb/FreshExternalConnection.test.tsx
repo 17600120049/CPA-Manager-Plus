@@ -1,6 +1,7 @@
+import { webcrypto } from 'node:crypto';
 import { useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FreshExternalConnection } from './FreshExternalConnection';
 import type { FreshOperation } from './bootstrapTransport';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
@@ -49,6 +50,8 @@ async function mount(
 }
 
 describe('Fresh External one-operation connection', () => {
+  beforeEach(() => vi.stubGlobal('crypto', { subtle: webcrypto.subtle }));
+  afterEach(() => vi.unstubAllGlobals());
   it('acknowledges only one POST plus a matching later GET, with no complete', async () => {
     const get = vi.fn().mockResolvedValue(committed);
     const post = vi.fn().mockResolvedValue(committed);

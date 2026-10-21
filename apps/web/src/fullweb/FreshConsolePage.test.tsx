@@ -1,3 +1,4 @@
+import { webcrypto } from 'node:crypto';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FreshConsolePage } from './FreshConsolePage';
@@ -56,7 +57,7 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     scrollRetry = vi.fn();
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal('window', { location: new URL('https://manager.example/console') });
-    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb) });
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb), subtle: webcrypto.subtle });
     vi.stubGlobal('document', {
       documentElement: { classList: { toggle: vi.fn<typeof fetch>() } },
     });
