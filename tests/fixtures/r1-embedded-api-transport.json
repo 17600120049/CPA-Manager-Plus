@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "contractId": "cpamp-r1-embedded-public-api-transport-v1",
+  "qualification": "SOURCE_TRANSPORT_CONTRACT_ONLY_NOT_COMPLETE_WEB_API_COMPATIBILITY",
+  "origin": "https://manager.example:18317",
+  "snapshot": {
+    "state": "verified_effective",
+    "verifiedEffectiveControlBasePath": "/phase4-test",
+    "revision": 1
+  },
+  "apiSuffix": "/api/v2",
+  "method": "GET",
+  "resource": "technical",
+  "expectedPath": "/phase4-test/api/v2/technical",
+  "expectedResponse": {
+    "ok": true
+  },
+  "deniedPaths": [
+    "/api/v2/technical",
+    "/phase4-test/api/v2ish/technical",
+    "/phase4-test/api/v2/technical/"
+  ]
+}

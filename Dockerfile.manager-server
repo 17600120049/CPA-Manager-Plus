@@ -18,6 +18,7 @@ ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
 COPY apps/manager-server ./apps/manager-server
+COPY tests/fixtures/r1-embedded-api-transport.json ./apps/manager-server/internal/domain/routing/release-embedded-api-transport.json
 COPY --from=web-build /app/apps/web/dist/panel/management.html ./apps/manager-server/internal/httpapi/web/management.html
 COPY --from=web-build /app/apps/web/dist/fullweb/ ./apps/manager-server/internal/httpapi/web/fullweb/
 COPY --from=web-build /out/fullweb-manifest.json ./apps/manager-server/internal/httpapi/release-fullweb-manifest.json
@@ -31,12 +32,14 @@ RUN go version -m /out/cpa-manager-plus | grep -F "SourceCommit=$SOURCE_COMMIT"
 # image consumes the same compiled artifact only after this check passes.
 FROM service-build AS web-package-test
 RUN CPAMP_FULLWEB_PACKAGED_TEST=1 go test -run '^TestPackagedFullWeb(Dist|Manifest)$' ./internal/httpapi
+RUN go test -run '^TestR1EmbeddedPublicAPITransportFixture$' ./internal/domain/routing
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates wget tzdata
 WORKDIR /app
 COPY --from=web-package-test /out/cpa-manager-plus /usr/local/bin/cpa-manager-plus
 COPY --from=web-build /out/fullweb-manifest.json /usr/local/share/cpamp/release/fullweb-manifest.json
+COPY tests/fixtures/r1-embedded-api-transport.json /usr/local/share/cpamp/release/public-api-transport-contract.json
 COPY LICENSE /usr/local/share/licenses/cpamp/LICENSE
 COPY bin/release/embedded-third-party-inventory.txt /usr/local/share/cpamp/release/third-party-inventory.txt
 ENV HTTP_ADDR=0.0.0.0:18317

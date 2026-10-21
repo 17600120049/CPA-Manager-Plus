@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPublicApiClient, type FullWebCredential } from './publicApi';
 import { resolveRoutingContext, type RoutingContext } from './routingContext';
+import r1Transport from '../../../../tests/fixtures/r1-embedded-api-transport.json';
 
 const context = resolveRoutingContext({
   state: 'verified_effective',
@@ -21,6 +22,35 @@ function browserOrigin(origin = 'https://manager.example:18317') {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('canonical Full Web Public API transport', () => {
+  it('uses the R1 Embedded transport fixture to construct the exact authorized request', async () => {
+    expect(r1Transport.schemaVersion).toBe(1);
+    expect(r1Transport.qualification).toBe(
+      'SOURCE_TRANSPORT_CONTRACT_ONLY_NOT_COMPLETE_WEB_API_COMPATIBILITY'
+    );
+    browserOrigin(r1Transport.origin);
+    const verified = resolveRoutingContext(r1Transport.snapshot)!;
+    expect(verified.apiBase).toBe(
+      r1Transport.snapshot.verifiedEffectiveControlBasePath + r1Transport.apiSuffix
+    );
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json(r1Transport.expectedResponse));
+    const result = await createPublicApiClient(() => verified, transport).get(
+      r1Transport.resource,
+      credential
+    );
+    expect(result).toEqual(r1Transport.expectedResponse);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(transport).toHaveBeenCalledWith(
+      r1Transport.origin + r1Transport.expectedPath,
+      expect.objectContaining({
+        method: r1Transport.method,
+        headers: { Accept: 'application/json', Authorization: 'Bearer full-web-admin-secret' },
+        mode: 'same-origin',
+        credentials: 'omit',
+        redirect: 'error',
+      })
+    );
+  });
+
   it.each([
     ['gateway/retry/request-retry', 'invalid_retry_request', 'invalid_retry_request'],
     [
