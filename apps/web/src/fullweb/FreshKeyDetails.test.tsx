@@ -127,12 +127,13 @@ describe('Canonical key detail and rename', () => {
     expect(close).not.toHaveBeenCalled();
     expect(button(t('keysCloseDetails')).props.disabled).toBe(true);
     expect(button(t('keysReadDetails')).props.disabled).toBe(true);
-    expect(button(t('keysCheckInstallation')).props.disabled).toBe(false);
+    expect(button(t('keysCheckInstallation')).props.disabled).toBe(true);
     expect(pending).toHaveBeenLastCalledWith(true);
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0);
     await act(async () => rejectInstall(new Error('lost install reply')));
     expect(button(t('keysCloseDetails')).props.disabled).toBe(true);
+    expect(button(t('keysCheckInstallation')).props.disabled).toBe(false);
     await act(async () => button(t('keysCheckInstallation')).props.onClick());
     expect(pending).toHaveBeenLastCalledWith(false);
     expect(button(t('keysCloseDetails')).props.disabled).toBe(false);
