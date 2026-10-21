@@ -1,0 +1,291 @@
+{
+  "sourceHead": "a20a7fe83483d51a7ca29c70d94bb4df75e35dfe",
+  "sourceTrees": {
+    "apps/manager-server": "e86d43cbfcf99a0d221eb12d6c5e5f9ca518b6b1",
+    "apps/web": "9d2587d554e2883bdca408c1389d7840055ef593",
+    "apps/ingress": "9bdd5542c1fe989dc6b3f783cf58702e3701cc78",
+    "apps/runtime-supervisor": "a5c3cd44551203759bae76e0c1839ef4b705eceb",
+    "bin/ci": "78c667293b9b1d9fafc93afd0bbb7ea2363c386e",
+    "bin/build": "990977e06dd9877f560d6a5177fdcbb7d97cf70b",
+    "docker/runtime": "3d901b9e1e5797df467f383eb61879dc0f738040"
+  },
+  "supplementalSourceSHA256": {
+    "Dockerfile.runtime": "f69326cc44b021a8fedaf4b4476c2830f23dc79208ea4ff8ec6aa6963f0ff60b",
+    "Dockerfile.manager-server": "12d6ac62a29f05aaca339da2746c2b451b8de45c6636c2aa78571216713e7b9b",
+    "Dockerfile.ingress": "7e461eb45ed94c54da705e231ce3d14fb963539fae3448e968b374137f3c120b",
+    "package.json": "c89640b5f8fd7d2bbb7e6ae8312a4d938be4e351c3d3bbbb516f0616a0ec7fe4",
+    "package-lock.json": "3a6bf6ea7c31b4630f1f4e2c24085b4687a601a8546c442e91d43e21a83f6050",
+    "apps/manager-server/internal/service/freshkeyapply/key_operation.go": "1da27360f7a391509eadb68dbe56e7eae852ba36acc0ccf0049447ffb25d3dbe",
+    "apps/manager-server/internal/service/freshkeyapply/key_operation_test.go": "7e2bcadfd23eb9c9b2b3eb1f7f5f3787bd74b101382240a91e027258adab05eb",
+    "apps/web/src/fullweb/FreshKeyRevocation.test.tsx": "fa4e28d9a3500df5546138b6f3ecbcf7540db89bd034daa58955215cf76b4d89",
+    "apps/web/src/fullweb/FreshKeyRevocation.tsx": "5e1e1cb1a6daf08b0ec48aaf0f194365f8399735aa6bc813df1d2f1a34e708b0",
+    "apps/web/src/fullweb/publicApi.ts": "7ff746dafe0fdcbb7ddba3995123de9e324e6229ad833cda91d68cdf773aa764"
+  },
+  "images": {
+    "runtime": "sha256:3fc9b926a8af2742cda13656e589dbb067c3aa3984438ea742b88c0158d686e2",
+    "manager": "sha256:cd44c1a1568d5c7633b5a26e5d47592f5a7c5fcf20211c7d0aa551a5b6c5fc06",
+    "ingress": "sha256:2b46fb49a9fafc3e4aa7d7e0419c0b0d628e60231469090229fd15563e9b7a48"
+  },
+  "disposition": "KU BROWSER STOP / ACCEPTANCE HOLD / LIVE NOT RUN / BETA HOLD",
+  "runs": [
+    {
+      "case": "ku-browser",
+      "command": "python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/ku/acceptance-a20a7fe-20261021/ku-browser --ku",
+      "startedAt": "2026-10-20T23:44:10.575927+00:00",
+      "result": "STOP",
+      "exitCode": 1,
+      "finishedAt": "2026-10-20T23:45:42.597091+00:00"
+    },
+    {
+      "case": "ku-browser-recheck",
+      "command": "python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/ku/acceptance-a20a7fe-20261021/ku-browser-recheck --ku",
+      "startedAt": "2026-10-20T23:46:27.656804+00:00",
+      "result": "STOP",
+      "exitCode": 1,
+      "finishedAt": "2026-10-20T23:48:02.708793+00:00"
+    },
+    {
+      "case": "s1",
+      "command": "python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/ku/acceptance-a20a7fe-20261021/s1",
+      "startedAt": "2026-10-20T23:48:23.608993+00:00",
+      "result": "PASS_PRIVATE_S1_GATEWAY_STOP",
+      "exitCode": 0,
+      "finishedAt": "2026-10-20T23:49:09.882043+00:00"
+    },
+    {
+      "case": "s2a",
+      "command": "python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/ku/acceptance-a20a7fe-20261021/s2a --s2a",
+      "startedAt": "2026-10-20T23:49:09.898785+00:00",
+      "result": "PASS_PRIVATE_S2A_CHAT",
+      "exitCode": 0,
+      "finishedAt": "2026-10-20T23:51:14.343853+00:00"
+    },
+    {
+      "case": "ku-browser-diagnostic",
+      "command": "python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/ku/acceptance-a20a7fe-20261021/ku-browser-diagnostic --ku",
+      "startedAt": "2026-10-20T23:51:14.365098+00:00",
+      "result": "STOP",
+      "exitCode": 1,
+      "finishedAt": "2026-10-20T23:52:48.359997+00:00"
+    },
+    {
+      "case": "ku-browser-chromium",
+      "command": "python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/ku/acceptance-a20a7fe-20261021/ku-browser-chromium --ku",
+      "browser": "Playwright 1.58.0 bundled Chromium 1208 (no channel override)",
+      "startedAt": "2026-10-20T23:52:48.418281+00:00",
+      "result": "STOP",
+      "exitCode": 1,
+      "finishedAt": "2026-10-20T23:53:55.439482+00:00"
+    },
+    {
+      "case": "ku-api",
+      "command": "python3 bin/ci/fresh-s1-docker-proof.py bin/tmp/ku/acceptance-a20a7fe-20261021/ku-api --ku",
+      "startedAt": "2026-10-20T23:54:25.572315+00:00",
+      "result": "PASS_PRIVATE_KEY_REVOKE_REPLACE_OFFLINE_LIVE_HOLD",
+      "exitCode": 0,
+      "finishedAt": "2026-10-20T23:55:31.325292+00:00"
+    }
+  ],
+  "currentRecords": {
+    "ku-browser.json": {
+      "run": "cpamp-s1-8345909bd203",
+      "result": "STOP",
+      "listedSourceCount": 38,
+      "sourceHashMismatches": []
+    },
+    "ku-api.json": {
+      "run": "cpamp-s1-57d79c413f4a",
+      "result": "PASS_PRIVATE_KEY_REVOKE_REPLACE_OFFLINE_LIVE_HOLD",
+      "listedSourceCount": 38,
+      "sourceHashMismatches": []
+    },
+    "s1.json": {
+      "run": "cpamp-s1-842d03d6c629",
+      "result": "PASS_PRIVATE_S1_GATEWAY_STOP",
+      "listedSourceCount": 17,
+      "sourceHashMismatches": []
+    },
+    "s2a.json": {
+      "run": "cpamp-s1-9d3088a59577",
+      "result": "PASS_PRIVATE_S2A_CHAT",
+      "listedSourceCount": 25,
+      "sourceHashMismatches": []
+    }
+  },
+  "allTaskResourcesDestroyed": true,
+  "historicalS2B": {
+    "sourceHead": "95d885f60e600bf8c8adae8d1e163454b5e4fd46",
+    "originalSourceHashesMatched": 27,
+    "currentSourceHashesMatched": 26,
+    "changedSourcePaths": [
+      "apps/manager-server/internal/service/freshkeyapply/key_operation.go"
+    ],
+    "newHeadDockerRun": false,
+    "disposition": "HISTORICAL_REUSE_ONLY",
+    "reason": "Changed checkOperation/ContinueOperation methods are not used by S2-B with KU disabled; shared installedKey/admission/permit/Provider/Ingress/Runtime/harness unchanged. Current targeted race and S2-A regression supplement original observations."
+  },
+  "sourceHeadCI": {
+    "baseRefName": "v2",
+    "headRefName": "feat/v2-canonical-key-revoke",
+    "headRefOid": "a20a7fe83483d51a7ca29c70d94bb4df75e35dfe",
+    "isDraft": true,
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:01:27Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161197/job/118935569841",
+        "name": "AUT-03 Linux AMD64 runtime",
+        "startedAt": "2026-10-20T23:01:06Z",
+        "status": "COMPLETED",
+        "workflowName": "AUT-03 artifact integrity"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:01:15Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935569750",
+        "name": "Scope",
+        "startedAt": "2026-10-20T23:01:06Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:01:09Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161098/job/118935569652",
+        "name": "PR Template",
+        "startedAt": "2026-10-20T23:01:06Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Template"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:04:14Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935637260",
+        "name": "Frontend",
+        "startedAt": "2026-10-20T23:01:17Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:06:19Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935637329",
+        "name": "Manager Server",
+        "startedAt": "2026-10-20T23:01:17Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:01:15Z",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935638938",
+        "name": "Runtime Supervisor",
+        "startedAt": "2026-10-20T23:01:15Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:01:15Z",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935639172",
+        "name": "Runtime Supervisor (Windows)",
+        "startedAt": "2026-10-20T23:01:15Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:01:15Z",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935638883",
+        "name": "Ingress",
+        "startedAt": "2026-10-20T23:01:15Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:05:09Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935637136",
+        "name": "Manager Server SQLite (Windows)",
+        "startedAt": "2026-10-20T23:01:17Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:01:15Z",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935638872",
+        "name": "Native Control (${{ matrix.os }})",
+        "startedAt": "2026-10-20T23:01:15Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:01:40Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935637351",
+        "name": "Demo and Docs",
+        "startedAt": "2026-10-20T23:01:17Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:01:15Z",
+        "conclusion": "SKIPPED",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118935638816",
+        "name": "Release Content",
+        "startedAt": "2026-10-20T23:01:15Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:10:03Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118937549539",
+        "name": "Docker Build",
+        "startedAt": "2026-10-20T23:06:21Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-20T23:10:09Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/seakee/CPA-Manager-Plus/actions/runs/39512161114/job/118938953891",
+        "name": "Required checks",
+        "startedAt": "2026-10-20T23:10:05Z",
+        "status": "COMPLETED",
+        "workflowName": "PR Check"
+      }
+    ]
+  },
+  "artifactSHA256": {
+    "ku-browser.json": "428902dbc0bfca932f95454a44c4e68ba3850db9b43b09d6545a144a2584fe5d",
+    "ku-api.json": "e73e24ad553c6602cc3aa6d1845fa496070bdb0f0c5c6883ea37fc8d712cc650",
+    "browser.json": "a6c351879b55625133381bdd899d303ee9e550675b91b5b9572828a706592574",
+    "s1.json": "8642a1d6c5db26aee57855d35c093f23b312f473eaf85955f599d0759e935697",
+    "s2a.json": "e71f578aa79d88f4dfac24fd6739ba22af2c5ce4688e5f403113f1379ce9d8af",
+    "s2b.json": "df3efb89408fa07fd4ade8b7cfab4c246849dffe6e5687bc9b32cf225c5c21eb",
+    "chrome-browser-stops.json": "b81d8ab6fe9b1f1d5f2b6a43e0ba280605d984e2c424c932fb4a51f4f705c116",
+    "browser-network.jsonl": "530aa84e178af52469bed16f8156364c32f4a95e5ca9eb74bdcf9800f780fef6",
+    "browser-observer.cjs.txt": "4bc5ffce3a4ff306dcbd813a647e694c29f5125b3f04a4568be514beeaf7c094",
+    "acceptance-checks.txt": "4f2032cfeb4c567ccd71baa0baccf6ef2a10121d9292e353c2af6f8997a1d986",
+    "desktop-dark-en-selection.png": "70da83bb16bd31b35eebce6e64938f2c79d8dfca7b92f7873cd7c073652bdd3f",
+    "desktop-light-en.png": "7e3a64a68dcc2d9af6eda68be1e644a2280a5e1ebfc6611042b5bdc571941529",
+    "mobile-dark-zh-CN.png": "bc5fb9dc6ddab4865e91c649ab7d8fad1db48d6da4fb7bcadb8892f446ed7c55"
+  }
+}

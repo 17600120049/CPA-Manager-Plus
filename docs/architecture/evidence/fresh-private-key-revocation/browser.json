@@ -1,5 +1,5 @@
 {
-  "result": "PASS_BROWSER_PRIVATE_REPLACEMENT",
+  "result": "STOP",
   "checks": [
     "Browser canonical selection, durable preparation, dedicated add permit and observed replacement",
     "Manager restart and browser reload recover the original operation",
@@ -13,10 +13,12 @@
   ],
   "apiFailures": [
     {
-      "path": "/control/api/v2/api-keys/operations/eb318c336a7d15bbd27c69f7a741ff4d/continue",
+      "path": "/control/api/v2/api-keys/operations/5a8c09d703402babf1397445628f1e5c/continue",
       "status": 409
     }
   ],
-  "networkFailures": [],
-  "operation": "eb318c336a7d15bbd27c69f7a741ff4d"
+  "networkFailures": [
+    "/control/api/v2/api-keys/operations/5a8c09d703402babf1397445628f1e5c/continue"
+  ],
+  "error": "Expected values to be strictly equal:\n\n1 !== 0\n"
 }

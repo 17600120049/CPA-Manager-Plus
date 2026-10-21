@@ -1,0 +1,26 @@
+// Task-only passive observer. No request interception or test filtering.
+const { appendFileSync } = require('node:fs');
+const { resolve } = require('node:path');
+const playwright = require('/Users/seakee/.cache/uv/archive-v0/BkKp8nKYyqR_kymb621O0/playwright/driver/package');
+const launch = playwright.chromium.launch.bind(playwright.chromium);
+playwright.chromium.launch = async (...args) => {
+  const browser = await launch(...args);
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (...contextArgs) => {
+    const context = await newContext(...contextArgs);
+    context.on('page', page => {
+      const write = (event, request, fields = {}) => {
+        const path = new URL(request.url()).pathname;
+        if (!path.includes('/api/v2/api-keys/operations/')) return;
+        appendFileSync(resolve(process.argv[3], 'browser-network.jsonl'), JSON.stringify({ utcMs: Date.now(), event, path, method: request.method(), ...fields }) + '\n');
+      };
+      page.on('request', request => write('request', request));
+      page.on('response', response => write('response', response.request(), { status: response.status() }));
+      page.on('requestfinished', request => write('finished', request));
+      page.on('requestfailed', request => write('failed', request, { errorText: request.failure()?.errorText }));
+    });
+    return context;
+  };
+  return browser;
+};
+module.exports = playwright;

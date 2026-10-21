@@ -1,0 +1,1450 @@
+{
+  "result": "PASS_PRIVATE_KEY_REVOKE_REPLACE_OFFLINE_LIVE_HOLD",
+  "run": "cpamp-s1-57d79c413f4a",
+  "events": [
+    {
+      "utcMs": 1792540466558,
+      "port": 9081,
+      "path": "/v1/runtime/status",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540468115,
+      "port": 28471,
+      "path": "/.well-known/cpamp-bootstrap",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540468454,
+      "port": 28471,
+      "path": "/.well-known/cpamp-bootstrap/api/v2/claim/exchange",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540468752,
+      "port": 28471,
+      "path": "/.well-known/cpamp-bootstrap/api/v2/admin/generate",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540469060,
+      "port": 28471,
+      "path": "/.well-known/cpamp-bootstrap/api/v2/admin/commit",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540469373,
+      "port": 28471,
+      "path": "/.well-known/cpamp-bootstrap/api/v2/routing/prepare",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540469696,
+      "port": 28471,
+      "path": "/.well-known/cpamp-bootstrap/api/v2/routing/activate",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540469996,
+      "port": 28471,
+      "path": "/control/api/v2/strategy",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540470586,
+      "port": 28471,
+      "path": "/control/api/v2/strategy",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540470891,
+      "port": 9081,
+      "path": "/v1/runtime/status",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540471238,
+      "port": 8317,
+      "path": "/v8/management/config/access/api-keys",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540471590,
+      "port": 8317,
+      "path": "/v8/management/config/access/api-keys",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "utcMs": 1792540471927,
+      "port": 8317,
+      "path": "/v8/management/config",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540472320,
+      "preflight": "PASS",
+      "privatePortsRefused": [
+        8317,
+        9081
+      ],
+      "emptyKeys": true,
+      "uniqueWriter": "host-owned serial launcher"
+    },
+    {
+      "utcMs": 1792540472997,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540473663,
+      "port": 8317,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540473959,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540474332,
+      "scenario": "s1-pre-post-install",
+      "edge": "private-cpa",
+      "status": 200,
+      "cpaChatArrivals": 1,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540474332,
+      "edge": "private-cpa",
+      "credential": "absent",
+      "stream": false,
+      "status": 200,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540474628,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540475321,
+      "port": 8317,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540475621,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540475994,
+      "scenario": "s1-pre-post-install",
+      "edge": "private-cpa",
+      "status": 200,
+      "cpaChatArrivals": 1,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540475994,
+      "edge": "private-cpa",
+      "credential": "wrong",
+      "stream": false,
+      "status": 200,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540476304,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "utcMs": 1792540476594,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540477262,
+      "port": 8317,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540477555,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540477939,
+      "scenario": "s1-pre-post-install",
+      "edge": "private-cpa",
+      "status": 200,
+      "cpaChatArrivals": 1,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540477939,
+      "edge": "private-cpa",
+      "credential": "valid",
+      "stream": false,
+      "status": 200,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540478234,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540478930,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540479241,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540479620,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540479620,
+      "edge": "ingress",
+      "credential": "absent",
+      "stream": false,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540479917,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540480593,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540480895,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540481257,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540481257,
+      "edge": "ingress",
+      "credential": "absent",
+      "stream": true,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540481558,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540482235,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540482530,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540482918,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540482918,
+      "edge": "ingress",
+      "credential": "wrong",
+      "stream": false,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540483222,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540483899,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540484200,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540484566,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540484566,
+      "edge": "ingress",
+      "credential": "wrong",
+      "stream": true,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540484866,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540485536,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540485839,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540486210,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540486210,
+      "edge": "ingress",
+      "credential": "valid",
+      "stream": false,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540486515,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540487195,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540487494,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540487875,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540487875,
+      "edge": "ingress",
+      "credential": "valid",
+      "stream": true,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540488178,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/initial-install",
+      "method": "POST",
+      "status": 401
+    },
+    {
+      "utcMs": 1792540488480,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/initial-install",
+      "method": "POST",
+      "status": 401
+    },
+    {
+      "utcMs": 1792540488782,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/initial-install",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "utcMs": 1792540489106,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/initial-install",
+      "method": "POST",
+      "status": 400
+    },
+    {
+      "utcMs": 1792540490383,
+      "hostAuthority": "PASS",
+      "containers": [
+        "cpamp-s1-57d79c413f4a-runtime",
+        "cpamp-s1-57d79c413f4a-probe",
+        "cpamp-s1-57d79c413f4a-meter",
+        "cpamp-s1-57d79c413f4a-manager",
+        "cpamp-s1-57d79c413f4a-ingress"
+      ],
+      "volumes": [
+        "cpamp-s1-57d79c413f4a-runtime",
+        "cpamp-s1-57d79c413f4a-token",
+        "cpamp-s1-57d79c413f4a-manager",
+        "cpamp-s1-57d79c413f4a-permit"
+      ],
+      "networkInternal": true,
+      "permitMountedReadOnly": true,
+      "managementCredential": "unique ephemeral secret; CPA hash + Manager read-only permit only"
+    },
+    {
+      "utcMs": 1792540490741,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/initial-install",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540491815,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/initial-install",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540492118,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/initial-install",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "utcMs": 1792540492417,
+      "port": 8317,
+      "path": "/v1/models",
+      "method": "GET",
+      "status": 401
+    },
+    {
+      "utcMs": 1792540492716,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540493392,
+      "port": 8317,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 401
+    },
+    {
+      "utcMs": 1792540493678,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540494042,
+      "scenario": "s1-pre-post-install",
+      "edge": "private-cpa",
+      "status": 401,
+      "cpaChatArrivals": 1,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540494042,
+      "edge": "private-cpa",
+      "credential": "absent",
+      "stream": false,
+      "status": 401,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540494339,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540495010,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540495308,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540495678,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540495678,
+      "edge": "ingress",
+      "credential": "absent",
+      "stream": false,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540495976,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540496650,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540496944,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540497322,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540497322,
+      "edge": "ingress",
+      "credential": "absent",
+      "stream": true,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540497622,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540498277,
+      "port": 8317,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 401
+    },
+    {
+      "utcMs": 1792540498571,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540498971,
+      "scenario": "s1-pre-post-install",
+      "edge": "private-cpa",
+      "status": 401,
+      "cpaChatArrivals": 1,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540498971,
+      "edge": "private-cpa",
+      "credential": "wrong",
+      "stream": false,
+      "status": 401,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540499267,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540499944,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540500258,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540500626,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540500626,
+      "edge": "ingress",
+      "credential": "wrong",
+      "stream": false,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540500927,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540501619,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540501918,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540502293,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540502293,
+      "edge": "ingress",
+      "credential": "wrong",
+      "stream": true,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540502581,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540503257,
+      "port": 8317,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540503553,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540503929,
+      "scenario": "s1-pre-post-install",
+      "edge": "private-cpa",
+      "status": 200,
+      "cpaChatArrivals": 1,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540503929,
+      "edge": "private-cpa",
+      "credential": "valid",
+      "stream": false,
+      "status": 200,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540504216,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540504996,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540505299,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540505672,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 200,
+      "cpaChatArrivals": 1,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540505672,
+      "edge": "ingress",
+      "credential": "valid",
+      "stream": false,
+      "status": 200,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540505961,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540506641,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540506941,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540507315,
+      "scenario": "s1-pre-post-install",
+      "edge": "ingress",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540507315,
+      "edge": "ingress",
+      "credential": "valid",
+      "stream": true,
+      "status": 503,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540508171,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/initial-install",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540508536,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "utcMs": 1792540508850,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/revocation",
+      "method": "POST",
+      "status": 401
+    },
+    {
+      "utcMs": 1792540509182,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/revocation",
+      "method": "POST",
+      "status": 401
+    },
+    {
+      "utcMs": 1792540509630,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/revocation",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "utcMs": 1792540509932,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/ffffffffffffffffffffffffffffffff/revocation",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "utcMs": 1792540509932,
+      "scenario": "last-key-staged-only-keeper-and-unauthorized-refused",
+      "noClientKeyWrite": true
+    },
+    {
+      "utcMs": 1792540510379,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/revocation",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540510686,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/operations/ef90ff5edf1d362ca152c42b04d26389/continue",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "utcMs": 1792540511364,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540511662,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540512342,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540512342,
+      "scenario": "prepared-operation-denies-old",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540512858,
+      "port": 9081,
+      "path": "/v1/runtime/status",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540513438,
+      "scenario": "dedicated-step-grant",
+      "operation": "ef90ff5edf1d362ca152c42b04d26389",
+      "step": "add",
+      "generation": "11303449967116809555",
+      "sourceSHA256": "b073842bcae06b2cfc18f995f4059fe6c8aeb6d49206cb5fdb3d94caa20a6072",
+      "allSourceAndNamespaceConsumersOwned": true
+    },
+    {
+      "utcMs": 1792540514928,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/operations/ef90ff5edf1d362ca152c42b04d26389/continue",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540515283,
+      "port": 8317,
+      "path": "/v8/management/config/access/api-keys",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540515953,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540516254,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540516922,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540516923,
+      "scenario": "two-key-transition-denies-old",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540517598,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540517905,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540518575,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540518575,
+      "scenario": "two-key-transition-denies-replacement",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540518898,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/operations/ef90ff5edf1d362ca152c42b04d26389/continue",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "utcMs": 1792540519367,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/operations/ef90ff5edf1d362ca152c42b04d26389",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540519673,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/operations/ef90ff5edf1d362ca152c42b04d26389/continue",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "utcMs": 1792540519972,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304/revocation",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "utcMs": 1792540520499,
+      "port": 9081,
+      "path": "/v1/runtime/status",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540521039,
+      "scenario": "dedicated-step-grant",
+      "operation": "ef90ff5edf1d362ca152c42b04d26389",
+      "step": "revoke",
+      "generation": "11303449967116809555",
+      "sourceSHA256": "ba773f67ee05565ee26c82ff75d3a00e8ad1105153a6b31da9d9612c6ff747d9",
+      "allSourceAndNamespaceConsumersOwned": true
+    },
+    {
+      "utcMs": 1792540522541,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/operations/ef90ff5edf1d362ca152c42b04d26389/continue",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540523229,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540523638,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540524314,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540524314,
+      "scenario": "replacement-ingress-success",
+      "status": 200,
+      "cpaChatArrivals": 1,
+      "upstreamArrivals": 1
+    },
+    {
+      "utcMs": 1792540525008,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540525316,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540526010,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540526010,
+      "scenario": "revoked-old",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540526709,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540527005,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540527676,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540527676,
+      "scenario": "wrong-key",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540528389,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540528690,
+      "port": 28471,
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540529421,
+      "port": 18321,
+      "path": "/events",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540529421,
+      "scenario": "absent-key",
+      "status": 503,
+      "cpaChatArrivals": 0,
+      "upstreamArrivals": 0
+    },
+    {
+      "utcMs": 1792540529725,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/aab5ff344fef6cba6db7776136da6304",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540530037,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/68726cad60e3ecdd98a18121362a3569",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540530341,
+      "port": 28471,
+      "path": "/control/api/v2/api-keys/68726cad60e3ecdd98a18121362a3569/revocation",
+      "method": "POST",
+      "status": 503
+    },
+    {
+      "utcMs": 1792540530690,
+      "port": 8317,
+      "path": "/v8/management/config/access/api-keys",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "utcMs": 1792540530690,
+      "scenario": "canonical-history-and-last-key-retained",
+      "oldLifecycle": "superseded",
+      "keeperLifecycle": "active",
+      "originalOperation": "ef90ff5edf1d362ca152c42b04d26389",
+      "managerRestartRecovered": true
+    }
+  ],
+  "sourceSHA256": {
+    "apps/manager-server/cmd/cpa-manager-plus/fresh.go": "dcbe1ef27a71d5d8e6c77594094972f5d0db7f3459f15e68fe70ce690923f24c",
+    "apps/manager-server/cmd/cpa-manager-plus/fresh_keys.go": "234498771a23fea26d50b7ddf5483bc740b7af46685bd4d082f42878067ac0b4",
+    "apps/manager-server/cmd/cpa-manager-plus/fresh_key_install.go": "add92bb71f18ad7221b308a6dfd97b699305591d421ec8547f42ba7e675d3340",
+    "apps/manager-server/internal/repository/freshkeys/initial_install.go": "b2a503279c55de7e8d1f94cd26dfb5f50f6cde20497fa924458e0ae3e3fb6f0b",
+    "apps/manager-server/internal/service/freshkeys/service.go": "27fb807a3113f4d88fa06263412b89869b9a2dc8988c1b3e8166b1a7e1f0d463",
+    "apps/manager-server/internal/service/cpa/private_initial_key.go": "abdb3d5023a4404faf5eb93b3f425042a1cfd6418739a4b21cc3e6e385851494",
+    "apps/manager-server/internal/service/cpa/private_key_observation.go": "cc018f9f3b130855870d5772f496c1792ef1db2afb4e38694c608d2267eec6ec",
+    "apps/web/src/fullweb/FreshKeyInstallation.tsx": "d540d18a7f0c15c190138e6cf96c2e54efb2b55403f1012eb50721324ae54f6a",
+    "apps/web/src/fullweb/FreshKeyDetails.tsx": "c16f326faedcad1a28aef57206251ee39fb1f972a23f778b068f64dd03a372ae",
+    "apps/web/src/fullweb/freshKeyMetadata.ts": "2a8363a77e731ce17a2b0b146a6800232930f83d0014bfd24f7eb81439fb75fd",
+    "bin/ci/fresh-s1-docker-proof.py": "063b137bbddee1f49fe5fe08035536131bbf5065dbfea885f5abefcd1f4dc200",
+    "apps/manager-server/internal/service/freshkeyapply/admission.go": "2123afed62fae0cbb97a6d90245c6bc5893c8077c951a3b090279e1d80176f31",
+    "apps/manager-server/internal/service/freshkeyapply/key_operation.go": "1da27360f7a391509eadb68dbe56e7eae852ba36acc0ccf0049447ffb25d3dbe",
+    "apps/manager-server/internal/service/freshkeyapply/permit.go": "349e676e3c6a915b0c12c152ee4171a6ece35df4ffcc0842fb89fc1e999b6c7a",
+    "apps/manager-server/internal/service/freshkeyapply/permit_linux.go": "ea60a96d88e347ce46a67e6fc9726d0d7186eaf81740dff9718f7159fa1ce03e",
+    "apps/manager-server/internal/service/freshkeyapply/permit_other.go": "a130903c2df4842aa5869f7bca5a488056c1ca9477375b2ea81dcb4c6236d33a",
+    "apps/manager-server/internal/service/freshkeyapply/service.go": "a6bbd6d2369d5301ad55630f1c873d1462b04820fcfab96f29525841bbd048e9",
+    "apps/web/src/fullweb/carrier.css": "3717ba2f94d8d5f7e1f96de950cc3f896dc54fc7b29fa0c72bf322b4c68a689c",
+    "bin/ci/fresh_ku_proof.py": "8fce5993541411b9a10101aa5338c38e835c08415ab088fea1d2309a0be66a54",
+    "bin/ci/fresh_ku_browser.py": "ceea4a1070599a06cfa0094e8794af5b8f6113bf45e4c1d0b9bc6585474fc75d",
+    "bin/ci/fresh-ku-browser.mjs": "46e3f33c9c84838b2cb939d1524d04da26f5075cef798b177caa794652046301",
+    "apps/manager-server/cmd/cpa-manager-plus/fresh_key_operation.go": "1d0d53c5310f5bfc8311327a6e63a08aef54429e9cb12913328f2767a982fbe9",
+    "apps/manager-server/internal/repository/freshkeys/operation.go": "f3ad9b0c6d4cdc55992cde43eedfe432c334f93367705671eac72966cc4f37ec",
+    "apps/manager-server/internal/service/cpa/private_key_operation.go": "80e5dd3cfcfb402fb1e602f35db00f7b97911665f606003a1f47a69fc2a11eaa",
+    "apps/web/src/fullweb/FreshKeyRevocation.tsx": "5e1e1cb1a6daf08b0ec48aaf0f194365f8399735aa6bc813df1d2f1a34e708b0",
+    "apps/web/src/fullweb/FreshApiKeys.tsx": "877d7491c3e8b3a037562247adb8e1df09773eaf90ce55d1ae6e4303da97feda",
+    "apps/web/src/i18n/locales/en.json": "53e9a8c25039b5d04ad741a3b9e1f8ca780b7fe4b8bd81786621267b42f82c3b",
+    "apps/web/src/i18n/locales/zh-CN.json": "9377dd5a28611062cee5703f93452bcbd1bffe2c0a444939a2ea4bfb34d6ab92",
+    "apps/web/src/i18n/locales/zh-TW.json": "843240d6db5f15ca9f2639f4f877df268045e44f731a6249cfd2591f4091eca3",
+    "apps/web/src/i18n/locales/ru.json": "592e97138ca610453fc98050d635ea821950aa5dbd59ec5978311e390905d518",
+    "bin/ci/fresh_s2a_proof.py": "06598a42e3babef68cbd01f0718ac2cc3bd25a7bb68a4689ee3039b25aa8273d",
+    "apps/manager-server/cmd/cpa-manager-plus/fresh_chat_admission.go": "547d94e4115d8f486f5f05fd6148d7ad22959fabb80c1066ccd2242c27c15a89",
+    "apps/ingress/cmd/cpamp-ingress/main.go": "d10d4ad4406c62666ece5326314b5b6da69c43ca9a2b917771e2ff74939597b5",
+    "apps/ingress/internal/ingress/chat.go": "b498646ccc94f93bfb4677070671f5a5639ee8039b72440fa9efb236920925a2",
+    "apps/ingress/internal/ingress/chat_body.go": "0d791d84e03082ff3d8be80fc4b84e4c2f5f13393cac0c019fa2e58a18a9ffd1",
+    "apps/ingress/internal/ingress/classifier.go": "66f7d97a8bfc4bf2235eaf6b636fae5c12ab62f2160d087e4c3d3aae208003cf",
+    "apps/ingress/internal/ingress/fresh.go": "14caf342816051a67b25e8e9c335853e68a7d6ee462096a7aa3d70bec4ec0cac",
+    "apps/ingress/internal/ingress/proxy.go": "01b74cae20c71b1a108fe95b57ea77fc25164422b22b92915b44f197d499d71f"
+  },
+  "runtimeImageId": "sha256:3fc9b926a8af2742cda13656e589dbb067c3aa3984438ea742b88c0158d686e2",
+  "initialStatus": {
+    "protocolVersion": "v1",
+    "runtimeIdentity": "embedded-auth-proof",
+    "runtimeGeneration": 11303449967116809555,
+    "state": "offline",
+    "cpaObservedVersion": "8.0.13",
+    "activeGatewayArtifact": {
+      "engine": "cpa",
+      "artifactId": "sha256:b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
+      "version": "8.0.13"
+    },
+    "capabilities": [
+      "start",
+      "stop",
+      "restart",
+      "prepare_update",
+      "activate_update",
+      "observe_update_operation",
+      "stage_destination"
+    ],
+    "recovery": {
+      "state": "inactive",
+      "attemptsRemaining": 0
+    }
+  },
+  "liveStatus": {
+    "protocolVersion": "v1",
+    "runtimeIdentity": "embedded-auth-proof",
+    "runtimeGeneration": 11303449967116809555,
+    "state": "ready",
+    "cpaObservedVersion": "8.0.13",
+    "activeGatewayArtifact": {
+      "engine": "cpa",
+      "artifactId": "sha256:b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
+      "version": "8.0.13"
+    },
+    "capabilities": [
+      "start",
+      "stop",
+      "restart",
+      "prepare_update",
+      "activate_update",
+      "observe_update_operation",
+      "stage_destination"
+    ],
+    "recovery": {
+      "state": "armed",
+      "attemptsRemaining": 3
+    }
+  },
+  "managementProjectionFields": [
+    "allow-remote",
+    "disable-auto-update-panel",
+    "disable-control-panel",
+    "secret-key"
+  ],
+  "configProjectionWithoutManagementSecret": {
+    "access": {
+      "api-keys": []
+    },
+    "api-keys": {
+      "openai-compatibility": [
+        {
+          "base-url": "http://127.0.0.1:18321/v1",
+          "keys": [
+            {
+              "api-key": "s1-synthetic-upstream-only",
+              "auth_index": "557ea5257c0a559d"
+            }
+          ],
+          "models": [
+            {
+              "alias": "s1-proof-model",
+              "name": "s1-proof-model"
+            }
+          ],
+          "name": "s1-synthetic"
+        }
+      ]
+    },
+    "config-version": 8,
+    "management": {
+      "allow-remote": false,
+      "disable-auto-update-panel": true,
+      "disable-control-panel": true
+    },
+    "oauth": {
+      "auth-dir": "/runtime/gateway/auth"
+    },
+    "observability": {
+      "logs": {
+        "logging-to-file": false
+      },
+      "usage": {
+        "usage-statistics-enabled": false
+      }
+    },
+    "plugins": {
+      "dir": "/runtime/gateway/plugins",
+      "enabled": false
+    },
+    "server": {
+      "host": "127.0.0.1",
+      "port": 8317
+    }
+  },
+  "runtimeNamespaceConsumers": [
+    {
+      "container": "cpamp-s1-57d79c413f4a-ingress",
+      "networkMode": "container:48f20c0fe8001e0928ba849a76582786bbd480267731db00e74d12368f944efa",
+      "resolvedRuntimeId": "48f20c0fe8001e0928ba849a76582786bbd480267731db00e74d12368f944efa",
+      "trusted": true
+    },
+    {
+      "container": "cpamp-s1-57d79c413f4a-manager",
+      "networkMode": "container:48f20c0fe8001e0928ba849a76582786bbd480267731db00e74d12368f944efa",
+      "resolvedRuntimeId": "48f20c0fe8001e0928ba849a76582786bbd480267731db00e74d12368f944efa",
+      "trusted": true
+    },
+    {
+      "container": "cpamp-s1-57d79c413f4a-meter",
+      "networkMode": "container:48f20c0fe8001e0928ba849a76582786bbd480267731db00e74d12368f944efa",
+      "resolvedRuntimeId": "48f20c0fe8001e0928ba849a76582786bbd480267731db00e74d12368f944efa",
+      "trusted": true
+    },
+    {
+      "container": "cpamp-s1-57d79c413f4a-probe",
+      "networkMode": "container:48f20c0fe8001e0928ba849a76582786bbd480267731db00e74d12368f944efa",
+      "resolvedRuntimeId": "48f20c0fe8001e0928ba849a76582786bbd480267731db00e74d12368f944efa",
+      "trusted": true
+    },
+    {
+      "container": "cpamp-s1-57d79c413f4a-runtime",
+      "networkMode": "cpamp-s1-57d79c413f4a",
+      "resolvedRuntimeId": "48f20c0fe8001e0928ba849a76582786bbd480267731db00e74d12368f944efa",
+      "trusted": true
+    }
+  ],
+  "containerImages": {
+    "cpamp-s1-57d79c413f4a-runtime": "sha256:3fc9b926a8af2742cda13656e589dbb067c3aa3984438ea742b88c0158d686e2",
+    "cpamp-s1-57d79c413f4a-probe": "sha256:050f6d1f4e5f89af62e03f6fcd1c06be2a401339b3694adc4c0a2850d9d8b1e7",
+    "cpamp-s1-57d79c413f4a-meter": "sha256:050f6d1f4e5f89af62e03f6fcd1c06be2a401339b3694adc4c0a2850d9d8b1e7",
+    "cpamp-s1-57d79c413f4a-manager": "sha256:cd44c1a1568d5c7633b5a26e5d47592f5a7c5fcf20211c7d0aa551a5b6c5fc06",
+    "cpamp-s1-57d79c413f4a-ingress": "sha256:2b46fb49a9fafc3e4aa7d7e0419c0b0d628e60231469090229fd15563e9b7a48"
+  },
+  "process": "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41  /proc/71/exe\n/runtime/gateway\nUid:\t10001\t10001\t10001\t10001\nGid:\t10001\t10001\t10001\t10001",
+  "installObservation": {
+    "keyId": "aab5ff344fef6cba6db7776136da6304",
+    "managerStaged": true,
+    "cpaConfigured": true,
+    "runtimeState": "effective_observed",
+    "runtimeGeneration": "11303449967116809555",
+    "observedFromMs": 1792540491291,
+    "observedUntilMs": 1792540491801,
+    "expiresAtMs": 1792540496801,
+    "ingressAuthorized": false,
+    "installAvailable": false,
+    "attempted": true
+  },
+  "effectiveObservation": {
+    "keyId": "aab5ff344fef6cba6db7776136da6304",
+    "managerStaged": true,
+    "cpaConfigured": true,
+    "runtimeState": "effective_observed",
+    "runtimeGeneration": "11303449967116809555",
+    "observedFromMs": 1792540507649,
+    "observedUntilMs": 1792540508157,
+    "expiresAtMs": 1792540513157,
+    "ingressAuthorized": false,
+    "installAvailable": false,
+    "attempted": true
+  },
+  "keyOperation": {
+    "id": "ef90ff5edf1d362ca152c42b04d26389",
+    "targetId": "aab5ff344fef6cba6db7776136da6304",
+    "keeperId": "68726cad60e3ecdd98a18121362a3569",
+    "outcome": "committed",
+    "generation": "11303449967116809555"
+  }
+}

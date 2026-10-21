@@ -1,113 +1,176 @@
 # Private Key revocation / necessary replacement evidence
 
-Disposition: **PRIVATE SOURCE + OFFLINE CPA VERIFIED / LIVE NOT RUN / BETA HOLD**.
-These are developer observations, not independent acceptance or release/image
-qualification. The Draft PR's exact final HEAD is the independent review target.
+Disposition: **KU BROWSER STOP / ACCEPTANCE HOLD / LIVE NOT RUN / BETA HOLD**.
+Current source passes KU API, S1 and S2-A offline Docker proofs. The unchanged KU
+Browser runner fails its final network assertion. Successful operation assertions
+and CI do not turn a stopped browser run into PASS.
 
-Product base: `v2@bbf504557ff2e5828933f2855d94abee947dbc94`.
-Authority: maintainer's explicit private implementation/write instruction and
+Tested product source: **a20a7fe83483d51a7ca29c70d94bb4df75e35dfe**.
+The delivery commit changes evidence/docs only. Its exact HEAD is the Draft PR
+review target; executable source trees and supplemental hashes are recorded in
+[the acceptance manifest](acceptance-a20a7fe.json). No rebase, product change or
+modification of another worktree was performed during this acceptance.
+
+Authority: maintainer's explicit disposable private proof instruction and
 [Plan #64](https://github.com/seakee/cpamp-plan/pull/64), merge
-`ac4600cec887a937dbf6f52ea0bd50dff2971548`. Latest Plan main was also checked at
-`6c217236b62e2c76558108859887ecd15d4a540d`; its separate configuration lane is
-not implemented here. No configuration/wizard owner files were changed.
+ac4600cec887a937dbf6f52ea0bd50dff2971548.
+[Plan #63](https://github.com/seakee/cpamp-plan/pull/63) defers real-environment
+manual acceptance to pre-Beta; it does not waive failed source checks or grant
+production writes. Configuration/wizard owner files remain outside scope.
 
-## Retained real observations
+## Current-source observations
 
-| Record | Result / scope |
+All new runs used official CPA **v8.0.13**, Linux/amd64, a fresh internal network
+and newly created disposable volumes. The existing serial launcher proved
+source/namespace ownership and issued dedicated per-step permits. No ordinary
+Compose, External, Upgrade, real user volume or public Gateway was used. All
+task-owned containers, volumes and networks were confirmed destroyed.
+
+| Record | Current-source result / scope |
 | --- | --- |
-| [KU browser + CPA](ku-browser.json) | Official v8.0.13 replacement then revocation, original operation recovery after Manager restart, final Ingress positive/negatives |
-| [Browser assertions](browser.json) | Canonical selection, preparation, two authorized UI steps, reload/login recovery, list refresh; zero page errors and failed network requests; expected missing-permit 409 recorded |
-| [S1 regression](s1.json) | Original private one-time installation and generation fences; Gateway remains closed |
-| [S2-A regression](s2a.json) | Existing synthetic nonstreaming Chat positive/negative matrix, isolation, restart and request-time fences |
-| [S2-B regression](s2b.json) | Existing fixed Provider/model admission and offline TLS fixture; real Provider/network NOT RUN |
+| [KU Browser Docker](ku-browser.json) / [browser report](browser.json) | **STOP**, vanilla Playwright 1.58.0 bundled Chromium revision 1208; three functional assertions and layouts completed, final zero-network-failures assertion failed |
+| [Chrome attempts](chrome-browser-stops.json) | Two original runs and one passive diagnostic run with Chrome 155.0.8059.85 also **STOP**; not replaced by API PASS |
+| [Passive network events](browser-network.jsonl) | Expected missing-permit POST returned 409, later reported net::ERR_ABORTED during re-login; both authorized POST responses were 200 and finished normally |
+| [KU API Docker](ku-api.json) | **PASS**, actual replacement/revocation, original operation recovery after Manager restart, final CPA/Ingress positive and negative controls |
+| [S1 regression](s1.json) | **PASS**, original installation, duplicate-attempt and generation fences; Gateway remains closed |
+| [S2-A regression](s2a.json) | **PASS**, synthetic Chat matrix, malformed requests, expiry, isolation, restart, CPA unresponsiveness and generation fences |
+| [S2-B historical record](s2b.json) | Historical PASS at 95d885f…, retained unchanged with the reuse analysis below; **not a new-head Docker run** |
 
-All four Docker records use the same final Manager image:
-`sha256:b1b76861d5d2bb9d85a772aa1035231485c8a51b7656ccf8682a38bb24f9416a`.
-Runtime is `sha256:3fc9b926a8af2742cda13656e589dbb067c3aa3984438ea742b88c0158d686e2`;
-Ingress is `sha256:2b46fb49a9fafc3e4aa7d7e0419c0b0d628e60231469090229fd15563e9b7a48`.
-Each manifest was checked against final executable/harness sources with **zero
-hash mismatches**. The KU manifest binds 38 source files, including new writer,
-journal, UI, CSS and locales. Images were built from the worktree before commit;
-this is source-content binding, not signed build/release provenance.
-The official CPA executable SHA256 is
-`b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41`.
+Current Manager image:
+sha256:cd44c1a1568d5c7633b5a26e5d47592f5a7c5fcf20211c7d0aa551a5b6c5fc06.
+Runtime: sha256:3fc9b926a8af2742cda13656e589dbb067c3aa3984438ea742b88c0158d686e2.
+Ingress: sha256:2b46fb49a9fafc3e4aa7d7e0419c0b0d628e60231469090229fd15563e9b7a48.
+All three were built from clean tested source. Runtime/Ingress reused identical
+cached layers; Manager was rebuilt with Full Web, packaged-web checks and
+SOURCE_COMMIT=a20a7fe…. This is development-image source binding, not signed
+release provenance.
 
-The existing Key API created the independent replacement. Browser actions then
-selected both canonical IDs, prepared the operation, observed missing-permit
-refusal, continued `add`, reloaded/re-authenticated after an actual Manager
-restart, and continued `revoke` under a fresh dedicated grant. Host inspected
-all reachable source/namespace consumers before each grant. The browser never
-received a CPA Management credential or supplied writer/proof flags.
+Every current Docker record matches its listed source hashes with **zero
+mismatches**. KU binds 38 files. The supplemental manifest also binds all five
+files changed since 95d885f…, including publicApi.ts, plus Dockerfiles, package/
+lock files and Git source-tree IDs. The runner's 38-file list alone does not cover
+every build input. Official CPA executable SHA256:
+b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41.
 
-| Final request through Ingress | HTTP | CPA Chat arrivals | Synthetic upstream arrivals |
+The separate KU API run measured final deltas using the passive CPA packet meter
+and independent synthetic upstream log:
+
+| Request through Ingress | HTTP | CPA Chat arrivals | Synthetic upstream arrivals |
 | --- | --- | --- | --- |
 | Replacement | 200 | 1 | 1 |
 | Revoked old Key | 503 | 0 | 0 |
 | Wrong Key | 503 | 0 | 0 |
 | Missing Key | 503 | 0 | 0 |
 
-Counts are measured deltas using the existing passive CPA meter and independent
-synthetic upstream log, not inferred from status. The API-mode development run
-also observed both Keys refused by Ingress during the two-Key transition. No
-empty Key set was written. Final CPA configuration contained only replacement;
-old canonical identity was `superseded`, replacement remained `active`.
-The original S1 journal and encrypted canonical records were retained.
+Browser runs stop before the launcher's final Ingress matrix. These API-run
+measurements must not be attributed to a stopped browser run. No empty Key set
+was written. API proof retained the original S1 journal and canonical history:
+old superseded, independent replacement active.
 
-## Source verification and self-review
+## Browser STOP and smallest next step
 
-- Manager `go test ./...`, `go vet ./...`, `go build ./...`: passed. Final changed
-  Key/CPA/HTTP paths passed race tests, including multi-consumer journal claims.
-  Expanded full Manager race initially timed out in untouched `maintenancebundle`
-  at ten minutes; all other packages passed. Its isolated 20-minute recheck
-  passed in 812.717 seconds. [Raw focused/recheck output](race-recheck.txt).
-- Ingress and Runtime: full `go test -race ./...`, vet and build passed.
-- Full Web: 233 focused tests; full Web suite **4,091** tests and repository
-  tooling **734** tests passed. Type check, lint and build passed. Lint retains
-  four existing Accounts warnings, zero errors. Packaged Full Web Docker check
-  passed. Proof helper namespace tests and Python compilation passed.
-- One S2-A development run refused a positive control beyond the existing
-  one-second admission window while builds/tests ran concurrently. Subsequent
-  isolated and final-image matrices passed; the deadline was not relaxed.
-- Required CI must be read from the Draft PR at its exact final HEAD. Local
-  results do not substitute for that gate.
+The existing browser runner completes canonical selection, preparation,
+missing-permit refusal, authorized add, actual Manager restart, re-login,
+authorized revoke and history refresh. All four attempts report zero page errors
+and one failed /continue request. **No browser run is PASS.**
 
-Three self-review rounds covered user closure; authentication, last-Key,
-concurrency and unknown-result recovery; then boundaries, regressions and scope.
-Confirmed issues were fixed and rechecked: submitted canonical selection and
-monotonic UI recovery, retained revoked detail/install state, correction of a
-rejected new selection after a completed operation, mobile form layout, and
-retained history status after later operations. No confirmed unresolved blocking
-finding remained at handoff.
+The Chrome diagnostic ties the event to the already returned intentional 409:
+the two authorized 200 requests have matching normal completion events. Its
+[task-only observer](browser-observer.cjs.txt) is retained as text evidence.
+It adds event listeners only, with no request interception or failure filtering.
 
-Fault/state-machine tests use synthetic transports to exercise pre/post-intent
-failure, lost replies, delayed reload, no-resend recovery, conflicting operations,
-source/permit/generation mismatch, and later history. Those unit results are
-**not** claimed as real CPA effect evidence; the Docker records above supply the
-actual official CPA positive/negative and Manager restart observations.
+**HOLD:** narrowly correct the bounded browser proof's handling of an already
+received expected 409 response cancelled during navigation, then rerun KU Browser
+on the same product source. Keep failures of authorized writes, unexpected
+statuses and unknown outcomes visible. Do not remove the network assertion or
+whitelist all /continue failures. This task permits evidence/docs commits only;
+no product or executable proof-tool fix is included. Further unchanged browser
+retries add no useful evidence. Real Provider acceptance is not this unlock.
 
-## Browser layout evidence
+## S2-B historical reuse
+
+The original [S2-B artifact at its source HEAD](https://github.com/seakee/CPA-Manager-Plus/blob/95d885f60e600bf8c8adae8d1e163454b5e4fd46/docs/architecture/evidence/fresh-private-key-revocation/s2b.json)
+is preserved byte-for-byte (artifact SHA256 in the manifest). All 27 source
+hashes match 95d885f60e600bf8c8adae8d1e163454b5e4fd46; 26 also match current
+source. The sole mismatch is freshkeyapply/key_operation.go.
+
+That delta changes checkOperation historical committed reads and latest-operation
+ordering in ContinueOperation. The S2-B launcher does not enable
+CPAMP_PRIVATE_KEY_OPERATIONS or call either method. Shared installedKey, Admit,
+permit/service wiring, fixed Provider transport, Ingress, Runtime, seed and S2-B
+harness are unchanged. Other changes are KU UI/API-client handling and tests,
+unused by that proof. Current freshkeyapply race tests include S2-B fixture/
+journal/permit regressions; current S2-A Docker covers shared request admission.
+
+Historical fixed-Provider/model, TLS-stub, replay and denial observations remain
+useful within that unchanged scope. They do not qualify the new Manager image as
+a newly executed S2-B Docker run, KU-with-S2-B, real Provider, external egress or
+target Host/network. No full S2-B matrix rerun was needed for this delta.
+
+## Source checks and review
+
+[Current command output](acceptance-checks.txt):
+
+- Targeted Manager race: freshkeyapply, freshkeys, cpa and cmd/cpa-manager-plus
+  passed; repository/freshkeys has no test files. Includes historical-result,
+  no-retry and S2-B regressions.
+- Targeted Manager vet, Full Web **235 tests**, type check and Lint passed.
+  Lint retains four existing Accounts warnings, zero errors. Proof namespace
+  test passed. Full Web/panel build and packaged-web check passed inside build.
+- Source-HEAD PR Check, Frontend, Manager Server, Windows SQLite, Docker Build,
+  AUT-03 and Required checks passed; snapshot/URLs are in the manifest.
+  Delivery-HEAD checks must be read from the PR, not inferred from that snapshot.
+- Original full Go/Web/Ingress/Runtime checks, 4,091 Web tests and
+  [maintenancebundle race timeout/recheck](race-recheck.txt) belong to 95d885f…,
+  not this rerun. Current targeted checks and CI supplement them.
+
+Three acceptance self-review passes check source/run/image identity; authority,
+secret exclusion, failed-run preservation and history boundaries; then
+evidence-only scope, links and delivery HEAD/CI reporting. Stale all-PASS and
+all-current-image claims are removed. Browser STOP remains explicit; completed
+acceptance or independent human review is not claimed.
+
+Fault/state-machine tests use synthetic transports and are not real CPA effect
+evidence. Actual CPA observations come only from the retained Docker records.
+
+## Layouts and reproduction
+
+Current-source screenshots were inspected. They are from the **stopped**
+bundled Chromium run and do not change its disposition:
 
 - [Desktop dark English selection](desktop-dark-en-selection.png)
-- [Desktop light English completed operation](desktop-light-en.png)
-- [Mobile dark Simplified Chinese completed operation](mobile-dark-zh-CN.png)
+- [Desktop light English committed result](desktop-light-en.png)
+- [Mobile dark Simplified Chinese committed result](mobile-dark-zh-CN.png)
 
-Rendered layout was inspected. The runner checks visible operation state, no
-horizontal page overflow and empty persistent browser storage. Other locale/
-theme combinations have automated i18n/type coverage, not visual acceptance.
+The runner checked visible state, no horizontal overflow and empty persistent
+browser storage. Other locale/theme variants are not visual acceptance claims.
 
-## Limits and remaining gate
+Build images per [the existing instructions](../../fresh-private-key-revocation.md)
+with prefix cpamp-ku-acceptance and tag a20a7fe. Run serially with unique output
+directories and existing explicit disposable private-write approval:
 
-Only the default-off disposable Linux/amd64 profile, fixed seed and one/two
-canonical-Key configurations are qualified here. KU's final Chat uses the
-existing S2-A synthetic Provider. S2-B's original offline behavior is a regression
-check, not a real-Provider KU acceptance claim. Last-Key removal is refused;
-direct two-Key mode has service tests and shares the real-CPA revoke step used
-after replacement. This does not qualify arbitrary existing deployments.
+~~~sh
+export CPAMP_PROOF_IMAGE_PREFIX=cpamp-ku-acceptance
+export CPAMP_PROOF_IMAGE_TAG=a20a7fe
+export CPAMP_PROOF_KEY_WRITE_APPROVED=plan64-private
+# Bundled Chromium; this browser run currently STOPs.
+unset PLAYWRIGHT_CHANNEL
+CPAMP_PROOF_KU_BROWSER=1 PLAYWRIGHT_MODULE=/absolute/path/to/playwright \
+  python3 bin/ci/fresh-s1-docker-proof.py <unique-browser-output> --ku
+env -u CPAMP_PROOF_KU_BROWSER \
+  python3 bin/ci/fresh-s1-docker-proof.py <unique-api-output> --ku
+python3 bin/ci/fresh-s1-docker-proof.py <unique-s1-output>
+python3 bin/ci/fresh-s1-docker-proof.py <unique-s2a-output> --s2a
+~~~
 
-Real Provider traffic, target network/Host isolation and human end-to-end
-acceptance remain **LIVE NOT RUN / BETA HOLD**, scheduled together before the
-first Beta under Plan #63. Ordinary Compose, External, Upgrade, arm64, public
-Gateway and generation recovery are outside this private write authorization.
-No automatic merge or Beta/release publication is performed.
+Acknowledgement variables are not authorization. No new test framework, product
+feature, CPA writer, dependency or acceptance gate was introduced.
 
-See [operation contract and reproduction](../../fresh-private-key-revocation.md).
+## Remaining qualification
+
+Overall acceptance is **HOLD** until the existing KU Browser proof completes.
+Real Provider traffic, controlled external egress, target network/Host isolation
+and human end-to-end acceptance remain **LIVE NOT RUN / BETA HOLD**, scheduled
+before first Beta under Plan #63. Offline synthetic traffic is not LIVE evidence.
+Ordinary Compose, External, Upgrade, arm64, public Gateway and generation
+recovery remain outside this private scope. The PR stays Draft; no merge/release.

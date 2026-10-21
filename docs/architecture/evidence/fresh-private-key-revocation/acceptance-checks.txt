@@ -1,0 +1,75 @@
+Manager targeted race (exit 0)
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply	22.982s
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys	(cached)
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa	(cached)
+?   	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys	[no test files]
+ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/cmd/cpa-manager-plus	56.755s
+
+
+Manager targeted vet (exit 0; empty output)
+
+
+Full Web tests (exit 0)
+
+> cpa-manager-plus-web@0.0.0 test
+> vitest run src/fullweb
+
+
+ RUN  v4.1.5 /Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/feat/v2-canonical-key-revoke/apps/web
+
+
+ Test Files  13 passed (13)
+      Tests  235 passed (235)
+   Start at  07:42:24
+   Duration  1.45s (transform 2.59s, setup 0ms, import 4.70s, tests 2.73s, environment 2ms)
+
+
+
+Type check (exit 0)
+
+> cpa-manager-plus@0.0.0 type-check
+> npm --workspace apps/web run type-check
+
+
+> cpa-manager-plus-web@0.0.0 type-check
+> tsc --noEmit
+
+
+
+Lint (exit 0)
+
+> cpa-manager-plus@0.0.0 lint
+> npm --workspace apps/web run lint
+
+
+> cpa-manager-plus-web@0.0.0 lint
+> eslint . --ext ts,tsx --report-unused-disable-directives
+
+[BABEL] Note: The code generator has deoptimised the styling of /Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/feat/v2-canonical-key-revoke/apps/web/src/features/accounts/AccountsPage.test.tsx as it exceeds the max of 500KB.
+
+/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/feat/v2-canonical-key-revoke/apps/web/src/features/accounts/AccountsPage.test.tsx
+  12540:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  12618:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  16991:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/seakee/WorkSpace/Worktree/CPA-Manager-Plus/feat/v2-canonical-key-revoke/apps/web/src/features/accounts/components/AccountHealthBadge.tsx
+  73:14  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+✖ 4 problems (0 errors, 4 warnings)
+
+
+
+Proof namespace regression (exit 0)
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+
+
+Manager image build (exit 0), relevant original build output
+#24 [service-build 8/8] RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.Version=dev -X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.SourceCommit=a20a7fe83483d51a7ca29c70d94bb4df75e35dfe" -o /out/cpa-manager-plus ./cmd/cpa-manager-plus
+#25 [web-package-test 1/1] RUN CPAMP_FULLWEB_PACKAGED_TEST=1 go test -run '^TestPackagedFullWebDist$' ./internal/httpapi
+#25 4.533 ok  	github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi	0.050s
+#29 writing image sha256:cd44c1a1568d5c7633b5a26e5d47592f5a7c5fcf20211c7d0aa551a5b6c5fc06
+#29 writing image sha256:cd44c1a1568d5c7633b5a26e5d47592f5a7c5fcf20211c7d0aa551a5b6c5fc06 done
