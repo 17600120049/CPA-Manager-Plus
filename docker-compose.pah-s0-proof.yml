@@ -62,6 +62,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ingress
+      args:
+        CPAMP_PAH_S0_BUILD: '1'
     image: cpamp-ingress:pah-s0-proof
     restart: 'no'
     network_mode: 'service:cpamp-runtime'

@@ -106,8 +106,13 @@ func loadConfig(getenv func(string) string) (config, error) {
 		controlAddr = "0.0.0.0:9082"
 	}
 	flag := strings.TrimSpace(getenv("CPAMP_PRIVATE_PAH_S0"))
-	if flag != "" && flag != "0" && flag != "1" {
-		return config{}, errors.New("CPAMP_PRIVATE_PAH_S0 must be 0 or 1")
+	build := strings.TrimSpace(getenv("CPAMP_PAH_S0_BUILD"))
+	if (flag != "" && flag != "0" && flag != "1") ||
+		(build != "" && build != "0" && build != "1") {
+		return config{}, errors.New("PAH-S0 build and runtime flags must be 0 or 1")
+	}
+	if (flag == "1") != (build == "1") {
+		return config{}, errors.New("PAH-S0 Ingress runtime does not match its image build")
 	}
 	if flag == "1" {
 		if managerURL.Hostname() != "127.0.0.1" || gatewayURL.Hostname() != "127.0.0.1" {

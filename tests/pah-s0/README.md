@@ -9,8 +9,10 @@ Build the profile with `docker compose -f docker-compose.pah-s0-proof.yml build`
 and start only on a private, disposable Host. The one host-loopback-published port
 is `127.0.0.1:28491` unless deliberately changed in the proof environment.
 Ingress and Manager must use the same fixed profile; the Manager image's Web
-bundle is compiled with `VITE_CPAMP_PAH_S0=1` and both services opt in with
-`CPAMP_PRIVATE_PAH_S0=1`. Absence of a responsive Manager guard **never**
+bundle is compiled with `VITE_CPAMP_PAH_S0=1` and the Ingress image with
+`CPAMP_PAH_S0_BUILD=1`; both images retain `CPAMP_PAH_S0_BUILD=1` as
+an image-stamped runtime marker. Both services must opt in with
+`CPAMP_PRIVATE_PAH_S0=1`, and a missing/mismatched marker refuses startup. Absence of a responsive Manager guard **never**
 authorizes a plugin resource request.
 
 Still required before any P-S0 deployment qualification:

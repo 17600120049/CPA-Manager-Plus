@@ -10,6 +10,7 @@ import (
 func TestPAHS0ConfigRejectsInvalidOrUnsharedTopology(t *testing.T) {
 	base := map[string]string{
 		"CPAMP_PRIVATE_PAH_S0": "1",
+		"CPAMP_PAH_S0_BUILD": "1",
 		"CPAMP_MANAGER_URL": "http://127.0.0.1:18319",
 		"CPAMP_GATEWAY_URL": "http://127.0.0.1:8317",
 		"CPAMP_INGRESS_CONTROL_ADDR": "127.0.0.1:9082",
@@ -24,6 +25,9 @@ func TestPAHS0ConfigRejectsInvalidOrUnsharedTopology(t *testing.T) {
 		{"CPAMP_GATEWAY_URL", "http://cpamp-runtime:8317"},
 		{"CPAMP_INGRESS_CONTROL_ADDR", "0.0.0.0:9082"},
 		{"CPAMP_PRIVATE_PAH_S0", "unexpected"},
+		{"CPAMP_PRIVATE_PAH_S0", "0"},
+		{"CPAMP_PAH_S0_BUILD", "0"},
+		{"CPAMP_PAH_S0_BUILD", "unexpected"},
 	} {
 		original := base[tc.key]
 		base[tc.key] = tc.value
