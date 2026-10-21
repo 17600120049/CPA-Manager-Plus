@@ -21,6 +21,9 @@ CPA_EXECUTABLE_SHA256 = {
     "arm64": "9dfe80b79f8466b4e56d51d71869ce759021942a9279e43dbea92eda21b994d7",
 }
 CPA_VERSION = "8.0.13"
+CPA_LICENSE_PATH = "/usr/local/share/licenses/cli-proxy-api/LICENSE"
+# Original LICENSE bytes from the checksum-verified official v8.0.13 archive.
+CPA_LICENSE_SHA256 = "879792e89cf1bdd6a8d446033ec87e30496f97dcafc4656dc53f641509b346a6"
 EXTRACT = {
     "manager": ("/usr/local/bin/cpa-manager-plus",),
     "ingress": ("/usr/local/bin/cpamp-ingress",),
@@ -28,6 +31,7 @@ EXTRACT = {
         "/usr/local/bin/cpamp-runtime-supervisor",
         "/usr/local/bin/cli-proxy-api",
         "/usr/local/share/cpamp/runtime/cpa-artifact.json",
+        CPA_LICENSE_PATH,
     ),
 }
 
@@ -71,6 +75,15 @@ def check_artifact(content, architecture):
     return value
 
 
+def check_cpa_license(path):
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("missing regular CPA LICENSE")
+    if path.stat().st_mode & 0o222:
+        raise ValueError("packaged CPA LICENSE must be read-only")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != CPA_LICENSE_SHA256:
+        raise ValueError("packaged CPA LICENSE differs from official v8.0.13")
+
+
 def audit_one(role, image, tmpdir):
     record = inspect_image(image)
     name = "cpamp-v2-readonly-" + uuid.uuid4().hex[:16]
@@ -87,6 +100,8 @@ def audit_one(role, image, tmpdir):
             files[path] = digest
             if path.endswith("cpa-artifact.json"):
                 check_artifact(destination.read_text(encoding="utf-8"), record["architecture"])
+            if path == CPA_LICENSE_PATH:
+                check_cpa_license(destination)
         record["files"] = files
         if role == "runtime" and files["/usr/local/bin/cli-proxy-api"] != CPA_EXECUTABLE_SHA256[record["architecture"]]:
             raise ValueError("actual bundled CPA executable differs from pinned v8.0.13")
@@ -130,7 +145,7 @@ def main():
             "image manifest/index digest and immutable shared deployment set",
             "full-Web complete asset-set hash and Manager embedded API pairing",
             "Docker running-network topology, live-key authentication, readiness, rollback",
-            "license and third-party NOTICE bytes packaged in images",
+            "CPAMP and other third-party license/NOTICE completeness or legal acceptance",
             "registry availability, installer, supported paths, public Beta or release",
         ],
     }
