@@ -59,7 +59,11 @@ actual a20a7fe results; they were not rerun for this host-only browser correctio
 The launcher's only change outside the browser is adding the imported helper to
 the KU source hash list. The S1/S2-A execution paths are unchanged. Historical
 [S2-B](s2b.json) reuse and its limits remain as documented in the previous report;
-no new S2-B Docker run is claimed. Existing Go/Web tests/builds belong to their
+27/27 source hashes match its original HEAD and 26/27 match a20a7fe. Against the
+proof-fix delivery, 25/27 match: the additional mismatch is the launcher, changed
+only to add the KU helper to the KU-only hash list. It does not change S2-B
+execution. These two mismatches are recorded in the new manifest. No new S2-B
+Docker run is claimed. Existing Go/Web tests/builds belong to their
 recorded source HEADs; exact delivery-HEAD Required CI must be read from GitHub.
 
 ## Layout and reproduction

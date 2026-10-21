@@ -87,5 +87,18 @@
     "desktop-dark-en-selection.png": "fee581931657a69cfb9d51b16da4935e5c99892151c2453aeecf30e24c0fe323",
     "desktop-light-en.png": "ced6d7ef7d87612d4afa0b15d459a469d695692385050a23af44a1b33351076b",
     "mobile-dark-zh-CN.png": "b9e40bb6a43f495131b1aba982dc7aefd2bbe5b8d7e67250774d0a81705ec615"
+  },
+  "historicalS2B": {
+    "sourceHead": "95d885f60e600bf8c8adae8d1e163454b5e4fd46",
+    "matchedAtOriginalHead": 27,
+    "matchedAtProductSourceA20a7fe": 26,
+    "matchedAtProofFixDelivery": 25,
+    "changedPaths": [
+      "bin/ci/fresh-s1-docker-proof.py",
+      "apps/manager-server/internal/service/freshkeyapply/key_operation.go"
+    ],
+    "newDockerRun": false,
+    "launcherDelta": "Only KU source hash list includes the new browser helper; S2-B execution unchanged.",
+    "productDelta": "KU checkOperation/ContinueOperation historical-read and continuation changes; not called by S2-B with KU disabled."
   }
 }
