@@ -188,7 +188,7 @@ export function FreshKeyDetails({
                 setInstallationPending(pending);
                 onPending(pending);
               }}
-              disabled={busy || unknown || dirty || installationPending}
+              disabled={busy || unknown || dirty}
             />
           )}
         </>

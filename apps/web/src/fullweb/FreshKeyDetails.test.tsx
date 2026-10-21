@@ -127,6 +127,7 @@ describe('Canonical key detail and rename', () => {
     expect(close).not.toHaveBeenCalled();
     expect(button(t('keysCloseDetails')).props.disabled).toBe(true);
     expect(button(t('keysReadDetails')).props.disabled).toBe(true);
+    expect(button(t('keysCheckInstallation')).props.disabled).toBe(false);
     expect(pending).toHaveBeenLastCalledWith(true);
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0);

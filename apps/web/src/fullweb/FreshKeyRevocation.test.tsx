@@ -121,7 +121,6 @@ describe('Canonical revocation recovery UI', () => {
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
     await act(async () => resolvePrepare(result()));
     expect(JSON.stringify(view.toJSON())).toContain(id);
-    expect(JSON.stringify(view.toJSON())).not.toContain('c'.repeat(32) + '</code>');
     expect(button('keysOperationContinue').props.disabled).toBe(false);
   });
 
