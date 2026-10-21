@@ -34,7 +34,7 @@ def tar_content(files):
 
 def sample_elf():
     data = bytearray(64)
-    data[0:4] = b"\\x7fELF"
+    data[0:4] = b"\x7fELF"
     data[18:20] = (62).to_bytes(2, "little")
     return bytes(data)
 
