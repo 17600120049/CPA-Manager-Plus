@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { webcrypto } from 'node:crypto';
 import { useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
