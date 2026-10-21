@@ -107,6 +107,7 @@ export function FreshKeyInstallation({
       setState(value);
       if (uncertainInstall.current && value.attempted) {
         uncertainInstall.current = false;
+        setMessage('');
         onPending(false);
       }
     } catch (err) {
