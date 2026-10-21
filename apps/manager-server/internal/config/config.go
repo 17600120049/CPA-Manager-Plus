@@ -41,6 +41,7 @@ type Config struct {
 	AdminAuthorityConfigured     bool
 	DataKey                      string
 	DataKeyPath                  string
+	PAHS0Enabled                bool
 	RuntimeURL                   string
 	RuntimeTokenFile             string
 	CollectorMode                string
@@ -126,6 +127,10 @@ func InspectionConfigPath() (string, error) {
 }
 
 func LoadWithOptions(options LoadOptions) (Config, error) {
+	pahS0 := strings.TrimSpace(os.Getenv("CPAMP_PRIVATE_PAH_S0"))
+	if pahS0 != "" && pahS0 != "0" && pahS0 != "1" {
+		return Config{}, fmt.Errorf("CPAMP_PRIVATE_PAH_S0 must be 0 or 1")
+	}
 	cfgFile, cfgDir, err := loadFileConfig(options)
 	if err != nil {
 		return Config{}, err
@@ -189,6 +194,7 @@ func LoadWithOptions(options LoadOptions) (Config, error) {
 		AdminAuthorityConfigured:     adminAuthorityConfigured,
 		DataKey:                      readSecret("CPA_MANAGER_DATA_KEY", "CPA_MANAGER_DATA_KEY_FILE", dataKeyFile),
 		DataKeyPath:                  env("CPA_MANAGER_DATA_KEY_PATH", dataKeyPath),
+		PAHS0Enabled:                pahS0 == "1",
 		RuntimeURL:                   strings.TrimSpace(os.Getenv("CPAMP_RUNTIME_URL")),
 		RuntimeTokenFile:             strings.TrimSpace(os.Getenv("CPAMP_RUNTIME_TOKEN_FILE")),
 		CollectorMode:                normalizeCollectorMode(env("USAGE_COLLECTOR_MODE", stringFallback(cfgFile.CollectorMode, "auto"))),

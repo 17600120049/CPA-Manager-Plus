@@ -4642,6 +4642,7 @@
     "gate_step3_hint": "Enter the exact identifier shown above."
   },
   "plugin_resource": {
+    "pah_s0_unsupported": "Plugin pages are disabled in this private security profile. Plugin management remains available.",
     "title": "Plugin Page",
     "page_count": "{{count}} pages",
     "load_failed": "Failed to load plugin page",
