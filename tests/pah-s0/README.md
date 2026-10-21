@@ -64,3 +64,31 @@ Source/CI proof and a green private P-S0 image build do not qualify external
 network, IPv4/IPv6, reverse proxy/cache, active plugin route, real browser,
 single-side restart, or a published Beta. Record every tested exact image
 digest and observer origin; never promote the private Compose to release.
+
+## Trusted, disposable proof launcher (not a production deployment)
+
+The only approved launcher entry is `bin/ci/pah_s0_host_admission.py`
+from a trusted Docker Host with exclusive operator control. It is **not**
+invoked by CI, and requires exact opt-in:
+
+```sh
+export CPAMP_PAH_S0_TRUSTED_HOST=I_ACCEPT_DISPOSABLE_PAH_S0
+python3 bin/ci/pah_s0_host_admission.py --launch
+```
+
+This checks a fixed three-service Linux/amd64 Compose profile, strict build
+switches, actual Docker image IDs, runtime/shared network namespace, port
+bindings, label ownership and unexpected same-namespace/port peers before
+starting the Ingress process. Existing containers are refused, never adopted
+or overwritten. The ingress is started last; a detected error stops only
+the private project containers. Use the same tool without `--launch` for a
+read-only *current-graph audit*, not an autonomous restart. Do not use
+`docker compose up` directly to claim proof qualification.
+
+**STOP remains** if another proxy, old binary or untrusted peer can publish
+a second entry, if automatic/one-sided restarts occurred, or after any
+unobserved Host topology mutation. This script is a bounded startup preflight
+only; it is not continuously enforcing Docker ownership, cannot constrain
+a trusted Docker-root operator, and has not been executed on a live Host.
+An independent external observer must still verify IPv4/IPv6/ports and all
+resource/legacy bypass paths before claiming even private P-S0 safety.

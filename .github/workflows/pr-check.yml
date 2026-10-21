@@ -441,6 +441,9 @@ jobs:
         working-directory: apps/ingress
         run: go test ./...
 
+      - name: Audit PAH-S0 Host profile offline (never starts Docker)
+        run: python3 -m unittest discover -s bin/ci -p 'test_pah_s0_host_admission.py' -v
+
       - name: Race test
         working-directory: apps/ingress
         run: go test -race ./...
