@@ -136,6 +136,34 @@ func validChange(before, after []byte, op Operation) bool {
 		return false
 	}
 	switch op.Scope {
+	case "key-add", "key-revoke":
+		old, next := leaf(a, "access", "api-keys"), leaf(b, "access", "api-keys")
+		if old == nil || next == nil || old.Kind != yaml.SequenceNode || next.Kind != yaml.SequenceNode {
+			return false
+		}
+		hashes := func(n *yaml.Node) []string {
+			out := []string{}
+			for _, v := range n.Content {
+				if v.Tag != "!!str" || len(v.Value) != 73 || !strings.HasPrefix(v.Value, "cpamp_sk_") || !hashValid(v.Value[9:]) {
+					return nil
+				}
+				out = append(out, digest([]byte(v.Value)))
+			}
+			return out
+		}
+		x, y := hashes(old), hashes(next)
+		if op.Scope == "key-add" {
+			if len(x) != 1 || len(y) != 2 || x[0] != op.KeySHA256 || x[0] != y[0] || y[1] != op.KeeperSHA256 || x[0] == y[1] {
+				return false
+			}
+		} else {
+			if len(x) != 2 || len(y) != 1 || x[0] == x[1] || y[0] != op.KeeperSHA256 || !((x[0] == op.KeySHA256 && x[1] == y[0]) || (x[1] == op.KeySHA256 && x[0] == y[0])) {
+				return false
+			}
+		}
+		if set(a, next, "access", "api-keys") != nil {
+			return false
+		}
 	case "initial-key":
 		old := leaf(a, "access", "api-keys")
 		next := leaf(b, "access", "api-keys")

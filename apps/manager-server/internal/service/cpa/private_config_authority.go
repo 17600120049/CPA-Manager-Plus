@@ -33,25 +33,28 @@ func strictJSON(b []byte, v any) error {
 }
 
 type configOperation struct {
-	ID         string `json:"id"`
-	Scope      string `json:"scope"`
-	KeySHA256  string `json:"keySHA256,omitempty"`
-	Retry      int    `json:"retry"`
-	Generation string `json:"generation"`
-	State      string `json:"state"`
+	KeeperSHA256 string `json:"keeperSHA256,omitempty"`
+	ID           string `json:"id"`
+	Scope        string `json:"scope"`
+	KeySHA256    string `json:"keySHA256,omitempty"`
+	Retry        int    `json:"retry"`
+	Generation   string `json:"generation"`
+	State        string `json:"state"`
 }
 type configRequest struct {
-	Action           string `json:"action"`
-	SourceID         string `json:"sourceId"`
-	Generation       string `json:"generation"`
-	ExpectedRevision uint64 `json:"expectedRevision"`
-	ExpectedSHA256   string `json:"expectedSHA256"`
-	OperationID      string `json:"operationId"`
-	Scope            string `json:"scope"`
-	KeySHA256        string `json:"keySHA256,omitempty"`
-	Retry            int    `json:"retry"`
+	H1               *H1Request `json:"h1,omitempty"`
+	Action           string     `json:"action"`
+	SourceID         string     `json:"sourceId"`
+	Generation       string     `json:"generation"`
+	ExpectedRevision uint64     `json:"expectedRevision"`
+	ExpectedSHA256   string     `json:"expectedSHA256"`
+	OperationID      string     `json:"operationId"`
+	Scope            string     `json:"scope"`
+	KeySHA256        string     `json:"keySHA256,omitempty"`
+	Retry            int        `json:"retry"`
 }
 type configObservation struct {
+	H1             *H1Record       `json:"h1,omitempty"`
 	SourceID       string          `json:"sourceId"`
 	Generation     string          `json:"generation"`
 	Revision       uint64          `json:"revision"`
@@ -63,16 +66,18 @@ type configObservation struct {
 	Created        bool            `json:"created"`
 }
 type configGrant struct {
-	SourceID          string `json:"sourceId"`
-	Generation        string `json:"generation"`
-	Namespace         string `json:"namespace"`
-	Device            uint64 `json:"device"`
-	Inode             uint64 `json:"inode"`
-	SeedSHA256        string `json:"seedSHA256"`
-	IssuedAtMS        int64  `json:"issuedAtMs"`
-	ExpiresAtMS       int64  `json:"expiresAtMs"`
-	RecoveryOperation string `json:"recoveryOperation,omitempty"`
-	RecoverySHA256    string `json:"recoverySHA256,omitempty"`
+	BootstrapRun      string   `json:"bootstrapRun,omitempty"`
+	H1                *H1Grant `json:"h1,omitempty"`
+	SourceID          string   `json:"sourceId"`
+	Generation        string   `json:"generation"`
+	Namespace         string   `json:"namespace"`
+	Device            uint64   `json:"device"`
+	Inode             uint64   `json:"inode"`
+	SeedSHA256        string   `json:"seedSHA256"`
+	IssuedAtMS        int64    `json:"issuedAtMs"`
+	ExpiresAtMS       int64    `json:"expiresAtMs"`
+	RecoveryOperation string   `json:"recoveryOperation,omitempty"`
+	RecoverySHA256    string   `json:"recoverySHA256,omitempty"`
 }
 type privateConfigClient struct {
 	call  func(context.Context, configRequest) (configObservation, error)
@@ -152,6 +157,9 @@ func (t *Transport) configuration(ctx context.Context, action string) (configReq
 	}
 	q = configRequest{Action: action, SourceID: g.SourceID, Generation: g.Generation}
 	v, e = t.configurationAuthority.call(ctx, q)
+	if e == nil && v.H1 != nil && t.h1 == nil {
+		return q, configObservation{}, ErrProofUnavailable
+	}
 	return q, v, e
 }
 func (t *Transport) beginInitialConfiguration(ctx context.Context, proof TargetProof, secret string) (*configRequest, error) {
@@ -239,15 +247,18 @@ func (t *Transport) postInstallProjection(ctx context.Context, body []byte) ([]b
 	}
 	routing, exists := root["routing"]
 	if !exists {
+		if v.CommittedRetry != nil {
+			return nil, ErrSourceConflict
+		}
 		return body, nil
 	}
 	if v.CommittedRetry == nil {
 		return nil, ErrSourceConflict
 	}
 	var r, retry map[string]json.RawMessage
-	var value int
+	var value *int
 	if json.Unmarshal(routing, &r) != nil || len(r) != 1 || json.Unmarshal(r["retry"], &retry) != nil || len(retry) != 1 ||
-		json.Unmarshal(retry["request-retry"], &value) != nil || value != *v.CommittedRetry {
+		json.Unmarshal(retry["request-retry"], &value) != nil || value == nil || *value != *v.CommittedRetry {
 		return nil, ErrSourceConflict
 	}
 	delete(root, "routing")

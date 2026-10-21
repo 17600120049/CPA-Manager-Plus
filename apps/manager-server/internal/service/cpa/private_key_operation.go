@@ -12,12 +12,24 @@ import (
 type KeySnapshot struct {
 	Keys         []string
 	SourceSHA256 string
+	SourceID     string
+	Generation   string
+	Revision     uint64
 }
 
 // KeySnapshot checks the same exact private seed, allowing only its client list
-// to differ. The source hash binds a Host grant to actual saved YAML bytes.
+// to differ. H1 uses Runtime raw bytes; the standalone legacy path retains the
+// old CPA GET serialization fingerprint and must never share H1 permits.
 func (t *Transport) KeySnapshot(ctx context.Context, management string) (KeySnapshot, error) {
 	var result KeySnapshot
+	var authority configObservation
+	if t.h1 != nil {
+		v, e := t.h1.Ready(ctx, t)
+		if e != nil || v.State != "persisted" {
+			return result, ErrSourceConflict
+		}
+		authority = v
+	}
 	code, body, err := t.request(ctx, http.MethodGet, "/v8/management/config", management, nil)
 	if err != nil || code != 200 {
 		return result, ErrProofUnavailable
@@ -37,6 +49,13 @@ func (t *Transport) KeySnapshot(ctx context.Context, management string) (KeySnap
 	}
 	root["access"] = json.RawMessage(`{"api-keys":[]}`)
 	empty, _ := json.Marshal(root)
+	if t.h1 != nil {
+		var e error
+		empty, e = t.postInstallProjection(ctx, empty)
+		if e != nil {
+			return result, e
+		}
+	}
 	valid := emptyProofConfig(empty)
 	if t.providerSeed != nil {
 		seed, e := t.providerSeed()
@@ -49,6 +68,17 @@ func (t *Transport) KeySnapshot(ctx context.Context, management string) (KeySnap
 	var keys []string
 	if err != nil || code != 200 || json.Unmarshal(body, &keys) != nil || !slices.Equal(keys, result.Keys) {
 		return result, ErrSourceConflict
+	}
+	if t.h1 != nil {
+		v, e := t.h1.Ready(ctx, t)
+		if e != nil || h1Digest(v) != h1Digest(authority) {
+			return result, ErrSourceConflict
+		}
+		result.SourceSHA256 = v.SHA256
+		result.SourceID = v.SourceID
+		result.Generation = v.Generation
+		result.Revision = v.Revision
+		return result, nil
 	}
 	code, body, err = t.request(ctx, http.MethodGet, "/v8/management/config.yaml", management, nil)
 	if err != nil || code != 200 {

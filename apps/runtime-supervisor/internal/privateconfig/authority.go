@@ -20,26 +20,31 @@ const GrantPath = "/run/cpamp-config/source.json"
 // isolated namespace, exclusive volume and credential/mount boundaries for its
 // entire lease. No container may receive a Docker socket or a writable alias.
 type Grant struct {
-	SourceID          string `json:"sourceId"`
-	Generation        string `json:"generation"`
-	Namespace         string `json:"namespace"`
-	Device            uint64 `json:"device"`
-	Inode             uint64 `json:"inode"`
-	SeedSHA256        string `json:"seedSHA256"`
-	IssuedAtMS        int64  `json:"issuedAtMs"`
-	ExpiresAtMS       int64  `json:"expiresAtMs"`
-	RecoveryOperation string `json:"recoveryOperation,omitempty"`
-	RecoverySHA256    string `json:"recoverySHA256,omitempty"`
+	BootstrapRun      string   `json:"bootstrapRun,omitempty"`
+	H1                *H1Grant `json:"h1,omitempty"`
+	SourceID          string   `json:"sourceId"`
+	Generation        string   `json:"generation"`
+	Namespace         string   `json:"namespace"`
+	Device            uint64   `json:"device"`
+	Inode             uint64   `json:"inode"`
+	SeedSHA256        string   `json:"seedSHA256"`
+	IssuedAtMS        int64    `json:"issuedAtMs"`
+	ExpiresAtMS       int64    `json:"expiresAtMs"`
+	RecoveryOperation string   `json:"recoveryOperation,omitempty"`
+	RecoverySHA256    string   `json:"recoverySHA256,omitempty"`
 }
 type Operation struct {
-	ID         string `json:"id"`
-	Scope      string `json:"scope"`
-	KeySHA256  string `json:"keySHA256,omitempty"`
-	Retry      int    `json:"retry"`
-	Generation string `json:"generation"`
-	State      string `json:"state"`
+	KeeperSHA256 string `json:"keeperSHA256,omitempty"`
+	ID           string `json:"id"`
+	Scope        string `json:"scope"`
+	KeySHA256    string `json:"keySHA256,omitempty"`
+	Retry        int    `json:"retry"`
+	Generation   string `json:"generation"`
+	State        string `json:"state"`
 }
 type record struct {
+	BootstrapRun   string    `json:"bootstrapRun,omitempty"`
+	H1             *H1Record `json:"h1,omitempty"`
 	Version        int       `json:"version"`
 	SourceID       string    `json:"sourceId"`
 	SeedSHA256     string    `json:"seedSHA256"`
@@ -53,19 +58,21 @@ type record struct {
 	Operation      Operation `json:"operation"`
 }
 type Request struct {
-	Action           string `json:"action"`
-	SourceID         string `json:"sourceId"`
-	Generation       string `json:"generation"`
-	ExpectedRevision uint64 `json:"expectedRevision"`
-	ExpectedSHA256   string `json:"expectedSHA256"`
-	OperationID      string `json:"operationId"`
-	Scope            string `json:"scope"`
-	KeySHA256        string `json:"keySHA256,omitempty"`
-	Retry            int    `json:"retry"`
+	H1               *H1Request `json:"h1,omitempty"`
+	Action           string     `json:"action"`
+	SourceID         string     `json:"sourceId"`
+	Generation       string     `json:"generation"`
+	ExpectedRevision uint64     `json:"expectedRevision"`
+	ExpectedSHA256   string     `json:"expectedSHA256"`
+	OperationID      string     `json:"operationId"`
+	Scope            string     `json:"scope"`
+	KeySHA256        string     `json:"keySHA256,omitempty"`
+	Retry            int        `json:"retry"`
 }
 
 // Result contains no raw configuration, Key or recovery material.
 type Result struct {
+	H1             *H1Record `json:"h1,omitempty"`
 	SourceID       string    `json:"sourceId"`
 	Generation     string    `json:"generation"`
 	Revision       uint64    `json:"revision"`
@@ -95,6 +102,9 @@ func (a *Authority) loadGrant() (Grant, error) {
 	now := time.Now().UnixMilli()
 	if len(g.SourceID) < 16 || len(g.SourceID) > 128 || g.Generation != a.generation || !hashValid(g.SeedSHA256) ||
 		g.IssuedAtMS <= 0 || g.IssuedAtMS > now || g.ExpiresAtMS <= now || g.ExpiresAtMS-g.IssuedAtMS > 600000 {
+		return g, ErrStop
+	}
+	if g.BootstrapRun != "" && (len(g.BootstrapRun) < 16 || len(g.BootstrapRun) > 128) {
 		return g, ErrStop
 	}
 	ns, e := os.Readlink(a.namespace)
@@ -135,13 +145,16 @@ func (a *Authority) load(g Grant) (*record, error) {
 	}
 	b, e := readPrivate(filepath.Join(a.root, "record.json"), os.Geteuid(), 0600, 4<<20)
 	var r record
-	if e != nil || strict(b, &r) != nil || r.Version != 1 || r.Revision == 0 || r.Revision > 1<<52 ||
+	if e != nil || strict(b, &r) != nil || (r.Version != 1 && r.Version != 2) || r.Revision == 0 || r.Revision > 1<<52 ||
 		r.SourceID != g.SourceID || r.SeedSHA256 != g.SeedSHA256 || r.Device != g.Device || r.Inode != g.Inode ||
 		len(r.LastGood) == 0 || digest(r.LastGood) != r.LastGoodSHA256 {
 		return nil, ErrStop
 	}
 	if _, e := tree(r.LastGood); e != nil {
 		return nil, e
+	}
+	if (r.Version == 2 && !validH1Record(&r)) || (r.Version == 1 && r.H1 != nil) {
+		return nil, ErrStop
 	}
 	if r.CommittedRetry != nil {
 		n, _ := tree(r.LastGood)
@@ -157,7 +170,7 @@ func (a *Authority) load(g Grant) (*record, error) {
 		}
 	case "unknown", "persisted", "recovered":
 		if r.Operation.ID == "" || r.Operation.Generation == "" ||
-			(r.Operation.Scope != "initial-key" && r.Operation.Scope != "request-retry") {
+			(r.Operation.Scope != "initial-key" && r.Operation.Scope != "request-retry" && !(r.Version == 2 && (r.Operation.Scope == "key-add" || r.Operation.Scope == "key-revoke"))) {
 			return nil, ErrStop
 		}
 	default:
@@ -179,11 +192,14 @@ func (a *Authority) CheckStartup() error {
 		return e
 	}
 	r, e := a.load(g)
-	if e != nil || r == nil || r.Operation.State == "unknown" {
+	if e != nil || r == nil || r.Operation.State == "unknown" || (r.H1 != nil && (r.H1.Parent != nil || r.H1.Generation != a.generation || g.H1 == nil || g.H1.Action != "start")) {
 		return ErrStop
 	}
 	b, e := a.current()
 	if e != nil || digest(b) != r.LastGoodSHA256 {
+		return ErrStop
+	}
+	if r.H1 != nil && (g.H1.RunID != r.H1.RunID || g.H1.Revision != r.Revision || g.H1.SHA256 != r.LastGoodSHA256) {
 		return ErrStop
 	}
 	return nil
@@ -214,7 +230,7 @@ func (a *Authority) Do(q Request, running bool) (Result, error) {
 		if r != nil {
 			return a.result(r, sha, false), ErrStop
 		}
-		if running || sha != g.SeedSHA256 || sha != q.ExpectedSHA256 {
+		if running || sha != g.SeedSHA256 || sha != q.ExpectedSHA256 || g.H1 != nil {
 			return Result{}, ErrStop
 		}
 		if _, e := tree(b); e != nil {
@@ -227,6 +243,7 @@ func (a *Authority) Do(q Request, running bool) (Result, error) {
 			return Result{}, ErrStop
 		}
 		r = &record{Version: 1, SourceID: g.SourceID, SeedSHA256: g.SeedSHA256, Device: g.Device, Inode: g.Inode, Revision: 1, LastGood: b, LastGoodSHA256: sha}
+		r.BootstrapRun = g.BootstrapRun
 		if e := a.save(r); e != nil {
 			return Result{}, e
 		}
@@ -237,6 +254,9 @@ func (a *Authority) Do(q Request, running bool) (Result, error) {
 	}
 	if q.Action == "observe" {
 		return a.result(r, sha, false), nil
+	}
+	if r.Version == 2 || q.H1 != nil || g.H1 != nil {
+		return a.doH1(q, g, r, b, running)
 	}
 	if q.Action == "begin" {
 		if !running || r.Operation.State == "unknown" || q.ExpectedRevision != r.Revision || sha != r.LastGoodSHA256 ||
@@ -320,5 +340,5 @@ func (a *Authority) result(r *record, sha string, created bool) Result {
 	if sha != r.LastGoodSHA256 || r.Operation.State == "unknown" {
 		state = "unknown"
 	}
-	return Result{SourceID: r.SourceID, Generation: a.generation, Revision: r.Revision, SHA256: sha, State: state, Installed: r.Installed, CommittedRetry: r.CommittedRetry, Operation: r.Operation, Created: created}
+	return Result{H1: r.H1, SourceID: r.SourceID, Generation: a.generation, Revision: r.Revision, SHA256: sha, State: state, Installed: r.Installed, CommittedRetry: r.CommittedRetry, Operation: r.Operation, Created: created}
 }

@@ -92,9 +92,16 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	}
 	// The private host launcher alone mounts the short-lived permit. The default
 	// v7 profile and existing environments never opt into this consumer.
-	if os.Getenv("CPAMP_PRIVATE_S1_PERMIT") == freshkeyapply.PermitPath && cfg.RuntimeURL == "http://127.0.0.1:9081" && cfg.CPAUpstreamURL == "http://127.0.0.1:8317" {
+	h1Mode := os.Getenv("CPAMP_PRIVATE_H1")
+	h1Valid := h1Mode == "" || (h1Mode == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1")
+	if h1Valid && os.Getenv("CPAMP_PRIVATE_S1_PERMIT") == freshkeyapply.PermitPath && cfg.RuntimeURL == "http://127.0.0.1:9081" && cfg.CPAUpstreamURL == "http://127.0.0.1:8317" {
 		a.keyApply = freshkeyapply.New(keyrepo.New(opened.DB), a.keys, runtime)
 		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
+		if os.Getenv("CPAMP_PRIVATE_H1") == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1" {
+			h := cpa.NewH1Coordinator(opened.DB)
+			a.keyApply.EnableH1(h)
+			a.configRetry.EnableH1(h)
+		}
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
