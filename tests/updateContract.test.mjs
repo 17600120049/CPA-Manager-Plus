@@ -78,9 +78,18 @@ describe('update contract', () => {
   });
   it('rejects Manager-only v2 schema1 at the shared validator before channels or generator', () => {
     const historical = makeInfo('v1.14.7');
-    const forged = { ...historical, release: { ...historical.release, version: 'v2.0.0', stage: 'stable' },
-      distribution: { docker: { ...historical.distribution.docker, version_tag: 'v2.0.0' },
-        native: { assets: historical.distribution.native.assets.map((x) => x.replaceAll('v1.14.7', 'v2.0.0')) } } };
+    const forged = {
+      ...historical,
+      release: { ...historical.release, version: 'v2.0.0', stage: 'stable' },
+      distribution: {
+        docker: { ...historical.distribution.docker, version_tag: 'v2.0.0' },
+        native: {
+          assets: historical.distribution.native.assets.map((asset) =>
+            asset.replaceAll('v1.14.7', 'v2.0.0')
+          ),
+        },
+      },
+    };
     expect(validateInfo(historical, 'v1.14.7')).toBe(historical);
     expect(() => validateInfo(forged, 'v2.0.0')).toThrow(/v2 Embedded/);
     expect(() => resolveChannels([historical, forged])).toThrow(/v2 Embedded/);
