@@ -67,10 +67,18 @@ def main():
     runtime, probe = name + "-runtime", name + "-probe"
     full = "--preflight" not in sys.argv[2:]
     ku = "--ku" in sys.argv[2:]
+    h1 = "--h1" in sys.argv[2:]
+    h1_host = None
+    if h1:
+        assert os.environ.get("CPAMP_PROOF_H1_WRITE_APPROVED") == "plan67-private", "dedicated disposable H1 write authorization missing"
+        assert full and not ku and not any(v in sys.argv[2:] for v in ("--ui", "--s2b-offline", "--s2a-expiry", "--s2b-offline-expiry")), "H1 uses only the closed S1/S2A fixture"
+        from fresh_h1_proof import Host
+        h1_host = Host(command, http=None, name=name, runtime=runtime, probe=probe,
+                       token=token, images=None, volumes=volumes, containers=containers, out=out)
     if ku:
         assert os.environ.get("CPAMP_PROOF_KEY_WRITE_APPROVED") == "plan64-private", "explicit private write approval missing"
     s2b = "--s2b-offline" in sys.argv[2:]
-    s2a = "--s2a" in sys.argv[2:] or s2b or ku
+    s2a = "--s2a" in sys.argv[2:] or s2b or ku or h1
     expiry = "--s2a-expiry" in sys.argv[2:] or "--s2b-offline-expiry" in sys.argv[2:]
     if s2b:
         from fresh_s2b_proof import fixture
@@ -79,6 +87,14 @@ def main():
     prefix = os.environ.get("CPAMP_PROOF_IMAGE_PREFIX", "cpamp-s1")
     tag = os.environ.get("CPAMP_PROOF_IMAGE_TAG", "local")
     images = {kind: prefix+"-"+kind+":"+tag for kind in ("runtime", "manager", "ingress")}
+    if h1_host:
+        h1_host.images = images
+        h1_sources = ["bin/ci/fresh_h1_proof.py"]
+        for folder in ("apps/runtime-supervisor/internal/privateconfig", "apps/manager-server/internal/service/cpa",
+                       "apps/manager-server/internal/service/freshconfig", "apps/manager-server/internal/repository/freshkeys",
+                       "apps/manager-server/internal/repository/freshstore"):
+            h1_sources += [str(p.relative_to(ROOT)) for p in sorted((ROOT/folder).glob("*.go")) if not p.name.endswith("_test.go")]
+        evidence["sourceSHA256"].update({p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in h1_sources})
     if ku:
         p="apps/web/src/fullweb/carrier.css"
         evidence["sourceSHA256"][p] = hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
@@ -99,9 +115,11 @@ def main():
 
     def run(suffix, image, *options, args=()):
         container = name + "-" + suffix
-        command("docker", "run", "-d", "--name", container, "--platform", "linux/amd64",
+        cid = command("docker", "run", "-d", "--name", container, "--platform", "linux/amd64",
                 *options, image, *args)
         containers.append(container)
+        if h1_host:
+            h1_host.track(container, cid)
         return container
 
     def http(port, path, method="GET", body=None, key=None, scheme="Bearer"):
@@ -125,17 +143,25 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
             return result["status"], None
 
     try:
+        if h1_host:
+            h1_host.http = http
+            for kind in images:
+                image = json.loads(command("docker", "image", "inspect", images[kind]))[0]
+                assert image["Os"] == "linux" and image["Architecture"] == "amd64"
+                images[kind] = image["Id"]  # no tag drift during this operation window
+            evidence["h1ImageIds"] = dict(images)
         metadata = json.loads(command("docker", "image", "inspect", images["runtime"]))[0]
         assert metadata["Os"] == "linux" and metadata["Architecture"] == "amd64"
         evidence["runtimeImageId"] = metadata["Id"]
         command("docker", "network", "create", "--internal", name)
-        for suffix in ("runtime", "token", "manager", "permit"):
+        for suffix in ("runtime", "token", "manager", "permit") + (("h1-grant",) if h1 else ()):
             volume = name + "-" + suffix
             assert volume not in command("docker","volume","ls","-q").splitlines()
             command("docker", "volume", "create", volume)
             volumes.append(volume)
         # Newly created volumes: no existing deployment is ever selected.
         run("runtime", metadata["Id"], "--network", name,
+            *(["-e", "CPAMP_PRIVATE_CONFIG_AUTHORITY=1", "-v", volumes[4]+":/run/cpamp-config:ro"] if h1 else []),
             *(["--add-host", "s2b-provider.invalid:127.0.0.1"] if s2b else []),
             "-e", "CPAMP_RUNTIME_ADDR=127.0.0.1:9081",
             "-e", "CPAMP_RUNTIME_IDENTITY=embedded-auth-proof",
@@ -159,6 +185,8 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
         # No child is running. Seed ONLY the task-created empty config, once.
         seed = (ROOT / "docker/runtime/config.v8.loopback-proof.yaml").read_text()
         seed = seed.replace("secret-key: ''", "secret-key: '"+management+"'")
+        if h1_host:
+            seed = h1_host.prehash(seed, management)
         if full and not s2b:
             seed += "\napi-keys:\n  openai-compatibility:\n    - name: s1-synthetic\n      base-url: http://127.0.0.1:18321/v1\n      keys:\n        - api-key: s1-synthetic-upstream-only\n      models:\n        - name: s1-proof-model\n          alias: s1-proof-model\n"
         if s2b:
@@ -167,6 +195,8 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
             start_offline_tls(command, runtime, probe, provider_credential)
         command("docker", "exec", "-i", runtime, "sh", "-ec",
                 "test -z \"$(ls -A /runtime/gateway/auth)\"; cat > /runtime/gateway/config.yaml; chown 10001:10001 /runtime/gateway/config.yaml; chmod 600 /runtime/gateway/config.yaml", data=seed)
+        if h1_host:
+            h1_host.provision(seed)
         if full:
             if s2a:
                 from fresh_s2a_proof import start_meter
@@ -178,6 +208,8 @@ print(json.dumps({'status':r.status,'body':data.decode()}))
                 "-e", "CPAMP_UPDATE_CHECK_ENABLED=false", "-e", "CPAMP_PRIVATE_S1_PERMIT=/run/cpamp-s1/permit.json"]
             if ku:
                 manager_env += ["-e", "CPAMP_PRIVATE_KEY_OPERATIONS=1"]
+            if h1:
+                manager_env += ["-e", "CPAMP_PRIVATE_KEY_OPERATIONS=1", "-e", "CPAMP_PRIVATE_CONFIG_AUTHORITY=1", "-e", "CPAMP_PRIVATE_H1=1", "-v", volumes[4]+":/run/cpamp-config:ro"]
             if s2a:
                 from fresh_s2a_proof import start_relay
                 start_relay(command, probe, replay_test=s2b)
@@ -411,6 +443,10 @@ r=c.getresponse();print(json.dumps({'status':r.status,'headers':r.getheaders(),'
         code,state=http(28471,install_path,key=admin)
         assert code==200 and state["runtimeState"]=="effective_observed"
         evidence["effectiveObservation"]=state
+        if h1_host:
+            h1_host.exercise(admin, api, permit, secret, key_id, evidence)
+            evidence["result"] = "PASS_DISPOSABLE_H1_COMBINED_NATIVE_LINUX_BETA_NOT_PROVEN"
+            return
         if ku:
             from fresh_ku_proof import exercise
             exercise(command,http,record,evidence,name,probe,runtime,secret,key_id,admin,api,permit,volumes,containers,images,namespace_owner,out)
@@ -500,12 +536,24 @@ assert v['secret'] not in journal and json.loads(journal)['keyId']==v['id']
         evidence["result"]="STOP"
         raise
     finally:
-        (out / "evidence.json").write_text(json.dumps(evidence, indent=2)+"\n")
-        for container in reversed(containers+fixtures):
-            command("docker", "rm", "-f", container)
-        for volume in volumes:
-            command("docker", "volume", "rm", volume)
-        command("docker", "network", "rm", name)
+        if h1_host:
+            # Preserve receipts, journals and forensic state even on failure.
+            # Never let ordinary S1 cleanup delete an unconsumed H1 receipt.
+            try:
+                h1_host.quiesce()
+            except Exception:
+                evidence["result"] = "STOP"
+                evidence["h1Shutdown"] = "UNPROVEN / NO RECOVERY OR HANDOFF"
+                raise
+            finally:
+                (out / "evidence.json").write_text(json.dumps(evidence, indent=2)+"\n")
+        else:
+            (out / "evidence.json").write_text(json.dumps(evidence, indent=2)+"\n")
+            for container in reversed(containers+fixtures):
+                command("docker", "rm", "-f", container)
+            for volume in volumes:
+                command("docker", "volume", "rm", volume)
+            command("docker", "network", "rm", name)
 
 
 if __name__ == "__main__":

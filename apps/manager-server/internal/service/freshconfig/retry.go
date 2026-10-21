@@ -50,6 +50,7 @@ type wire interface {
 	ReconcileRetry(context.Context, cpa.RetrySource, string, int) (cpa.RetrySource, error)
 }
 type Service struct {
+	h1     *cpa.H1Coordinator
 	mu     sync.Mutex
 	store  freshstore.Store
 	wire   wire
@@ -66,6 +67,9 @@ func expected(v cpa.RetrySource) Expected {
 	return Expected{v.SourceID, v.Generation, v.Revision, v.SHA256}
 }
 func knownSource(r freshstore.Record, source cpa.RetrySource) bool {
+	if source.H1 {
+		return source.HandoffValid && source.ParentID == ""
+	}
 	if source.OperationScope == "initial-key" {
 		return true
 	}
@@ -140,6 +144,9 @@ func (s *Service) Save(ctx context.Context, q Request) (freshstore.RetryOperatio
 	defer s.mu.Unlock()
 	if !freshkeys.ValidRequestID(q.RequestID) || q.Value == nil || *q.Value < 0 || *q.Value > 10 || q.Expected.SourceID == "" || q.Expected.Generation == "" || q.Expected.Revision == 0 || len(q.Expected.SHA256) != 64 {
 		return freshstore.RetryOperation{}, ErrInvalid
+	}
+	if s.h1 != nil {
+		return s.saveH1(ctx, q)
 	}
 	r, m, e := s.owner(ctx)
 	if e != nil {
@@ -216,6 +223,9 @@ func (s *Service) Operation(ctx context.Context, id string, reconcile bool) (fre
 	o, ok := r.Retry.Operations[id]
 	if !ok {
 		return o, ErrNotFound
+	}
+	if s.h1 != nil && reconcile {
+		return s.reconcileH1(ctx, o)
 	}
 	if !reconcile || o.State != "unknown" {
 		return o, nil

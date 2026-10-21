@@ -82,6 +82,7 @@ jobs:
         run: |
           python3 -m py_compile bin/ci/check-v2-private-candidate.py bin/ci/test-check-v2-private-candidate.py
           python3 bin/ci/test-check-v2-private-candidate.py -v
+          python3 -m unittest discover -s bin/ci -p 'test_fresh*_proof.py' -v
 
   frontend:
     name: Frontend
@@ -159,7 +160,7 @@ jobs:
 
       - name: Race test Fresh admission and authentication cutover
         working-directory: apps/manager-server
-        run: go test -race ./cmd/cpa-manager-plus ./internal/processlock ./internal/repository/freshstore ./internal/service/fresh ./internal/service/freshrouting ./internal/service/freshstrategy ./internal/http/controller/freshbootstrap
+        run: go test -race ./cmd/cpa-manager-plus ./internal/processlock ./internal/repository/freshstore ./internal/repository/freshkeys ./internal/service/fresh ./internal/service/freshrouting ./internal/service/freshstrategy ./internal/service/cpa ./internal/service/freshkeyapply ./internal/service/freshconfig ./internal/http/controller/freshbootstrap
 
       - name: Race test Runtime ownership paths
         if: needs.changes.outputs.manager_runtime == 'true'

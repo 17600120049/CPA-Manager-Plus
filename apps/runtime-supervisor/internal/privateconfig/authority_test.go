@@ -21,6 +21,9 @@ type fixture struct {
 }
 
 func fresh(t *testing.T) *fixture {
+	return freshBootstrap(t, "")
+}
+func freshBootstrap(t *testing.T, run string) *fixture {
 	t.Helper()
 	root, e := filepath.EvalSymlinks(t.TempDir())
 	if e != nil {
@@ -39,6 +42,7 @@ func fresh(t *testing.T) *fixture {
 	dev, ino, _ := fileID(info)
 	g := Grant{SourceID: "fresh-test-source-unique", Generation: "7", Namespace: "net:[test-private]", Device: dev, Inode: ino, SeedSHA256: digest(seed),
 		IssuedAtMS: time.Now().Add(-time.Second).UnixMilli(), ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli()}
+	g.BootstrapRun = run
 	f := &fixture{a: New(filepath.Join(root, "authority"), config, filepath.Join(root, "source.json"), ns, 7, uint32(os.Geteuid())), g: g, t: t, seed: seed}
 	f.grant()
 	if f.a.CheckStartup() == nil {

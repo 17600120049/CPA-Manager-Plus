@@ -16,6 +16,11 @@ const operationPrefix = "fresh_key_operation_v1:"
 // Operation records attempts, not a reusable live-auth grant. Secrets remain in
 // the original encrypted canonical records; the S1 journal is never overwritten.
 type Operation struct {
+	ParentID           string    `json:"parentId,omitempty"`
+	SourceID           string    `json:"sourceId,omitempty"`
+	ClaimSHA256        string    `json:"claimSHA256,omitempty"`
+	ClaimRevision      uint64    `json:"claimRevision,omitempty"`
+	IntentDigest       string    `json:"intentDigest,omitempty"`
 	ID                 string    `json:"id"`
 	TargetID           string    `json:"targetId"`
 	KeeperID           string    `json:"keeperId"`
@@ -30,9 +35,13 @@ type Operation struct {
 	CompletedAtMS      int64     `json:"completedAtMs"`
 }
 type KeyStep struct {
-	Name     string `json:"name"`
-	State    string `json:"state"` // unattempted, attempted, observed
-	Returned bool   `json:"returned"`
+	RuntimeID     string `json:"runtimeId,omitempty"`
+	BeginRevision uint64 `json:"beginRevision,omitempty"`
+	HTTP200       bool   `json:"http200,omitempty"`
+	Receipt       string `json:"receipt,omitempty"`
+	Name          string `json:"name"`
+	State         string `json:"state"` // unattempted, attempted, observed
+	Returned      bool   `json:"returned"`
 }
 
 func readOperation(ctx context.Context, q interface {
@@ -61,6 +70,12 @@ func validOperation(o Operation) bool {
 	if o.TargetID == o.KeeperID || o.RunID == "" || o.Generation == "" || (o.Outcome != "pending" && o.Outcome != "unknown" && o.Outcome != "committed") {
 		return false
 	}
+	if o.ParentID != "" && (o.ParentID != "k:"+o.ID || len(o.SourceID) < 16 || o.ClaimRevision == 0 || !identity.IsValidSHA256Hex(o.ClaimSHA256) || !identity.IsValidSHA256Hex(o.IntentDigest)) {
+		return false
+	}
+	if o.ParentID == "" && (o.SourceID != "" || o.ClaimSHA256 != "" || o.ClaimRevision != 0 || o.IntentDigest != "") {
+		return false
+	}
 	names := []string{"revoke"}
 	if o.Mode == "replace" {
 		names = []string{"add", "revoke"}
@@ -71,6 +86,20 @@ func validOperation(o Operation) bool {
 		return false
 	}
 	for i, s := range o.Steps {
+		if o.ParentID != "" {
+			ordinal := "0"
+			if i == 1 {
+				ordinal = "1"
+			}
+			if s.RuntimeID != o.ParentID+":"+ordinal+":"+names[i] || (s.HTTP200 && (s.BeginRevision <= o.ClaimRevision || !s.Returned)) || (s.State == "observed" && (!s.HTTP200 || !identity.IsValidSHA256Hex(s.Receipt))) {
+				return false
+			}
+			if (s.State == "unattempted" && (s.Returned || s.HTTP200 || s.BeginRevision != 0 || s.Receipt != "")) || (s.Receipt != "" && (!s.HTTP200 || !identity.IsValidSHA256Hex(s.Receipt))) {
+				return false
+			}
+		} else if s.RuntimeID != "" || s.BeginRevision != 0 || s.HTTP200 || s.Receipt != "" {
+			return false
+		}
 		if s.Name != names[i] || (s.State != "unattempted" && s.State != "attempted" && s.State != "observed") {
 			return false
 		}
@@ -150,6 +179,17 @@ func (r *Repository) SaveOperation(ctx context.Context, o Operation) error {
 	}
 	if previous == nil || previous.Revision != o.Revision || previous.Outcome == "committed" {
 		return ErrConflict
+	}
+	if previous.ParentID != "" || o.ParentID != "" {
+		if previous.ParentID != o.ParentID || previous.SourceID != o.SourceID || previous.ClaimSHA256 != o.ClaimSHA256 || previous.ClaimRevision != o.ClaimRevision || previous.IntentDigest != o.IntentDigest || previous.TargetID != o.TargetID || previous.KeeperID != o.KeeperID || previous.Mode != o.Mode || previous.RunID != o.RunID || previous.Generation != o.Generation || previous.ProviderSeedSHA256 != o.ProviderSeedSHA256 {
+			return ErrConflict
+		}
+		for n, p := range previous.Steps {
+			s := o.Steps[n]
+			if p.RuntimeID != s.RuntimeID || (p.State == "observed" && p != s) || (p.State == "attempted" && s.State == "unattempted") || (p.HTTP200 && !s.HTTP200) || (p.BeginRevision != 0 && p.BeginRevision != s.BeginRevision) || (p.Receipt != "" && p.Receipt != s.Receipt) {
+				return ErrConflict
+			}
+		}
 	}
 	o.Revision++
 	data, _ := json.Marshal(o)

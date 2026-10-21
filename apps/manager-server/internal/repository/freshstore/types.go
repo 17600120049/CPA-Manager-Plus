@@ -50,13 +50,20 @@ type RetryJournal struct {
 	Operations map[string]RetryOperation `json:"operations"`
 }
 type RetryOperation struct {
-	RequestID  string `json:"requestId"`
-	Value      int    `json:"value"`
-	SourceID   string `json:"sourceId"`
-	Generation string `json:"generation"`
-	Revision   uint64 `json:"revision"`
-	SHA256     string `json:"sha256"`
-	State      string `json:"state"`
+	ParentID      string `json:"parentId,omitempty"`
+	ClaimRevision uint64 `json:"claimRevision,omitempty"`
+	IntentDigest  string `json:"intentDigest,omitempty"`
+	Attempted     bool   `json:"attempted,omitempty"`
+	BeginRevision uint64 `json:"beginRevision,omitempty"`
+	HTTP200       bool   `json:"http200,omitempty"`
+	Receipt       string `json:"receipt,omitempty"`
+	RequestID     string `json:"requestId"`
+	Value         int    `json:"value"`
+	SourceID      string `json:"sourceId"`
+	Generation    string `json:"generation"`
+	Revision      uint64 `json:"revision"`
+	SHA256        string `json:"sha256"`
+	State         string `json:"state"`
 }
 
 // Store exposes only Fresh CAS transactions, not arbitrary workflow execution.

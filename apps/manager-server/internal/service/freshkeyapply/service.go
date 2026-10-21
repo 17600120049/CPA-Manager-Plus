@@ -38,6 +38,7 @@ type wire interface {
 	AuthSweep(context.Context, string) (bool, error)
 }
 type Service struct {
+	h1            *cpa.H1Coordinator
 	mu            sync.Mutex
 	repo          *repo.Repository
 	keys          *freshkeys.Service
@@ -201,5 +202,14 @@ func (s *Service) observe(ctx context.Context, id string, generation uint64) (St
 		}
 		return nil
 	})
+	if err == nil && s.h1 != nil && result.RuntimeState == "effective_observed" {
+		t, ok := s.wire.(*cpa.Transport)
+		if !ok {
+			return result, ErrUnavailable
+		}
+		if err = s.h1.InitialConsumed(ctx, t, p.RunID, p.Generation, id); err != nil {
+			return result, err
+		}
+	}
 	return result, err
 }

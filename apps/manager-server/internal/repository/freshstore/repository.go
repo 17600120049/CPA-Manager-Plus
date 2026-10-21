@@ -96,10 +96,25 @@ func validRetry(r *RetryJournal) bool {
 			if b, e := hex.DecodeString(o.SHA256); e != nil || hex.EncodeToString(b) != o.SHA256 {
 				return false
 			}
+			if o.ParentID != "" {
+				if o.ParentID != "c:"+id || !o.Attempted || o.ClaimRevision <= o.Revision || !retryHash(o.IntentDigest) || (o.HTTP200 && o.BeginRevision <= o.ClaimRevision) || (!o.HTTP200 && (o.BeginRevision != 0 || o.Receipt != "")) || (o.State != "unknown" && (o.State != "persisted" || !o.HTTP200 || !retryHash(o.Receipt))) || (o.State == "unknown" && o.Receipt != "") {
+					return false
+				}
+			} else if o.ClaimRevision != 0 || o.IntentDigest != "" || o.Attempted || o.BeginRevision != 0 || o.HTTP200 || o.Receipt != "" {
+				return false
+			}
 		}
 	}
 	return true
 }
+func retryHash(s string) bool {
+	b, e := hex.DecodeString(s)
+	return e == nil && len(b) == 32 && hex.EncodeToString(b) == s
+}
+
+// ValidateRetryJournal lets the shared admission checkpoint reject a damaged
+// Config journal with exactly the same rules as its owning repository.
+func ValidateRetryJournal(r *RetryJournal) bool { return r != nil && validRetry(r) }
 func valid(r Record) error {
 	if !validRetry(r.Retry) || r.RetryInvalid && r.Retry != nil {
 		return ErrNotFresh
@@ -307,6 +322,20 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 			}
 			state := next.State
 			next.State = old.State
+			if old.ParentID != "" && old.State == "unknown" {
+				if !next.Attempted || (old.HTTP200 && (!next.HTTP200 || old.BeginRevision != next.BeginRevision)) || (!old.HTTP200 && next.HTTP200 && (next.BeginRevision <= old.ClaimRevision || next.Receipt != "" || state != "unknown")) {
+					return Record{}, ErrConflict
+				}
+				if next.Receipt != old.Receipt && (old.Receipt != "" || !old.HTTP200 || state != "persisted" || len(next.Receipt) != 64) {
+					return Record{}, ErrConflict
+				}
+				if state != "unknown" && (state != "persisted" || !next.HTTP200 || len(next.Receipt) != 64) {
+					return Record{}, ErrConflict
+				}
+				next.HTTP200 = old.HTTP200
+				next.BeginRevision = old.BeginRevision
+				next.Receipt = old.Receipt
+			}
 			if next != old || old.State != "unknown" && state != old.State {
 				return Record{}, ErrConflict
 			}

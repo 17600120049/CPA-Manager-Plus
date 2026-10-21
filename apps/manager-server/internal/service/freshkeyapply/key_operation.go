@@ -22,6 +22,11 @@ var ErrLastKey = errors.New("cannot revoke last effective key")
 // exclude/drain every other config/file/reload writer before issuing this file.
 // It contains no credential and cannot be supplied through the public API.
 type KeyPermit struct {
+	Version      int    `json:"version,omitempty"`
+	SourceID     string `json:"sourceId,omitempty"`
+	Revision     uint64 `json:"revision,omitempty"`
+	ParentID     string `json:"parentId,omitempty"`
+	StepID       string `json:"stepId,omitempty"`
 	OperationID  string `json:"operationId"`
 	Step         string `json:"step"`
 	RunID        string `json:"runId"`
@@ -53,6 +58,9 @@ func (s *Service) KeyOperationsEnabled() bool {
 	if s == nil || !s.keyOperations {
 		return false
 	}
+	if s.h1 != nil {
+		return os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1"
+	}
 	// A config-owned source can never use this independent K/U journal. This
 	// additional fail-closed fence does NOT attest Host lifecycle exclusivity.
 	_, e := os.Lstat("/run/cpamp-config/source.json")
@@ -60,6 +68,15 @@ func (s *Service) KeyOperationsEnabled() bool {
 }
 
 func (s *Service) installedKey(ctx context.Context) (string, error) {
+	if s.h1 != nil {
+		t, ok := s.wire.(*cpa.Transport)
+		if !ok {
+			return "", ErrUnavailable
+		}
+		if e := s.h1.Free(ctx, t); e != nil {
+			return "", e
+		}
+	}
 	o, err := s.repo.LatestOperation(ctx)
 	if err != nil {
 		return "", err
@@ -156,6 +173,31 @@ func (s *Service) Prepare(ctx context.Context, id, target, keeper, mode string, 
 		steps = append([]repo.KeyStep{{Name: "add", State: "unattempted"}}, steps...)
 	}
 	o := repo.Operation{ID: id, TargetID: target, KeeperID: keeper, Mode: mode, RunID: p.RunID, Generation: p.Generation, ProviderSeedSHA256: p.S2B.Binding(), Revision: 1, Outcome: "pending", Steps: steps, CreatedAtMS: time.Now().UnixMilli()}
+	if s.h1 != nil {
+		err = s.keyPair(ctx, target, keeper, false, func(old, next string) error {
+			t, ok := s.wire.(*cpa.Transport)
+			if !ok {
+				return ErrUnavailable
+			}
+			i := cpa.H1Intent{RequestID: id, Domain: "key", Mode: mode, TargetID: target, KeeperID: keeper, TargetSHA256: cpa.H1SecretHash(old), KeeperSHA256: cpa.H1SecretHash(next)}
+			parent, e := s.h1.Claim(ctx, t, i)
+			if e != nil {
+				return e
+			}
+			o.ParentID = parent.ID
+			o.SourceID = parent.SourceID
+			o.ClaimSHA256 = parent.ClaimSHA256
+			o.ClaimRevision = parent.ClaimRevision
+			o.IntentDigest = cpa.H1Terminal(i)
+			for n := range o.Steps {
+				o.Steps[n].RuntimeID = cpa.H1StepID(i, n)
+			}
+			return nil
+		})
+		if err != nil {
+			return result, err
+		}
+	}
 	if err = s.repo.BeginOperation(ctx, o); err != nil {
 		return result, err
 	}
@@ -234,6 +276,9 @@ func (s *Service) CheckOperation(ctx context.Context, id string, generation uint
 
 func (s *Service) checkOperation(ctx context.Context, o *repo.Operation, generation uint64) (OperationResult, error) {
 	r := OperationResult{Operation: o, RuntimeState: "effect_unknown"}
+	if s.h1 != nil && o.ParentID == "" {
+		return r, ErrUnavailable
+	}
 	if o.Outcome == "committed" {
 		latest, err := s.repo.LatestOperation(ctx)
 		if err != nil {
@@ -258,6 +303,21 @@ func (s *Service) checkOperation(ctx context.Context, o *repo.Operation, generat
 	if o.RunID != p.RunID || o.Generation != p.Generation || o.ProviderSeedSHA256 != p.S2B.Binding() {
 		return r, ErrGeneration
 	}
+	if s.h1 != nil && o.Outcome == "committed" {
+		if err = s.finishH1(ctx, o); err != nil {
+			return r, err
+		}
+	}
+	if s.h1 != nil && o.Outcome != "committed" {
+		v, e := s.h1.Parent(ctx, s.wire.(*cpa.Transport), o.ParentID)
+		if e != nil {
+			return r, e
+		}
+		p := v.H1.Parent
+		if p.SourceID != o.SourceID || p.Generation != o.Generation || p.ClaimSHA256 != o.ClaimSHA256 || p.ClaimRevision != o.ClaimRevision || cpa.H1Terminal(p.Intent) != o.IntentDigest || p.Intent.RequestID != o.ID || p.Intent.TargetID != o.TargetID || p.Intent.KeeperID != o.KeeperID || p.Intent.Mode != o.Mode {
+			return r, cpa.ErrSourceConflict
+		}
+	}
 	w, ok := s.wire.(keyWire)
 	if !ok {
 		return r, ErrUnavailable
@@ -269,6 +329,26 @@ func (s *Service) checkOperation(ctx context.Context, o *repo.Operation, generat
 		}
 		if step.State == "observed" && i < len(o.Steps)-1 {
 			continue
+		}
+		if s.h1 != nil && o.Outcome != "committed" {
+			if !step.HTTP200 {
+				return r, cpa.ErrApplyUnknown
+			}
+			t := s.wire.(*cpa.Transport)
+			receipt, e := s.h1.Commit(ctx, t, o.ParentID, i)
+			if e != nil {
+				return r, e
+			}
+			if receipt.ID != step.RuntimeID || receipt.BeginRevision != step.BeginRevision || receipt.Receipt == "" {
+				return r, cpa.ErrApplyUnknown
+			}
+			if o.Steps[i].Receipt == "" {
+				o.Steps[i].Receipt = receipt.Receipt
+				if e = s.repo.SaveOperation(ctx, *o); e != nil {
+					return r, e
+				}
+				o.Revision++
+			}
 		}
 		err = s.keyPair(ctx, o.TargetID, o.KeeperID, o.Outcome == "committed", func(old, next string) error {
 			want, reject := []string{next}, []string{old}
@@ -325,6 +405,11 @@ func (s *Service) checkOperation(ctx context.Context, o *repo.Operation, generat
 			o.Revision++
 		}
 	}
+	if s.h1 != nil {
+		if err = s.finishH1(ctx, o); err != nil {
+			return r, err
+		}
+	}
 	r.RuntimeState = "effective_observed"
 	r.ExpiresAtMS = time.Now().Add(5 * time.Second).UnixMilli()
 	if r.ExpiresAtMS > p.ExpiresAtMS {
@@ -368,6 +453,9 @@ func (s *Service) ContinueOperation(ctx context.Context, id string, generation u
 	}
 	if index < 0 {
 		return r, cpa.ErrApplyUnknown
+	}
+	if s.h1 != nil {
+		return s.continueH1(ctx, o, index, generation)
 	}
 	p, err := s.operationTarget(ctx, generation)
 	if err != nil {

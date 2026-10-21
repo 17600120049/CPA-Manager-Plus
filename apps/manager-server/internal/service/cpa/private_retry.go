@@ -16,6 +16,9 @@ var ErrWriterIsolation = errors.New("private config source has a reachable key w
 // RetrySource contains Runtime metadata, never YAML or a secret. SHA256 is
 // ALWAYS the admitted raw file digest, never ConfigV8's serialized YAML GET.
 type RetrySource struct {
+	H1             bool   `json:"h1,omitempty"`
+	ParentID       string `json:"parentId,omitempty"`
+	HandoffValid   bool   `json:"handoffValid,omitempty"`
 	SourceID       string `json:"sourceId"`
 	Generation     string `json:"generation"`
 	Revision       uint64 `json:"revision"`
@@ -29,9 +32,27 @@ type RetrySource struct {
 }
 
 func retrySource(v configObservation) RetrySource {
-	return RetrySource{v.SourceID, v.Generation, v.Revision, v.SHA256, v.State, v.Installed, v.Operation.ID, v.Operation.State, v.Operation.Scope, v.Operation.Retry}
+	out := RetrySource{SourceID: v.SourceID, Generation: v.Generation, Revision: v.Revision, SHA256: v.SHA256, State: v.State, Installed: v.Installed, OperationID: v.Operation.ID, OperationState: v.Operation.State, OperationScope: v.Operation.Scope, OperationRetry: v.Operation.Retry}
+	if v.H1 != nil {
+		out.H1 = true
+		if v.H1.Parent != nil {
+			out.ParentID = v.H1.Parent.ID
+		}
+	}
+	return out
 }
 func (t *Transport) RetrySource(ctx context.Context) (RetrySource, error) {
+	if t.h1 != nil {
+		v, e := t.h1.Ready(ctx, t)
+		out := retrySource(v)
+		if e != nil {
+			return out, e
+		}
+		if v.H1.Parent == nil {
+			out.HandoffValid = t.h1.Free(ctx, t) == nil
+		}
+		return out, nil
+	}
 	_, v, e := t.configuration(ctx, "observe")
 	return retrySource(v), e
 }

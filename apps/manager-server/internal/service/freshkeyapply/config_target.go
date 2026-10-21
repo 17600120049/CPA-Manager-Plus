@@ -13,6 +13,20 @@ func (s *Service) ConfigTarget(ctx context.Context, generation uint64) (string, 
 	if s == nil {
 		return "", ErrUnavailable
 	}
+	if s.h1 != nil {
+		p, e := s.operationTarget(ctx, generation)
+		if e != nil {
+			return "", e
+		}
+		t, ok := s.wire.(*cpa.Transport)
+		if !ok {
+			return "", ErrUnavailable
+		}
+		if _, e = s.h1.Ready(ctx, t); e != nil {
+			return "", e
+		}
+		return p.ManagementKey, nil
+	}
 	if s.keyOperations {
 		return "", cpa.ErrWriterIsolation
 	}

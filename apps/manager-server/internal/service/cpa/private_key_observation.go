@@ -18,6 +18,9 @@ func (t *Transport) Configured(ctx context.Context, management, secret string) (
 		if e != nil {
 			return false, e
 		}
+		if t.h1 != nil && observed.H1 != nil && observed.H1.Parent != nil {
+			return false, ErrApplyUnknown
+		}
 		if observed.State == "unknown" && observed.Operation.Scope == "initial-key" &&
 			observed.Operation.ID == "s1-"+hashBytes([]byte(secret)) && observed.Operation.KeySHA256 == hashBytes([]byte(secret)) {
 			if e := t.reconcilePrivateConfiguration(ctx, observed.Operation.ID); e != nil {

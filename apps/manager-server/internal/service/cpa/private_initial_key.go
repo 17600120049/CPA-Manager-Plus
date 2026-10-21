@@ -51,6 +51,7 @@ type InstallResult struct {
 // Transport pins production requests to the private loopback CPA Management
 // endpoint. Tests can inject a private synthetic server inside this package.
 type Transport struct {
+	h1                     *H1Coordinator
 	configurationAuthority *privateConfigClient
 	mu                     sync.Mutex
 	client                 *http.Client
