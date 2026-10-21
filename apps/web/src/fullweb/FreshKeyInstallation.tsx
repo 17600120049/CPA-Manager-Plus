@@ -62,7 +62,7 @@ export function FreshKeyInstallation({
       return;
     inFlight.current = true;
     setBusy(true);
-    setMessage('');
+    setMessage(!install && uncertainInstall.current ? t('keysInstallUnknown') : '');
     if (install) {
       uncertainInstall.current = true;
       onPending(true); // synchronous before dispatch, including same-turn close/logout
@@ -113,7 +113,12 @@ export function FreshKeyInstallation({
       if (!active.current) return;
       setExpired(true);
       if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
-      else setMessage(t(install ? 'keysInstallUnknown' : 'keysInstallUnavailable'));
+      else
+        setMessage(
+          !install && uncertainInstall.current
+            ? `${t('keysInstallUnknown')} ${t('keysInstallUnavailable')}`
+            : t(install ? 'keysInstallUnknown' : 'keysInstallUnavailable')
+        );
     } finally {
       inFlight.current = false;
       if (active.current) setBusy(false);

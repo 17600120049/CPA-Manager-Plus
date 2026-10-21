@@ -117,6 +117,33 @@ describe('private S1 installation', () => {
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 
+  it('retains the original UNKNOWN warning if a recovery GET fails and later observes the S1 journal', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(pending))
+      .mockRejectedValueOnce(new Error('install response lost'))
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(Response.json(pending))
+      .mockResolvedValueOnce(
+        Response.json({ ...pending, attempted: true, installAvailable: false })
+      );
+    await mount(fetchMock);
+    await click(t('keysCheckInstallation'));
+    await click(t('keysInstallOne'));
+    expect(view()).toContain(t('keysInstallUnknown'));
+    await click(t('keysCheckInstallation'));
+    expect(view()).toContain(t('keysInstallUnknown'));
+    expect(view()).toContain(t('keysInstallUnavailable'));
+    expect(onPending).toHaveBeenLastCalledWith(true);
+    await click(t('keysCheckInstallation'));
+    expect(view()).toContain(t('keysInstallUnknown'));
+    expect(onPending).toHaveBeenLastCalledWith(true);
+    await click(t('keysCheckInstallation'));
+    expect(view()).not.toContain(t('keysInstallUnknown'));
+    expect(onPending).toHaveBeenLastCalledWith(false);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+  });
+
   it('expires a live observation without a write or reload', async () => {
     vi.useFakeTimers();
     const now = Date.now();
