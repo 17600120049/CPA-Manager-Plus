@@ -1,4 +1,4 @@
-/// <reference types="node" />
+// @ts-expect-error Node-only Vitest fixture; production Web excludes Node types.
 import { webcrypto } from 'node:crypto';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
