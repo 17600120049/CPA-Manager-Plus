@@ -141,6 +141,49 @@ describe('Canonical key detail and rename', () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  it('does not start S1 installation behind an earlier in-flight detail read', async () => {
+    let finishRead!: (response: Response) => void;
+    let rejectInstall!: (reason: Error) => void;
+    const ready = {
+      keyId: key.id,
+      managerStaged: true,
+      cpaConfigured: false,
+      runtimeState: 'effect_unknown',
+      runtimeGeneration: '7',
+      observedFromMs: 0,
+      observedUntilMs: 0,
+      expiresAtMs: 0,
+      ingressAuthorized: false,
+      installAvailable: true,
+      attempted: false,
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(key))
+      .mockResolvedValueOnce(Response.json(ready))
+      .mockReturnValueOnce(new Promise<Response>((resolve) => { finishRead = resolve; }))
+      .mockReturnValueOnce(new Promise<Response>((_resolve, reject) => { rejectInstall = reject; }))
+      .mockResolvedValueOnce(Response.json({ ...ready, attempted: true, installAvailable: false }));
+    await mount(fetchMock);
+    await act(async () => button(t('keysCheckInstallation')).props.onClick());
+    await act(async () => {
+      button(t('keysReadDetails')).props.onClick();
+      // The old render has an enabled install button, but the live detail ref
+      // must stop a second same-turn operation from starting.
+      button(t('keysInstallOne')).props.onClick();
+    });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
+    await act(async () => finishRead(Response.json(key)));
+    await act(async () => button(t('keysInstallOne')).props.onClick());
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    expect(pending).toHaveBeenLastCalledWith(true);
+    await act(async () => rejectInstall(new Error('lost reply')));
+    expect(pending).toHaveBeenLastCalledWith(true);
+    await act(async () => button(t('keysCheckInstallation')).props.onClick());
+    expect(pending).toHaveBeenLastCalledWith(false);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+  });
+
   it('retains revoked details and name history without offering installation again', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

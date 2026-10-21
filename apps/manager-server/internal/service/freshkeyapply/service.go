@@ -132,7 +132,10 @@ func (s *Service) observe(ctx context.Context, id string, generation uint64) (St
 	if err != nil {
 		return result, err
 	}
-	result.Attempted = attempt != nil
+	// This is evidence for this canonical Key only. Another Key consuming
+	// the single S1 journal must still block future installs, not resolve this
+	// Key's UNKNOWN response.
+	result.Attempted = attempt != nil && attempt.KeyID == id
 	p, err := s.permit()
 	if err != nil {
 		return result, nil

@@ -22,6 +22,7 @@ export function FreshKeyInstallation({
   credential,
   onUnauthorized,
   onPending,
+  canInstall,
   disabled,
 }: {
   id: string;
@@ -29,6 +30,7 @@ export function FreshKeyInstallation({
   credential: string;
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
+  canInstall: () => boolean;
   disabled: boolean;
 }) {
   const [state, setState] = useState<State | null>(null);
@@ -57,7 +59,8 @@ export function FreshKeyInstallation({
     if (
       inFlight.current ||
       disabled ||
-      (install && (used.current || !state?.installAvailable || state.attempted))
+      (install &&
+        (!canInstall() || used.current || !state?.installAvailable || state.attempted))
     )
       return;
     inFlight.current = true;

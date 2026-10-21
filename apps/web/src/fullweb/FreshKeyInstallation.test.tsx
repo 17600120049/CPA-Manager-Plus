@@ -43,6 +43,7 @@ describe('private S1 installation', () => {
           credential="admin-only"
           onUnauthorized={unauthorized}
           onPending={onPending}
+          canInstall={() => true}
           disabled={false}
         />
       );
@@ -141,6 +142,24 @@ describe('private S1 installation', () => {
     await click(t('keysCheckInstallation'));
     expect(view()).not.toContain(t('keysInstallUnknown'));
     expect(onPending).toHaveBeenLastCalledWith(false);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+  });
+
+  it('holds an unresolved Key install when a different S1 journal consumed the global slot', async () => {
+    const foreignJournal = { ...pending, attempted: false, installAvailable: false };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(pending))
+      .mockRejectedValueOnce(new Error('unknown POST reply'))
+      .mockResolvedValueOnce(Response.json(foreignJournal));
+    await mount(fetchMock);
+    await click(t('keysCheckInstallation'));
+    await click(t('keysInstallOne'));
+    await click(t('keysCheckInstallation'));
+    expect(view()).toContain(t('keysInstallUnknown'));
+    expect(view()).not.toContain(t('keysInstallOne'));
+    expect(onPending).toHaveBeenLastCalledWith(true);
+    expect(onPending).not.toHaveBeenCalledWith(false);
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 

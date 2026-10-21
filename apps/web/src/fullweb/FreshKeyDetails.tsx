@@ -183,6 +183,7 @@ export function FreshKeyDetails({
               client={client}
               credential={credential}
               onUnauthorized={onUnauthorized}
+              canInstall={() => !inFlight.current}
               onPending={(pending) => {
                 installationPendingRef.current = pending;
                 setInstallationPending(pending);
