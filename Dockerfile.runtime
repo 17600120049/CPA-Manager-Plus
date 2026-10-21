@@ -46,10 +46,12 @@ RUN set -eu; \
     mkdir -p /out; \
     tar -xOzf "/tmp/${asset_name}" cli-proxy-api > /out/cli-proxy-api; \
     printf '%s  %s\n' "$executable_sha256" /out/cli-proxy-api | sha256sum -c -; \
+    tar -xOzf "/tmp/${asset_name}" LICENSE > /out/CPA-LICENSE; \
+    test -s /out/CPA-LICENSE; \
     chmod 0755 /out/cli-proxy-api; \
     printf '{"schemaVersion":1,"engine":"cpa","version":"8.0.13","artifactId":"sha256:%s"}\n' \
       "$executable_sha256" > /out/cpa-artifact.json; \
-    chmod 0444 /out/cpa-artifact.json
+    chmod 0444 /out/cpa-artifact.json /out/CPA-LICENSE
 
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS supervisor-build
 
@@ -94,6 +96,7 @@ ARG TARGETARCH
 RUN test "$TARGETARCH" = "amd64"
 COPY --from=cpa-v8-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
 COPY --from=cpa-v8-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
+COPY --from=cpa-v8-download /out/CPA-LICENSE /usr/local/share/licenses/cli-proxy-api/LICENSE
 COPY docker/runtime/config.v8.seed.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
 
 # Private Embedded Fresh network-isolation experiment; this is not a release target.
@@ -103,6 +106,7 @@ ARG TARGETARCH
 RUN test "$TARGETARCH" = "amd64"
 COPY --from=cpa-v8-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
 COPY --from=cpa-v8-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
+COPY --from=cpa-v8-download /out/CPA-LICENSE /usr/local/share/licenses/cli-proxy-api/LICENSE
 COPY docker/runtime/config.v8.loopback-proof.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
 
 # Historical lifecycle regressions only; never selected by normal Compose.
@@ -115,6 +119,7 @@ COPY docker/runtime/config.seed.yaml /usr/local/share/cpamp/runtime/config.seed.
 FROM runtime-base AS runtime
 COPY --from=cpa-v8-download /out/cli-proxy-api /usr/local/bin/cli-proxy-api
 COPY --from=cpa-v8-download /out/cpa-artifact.json /usr/local/share/cpamp/runtime/cpa-artifact.json
+COPY --from=cpa-v8-download /out/CPA-LICENSE /usr/local/share/licenses/cli-proxy-api/LICENSE
 COPY docker/runtime/config.v8.default.seed.yaml /usr/local/share/cpamp/runtime/config.seed.yaml
 COPY docker/runtime/v8-entrypoint.sh /usr/local/bin/cpamp-runtime-v8-entrypoint
 ENTRYPOINT ["/usr/local/bin/cpamp-runtime-v8-entrypoint"]

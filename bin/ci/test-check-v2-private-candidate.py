@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline unit tests; no Docker daemon or registry required."""
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import unittest
@@ -13,6 +14,54 @@ spec.loader.exec_module(audit)
 
 
 class AuditTest(unittest.TestCase):
+    def test_cpa_license_requires_exact_bytes_and_readonly_regular_file(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as td:
+            license_file = Path(td) / 'LICENSE'
+            with self.assertRaisesRegex(ValueError, 'missing regular'):
+                audit.check_cpa_license(license_file)
+            # Synthetic bytes exercise the boundary; real archive/image equality
+            # is verified separately against the pinned official release.
+            content = b'fixture license\n'
+            license_file.write_bytes(content)
+            license_file.chmod(0o444)
+            with mock.patch.object(audit, 'CPA_LICENSE_SHA256',
+                                   hashlib.sha256(content).hexdigest()):
+                audit.check_cpa_license(license_file)
+                license_file.chmod(0o644)
+                with self.assertRaisesRegex(ValueError, 'read-only'):
+                    audit.check_cpa_license(license_file)
+            license_file.chmod(0o444)
+            with self.assertRaisesRegex(ValueError, 'differs from official'):
+                audit.check_cpa_license(license_file)
+            link = Path(td) / 'LICENSE-link'
+            link.symlink_to(license_file)
+            with self.assertRaisesRegex(ValueError, 'missing regular'):
+                audit.check_cpa_license(link)
+
+    def test_runtime_audit_rejects_missing_or_replaced_license_and_removes_container(self):
+        from tempfile import TemporaryDirectory
+        manifest = json.dumps({'schemaVersion': 1, 'engine': 'cpa', 'version': '8.0.13',
+                               'artifactId': 'sha256:' + audit.CPA_EXECUTABLE_SHA256['amd64']})
+        for missing in (True, False):
+            def fake_extract(container, source, dest):
+                if source == audit.CPA_LICENSE_PATH:
+                    if missing:
+                        raise ValueError('missing regular file')
+                    dest.write_bytes(b'replaced license')
+                    dest.chmod(0o444)
+                elif source.endswith('cpa-artifact.json'):
+                    dest.write_text(manifest)
+                return audit.CPA_EXECUTABLE_SHA256['amd64']
+            with self.subTest(missing=missing), TemporaryDirectory() as td, \
+                 mock.patch.object(audit, 'inspect_image', return_value={
+                     'imageConfigId': 'sha256:' + 'a' * 64, 'architecture': 'amd64'}), \
+                 mock.patch.object(audit, 'command', return_value='container-id') as cmd, \
+                 mock.patch.object(audit, 'extract_file', side_effect=fake_extract):
+                with self.assertRaisesRegex(ValueError, 'missing regular|differs from official'):
+                    audit.audit_one('runtime', 'runtime:test', Path(td))
+                self.assertEqual(cmd.call_args_list[-1].args[:3], ('docker', 'rm', '-f'))
+
     def test_artifact_requires_exact_pinned_v8(self):
         for architecture, pinned_sha in audit.CPA_EXECUTABLE_SHA256.items():
             v = {'schemaVersion': 1, 'engine': 'cpa', 'version': '8.0.13',
