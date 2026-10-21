@@ -377,8 +377,9 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     );
     await act(async () => {
       renderer.root.findByProps({ 'data-testid': 'external-connect' }).props.onClick();
+      // Wait for network dispatch, not for React to flush UI state inside act.
       await vi.waitFor(() =>
-        expect(renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.disabled).toBe(true)
+        expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
       );
     });
     expect(renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.disabled).toBe(true);
