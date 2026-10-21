@@ -118,7 +118,7 @@ func TestFreshCommittedStrategyReplayChecksTargetsWithoutUpdating(t *testing.T) 
 			}
 			for restart := 0; restart < 2; restart++ {
 				app.strategy = freshstrategy.New(options)
-				app.externalPermit = func(bootstrap.FreshOperation) bool { return true }
+				app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return true }
 				for complete := 0; complete < 2; complete++ {
 					assertFreshAuthority(http.StatusOK)
 					before, err := app.store.Load(ctx)
