@@ -17,6 +17,11 @@ subject = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(subject)
 SHA = "a" * 40
 EVENT = "local-test-event"
+MOCK_NOTICE = b"NOT_VERIFIED: license inventory only"
+MOCK_API_CONTRACT = json.dumps({
+    "schemaVersion": 1, "qualification": subject.API_CONTRACT_QUALIFICATION,
+    "apiSuffix": "/api/v2", "expectedPath": "/phase4-test/api/v2/technical",
+}).encode()
 
 
 def blob(data):
@@ -42,13 +47,15 @@ def sample_elf():
 
 def make_oci(destination, role, license_bytes, *,
              source=SHA, event=EVENT, arch="amd64", corrupt=False, missing=None,
-             bad_descriptor_size=False, bad_descriptor_type=False, bad_diff_id=False):
+             bad_descriptor_size=False, bad_descriptor_type=False, bad_diff_id=False,
+             notice_bytes=MOCK_NOTICE, api_contract=MOCK_API_CONTRACT):
     files = {
         "/usr/local/share/licenses/cpamp/LICENSE": license_bytes,
-        subject.NOTICE: b"NOT_VERIFIED: license inventory only",
+        subject.NOTICE: notice_bytes,
     }
     if role == "manager":
         files["/usr/local/bin/cpa-manager-plus"] = sample_elf()
+        files[subject.API_CONTRACT] = api_contract
         files[subject.WEB_MANIFEST] = json.dumps({
             "schemaVersion": 1, "files": [
                 {"path": "index.html", "sha256": blob(b"<html/>")},
@@ -129,6 +136,12 @@ class EmbeddedCandidateContracts(unittest.TestCase):
         seed = self.root / "docker/runtime/config.v8.default.seed.yaml"
         seed.parent.mkdir(parents=True)
         seed.write_bytes(b"seed")
+        inventory = self.root / "bin/release/embedded-third-party-inventory.txt"
+        inventory.parent.mkdir(parents=True)
+        inventory.write_bytes(MOCK_NOTICE)
+        api = self.root / "tests/fixtures/r1-embedded-api-transport.json"
+        api.parent.mkdir(parents=True)
+        api.write_bytes(MOCK_API_CONTRACT)
         fake_cpa = hashlib.sha256(sample_elf()).hexdigest()
         fake_license = hashlib.sha256(b"official").hexdigest()
         with patch.object(subject, "CPA_SHA", fake_cpa), patch.object(
@@ -145,6 +158,13 @@ class EmbeddedCandidateContracts(unittest.TestCase):
             self.assertEqual(len({x["platformManifestDigest"] for x in receipt["images"].values()}), 3)
             make_oci(archives["ingress"], "ingress", self.license, event="wrong-event")
             with self.assertRaisesRegex(ValueError, "build event"):
+                subject.verify(archives, SHA, EVENT, self.root)
+            make_oci(archives["ingress"], "ingress", self.license, notice_bytes=MOCK_NOTICE + b" tampered")
+            with self.assertRaisesRegex(ValueError, "third-party inventory differs"):
+                subject.verify(archives, SHA, EVENT, self.root)
+            make_oci(archives["ingress"], "ingress", self.license)
+            make_oci(archives["manager"], "manager", self.license, api_contract=MOCK_API_CONTRACT + b" ")
+            with self.assertRaisesRegex(ValueError, "public API transport contract differs"):
                 subject.verify(archives, SHA, EVENT, self.root)
 
     def test_manager_positive_manifest_and_binary_hashes(self):
@@ -170,6 +190,14 @@ class EmbeddedCandidateContracts(unittest.TestCase):
     def test_reject_invalid_rootfs_diff_id(self):
         with self.assertRaisesRegex(ValueError, "rootfs diff_id"):
             self.inspect(bad_diff_id=True)
+
+    def test_reject_missing_api_transport_fixture(self):
+        with self.assertRaisesRegex(ValueError, "missing packaged files"):
+            self.inspect(missing=subject.API_CONTRACT)
+
+    def test_reject_mismatched_api_contract(self):
+        with self.assertRaisesRegex(ValueError, "Web/API transport contract"):
+            self.inspect(api_contract=b"{}")
 
     def test_reject_modified_oci_blob(self):
         with self.assertRaisesRegex(ValueError, "digest mismatch"):

@@ -24,8 +24,10 @@ CPA_ARCHIVE_SHA = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d353
 LICENSE = "/usr/local/share/licenses/cpamp/LICENSE"
 NOTICE = "/usr/local/share/cpamp/release/third-party-inventory.txt"
 WEB_MANIFEST = "/usr/local/share/cpamp/release/fullweb-manifest.json"
+API_CONTRACT = "/usr/local/share/cpamp/release/public-api-transport-contract.json"
+API_CONTRACT_QUALIFICATION = "SOURCE_TRANSPORT_CONTRACT_ONLY_NOT_COMPLETE_WEB_API_COMPATIBILITY"
 WANTED = {
-    "manager": ("/usr/local/bin/cpa-manager-plus", LICENSE, NOTICE, WEB_MANIFEST),
+    "manager": ("/usr/local/bin/cpa-manager-plus", LICENSE, NOTICE, WEB_MANIFEST, API_CONTRACT),
     "ingress": ("/usr/local/bin/cpamp-ingress", LICENSE, NOTICE),
     "runtime": (
         "/usr/local/bin/cpamp-runtime-supervisor",
@@ -208,6 +210,12 @@ def inspect(path, role, source_sha, event, root_license, seed):
             require(files["/usr/local/share/cpamp/runtime/config.seed.yaml"] == seed,
                     "official v8 default seed mismatch")
         if role == "manager":
+            api_contract = json_object(files[API_CONTRACT], "Public API transport contract")
+            require(api_contract.get("schemaVersion") == 1 and
+                    api_contract.get("qualification") == API_CONTRACT_QUALIFICATION and
+                    api_contract.get("apiSuffix") == "/api/v2" and
+                    api_contract.get("expectedPath") == "/phase4-test/api/v2/technical",
+                    "unqualified or mismatched Web/API transport contract")
             fullweb = json_object(files[WEB_MANIFEST], "Full Web file-set manifest")
             require(fullweb.get("schemaVersion") == 1 and
                     isinstance(fullweb.get("files"), list) and len(fullweb["files"]) > 0,
@@ -234,8 +242,15 @@ def verify(paths, source_sha, event, root):
     require(re.fullmatch(r"[A-Za-z0-9._-]{8,128}", event) is not None, "invalid build event")
     license_bytes = (root / "LICENSE").read_bytes()
     seed = (root / "docker/runtime/config.v8.default.seed.yaml").read_bytes()
+    inventory_bytes = (root / "bin/release/embedded-third-party-inventory.txt").read_bytes()
+    api_contract_bytes = (root / "tests/fixtures/r1-embedded-api-transport.json").read_bytes()
     result = {role: inspect(paths[role], role, source_sha, event, license_bytes, seed)
               for role in ROLES}
+    for role in ROLES:
+        require(result[role]["packagedFiles"][NOTICE] == digest(inventory_bytes),
+                "final image third-party inventory differs from checked source: " + role)
+    require(result["manager"]["packagedFiles"][API_CONTRACT] == digest(api_contract_bytes),
+            "final Manager public API transport contract differs from checked source")
     require(len({result[role]["platformManifestDigest"] for role in ROLES}) == 3,
             "three different image manifests required")
     return {
@@ -252,7 +267,7 @@ def verify(paths, source_sha, event, root):
         },
         "notVerified": [
             "trusted production producer identity or independent registry readback",
-            "Manager binary source stamp and independently exercised Web/API compatibility (compile-time Web embed test only)",
+            "Full Web compiled embed and one source-paired Web/API transport fixture tested, but complete functional API compatibility",
             "third-party LICENSE/NOTICE legal sufficiency (inventory only)",
             "Host, network, startup, readiness, rollback (historical 1.x contract tested separately)",
             "production release, beta, mutable aliases or channels",

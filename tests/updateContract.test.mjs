@@ -84,11 +84,7 @@ describe('update contract', () => {
     expect(validateInfo(historical, 'v1.14.7')).toBe(historical);
     expect(() => validateInfo(forged, 'v2.0.0')).toThrow(/v2 Embedded/);
     expect(() => resolveChannels([historical, forged])).toThrow(/v2 Embedded/);
-    expect(() => generateReleaseInfo('v2.0.0', 'a'.repeat(40),
-      '<!-- cpamp-update\\n' + JSON.stringify({ summary: { zh: '更新', en: 'Update' },
-        update: { breaking: false, migration_required: false, minimum_direct_upgrade_version: null,
-          upgrade_guide_url: 'https://github.com/seakee/CPA-Manager-Plus/releases/tag/v2.0.0' },
-        compatibility: { minimum_cpa_version: null } }) + '\\n-->')).toThrow(/v2 Embedded/);
+    expect(() => makeInfo('v2.0.0')).toThrow(/v2 Embedded/);
   });
   it('generates recovery metadata from the explicit release SHA independently of the checkout', () => {
     const cwd = mkdtempSync(path.join(tmpdir(), 'cpamp-release-info-'));

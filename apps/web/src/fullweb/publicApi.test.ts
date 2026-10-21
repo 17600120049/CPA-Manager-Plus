@@ -28,7 +28,12 @@ describe('canonical Full Web Public API transport', () => {
       'SOURCE_TRANSPORT_CONTRACT_ONLY_NOT_COMPLETE_WEB_API_COMPATIBILITY'
     );
     browserOrigin(r1Transport.origin);
-    const verified = resolveRoutingContext(r1Transport.snapshot)!;
+    expect(r1Transport.snapshot.state).toBe('verified_effective');
+    const verified = resolveRoutingContext({
+      state: 'verified_effective',
+      verifiedEffectiveControlBasePath: r1Transport.snapshot.verifiedEffectiveControlBasePath,
+      revision: r1Transport.snapshot.revision,
+    })!;
     expect(verified.apiBase).toBe(
       r1Transport.snapshot.verifiedEffectiveControlBasePath + r1Transport.apiSuffix
     );
