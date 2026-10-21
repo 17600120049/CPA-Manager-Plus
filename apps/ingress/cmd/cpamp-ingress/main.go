@@ -25,6 +25,9 @@ const (
 	defaultGatewayURL = "http://cpamp-runtime:8317"
 )
 
+// pahS0Binary is embedded at compile time, not supplied by container ENV.
+var pahS0Binary = "0"
+
 type config struct {
 	addr        string
 	managerURL  *url.URL
@@ -42,6 +45,13 @@ func main() {
 	fresh := &ingress.FreshRoutes{}
 	authority := managerFreshAuthority(cfg.managerURL)
 	handler := ingress.NewFreshHandler(fresh, cfg.managerURL, cfg.gatewayURL, logger, managerLegacyGateway(authority))
+	// An off-profile Ingress must not leak to Gateway if its Manager has
+	// switched to private Fresh P-S0. Require a fresh Legacy authority proof
+	// for this namespace, never the cached general Legacy observation.
+	handler.RequireCurrentLegacyPluginAuthority(func(ctx context.Context) bool {
+		_, err := authority(ctx)
+		return errors.Is(err, errLegacyManager)
+	})
 	if cfg.pahS0 {
 		handler.EnablePAHS0(managerPAHS0Guard(cfg.managerURL))
 	}
@@ -89,6 +99,10 @@ func main() {
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
+	return loadConfigWithBuild(getenv, pahS0Binary)
+}
+
+func loadConfigWithBuild(getenv func(string) string, compiled string) (config, error) {
 	addr := strings.TrimSpace(getenv("CPAMP_INGRESS_ADDR"))
 	if addr == "" {
 		addr = defaultAddr
@@ -106,13 +120,12 @@ func loadConfig(getenv func(string) string) (config, error) {
 		controlAddr = "0.0.0.0:9082"
 	}
 	flag := strings.TrimSpace(getenv("CPAMP_PRIVATE_PAH_S0"))
-	build := strings.TrimSpace(getenv("CPAMP_PAH_S0_BUILD"))
 	if (flag != "" && flag != "0" && flag != "1") ||
-		(build != "" && build != "0" && build != "1") {
-		return config{}, errors.New("PAH-S0 build and runtime flags must be 0 or 1")
+		(compiled != "0" && compiled != "1") {
+		return config{}, errors.New("PAH-S0 Ingress build and runtime modes must be 0 or 1")
 	}
-	if (flag == "1") != (build == "1") {
-		return config{}, errors.New("PAH-S0 Ingress runtime does not match its image build")
+	if (flag == "1") != (compiled == "1") {
+		return config{}, errors.New("PAH-S0 Ingress runtime does not match compiled binary")
 	}
 	if flag == "1" {
 		if managerURL.Hostname() != "127.0.0.1" || gatewayURL.Hostname() != "127.0.0.1" {

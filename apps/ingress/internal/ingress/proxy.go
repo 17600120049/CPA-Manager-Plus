@@ -22,6 +22,7 @@ type Handler struct {
 	legacyGateway func(context.Context) bool
 	chat          *privateChat
 	pahS0Guard    func(context.Context) bool
+	currentLegacyPlugin func(context.Context) bool
 }
 
 func NewFreshHandler(fresh *FreshRoutes, managerURL, gatewayURL *url.URL, logger *log.Logger, legacyGateway func(context.Context) bool) *Handler {
@@ -47,7 +48,21 @@ func (h *Handler) EnablePAHS0(guard func(context.Context) bool) {
 	h.pahS0Guard = guard
 }
 
+// RequireCurrentLegacyPluginAuthority keeps the default Legacy data plane
+// unchanged while healthy, but fails closed for plugin resources if Manager
+// has stopped affirming *current* Legacy ownership (e.g. a Fresh switch).
+func (h *Handler) RequireCurrentLegacyPluginAuthority(probe func(context.Context) bool) {
+	h.currentLegacyPlugin = probe
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !h.classifier.pahS0 && h.currentLegacyPlugin != nil && r != nil &&
+		r.URL != nil && classifyLegacyPluginCandidate(r) &&
+		!h.currentLegacyPlugin(r.Context()) {
+		w.Header().Set("Cache-Control", "no-store")
+		http.NotFound(w, r)
+		return
+	}
 	route := h.classifier.ClassifyRequest(r)
 	if h.classifier.pahS0 && route == RouteManager && pahS0ResourceCandidate(r.URL.Path) {
 		if h.pahS0Guard == nil || !h.pahS0Guard(r.Context()) {

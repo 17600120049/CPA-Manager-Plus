@@ -9,10 +9,12 @@ Build the profile with `docker compose -f docker-compose.pah-s0-proof.yml build`
 and start only on a private, disposable Host. The one host-loopback-published port
 is `127.0.0.1:28491` unless deliberately changed in the proof environment.
 Ingress and Manager must use the same fixed profile; the Manager image's Web
-bundle is compiled with `VITE_CPAMP_PAH_S0=1` and the Ingress image with
-`CPAMP_PAH_S0_BUILD=1`; both images retain `CPAMP_PAH_S0_BUILD=1` as
-an image-stamped runtime marker. Both services must opt in with
-`CPAMP_PRIVATE_PAH_S0=1`, and a missing/mismatched marker refuses startup. Absence of a responsive Manager guard **never**
+bundle is compiled with `VITE_CPAMP_PAH_S0=1` and the Manager Go binary
+is compiled with the **same** immutable argument. Ingress is compiled with
+`CPAMP_PAH_S0_BUILD=1` into its Go binary. Runtime `ENV` values cannot
+change these build identities. Both services must opt in with
+`CPAMP_PRIVATE_PAH_S0=1`; missing or mismatched compiled identities
+refuse startup. A Legacy/unknown existing Manager store cannot join P-S0. Absence of a responsive Manager guard **never**
 authorizes a plugin resource request.
 
 Still required before any P-S0 deployment qualification:
@@ -32,3 +34,27 @@ Still required before any P-S0 deployment qualification:
 
 Do not run this fixture against a production CPA/Manager or trusted existing
 volumes. Remove the disposable resources after evidence capture.
+
+## Evidence limitation and concrete denial witness
+
+The official v8 loopback seed currently has `plugins.enabled: false`.
+Consequently, a 404 from that CPA fixture alone **does not prove** active
+plugin resource interception or plugin inventory compatibility. Go HTTP
+negative tests instead mount an instrumented fake upstream that increments a
+hit count and returns executable plugin bytes; all canonical, encoded, method
+and direct Manager resource requests must cause **zero upstream hits**, even
+with an Admin header. Non-plugin Admin/health traffic remains independently
+routable.
+
+This stub contract is **not** an official CPA plugin execution proof. If an
+actual enabled official-CPA plugin route is required for Host acceptance,
+a separately controlled disposable native plugin fixture and real network
+witness must be provided under the existing Host authorization; do not enable
+untrusted native plugins or claim that a disabled-plugin 404 closes G2.
+
+## Host acceptance remains STOP
+
+Source/CI proof and a green private P-S0 image build do not qualify external
+network, IPv4/IPv6, reverse proxy/cache, active plugin route, real browser,
+single-side restart, or a published Beta. Record every tested exact image
+digest and observer origin; never promote the private Compose to release.

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
 )
 
 const configEnvKey = "CPA_MANAGER_CONFIG"
@@ -126,15 +128,23 @@ func InspectionConfigPath() (string, error) {
 	return executableConfigPath()
 }
 
+func validatePAHS0Build(runtimeFlag, compiledWeb string) error {
+	if runtimeFlag != "" && runtimeFlag != "0" && runtimeFlag != "1" {
+		return fmt.Errorf("CPAMP_PRIVATE_PAH_S0 must be 0 or 1")
+	}
+	if compiledWeb != "0" && compiledWeb != "1" {
+		return fmt.Errorf("invalid compiled PAH-S0 Web mode")
+	}
+	if (runtimeFlag == "1") != (compiledWeb == "1") {
+		return fmt.Errorf("PAH-S0 Manager runtime does not match compiled Web assets")
+	}
+	return nil
+}
+
 func LoadWithOptions(options LoadOptions) (Config, error) {
 	pahS0 := strings.TrimSpace(os.Getenv("CPAMP_PRIVATE_PAH_S0"))
-	build := strings.TrimSpace(os.Getenv("CPAMP_PAH_S0_BUILD"))
-	if (pahS0 != "" && pahS0 != "0" && pahS0 != "1") ||
-		(build != "" && build != "0" && build != "1") {
-		return Config{}, fmt.Errorf("PAH-S0 build and runtime flags must be 0 or 1")
-	}
-	if (pahS0 == "1") != (build == "1") {
-		return Config{}, fmt.Errorf("PAH-S0 Manager runtime does not match its Web image build")
+	if err := validatePAHS0Build(pahS0, buildinfo.PAHS0WebBundle); err != nil {
+		return Config{}, err
 	}
 	cfgFile, cfgDir, err := loadFileConfig(options)
 	if err != nil {

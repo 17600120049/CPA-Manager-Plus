@@ -91,3 +91,49 @@ func TestPAHS0IngressProbeFailureCannotReachManagerOrGateway(t *testing.T) {
 		t.Fatalf("restart bypass: %d", w.Code)
 	}
 }
+
+func TestManagerOnIngressOffRejectsPluginGatewayPassthrough(t *testing.T) {
+	var gatewayHits atomic.Int32
+	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == pahS0GuardPath {
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer manager.Close()
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		gatewayHits.Add(1)
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer gateway.Close()
+	m, _ := url.Parse(manager.URL)
+	g, _ := url.Parse(gateway.URL)
+	// Simulates old Ingress profile with cached Legacy-gateway acceptance.
+	h := NewFreshHandler(&FreshRoutes{}, m, g, log.New(io.Discard, "", 0),
+		func(context.Context) bool { return true })
+	var isLegacy atomic.Bool
+	h.RequireCurrentLegacyPluginAuthority(func(context.Context) bool { return isLegacy.Load() })
+	for _, url := range []string{"/v0/resource/plugins/logo.png",
+		"/v0/resource/plugins%2fpage", "/v0/resource/plugins/../other"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, url, nil))
+		if w.Code != http.StatusNotFound || gatewayHits.Load() != 0 {
+			t.Fatalf("Manager-on/Ingress-off leaked %s: status=%d upstreamHits=%d", url, w.Code, gatewayHits.Load())
+		}
+	}
+	// Default healthy Legacy still retains its historical owner.
+	isLegacy.Store(true)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v0/resource/plugins/logo.png", nil))
+	if w.Code != http.StatusTeapot || gatewayHits.Load() != 1 {
+		t.Fatalf("healthy legacy resource access regressed: status=%d hits=%d", w.Code, gatewayHits.Load())
+	}
+	isLegacy.Store(false)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v0/resource/plugins/logo.png", nil))
+	if w.Code != http.StatusNotFound || gatewayHits.Load() != 1 {
+		t.Fatalf("restarted Manager bypassed guard: %d", w.Code)
+	}
+}

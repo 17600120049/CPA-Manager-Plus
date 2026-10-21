@@ -13,6 +13,7 @@ RUN VITE_CPAMP_PAH_S0=$VITE_CPAMP_PAH_S0 VERSION=$VERSION npm run build
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS service-build
 ARG VERSION=dev
 ARG SOURCE_COMMIT=unknown
+ARG VITE_CPAMP_PAH_S0=0
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
@@ -21,7 +22,7 @@ COPY --from=web-build /app/apps/web/dist/panel/management.html ./apps/manager-se
 COPY --from=web-build /app/apps/web/dist/fullweb/ ./apps/manager-server/internal/httpapi/web/fullweb/
 WORKDIR /src/apps/manager-server
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.Version=$VERSION -X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.SourceCommit=$SOURCE_COMMIT" -o /out/cpa-manager-plus ./cmd/cpa-manager-plus
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.Version=$VERSION -X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.SourceCommit=$SOURCE_COMMIT -X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.PAHS0WebBundle=$VITE_CPAMP_PAH_S0" -o /out/cpa-manager-plus ./cmd/cpa-manager-plus
 
 # Packaging smoke without activating production routing authority. The final
 # image consumes the same compiled artifact only after this check passes.
@@ -29,8 +30,6 @@ FROM service-build AS web-package-test
 RUN CPAMP_FULLWEB_PACKAGED_TEST=1 go test -run '^TestPackagedFullWebDist$' ./internal/httpapi
 
 FROM alpine:3.21
-ARG VITE_CPAMP_PAH_S0=0
-ENV CPAMP_PAH_S0_BUILD=$VITE_CPAMP_PAH_S0
 RUN apk add --no-cache ca-certificates wget tzdata
 WORKDIR /app
 COPY --from=web-package-test /out/cpa-manager-plus /usr/local/bin/cpa-manager-plus

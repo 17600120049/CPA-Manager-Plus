@@ -201,6 +201,11 @@ func runServerWithOptions(options legacypreflight.Options) {
 	paths := sqliterepo.InspectionPaths{
 		Database: cfg.DBPath, Config: configPath, DataKey: cfg.DataKeyPath, Archives: cfg.UsageArchiveDir,
 	}
+	if cfg.PAHS0Enabled {
+		if err := validatePAHS0FreshSource(paths.Database); err != nil {
+			log.Fatalf("reject private PAH-S0 source: %v", err)
+		}
+	}
 	// The listener comes up before product/data mutation. Discovery starts
 	// unavailable, then switches only to current read-only evidence: missing-DB
 	// inventory for Fresh/partial sources, or a bounded rollback-mode SQLite

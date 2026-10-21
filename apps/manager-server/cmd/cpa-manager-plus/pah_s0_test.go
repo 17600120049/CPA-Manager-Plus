@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"os"
+	"path/filepath"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
 )
@@ -54,5 +56,33 @@ func TestPAHS0FreshStartupHandlerDeniesResourcesAndAttestsOnlyAfterReadiness(t *
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v0/resource/plugins/demo", nil))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("ready Fresh Manager forwarded resource: %d", w.Code)
+	}
+}
+
+func TestPAHS0AdmitsOnlyFreshOrMissingStore(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.sqlite")
+	if err := validatePAHS0FreshSource(path); err != nil {
+		t.Fatalf("Fresh New missing store rejected: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("legacy"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePAHS0FreshSource(path); err == nil {
+		t.Fatal("existing Legacy or unknown store admitted to P-S0")
+	}
+	if err := os.WriteFile(path+".manager.lock", []byte("unverified"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// This only admits the marker-shaped path; fresh.Open still must
+	// validate authority and metadata before enabling the private guard.
+	if err := validatePAHS0FreshSource(path); err != nil {
+		t.Fatalf("Fresh marker blocked before strict fresh.Open: %v", err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := validatePAHS0FreshSource(path); err == nil {
+		t.Fatal("marker without database admitted")
 	}
 }
