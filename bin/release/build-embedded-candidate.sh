@@ -31,6 +31,7 @@ for role in manager ingress runtime; do
     --file "$file"
     --label "org.opencontainers.image.revision=$source_sha"
     --label "org.opencontainers.image.source=https://github.com/seakee/CPA-Manager-Plus"
+    --label "org.opencontainers.image.version=2.0.0-r1candidate"
     --label "io.cpamp.candidate.event=$event"
     --label "io.cpamp.candidate.role=$role"
     --provenance=false
