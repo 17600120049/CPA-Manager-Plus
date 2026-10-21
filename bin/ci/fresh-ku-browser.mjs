@@ -3,18 +3,25 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { isExpectedDeniedNavigationAbort } from './fresh-ku-network.mjs';
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const [origin, output] = process.argv.slice(2);
 const text = JSON.parse(readFileSync(new URL('../../apps/web/src/i18n/locales/en.json', import.meta.url))).fullweb;
 const zh = JSON.parse(readFileSync(new URL('../../apps/web/src/i18n/locales/zh-CN.json', import.meta.url))).fullweb;
-const report = { result: 'STOP', checks: [], pageErrors: [], layouts: [], apiFailures: [], networkFailures: [] };
+const report = { result: 'STOP', checks: [], pageErrors: [], layouts: [], apiFailures: [], networkFailures: [], expectedDenialCancellations: [] };
 const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}) });
 let secret = '';
 try {
   const context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 1100 } });
   const page = await context.newPage();
+  let denial;
+  let navigating = false;
   page.on('pageerror', () => report.pageErrors.push('uncaught page error'));
-  page.on('requestfailed', request => report.networkFailures.push(new URL(request.url()).pathname));
+  page.on('requestfailed', request => {
+    const failure = { path: new URL(request.url()).pathname, method: request.method(), errorText: request.failure()?.errorText };
+    if (isExpectedDeniedNavigationAbort(request, denial, navigating)) report.expectedDenialCancellations.push({ ...failure, status: denial.status });
+    else report.networkFailures.push(failure);
+  });
   page.on('response', response => {
     if (response.status() >= 400 && new URL(response.url()).pathname.includes('/api/v2/')) report.apiFailures.push({ path: new URL(response.url()).pathname, status: response.status() });
   });
@@ -48,15 +55,24 @@ try {
   await waitState(text.keysOperationAddNext);
   const operation = (await section().locator('code').allTextContents())[0];
   assert.match(operation, /^[a-f0-9]{32}$/);
+  const deniedResponse = page.waitForResponse(response => response.request().method() === 'POST' &&
+    response.url() === origin + '/control/api/v2/api-keys/operations/' + operation + '/continue');
   await proceed().click(); // An old S1 permit must not authorize KU.
+  const response = await deniedResponse;
+  assert.equal(response.status(), 409);
+  denial = { request: response.request(), status: response.status(), uiConfirmed: false };
   await section().getByRole('alert').waitFor();
+  denial.uiConfirmed = true;
+  report.checks.push('Missing dedicated permit returns HTTP 409 and a visible UI refusal');
   await check().click();
   assert.equal((await context.request.post(origin + '/__ku/grant', { data: {} })).status(), 200);
   await proceed().click();
   await waitState(text.keysOperationRevokeNext);
   report.checks.push('Browser canonical selection, durable preparation, dedicated add permit and observed replacement');
   assert.equal((await context.request.post(origin + '/__ku/restart', { data: {} })).status(), 200);
+  navigating = true;
   await login();
+  navigating = false;
   await waitState(text.keysOperationRevokeNext);
   assert.equal((await section().locator('code').allTextContents())[0], operation);
   report.checks.push('Manager restart and browser reload recover the original operation');

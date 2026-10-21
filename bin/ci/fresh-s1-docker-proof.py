@@ -82,7 +82,7 @@ def main():
     if ku:
         p="apps/web/src/fullweb/carrier.css"
         evidence["sourceSHA256"][p] = hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
-        for p in ("bin/ci/fresh_ku_proof.py", "bin/ci/fresh_ku_browser.py", "bin/ci/fresh-ku-browser.mjs", "apps/manager-server/cmd/cpa-manager-plus/fresh_key_operation.go", "apps/manager-server/internal/repository/freshkeys/operation.go", "apps/manager-server/internal/service/cpa/private_key_operation.go", "apps/web/src/fullweb/FreshKeyRevocation.tsx", "apps/web/src/fullweb/FreshApiKeys.tsx"):
+        for p in ("bin/ci/fresh_ku_proof.py", "bin/ci/fresh_ku_browser.py", "bin/ci/fresh-ku-browser.mjs", "bin/ci/fresh-ku-network.mjs", "apps/manager-server/cmd/cpa-manager-plus/fresh_key_operation.go", "apps/manager-server/internal/repository/freshkeys/operation.go", "apps/manager-server/internal/service/cpa/private_key_operation.go", "apps/web/src/fullweb/FreshKeyRevocation.tsx", "apps/web/src/fullweb/FreshApiKeys.tsx"):
             evidence["sourceSHA256"][p] = hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
         for locale in ("en", "zh-CN", "zh-TW", "ru"):
             p="apps/web/src/i18n/locales/"+locale+".json"

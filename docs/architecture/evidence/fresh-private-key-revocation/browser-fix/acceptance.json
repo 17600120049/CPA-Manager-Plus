@@ -1,0 +1,91 @@
+{
+  "disposition": "OFFLINE KU BROWSER PASS / LIVE NOT RUN / BETA HOLD",
+  "startingCheckout": "b0d2432b44449d581aa3c35e2c46e8503d9d18d6",
+  "productSource": "a20a7fe83483d51a7ca29c70d94bb4df75e35dfe",
+  "unchangedProductSourceTrees": {
+    "apps/manager-server": "e86d43cbfcf99a0d221eb12d6c5e5f9ca518b6b1",
+    "apps/web": "9d2587d554e2883bdca408c1389d7840055ef593",
+    "apps/ingress": "9bdd5542c1fe989dc6b3f783cf58702e3701cc78",
+    "apps/runtime-supervisor": "a5c3cd44551203759bae76e0c1839ef4b705eceb",
+    "bin/build": "990977e06dd9877f560d6a5177fdcbb7d97cf70b",
+    "docker/runtime": "3d901b9e1e5797df467f383eb61879dc0f738040"
+  },
+  "unchangedBuildInputSHA256": {
+    "Dockerfile.runtime": "f69326cc44b021a8fedaf4b4476c2830f23dc79208ea4ff8ec6aa6963f0ff60b",
+    "Dockerfile.manager-server": "12d6ac62a29f05aaca339da2746c2b451b8de45c6636c2aa78571216713e7b9b",
+    "Dockerfile.ingress": "7e461eb45ed94c54da705e231ce3d14fb963539fae3448e968b374137f3c120b",
+    "package.json": "c89640b5f8fd7d2bbb7e6ae8312a4d938be4e351c3d3bbbb516f0616a0ec7fe4",
+    "package-lock.json": "3a6bf6ea7c31b4630f1f4e2c24085b4687a601a8546c442e91d43e21a83f6050",
+    "apps/manager-server/internal/service/freshkeyapply/key_operation.go": "1da27360f7a391509eadb68dbe56e7eae852ba36acc0ccf0049447ffb25d3dbe",
+    "apps/manager-server/internal/service/freshkeyapply/key_operation_test.go": "7e2bcadfd23eb9c9b2b3eb1f7f5f3787bd74b101382240a91e027258adab05eb",
+    "apps/web/src/fullweb/FreshKeyRevocation.test.tsx": "fa4e28d9a3500df5546138b6f3ecbcf7540db89bd034daa58955215cf76b4d89",
+    "apps/web/src/fullweb/FreshKeyRevocation.tsx": "5e1e1cb1a6daf08b0ec48aaf0f194365f8399735aa6bc813df1d2f1a34e708b0",
+    "apps/web/src/fullweb/publicApi.ts": "7ff746dafe0fdcbb7ddba3995123de9e324e6229ad833cda91d68cdf773aa764"
+  },
+  "images": {
+    "runtime": "sha256:3fc9b926a8af2742cda13656e589dbb067c3aa3984438ea742b88c0158d686e2",
+    "manager": "sha256:cd44c1a1568d5c7633b5a26e5d47592f5a7c5fcf20211c7d0aa551a5b6c5fc06",
+    "ingress": "sha256:2b46fb49a9fafc3e4aa7d7e0419c0b0d628e60231469090229fd15563e9b7a48"
+  },
+  "officialCPAVersion": "v8.0.13",
+  "officialCPAExecutableSHA256": "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
+  "toolSHA256": {
+    "bin/ci/fresh-ku-browser.mjs": "f1b1aeefe9224d096c31c6a5e87cef554d0acf9f1798fe6f8770960176b18dad",
+    "bin/ci/fresh-ku-network.mjs": "14a8289ccfe68c746cfced2fcc015b6c947dc69cb55b102a8728c4a409e0c5bf",
+    "bin/ci/fresh-ku-network.test.mjs": "e5dc26e62dd8cfaf25953900bfa3c9dfcfad11a75313df8de20d3db4d0180345",
+    "bin/ci/fresh-s1-docker-proof.py": "5b02b39501b09f6c5a8467c356ca45a493b7bef5609eb80621abc9114d82d5eb"
+  },
+  "runs": [
+    {
+      "case": "chromium",
+      "startedAt": "2026-10-21T00:21:30.594520+00:00",
+      "finishedAt": "2026-10-21T00:22:47.913996+00:00",
+      "exitCode": 0,
+      "browser": "Playwright bundled Chromium 1208",
+      "run": "cpamp-s1-f60cdb1ff727",
+      "result": "PASS_PRIVATE_KEY_REVOKE_REPLACE_OFFLINE_LIVE_HOLD",
+      "browserResult": "PASS_BROWSER_PRIVATE_REPLACEMENT",
+      "allTaskResourcesDestroyed": true
+    },
+    {
+      "case": "chrome",
+      "startedAt": "2026-10-21T00:22:58.705616+00:00",
+      "finishedAt": "2026-10-21T00:24:13.771894+00:00",
+      "exitCode": 0,
+      "browser": "Chrome 155.0.8059.85",
+      "run": "cpamp-s1-2709febbe596",
+      "result": "PASS_PRIVATE_KEY_REVOKE_REPLACE_OFFLINE_LIVE_HOLD",
+      "browserResult": "PASS_BROWSER_PRIVATE_REPLACEMENT",
+      "allTaskResourcesDestroyed": true
+    }
+  ],
+  "regressions": "S1/S2-A and KU API retained from actual a20a7fe runs; S2-B historical reuse remains scoped. No new Docker runs for these modes.",
+  "reviews": [
+    {
+      "round": 1,
+      "scope": "Exact denial request/status/UI binding, browser operation, restart and full Ingress matrix",
+      "result": "PASS"
+    },
+    {
+      "round": 2,
+      "scope": "Other request identities, errors and statuses remain blocking; original writer and history boundaries unchanged",
+      "result": "PASS"
+    },
+    {
+      "round": 3,
+      "scope": "Product/image/source hashes, artifact hashes, preserved STOP records, links and proof-only scope",
+      "result": "PASS"
+    }
+  ],
+  "ci": "Read delivery-HEAD Required checks from PR #1031; no new-head CI PASS inferred from prior HEAD.",
+  "artifactSHA256": {
+    "checks.txt": "9e45c457848a68a9266313c9a565e53da334d1a89ec462de61eb28db3eab4f28",
+    "chrome-browser.json": "3c6b495fb89bf4b579fa2d7321a58386ae2c3419a063699c566d2532aa85b760",
+    "chrome-docker.json": "51ece60688ddac9f473c599d4a6918980475d59b5ada65895ca81b4468eea86f",
+    "chromium-browser.json": "893a373e0c5bd3fef52e337ed6166cb92a12fa75ad2b03e9754d46484cf0a896",
+    "chromium-docker.json": "6e19174479b240db0aa170dd7c372b4b057b4c19ed719a1eb6d1496e62815f08",
+    "desktop-dark-en-selection.png": "fee581931657a69cfb9d51b16da4935e5c99892151c2453aeecf30e24c0fe323",
+    "desktop-light-en.png": "ced6d7ef7d87612d4afa0b15d459a469d695692385050a23af44a1b33351076b",
+    "mobile-dark-zh-CN.png": "b9e40bb6a43f495131b1aba982dc7aefd2bbe5b8d7e67250774d0a81705ec615"
+  }
+}
