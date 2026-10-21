@@ -152,9 +152,15 @@ class Host:
         return v
 
     def exercise(self, admin, api, permit, old, old_id, evidence):
+        from fresh_s2a_proof import BODY, counts
+        proof = dict(configOperations=[], nativeLinux="NOT RUN", hostFailureInjection="NOT RUN", beta="HOLD")
+        evidence["h1"] = proof  # Retain completed observations even if a later assertion fails.
+        initial_counts = counts(self.command, self.runtime)
+        assert initial_counts["cpaKeyPUT"] == 1 and initial_counts["cpaRetryPUT"] == 0, "unexpected S1 write count; STOP"
         def call(resource, method="GET", body=None):
             return self.http(28471, api+resource, method, body, admin)
         def config(value):
+            before = counts(self.command, self.runtime)
             code, view = call("gateway/retry/request-retry")
             assert code == 200
             q = dict(requestId=secrets.token_hex(16), value=value, expected=view["expected"])
@@ -164,8 +170,14 @@ class Host:
             assert call("gateway/retry/request-retry", "PUT", bad)[0] == 409
             code, o = call("gateway/retry/request-retry", "PUT", q)
             assert code == 200 and o["operation"]["state"] == "persisted", ("Config terminal", code)
-            assert self.authority("observe")["h1"]["parent"] is None
+            released = self.authority("observe")
+            assert released["h1"]["parent"] is None
             assert call("gateway/retry/request-retry", "PUT", q)[0] == 200  # tombstone, no PUT
+            assert self.authority("observe") == released, "duplicate request changed Runtime; STOP"
+            after = counts(self.command, self.runtime)
+            assert after["cpaRetryPUT"] == before["cpaRetryPUT"]+1 and after["cpaKeyPUT"] == before["cpaKeyPUT"], "Config PUT replay or cross-domain write; STOP"
+            proof["configOperations"].append(dict(operation=o["operation"], released=released,
+                                                    retryPUTDelta=1, duplicateRequestChangedRuntime=False))
         self.delegate("activate")
         config(1)
         code, created = call("api-keys", "POST", {"requestId": secrets.token_hex(16)})
@@ -194,16 +206,38 @@ class Host:
             if step == "add":
                 v = self.authority("observe")
                 assert v["h1"]["parent"]["id"] == parent(i) and len(v["h1"]["parent"]["steps"]) == 1
-                assert not call("gateway/retry/request-retry")[1]["editable"]
+                assert v["h1"]["parent"]["phase"] == "held"
+                code, view = call("gateway/retry/request-retry")
+                assert code == 200 and not view["editable"]
+                before = counts(self.command, self.runtime)
+                blocked = dict(requestId=secrets.token_hex(16), value=0, expected=view["expected"])
+                assert call("gateway/retry/request-retry", "PUT", blocked)[0] == 409
+                assert self.authority("observe") == v, "blocked Config changed Key parent; STOP"
+                after = counts(self.command, self.runtime)
+                assert (after["cpaKeyPUT"], after["cpaRetryPUT"]) == (before["cpaKeyPUT"], before["cpaRetryPUT"])
+                proof.update(parentHeldAfterAdd=v, configWhileKeyHeldStatus=409, blockedConfigPUTDelta=0)
+        proof["keyOperation"] = o["operation"]
+        released = self.authority("observe")
+        assert released["h1"]["parent"] is None and released["h1"]["released"]["parentId"] == parent(i)
+        proof["keyReleased"] = released
         config(0)
         config(0)  # same-value PUT still has its own receipt
         for key, want in ((None, 401), ("wrong", 401), (old, 401), (new, 200)):
             assert self.http(8317, "/v1/models", key=key)[0] == want
-        from fresh_s2a_proof import BODY
+        before = counts(self.command, self.runtime)
+        proof["ingressDenied"] = []
+        for label, key in (("absent", None), ("wrong", "wrong"), ("revoked", old)):
+            code, _ = self.http(28471, "/v1/chat/completions", "POST", BODY, key)
+            assert code == 503, ("Ingress negative", label, code)
+            proof["ingressDenied"].append(dict(credential=label, status=code))
+        assert counts(self.command, self.runtime)["cpaChat"] == before["cpaChat"], "denied Chat reached CPA; STOP"
         assert self.http(28471, "/v1/chat/completions", "POST", BODY, new)[0] == 200
-        evidence["h1"] = dict(combinedSequence="B2(1)-Key(add/revoke)-B2(0)-B2(same 0)",
-                              wrongRequestDenied=True, parentHeldBetweenSteps=True,
-                              nativeLinux="NOT RUN", hostFailureInjection="NOT RUN", beta="HOLD")
+        final_counts = counts(self.command, self.runtime)
+        assert final_counts["cpaKeyPUT"] == 3 and final_counts["cpaRetryPUT"] == 3, "unexpected final write count; STOP"
+        assert final_counts["cpaChat"] == before["cpaChat"]+1
+        proof.update(combinedSequence="B2(1)-Key(add/revoke)-B2(0)-B2(same 0)",
+                     wrongRequestDenied=True, parentHeldBetweenSteps=True, ingressChatStatus=200,
+                     initialCounters=initial_counts, finalCounters=final_counts)
 
     def stop_exact(self, cid):
         assert cid in self.ids.values(), "unowned stop target; STOP"

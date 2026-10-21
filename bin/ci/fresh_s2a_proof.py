@@ -66,7 +66,7 @@ class Filter(ctypes.Structure):_fields_=[('code',ctypes.c_ushort),('jt',ctypes.c
 class Program(ctypes.Structure):_fields_=[('length',ctypes.c_ushort),('filters',ctypes.POINTER(Filter))]
 rules=(Filter*8)(*(Filter(*v) for v in [(0x30,0,0,23),(0x15,0,5,6),(0xb1,0,0,14),(0x48,0,0,16),(0x15,1,0,8317),(0x15,0,1,18320),(0x06,0,0,256),(0x06,0,0,0)]))
 s.setsockopt(socket.SOL_SOCKET,26,bytes(Program(len(rules),rules)));s.bind(('lo',0))
-counts={'cpaChat':0,'cpaTotal':0,'managerVerdicts':0,'dropped':0};seen=set();lock=threading.Lock()
+counts={'cpaChat':0,'cpaTotal':0,'cpaKeyPUT':0,'cpaRetryPUT':0,'managerVerdicts':0,'dropped':0};seen=set();lock=threading.Lock()
 def capture():
  while True:
   p,addr=s.recvfrom(131072)
@@ -86,6 +86,8 @@ def capture():
    if dst==8317:
     counts['cpaTotal']+=1
     if line[0]==b'POST' and line[1]==b'/v1/chat/completions':counts['cpaChat']+=1
+    if line[0]==b'PUT' and line[1]==b'/v8/management/config/access/api-keys':counts['cpaKeyPUT']+=1
+    if line[0]==b'PUT' and line[1]==b'/v8/management/config/routing/retry/request-retry':counts['cpaRetryPUT']+=1
    if dst==18320 and line[1]==b'/internal/fresh-chat-admission':counts['managerVerdicts']+=1
 t=threading.Thread(target=capture,daemon=True);t.start()
 class H(http.server.BaseHTTPRequestHandler):
