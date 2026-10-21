@@ -14,6 +14,7 @@ const CHECK_NAMES = [
   'runtime_lifecycle',
   'native_control',
   'docker',
+  'docker_all_images',
   'demo_docs',
   'release_content',
 ];
@@ -169,6 +170,12 @@ const triggersDocker = (filePath) =>
   filePath === 'package.json' ||
   filePath === 'package-lock.json';
 
+// Runtime E2E requires all images; shared Docker inputs must also build all images.
+const triggersDockerAllImages = (filePath) =>
+  triggersRuntimeLifecycle(filePath) ||
+  startsWithPath(filePath, 'docker') ||
+  filePath === '.dockerignore';
+
 const triggersDemoDocs = (filePath) =>
   startsWithPath(filePath, 'apps/web') ||
   startsWithPath(filePath, 'apps/docs') ||
@@ -199,6 +206,7 @@ export const classifyChangedFiles = (changedFiles) => {
     runtime_lifecycle: files.some(triggersRuntimeLifecycle),
     native_control: files.some(triggersNativeControl),
     docker: files.some(triggersDocker),
+    docker_all_images: files.some(triggersDockerAllImages),
     demo_docs: files.some(triggersDemoDocs),
     release_content: files.some(triggersReleaseContent),
   };

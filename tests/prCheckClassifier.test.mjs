@@ -22,6 +22,7 @@ const noChecks = {
   runtime_lifecycle: false,
   native_control: false,
   docker: false,
+  docker_all_images: false,
   demo_docs: false,
   release_content: false,
 };
@@ -61,6 +62,7 @@ describe('PR check classifier', () => {
       bundle_boundary: true,
       manager_runtime: true,
       runtime_lifecycle: true,
+      docker_all_images: true,
       native_control: true,
       docker: true,
       demo_docs: true,
@@ -70,6 +72,42 @@ describe('PR check classifier', () => {
 
   it('skips application checks for ordinary non-site docs changes', () => {
     expect(classifyChangedFiles(['docs/release.md'])).toEqual(noChecks);
+  });
+
+  it('retains full images for shared context and Runtime changes', () => {
+    for (const filePath of [
+      '.dockerignore',
+      'docker/runtime/config.v8.default.seed.yaml',
+      'apps/ingress/internal/ingress/proxy.go',
+      'apps/runtime-supervisor/internal/lifecycle/recovery.go',
+      'apps/manager-server/cmd/cpa-manager-plus/main.go',
+      'bin/ci/runtime14-failure-e2e.sh',
+    ]) {
+      const checks = classifyChangedFiles([filePath]);
+      expect(checks.docker, filePath).toBe(true);
+      expect(checks.docker_all_images, filePath).toBe(true);
+    }
+  });
+
+  it('omits unrelated Runtime and Ingress image builds for ordinary frontend and Manager changes', () => {
+    for (const filePath of [
+      'apps/web/src/features/login/LoginPage.tsx',
+      'apps/manager-server/internal/worker/rate_limit_auto_disable.go',
+      'package-lock.json',
+    ]) {
+      const checks = classifyChangedFiles([filePath]);
+      expect(checks.docker, filePath).toBe(true);
+      expect(checks.docker_all_images, filePath).toBe(false);
+    }
+  });
+
+  it('retains full image builds for mixed ordinary and Runtime changes', () => {
+    const checks = classifyChangedFiles([
+      'apps/web/src/features/login/LoginPage.tsx',
+      'apps/runtime-supervisor/internal/lifecycle/recovery.go',
+    ]);
+    expect(checks.docker).toBe(true);
+    expect(checks.docker_all_images).toBe(true);
   });
 
   it('runs frontend and Docker checks for web changes', () => {
@@ -168,6 +206,7 @@ describe('PR check classifier', () => {
       windows_preflight: true,
       manager_runtime: true,
       runtime_lifecycle: true,
+      docker_all_images: true,
       docker: true,
     });
   });
@@ -189,6 +228,7 @@ describe('PR check classifier', () => {
         ...noChecks,
         runtime_supervisor: true,
         runtime_lifecycle: true,
+        docker_all_images: true,
         docker: true,
       });
     }
@@ -206,6 +246,7 @@ describe('PR check classifier', () => {
       runtime_supervisor: true,
       manager_runtime: true,
       runtime_lifecycle: true,
+      docker_all_images: true,
       docker: true,
     });
   });
@@ -216,6 +257,7 @@ describe('PR check classifier', () => {
         ...noChecks,
         ingress: true,
         runtime_lifecycle: true,
+        docker_all_images: true,
         docker: true,
       });
     }
@@ -232,6 +274,7 @@ describe('PR check classifier', () => {
       manager_server: true,
       ingress: true,
       runtime_lifecycle: true,
+      docker_all_images: true,
       docker: true,
     });
   });
@@ -246,6 +289,7 @@ describe('PR check classifier', () => {
         ...noChecks,
         runtime_supervisor: true,
         runtime_lifecycle: true,
+        docker_all_images: true,
         docker: true,
       });
     }
@@ -290,6 +334,7 @@ describe('PR check classifier', () => {
       expect(classifyChangedFiles([filePath])).toEqual({
         ...noChecks,
         runtime_lifecycle: true,
+        docker_all_images: true,
         docker: true,
       });
     }
@@ -361,6 +406,7 @@ describe('PR check classifier', () => {
         bundle_boundary: true,
         manager_runtime: true,
         runtime_lifecycle: true,
+        docker_all_images: true,
         native_control: true,
         docker: true,
         demo_docs: true,
@@ -396,6 +442,7 @@ describe('PR check classifier', () => {
       windows_preflight: true,
       manager_runtime: true,
       runtime_lifecycle: true,
+      docker_all_images: true,
       docker: true,
       demo_docs: true,
     });
