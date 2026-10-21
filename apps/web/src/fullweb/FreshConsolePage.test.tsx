@@ -375,7 +375,12 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       renderer.root.findByProps({ 'data-testid': 'external-management-key' })
         .props.onChange({ target: { value: 'secret' } })
     );
-    await act(async () => renderer.root.findByProps({ 'data-testid': 'external-connect' }).props.onClick());
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'external-connect' }).props.onClick();
+      await vi.waitFor(() =>
+        expect(renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.disabled).toBe(true)
+      );
+    });
     expect(renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.disabled).toBe(true);
     expect(buttons().find((button) => button.props.children === t('logout'))?.props.disabled).toBe(true);
     await act(async () => renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.onClick());

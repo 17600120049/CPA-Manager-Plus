@@ -46,7 +46,14 @@ async function mount(
     await field('external-base-url', 'http://cpa.private:8317');
     await field('external-management-key', 'secret');
   };
-  const click = async (id: string) => act(async () => node(id).props.onClick());
+  const click = async (id: string) => act(async () => {
+    node(id).props.onClick();
+    // SHA-256 is asynchronous: wait until the submitted POST actually reaches
+    // the transport before asserting a result or testing an UNKNOWN boundary.
+    if (id === 'external-connect') {
+      await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    }
+  });
   return { renderer, node, field, prepare, click, pending, unauthorized };
 }
 
@@ -173,7 +180,10 @@ describe('Fresh External one-operation connection', () => {
     const post = vi.fn().mockImplementation(() => new Promise<FreshOperation>((r) => { resolve = r; }));
     const ui = await mount(vi.fn().mockResolvedValue(committed), post);
     await ui.prepare();
-    await act(async () => { ui.node('external-connect').props.onClick(); });
+    await act(async () => {
+      ui.node('external-connect').props.onClick();
+      await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    });
     expect(post).toHaveBeenCalledTimes(1);
     expect(ui.renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
     await act(async () => resolve(committed));
