@@ -65,15 +65,3 @@ func classifyPAHS0Resource(r *http.Request) (Route, bool) {
 	}
 	return RouteGateway, false
 }
-
-// classifyLegacyPluginCandidate recognizes all URI carriers before the old
-// Gateway fallback. Unlike the P-S0 classifier this does not change normal
-// ownership: it only requires a live Legacy authority on these requests.
-func classifyLegacyPluginCandidate(r *http.Request) bool {
-	for _, p := range []string{r.URL.Path, r.URL.RawPath, r.URL.EscapedPath(), r.RequestURI} {
-		if pahS0ResourceCandidate(p) {
-			return true
-		}
-	}
-	return false
-}

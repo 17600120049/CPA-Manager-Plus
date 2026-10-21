@@ -24,7 +24,13 @@ Still required before any P-S0 deployment qualification:
 - Prove canonical GET/HEAD traffic takes Ingress -> Manager denial without
   upstream CPA calls, while malformed/encoded methods never enter Gateway.
 - On a disposable profile only, test Ingress-only, Manager-only, one-side
-  restart, wrong/absent flag and legacy passthrough; any bypass is STOP.
+  restart, wrong/absent flag, **including swapped/off-profile Ingress** and
+  legacy passthrough; any bypass is STOP. Source binaries cannot prove a
+  mismatched Host public listener safe. Do not waive this test based on the
+  ordinary Legacy fallback behavior.
+- Reject persisted External/AdoptExisting Fresh checkpoints during private
+  Manager admission and reject strategy requests other than NewManaged. A
+  missing, not-yet-selected Fresh checkpoint remains available for setup.
 - With a real browser check old plugin menu URL types (same origin, external,
   data, blob, javascript, unknown), iframe, new tab, refresh, worker/import,
   redirects, cookies, storage and CSP. Preserve Admin/health/brand assets.

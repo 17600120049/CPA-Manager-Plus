@@ -45,13 +45,8 @@ func main() {
 	fresh := &ingress.FreshRoutes{}
 	authority := managerFreshAuthority(cfg.managerURL)
 	handler := ingress.NewFreshHandler(fresh, cfg.managerURL, cfg.gatewayURL, logger, managerLegacyGateway(authority))
-	// An off-profile Ingress must not leak to Gateway if its Manager has
-	// switched to private Fresh P-S0. Require a fresh Legacy authority proof
-	// for this namespace, never the cached general Legacy observation.
-	handler.RequireCurrentLegacyPluginAuthority(func(ctx context.Context) bool {
-		_, err := authority(ctx)
-		return errors.Is(err, errLegacyManager)
-	})
+	// The existing Legacy fallback stays unchanged outside the paired
+	// private proof profile; P-S0 ownership is enabled only by its binary.
 	if cfg.pahS0 {
 		handler.EnablePAHS0(managerPAHS0Guard(cfg.managerURL))
 	}

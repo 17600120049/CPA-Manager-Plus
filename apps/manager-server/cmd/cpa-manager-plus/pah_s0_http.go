@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/router"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshstrategy"
 )
 
 // Only a missing database or a pre-admitted Fresh database may use P-S0.
@@ -23,6 +25,23 @@ func validatePAHS0FreshSource(database string) error {
 		return fmt.Errorf("inspect P-S0 source: %w", err)
 	}
 	return errors.New("P-S0 cannot open Legacy or unknown existing Manager store")
+}
+
+// The opened Fresh checkpoint can be unset while the user is choosing a
+// strategy, or must already belong to Embedded NewManaged. Other strategies
+// remain valid in ordinary Fresh but are never admitted to the private P-S0.
+func validatePAHS0Strategy(strategy bootstrap.CPAStrategy) error {
+	if strategy == "" || strategy == bootstrap.NewManaged {
+		return nil
+	}
+	return &freshstrategy.Blocker{Code: "fresh_strategy_owner_conflict"}
+}
+
+func requirePAHS0ManagedRequest(strategy bootstrap.CPAStrategy) error {
+	if strategy == bootstrap.NewManaged {
+		return nil
+	}
+	return &freshstrategy.Blocker{Code: "fresh_strategy_owner_conflict"}
 }
 
 // PAH-S0 is enforced at the shared Manager process boundary, before the

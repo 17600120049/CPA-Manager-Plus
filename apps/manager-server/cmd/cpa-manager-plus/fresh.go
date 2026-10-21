@@ -77,11 +77,12 @@ type freshApplication struct {
 	keyApply    *freshkeyapply.Service
 	updates     *updatecheck.Service
 	configRetry *freshconfig.Service
+	pahS0       bool
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
-	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector}
+	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector, pahS0: cfg.PAHS0Enabled}
 	a.keys = freshkeys.New(keyrepo.New(opened.DB), opened.Protector)
 	// Reuse the existing settings authority without opening a Legacy app,
 	// collector, CPA client, or second SQLite connection.
@@ -300,6 +301,18 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	// The private Embedded Fresh New consumer must never promote an External
+	// or AdoptExisting strategy, including on first selection and retry.
+	if a.pahS0 {
+		if err := validatePAHS0Strategy(op.Strategy.Strategy); err != nil {
+			writeFreshStrategyError(w, err)
+			return
+		}
+		if err := requirePAHS0ManagedRequest(request.Strategy); err != nil {
+			writeFreshStrategyError(w, err)
+			return
+		}
+	}
 	if err := a.validateCommittedExternalReplay(r.Context(), op, request.Request); err != nil {
 		writeFreshStrategyError(w, err)
 		return
@@ -400,6 +413,19 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 	opened, err := fresh.Open(ctx, paths, fresh.OpenOptions{AdminKey: cfg.AdminKey, DataKey: cfg.DataKey})
 	if err != nil {
 		return nil, err
+	}
+	if cfg.PAHS0Enabled {
+		// The marker proves Fresh ownership, not the authorized Embedded
+		// strategy. Check the already-open, strictly admitted snapshot while
+		// Fresh still owns the SQLite startup fence.
+		record, checkErr := freshstore.New(opened.DB).Load(ctx)
+		if checkErr == nil {
+			checkErr = validatePAHS0Strategy(record.Operation.Strategy.Strategy)
+		}
+		if checkErr != nil {
+			_ = opened.Close()
+			return nil, checkErr
+		}
 	}
 	app := newFreshApplication(opened, cfg, freshDriver(cfg))
 	h.SetFreshHandler(app)

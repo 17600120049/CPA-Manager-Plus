@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
 )
 
@@ -84,5 +86,28 @@ func TestPAHS0AdmitsOnlyFreshOrMissingStore(t *testing.T) {
 	}
 	if err := validatePAHS0FreshSource(path); err == nil {
 		t.Fatal("marker without database admitted")
+	}
+}
+
+func TestPAHS0OnlyAdmitsManagedStrategy(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		strategy bootstrap.CPAStrategy
+		allowedAtOpen bool
+		allowedAtSubmit bool
+	}{
+		{"unset", "", true, false},
+		{"embedded-new", bootstrap.NewManaged, true, true},
+		{"external-committed", bootstrap.ConnectExternal, false, false},
+		{"adopt-existing", bootstrap.AdoptExisting, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := validatePAHS0Strategy(tc.strategy) == nil; got != tc.allowedAtOpen {
+				t.Fatalf("opened persisted strategy=%q accepted=%v", tc.strategy, got)
+			}
+			if got := requirePAHS0ManagedRequest(tc.strategy) == nil; got != tc.allowedAtSubmit {
+				t.Fatalf("submitted strategy=%q accepted=%v", tc.strategy, got)
+			}
+		})
 	}
 }

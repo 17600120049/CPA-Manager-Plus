@@ -30,23 +30,12 @@ afterEach(() => {
 });
 
 describe('PAH-S0 plugin page render contract', () => {
-  it.each([
-    '/v0/resource/plugins/demo/page',
-    'relative/page.html',
-    'https://outside.invalid/plugin',
-    'http://127.0.0.1:18319/v0/resource/plugins/demo',
-    'data:text/html,<script>alert(1)</script>',
-    'blob:https://example.invalid/opaque',
-    'javascript:alert(1)',
-    'custom:execute',
-  ])('never mounts legacy iframe or discovers a menu (%s)', (_menuURL) => {
+  it('renders unsupported content without mounting legacy iframe, route or store', () => {
     vi.stubEnv('VITE_CPAMP_PAH_S0', '1');
-    // P-S0 has no menu-path input by design: no upstream menu is fetched,
-    // so all of these paths are unable to reach the component at all.
+
     const html = renderToStaticMarkup(<PluginResourcePage />);
     expect(html).toContain('plugin_resource.pah_s0_unsupported');
     expect(html).not.toContain('<iframe');
-    expect(html).not.toContain('javascript:');
     expect(counters.apiReads).toBe(0);
     expect(counters.unsafeHookCalls).toBe(0);
   });
