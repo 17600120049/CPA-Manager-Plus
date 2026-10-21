@@ -21,6 +21,39 @@ function browserOrigin(origin = 'https://manager.example:18317') {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('canonical Full Web Public API transport', () => {
+  it.each([
+    ['gateway/retry/request-retry', 'invalid_retry_request', 'invalid_retry_request'],
+    [
+      'gateway/retry/operations/' + 'a'.repeat(32) + '/reconcile',
+      'invalid_retry_request',
+      'invalid_retry_request',
+    ],
+    ['gateway/retry/request-retry', 'raw upstream secret', undefined],
+    ['api-keys', 'invalid_retry_request', undefined],
+  ])('bounds HTTP 400 parsing for %s (%s)', async (resource, code, expectedCode) => {
+    browserOrigin();
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { code, message: 'raw upstream secret', result: { secret: 'hidden' } },
+          { status: 400 }
+        )
+      );
+    const error = await createPublicApiClient(() => context, transport)
+      .put(resource, {}, credential)
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      kind: 'http',
+      status: 400,
+      code: expectedCode,
+      operationResult: undefined,
+      message: 'Public API http',
+    });
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(error)).not.toContain('secret');
+  });
+
   it.each(['GET', 'PUT'])('bounds saved-setting %s without retries', async (method) => {
     browserOrigin();
     vi.useFakeTimers();

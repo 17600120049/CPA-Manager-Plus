@@ -106,14 +106,21 @@ export function createPublicApiClient(
         const operationResource = method === 'GET' && resource.startsWith('api-keys/operations/');
         if (
           (retryResource || operationResource) &&
-          (response.status === 409 || response.status === 503)
+          (response.status === 409 ||
+            response.status === 503 ||
+            (retryResource && response.status === 400))
         ) {
           try {
             const payload = (await response.json()) as Record<string, unknown>;
             if (retryResource) {
               if (typeof payload.code === 'string' && retryErrorCodes.has(payload.code))
                 code = payload.code;
-              if ('result' in payload && payload.result && typeof payload.result === 'object')
+              if (
+                response.status !== 400 &&
+                'result' in payload &&
+                payload.result &&
+                typeof payload.result === 'object'
+              )
                 operationResult = payload.result;
             } else if (
               typeof payload.code === 'string' &&

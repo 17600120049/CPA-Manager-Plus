@@ -27,7 +27,7 @@ export function FreshConsolePage({
   const creationPendingRef = useRef(false);
   const [installationPending, setInstallationPending] = useState(false);
   const installationPendingRef = useRef(false);
-  const [retryVisible, setRetryVisible] = useState(false);
+  const [retryNavigation, setRetryNavigation] = useState(0);
   const [retryPending, setRetryPending] = useState(false);
   const retryPendingRef = useRef(false);
   const requestId = useRef(0);
@@ -68,7 +68,7 @@ export function FreshConsolePage({
     setInstallationPending(false);
     retryPendingRef.current = false;
     setRetryPending(false);
-    setRetryVisible(false);
+    setRetryNavigation(0);
     setKey('');
     setCredential('');
     setOperation(null);
@@ -188,7 +188,7 @@ export function FreshConsolePage({
                           data-testid="gateway-retry-navigation"
                           onClick={(event) => {
                             event.preventDefault();
-                            setRetryVisible(true);
+                            setRetryNavigation((activation) => activation + 1);
                           }}
                         >
                           {t('retryNavigationLeaf')}
@@ -275,8 +275,9 @@ export function FreshConsolePage({
                       setError(t('authError'));
                     }}
                   />
-                  {retryVisible && (
+                  {retryNavigation > 0 && (
                     <FreshRetryConfiguration
+                      navigationRequest={retryNavigation}
                       client={client}
                       credential={credential}
                       onPending={(pending) => {

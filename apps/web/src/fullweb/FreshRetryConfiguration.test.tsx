@@ -223,6 +223,117 @@ describe('Full Web request retry editor', () => {
     expect(JSON.stringify(renderer.toJSON())).toContain(t('retryOperationNoPutReplay'));
   });
 
+  it('releases a request rejected by a real HTTP 400 without inventing an unknown operation', async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(retryView()))
+      .mockResolvedValueOnce(
+        Response.json(
+          { code: 'invalid_retry_request', message: 'private details' },
+          { status: 400 }
+        )
+      );
+    await mount(transport);
+    await change('3');
+    await click('retry-save');
+    expect(pendingEvents.slice(-2)).toEqual([true, false]);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'retry-operation-id' })).toHaveLength(0);
+    expect(button('retry-save').props.disabled).toBe(false);
+    expect(JSON.stringify(renderer.toJSON())).toContain(t('retrySaveRejected'));
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('private details');
+    expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+  });
+
+  it.each([400, 409, 503])(
+    'keeps uncertain HTTP %s locked unless it is a confirmed validation rejection',
+    async (status) => {
+      const transport = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(retryView()))
+        .mockResolvedValueOnce(
+          Response.json(
+            { code: status === 400 ? 'private unknown code' : 'invalid_retry_request' },
+            { status }
+          )
+        );
+      await mount(transport);
+      await change('3');
+      await click('retry-save');
+      expect(pendingEvents[pendingEvents.length - 1]).toBe(true);
+      expect(button('retry-save').props.disabled).toBe(true);
+      expect(
+        renderer.root.findByProps({ 'data-testid': 'retry-operation-id' }).props.children
+      ).toBe('ab'.repeat(16));
+      expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+    }
+  );
+
+  it.each(['initial read', 'refresh'])(
+    'shows a sanitized conflict lock on %s and forbids writes',
+    async (stage) => {
+      const transport = vi.fn<typeof fetch>();
+      if (stage === 'refresh') transport.mockResolvedValueOnce(Response.json(retryView()));
+      transport.mockResolvedValueOnce(
+        Response.json(
+          {
+            code: 'config_key_writer_not_isolated',
+            message: 'secret upstream error',
+          },
+          { status: 409 }
+        )
+      );
+      await mount(transport);
+      if (stage === 'refresh') await click('retry-refresh');
+      expect(
+        renderer.root.findByProps({ 'data-testid': 'retry-read-lock-reason' }).props.children
+      ).toBe(t('retryWriterNotIsolated'));
+      expect(JSON.stringify(renderer.toJSON())).toContain(t('retryReadConflict'));
+      expect(JSON.stringify(renderer.toJSON())).not.toContain('secret upstream error');
+      if (stage === 'refresh') {
+        expect(input().props.disabled).toBe(true);
+        await change('3');
+        await click('retry-save');
+        expect(button('retry-save').props.disabled).toBe(true);
+      }
+      expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0);
+    }
+  );
+
+  it('retains the original operation after a real transport abort timeout without another PUT', async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(retryView()))
+      .mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new Error('private timeout detail'))
+            );
+          })
+      );
+    await mount(transport);
+    await change('3');
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        button('retry-save').props.onClick();
+      });
+      expect(pendingEvents[pendingEvents.length - 1]).toBe(true);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+      });
+      expect(
+        renderer.root.findByProps({ 'data-testid': 'retry-operation-id' }).props.children
+      ).toBe('ab'.repeat(16));
+      expect(button('retry-save').props.disabled).toBe(true);
+      expect(pendingEvents[pendingEvents.length - 1]).toBe(true);
+      expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+      expect(JSON.stringify(renderer.toJSON())).not.toContain('private timeout detail');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('retains the original ID and never repeats PUT after a network failure', async () => {
     const transport = vi
       .fn<typeof fetch>()

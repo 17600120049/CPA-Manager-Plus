@@ -240,11 +240,13 @@ export function FreshRetryConfiguration({
   credential,
   onUnauthorized,
   onPending,
+  navigationRequest = 0,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
+  navigationRequest?: number;
 }) {
   const [view, setView] = useState<RetryView | null>(null);
   const [draft, setDraft] = useState('');
@@ -260,6 +262,8 @@ export function FreshRetryConfiguration({
   const flight = useRef(false);
   const pendingIdRef = useRef('');
   const issuedIds = useRef(new Set<string>());
+  const sectionRef = useRef<HTMLElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const auth = { kind: 'admin' as const, value: credential };
 
   function setPendingState(value: boolean) {
@@ -358,7 +362,11 @@ export function FreshRetryConfiguration({
       onUnauthorized();
       return;
     }
-    if (err instanceof PublicApiError && err.code === 'invalid_retry_request') {
+    if (
+      err instanceof PublicApiError &&
+      err.status === 400 &&
+      err.code === 'invalid_retry_request'
+    ) {
       pendingIdRef.current = '';
       setPendingId('');
       setOperationUnknown(false);
@@ -412,6 +420,8 @@ export function FreshRetryConfiguration({
       pendingIdRef.current = id;
       setPendingId(id);
     }
+    // Protect the original ID before dispatch, including same-turn logout.
+    setPendingState(true);
     setMessage('');
     setError('');
     try {
@@ -491,6 +501,12 @@ export function FreshRetryConfiguration({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!navigationRequest) return;
+    titleRef.current?.focus({ preventScroll: true });
+    sectionRef.current?.scrollIntoView({ block: 'start' });
+  }, [navigationRequest]);
+
   const currentValue =
     view?.presence === 'present' && view.value !== null
       ? String(view.value)
@@ -513,6 +529,7 @@ export function FreshRetryConfiguration({
 
   return (
     <section
+      ref={sectionRef}
       id="gateway-retry"
       className="console-keys retry-editor"
       aria-labelledby="gateway-retry-title"
@@ -522,7 +539,9 @@ export function FreshRetryConfiguration({
       <div className="console-keys-heading">
         <div>
           <p className="console-section-kicker">{t('retryNavigation')}</p>
-          <h2 id="gateway-retry-title">{t('retryTitle')}</h2>
+          <h2 id="gateway-retry-title" ref={titleRef} tabIndex={-1}>
+            {t('retryTitle')}
+          </h2>
         </div>
         <span className={`badge ${canEdit ? 'badge-emerald' : 'badge-amber'}`}>
           {busy ? t('retryBusy') : canEdit ? t('retryEditable') : t('retryReadonly')}
@@ -537,6 +556,11 @@ export function FreshRetryConfiguration({
       {error && (
         <p className="alert alert-warn" role="alert">
           {t(error)}
+        </p>
+      )}
+      {readUnavailable && lockCode && (
+        <p className="alert alert-warn" data-testid="retry-read-lock-reason">
+          {t(lockReasonKey('', lockCode))}
         </p>
       )}
       {view ? (
