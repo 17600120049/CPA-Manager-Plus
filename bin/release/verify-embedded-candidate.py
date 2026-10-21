@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 ROLES = ("manager", "ingress", "runtime")
 SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
 SOURCE = "https://github.com/seakee/CPA-Manager-Plus"
+CANDIDATE_VERSION = "2.0.0-r1candidate"
 CPA_SHA = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
 CPA_LICENSE_SHA = "879792e89cf1bdd6a8d446033ec87e30496f97dcafc4656dc53f641509b346a6"
 CPA_ARCHIVE_SHA = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
@@ -134,6 +135,8 @@ def inspect(path, role, source_sha, event, root_license, seed):
                 "source identity label mismatch")
         require(labels.get("org.opencontainers.image.source") == SOURCE,
                 "source repository mismatch")
+        require(labels.get("org.opencontainers.image.version") == CANDIDATE_VERSION,
+                "candidate version identity mismatch")
         require(labels.get("io.cpamp.candidate.event") == event and
                 labels.get("io.cpamp.candidate.role") == role,
                 "candidate build event or role mismatch")
@@ -194,6 +197,7 @@ def verify(paths, source_sha, event, root):
         "status": "STRUCTURAL_CANDIDATE_EVIDENCE_ONLY_NOT_RELEASE_QUALIFIED",
         "sourceCommitClaim": source_sha,
         "candidateBuildEventClaim": event,
+        "candidateVersionClaim": CANDIDATE_VERSION,
         "platform": "linux/amd64",
         "images": result,
         "officialCPA": {"version": "8.0.13", "archiveSHA256": CPA_ARCHIVE_SHA,
