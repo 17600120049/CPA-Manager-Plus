@@ -20,7 +20,7 @@ CPA_SHA = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
 CPA_LICENSE_SHA = "879792e89cf1bdd6a8d446033ec87e30496f97dcafc4656dc53f641509b346a6"
 CPA_ARCHIVE_SHA = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
 LICENSE = "/usr/local/share/licenses/cpamp/LICENSE"
-NOTICE = "/usr/local/share/licenses/cpamp/THIRD_PARTY_NOTICES.txt"
+NOTICE = "/usr/local/share/cpamp/release/third-party-inventory.txt"
 WEB_MANIFEST = "/usr/local/share/cpamp/release/fullweb-manifest.json"
 WANTED = {
     "manager": ("/usr/local/bin/cpa-manager-plus", LICENSE, NOTICE, WEB_MANIFEST),
@@ -141,11 +141,11 @@ def inspect(path, role, source_sha, event, root_license, seed):
         require(isinstance(layers, list) and len(layers) > 0, "missing image layers")
         files = final_files(archive, layers, WANTED[role])
         require(files[LICENSE] == root_license, "CPAMP LICENSE differs from source")
-        require(files[NOTICE].strip(), "empty third-party notice inventory")
+        require(files[NOTICE].startswith(b"NOT_VERIFIED"), "third-party inventory must explicitly remain unverified")
         for path_ in WANTED[role]:
             if path_.startswith("/usr/local/bin/") and path_ != "/usr/local/bin/cpamp-runtime-v8-entrypoint":
                 binary = files[path_]
-                require(binary[:4] == b"\\x7fELF" and int.from_bytes(binary[18:20], "little") == 62,
+                require(binary[:4] == b"\x7fELF" and int.from_bytes(binary[18:20], "little") == 62,
                         "binary is not linux/amd64 ELF: " + path_)
         if role == "runtime":
             require(hashlib.sha256(files["/usr/local/bin/cli-proxy-api"]).hexdigest() == CPA_SHA,
