@@ -128,6 +128,77 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('来源状态无法确认');
   });
 
+  it('rechecks an unknown source and shows Fresh guidance only after verified discovery', async () => {
+    const publicDiscovery = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError('temporary network error'))
+      .mockResolvedValueOnce(Response.json({
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'fresh_claim_required',
+        mode: 'fresh',
+        auth_entry: 'fresh_claim',
+        reason: 'fresh_claim_required',
+        authentication_required: true,
+      }));
+    const bootstrapTransport = vi.fn();
+    vi.stubGlobal('fetch', publicDiscovery);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(bootstrapTransport)} />
+      );
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    await act(async () => findByTestId(renderer.root, 'bootstrap-recheck-discovery').props.onClick());
+    expect(publicDiscovery).toHaveBeenCalledTimes(2);
+    expect(publicDiscovery.mock.calls[1][0]).toBe('/.well-known/cpamp-bootstrap');
+    expect(publicDiscovery.mock.calls[1][1]).toMatchObject({
+      method: 'GET', mode: 'same-origin', credentials: 'omit', redirect: 'error',
+      cache: 'no-store',
+    });
+    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe('cpa-manager-plus initialize');
+    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
+    expect(bootstrapTransport).not.toHaveBeenCalled();
+  });
+
+  it('keeps an invalid source fail-closed during and after a read-only recheck', async () => {
+    let resolveRecheck!: (response: Response) => void;
+    const publicDiscovery = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'fresh_claim_required',
+        mode: 'fresh',
+        auth_entry: 'fresh_claim',
+        reason: 'qualification_unavailable',
+        authentication_required: true,
+      }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveRecheck = resolve; }));
+    const bootstrapTransport = vi.fn();
+    vi.stubGlobal('fetch', publicDiscovery);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(bootstrapTransport)} />
+      );
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    await act(async () => findByTestId(renderer.root, 'bootstrap-recheck-discovery').props.onClick());
+    expect(publicDiscovery).toHaveBeenCalledTimes(2);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('正在读取来源状态');
+    await act(async () => {
+      resolveRecheck(Response.json({
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'unavailable',
+        auth_entry: 'unavailable',
+        reason: 'observation_unavailable',
+        authentication_required: false,
+      }, { status: 503 }));
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain('来源状态暂无法确认');
+    expect(bootstrapTransport).not.toHaveBeenCalled();
+  });
+
   it.each([
     [
       'fresh_claim_required',

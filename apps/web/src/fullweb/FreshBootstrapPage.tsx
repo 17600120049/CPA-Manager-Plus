@@ -174,6 +174,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   const [initErrorKind, setInitErrorKind] = useState<string | null>(null);
   const [discoveryNote, setDiscoveryNote] = useState<DiscoveryGuidance | null>(null);
   const [discoveryChecked, setDiscoveryChecked] = useState(false);
+  const [discoveryAttempt, setDiscoveryAttempt] = useState(0);
 
   const [adminKey, setAdminKey] = useState('');
   const [commitId, setCommitId] = useState<string>(() => createCommitId());
@@ -304,7 +305,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
     return () => {
       active = false;
     };
-  }, [handoff]);
+  }, [handoff, discoveryAttempt]);
 
   useEffect(() => {
     if (!handoff) {
@@ -655,6 +656,22 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       </div>
                     </div>
                   </div>
+                )}
+                {discoveryChecked && !discoveryNote && (
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    data-testid="bootstrap-recheck-discovery"
+                    onClick={() => {
+                      // Reissue only the public read-only discovery GET.
+                      // An unverified result never grants a claim or write authority.
+                      setDiscoveryChecked(false);
+                      setDiscoveryNote(null);
+                      setDiscoveryAttempt((attempt) => attempt + 1);
+                    }}
+                  >
+                    重新检查来源状态
+                  </button>
                 )}
               </div>
             </section>
