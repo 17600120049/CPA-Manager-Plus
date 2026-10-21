@@ -157,7 +157,10 @@ export function FreshExternalConnection({
     const submittedBaseURL = canonicalExternalURL(baseURL.trim());
     const submittedKey = managementKey;
     if (!submittedBaseURL || !submittedKey || submittedKey.trim() !== submittedKey ||
-        submittedKey.length > 4096 || /[\x00-\x20\x7f]/.test(submittedKey)) {
+        submittedKey.length > 4096 || Array.from(submittedKey).some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code < 0x21 || code === 0x7f;
+    })) {
       setError(t('externalInvalid'));
       return;
     }

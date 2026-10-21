@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -294,4 +295,56 @@ func TestA3ValidatedFencePersistsAfterSQLiteRestart(t *testing.T) {
 	if response.Code != http.StatusConflict { t.Fatal("restart allowed a second POST", response.Code) }
 	result, err := app.store.Load(ctx)
 	if err != nil || result.Operation.Revision != staged.Revision || result.Connection != nil { t.Fatal("restart fence lost", err) }
+}
+
+func TestA3FixedBootstrapAdmissionMatchesCanonical(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	handoff, err := app.authority.Issue(t.Context())
+	if err != nil || !handoff.Resume { t.Fatal("fixed session handoff unavailable", err) }
+	encodedSession, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(handoff.Fragment, "#handoff="))
+	if err != nil { t.Fatal(err) }
+	var session struct { Token string `json:"token"` }
+	if err := json.Unmarshal(encodedSession, &session); err != nil || session.Token == "" {
+		t.Fatal("fixed session token invalid", err)
+	}
+	var sourceReads atomic.Int32
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sourceReads.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"auth"},"access":{"api-keys":[]}}`))
+	}))
+	defer source.Close()
+	op, _ := app.current(t.Context())
+	body, err := json.Marshal(struct {
+		Identity bootstrap.FreshIdentity `json:"identity"`
+		ExpectedRevision uint64 `json:"expectedRevision"`
+		freshstrategy.Request
+	}{op.Identity, op.Revision, freshstrategy.Request{Strategy: bootstrap.ConnectExternal, BaseURL: source.URL, ManagementKey: "private-key"}})
+	if err != nil { t.Fatal(err) }
+	perform := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, bootstrap.FixedBootstrapAPIPath+"strategy", bytes.NewReader(body))
+		request.Header.Set("Authorization", "Fresh "+session.Token)
+		response := httptest.NewRecorder()
+		app.fixedStrategy(response, request)
+		return response
+	}
+	app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return false }
+	denied := perform()
+	if denied.Code != http.StatusServiceUnavailable || sourceReads.Load() != 0 {
+		t.Fatal("fixed entry bypassed Host denial", denied.Code)
+	}
+	before, _ := app.current(t.Context())
+	if before.Revision != op.Revision || before.Strategy.Strategy != "" {
+		t.Fatal("fixed denial occupied A3 attempt")
+	}
+	app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return true }
+	accepted := perform()
+	if accepted.Code != http.StatusOK || sourceReads.Load() != 1 {
+		t.Fatal("fixed entry did not complete a bounded accepted read", accepted.Code, accepted.Body.String())
+	}
+	current, _ := app.current(t.Context())
+	if current.Revision != op.Revision+2 || current.Strategy.Stage != "committed" || current.ProductComplete || !current.GatewayPending {
+		t.Fatal("fixed entry violated checkpoint shape", current)
+	}
 }
