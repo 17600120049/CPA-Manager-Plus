@@ -27,10 +27,33 @@ const operation: FreshOperation = {
   },
 };
 const key = 'Cpamp_Test_Only_Console_Admin_123456';
+const retryExpected = {
+  sourceId: 'isolated-source-1234',
+  generation: '7',
+  revision: 2,
+  sha256: 'a'.repeat(64),
+};
+const retryView = {
+  field: 'routing.retry.request-retry',
+  presence: 'present',
+  value: 2,
+  source: 'private-embedded-cpa-v8.0.13',
+  authority: 'host-runtime',
+  editable: true,
+  reason: '',
+  persisted: 'persisted',
+  effective: 'unknown',
+  concurrentProtection: 'host-exclusive-runtime-reservation',
+  expected: retryExpected,
+};
 
 describe('Fresh Console Admin Key login and read-only operation', () => {
   let renderer: ReactTestRenderer;
+  let focusRetry: ReturnType<typeof vi.fn>;
+  let scrollRetry: ReturnType<typeof vi.fn>;
   beforeEach(() => {
+    focusRetry = vi.fn();
+    scrollRetry = vi.fn();
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal('window', { location: new URL('https://manager.example/console') });
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb) });
@@ -74,7 +97,15 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
                   ? settingFetch(url, init)
                   : fetchMock(url, init)
           )}
-        />
+        />,
+        {
+          createNodeMock: (element) => {
+            const props = element.props as { id?: string };
+            if (props.id === 'gateway-retry-title') return { focus: focusRetry };
+            if (props.id === 'gateway-retry') return { scrollIntoView: scrollRetry };
+            return null;
+          },
+        }
       );
     });
   }
@@ -84,6 +115,131 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       await renderer.root.findByType('form').props.onSubmit({ preventDefault: vi.fn() });
     });
   }
+
+  it('scrolls and focuses the editor on first and repeated navigation without remounting', async () => {
+    const retryFetch = vi.fn<typeof fetch>().mockResolvedValue(Response.json(retryView));
+    await mount(
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation((url, init) =>
+          String(url).includes('/gateway/retry/')
+            ? retryFetch(url, init)
+            : Promise.resolve(Response.json(operation))
+        )
+    );
+    await login();
+    for (let activation = 1; activation <= 2; activation++) {
+      await act(async () =>
+        renderer.root
+          .findByProps({ 'data-testid': 'gateway-retry-navigation' })
+          .props.onClick({ preventDefault: vi.fn() })
+      );
+      expect(focusRetry).toHaveBeenCalledTimes(activation);
+      expect(focusRetry).toHaveBeenLastCalledWith({ preventScroll: true });
+      expect(scrollRetry).toHaveBeenCalledTimes(activation);
+      expect(scrollRetry).toHaveBeenLastCalledWith({ block: 'start' });
+      expect(renderer.root.findByProps({ id: 'gateway-retry-title' }).props.tabIndex).toBe(-1);
+    }
+    expect(retryFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['persisted', 'recovered', 'rejected'] as const)(
+    'blocks same-turn logout during PUT and releases only after %s confirmation',
+    async (confirmation) => {
+      let resolvePut!: (value: Response) => void;
+      let rejectPut!: (reason: Error) => void;
+      const pendingPut = new Promise<Response>((resolve, reject) => {
+        resolvePut = resolve;
+        rejectPut = reject;
+      });
+      const requestId = 'bb'.repeat(16);
+      const savedOperation = { ...retryExpected, requestId, value: 3, state: confirmation };
+      const response = (state: string) =>
+        Response.json({ operation: { ...savedOperation, state }, effective: 'unknown' });
+      const retryFetch = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(retryView))
+        .mockReturnValueOnce(pendingPut);
+      if (confirmation === 'recovered') {
+        retryFetch
+          .mockResolvedValueOnce(response('unknown'))
+          .mockResolvedValueOnce(response('recovered'));
+      }
+      if (confirmation !== 'rejected') {
+        retryFetch.mockResolvedValueOnce(
+          Response.json({
+            ...retryView,
+            value: confirmation === 'recovered' ? 7 : 3,
+            operation: savedOperation,
+          })
+        );
+      }
+      await mount(
+        vi
+          .fn<typeof fetch>()
+          .mockImplementation((url, init) =>
+            String(url).includes('/gateway/retry/')
+              ? retryFetch(url, init)
+              : Promise.resolve(Response.json(operation))
+          )
+      );
+      await login();
+      await act(async () =>
+        renderer.root
+          .findByProps({ 'data-testid': 'gateway-retry-navigation' })
+          .props.onClick({ preventDefault: vi.fn() })
+      );
+      await act(async () =>
+        renderer.root
+          .findByProps({ 'data-testid': 'retry-value' })
+          .props.onChange({ target: { value: '3' } })
+      );
+      const logout = () => buttons().find((button) => button.props.children === t('logout'))!;
+      await act(async () => {
+        renderer.root.findByProps({ 'data-testid': 'retry-save' }).props.onClick();
+        logout().props.onClick();
+      });
+      expect(logout().props.disabled).toBe(true);
+      expect(renderer.root.findAllByProps({ 'data-testid': 'retry-editor' })).toHaveLength(1);
+      if (confirmation === 'recovered') {
+        await act(async () => rejectPut(new Error('lost original response')));
+        await act(async () => logout().props.onClick());
+        expect(logout().props.disabled).toBe(true);
+        expect(
+          renderer.root.findByProps({ 'data-testid': 'retry-operation-id' }).props.children
+        ).toBe(requestId);
+        await act(async () =>
+          renderer.root.findByProps({ 'data-testid': 'retry-check-operation' }).props.onClick()
+        );
+        expect(logout().props.disabled).toBe(true);
+        await act(async () =>
+          renderer.root.findByProps({ 'data-testid': 'retry-reconcile' }).props.onClick()
+        );
+        expect(renderer.root.findByProps({ 'data-testid': 'retry-value' }).props.value).toBe('7');
+        expect(retryFetch.mock.calls[2][0]).toBe(
+          'https://manager.example/console/api/v2/gateway/retry/operations/' + requestId
+        );
+        expect(retryFetch.mock.calls[3][0]).toBe(
+          'https://manager.example/console/api/v2/gateway/retry/operations/' +
+            requestId +
+            '/reconcile'
+        );
+      } else {
+        await act(async () =>
+          resolvePut(
+            confirmation === 'rejected'
+              ? Response.json({ code: 'invalid_retry_request' }, { status: 400 })
+              : response('persisted')
+          )
+        );
+      }
+      expect(logout().props.disabled).toBe(false);
+      expect(retryFetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+      await act(async () => logout().props.onClick());
+      expect(renderer.root.findAllByProps({ 'data-testid': 'retry-editor' })).toHaveLength(0);
+      expect(input().props.value).toBe('');
+    }
+  );
 
   it('retires Console Admin authority when the settings read rejects it', async () => {
     await mount(
@@ -173,9 +329,10 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       renderer.root.findByProps({ 'data-testid': 'install-runtime' }).props.onClick();
     });
     const revision = () =>
-      renderer.root.findByProps({ 'data-testid': 'console-operation' }).findAllByType('dd')[1]
-        .props.children;
-    const stage = () => renderer.root.findByProps({ 'data-testid': 'install-stage' }).props.children;
+      renderer.root.findByProps({ 'data-testid': 'console-operation' }).findAllByType('dd')[1].props
+        .children;
+    const stage = () =>
+      renderer.root.findByProps({ 'data-testid': 'install-stage' }).props.children;
     expect(revision()).toBe(7);
     expect(stage()).toBe('staged');
     await act(async () => resolveRefresh(Response.json(operation)));

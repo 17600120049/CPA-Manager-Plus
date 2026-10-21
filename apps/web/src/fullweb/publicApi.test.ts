@@ -21,6 +21,39 @@ function browserOrigin(origin = 'https://manager.example:18317') {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('canonical Full Web Public API transport', () => {
+  it.each([
+    ['gateway/retry/request-retry', 'invalid_retry_request', 'invalid_retry_request'],
+    [
+      'gateway/retry/operations/' + 'a'.repeat(32) + '/reconcile',
+      'invalid_retry_request',
+      'invalid_retry_request',
+    ],
+    ['gateway/retry/request-retry', 'raw upstream secret', undefined],
+    ['api-keys', 'invalid_retry_request', undefined],
+  ])('bounds HTTP 400 parsing for %s (%s)', async (resource, code, expectedCode) => {
+    browserOrigin();
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { code, message: 'raw upstream secret', result: { secret: 'hidden' } },
+          { status: 400 }
+        )
+      );
+    const error = await createPublicApiClient(() => context, transport)
+      .put(resource, {}, credential)
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      kind: 'http',
+      status: 400,
+      code: expectedCode,
+      operationResult: undefined,
+      message: 'Public API http',
+    });
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(error)).not.toContain('secret');
+  });
+
   it.each(['GET', 'PUT'])('bounds saved-setting %s without retries', async (method) => {
     browserOrigin();
     vi.useFakeTimers();
@@ -69,6 +102,66 @@ describe('canonical Full Web Public API transport', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('bounds retry reads and exposes only the bounded retry code and operation result', async () => {
+    browserOrigin();
+    vi.useFakeTimers();
+    try {
+      const transport = vi.fn<typeof fetch>(
+        (_url, options) =>
+          new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(new Error('private detail')));
+          })
+      );
+      const pending = createPublicApiClient(() => context, transport).get(
+        'gateway/retry/request-retry',
+        credential
+      );
+      const assertion = expect(pending).rejects.toMatchObject({
+        kind: 'network',
+        message: 'Public API network',
+      });
+      await vi.advanceTimersByTimeAsync(15000);
+      await assertion;
+      expect(transport).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains a sanitized retry conflict code and original operation result without upstream detail', async () => {
+    browserOrigin();
+    const operation = {
+      requestId: 'a'.repeat(32),
+      value: 3,
+      sourceId: 'isolated-source-1234',
+      generation: '7',
+      revision: 2,
+      sha256: 'b'.repeat(64),
+      state: 'unknown',
+    };
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          code: 'source_or_operation_conflict',
+          result: { operation, effective: 'unknown' },
+          message: 'raw upstream error must not escape',
+        },
+        { status: 409 }
+      )
+    );
+    const error = (await createPublicApiClient(() => context, transport)
+      .put('gateway/retry/request-retry', { requestId: operation.requestId, value: 3 }, credential)
+      .catch((value) => value)) as Error & { code?: string; operationResult?: unknown };
+    expect(error).toMatchObject({
+      kind: 'http',
+      status: 409,
+      code: 'source_or_operation_conflict',
+      operationResult: { operation, effective: 'unknown' },
+      message: 'Public API http',
+    });
+    expect(error.message).not.toContain('raw upstream error');
   });
 
   it('uses the same canonical non-root base and explicit in-memory credential', async () => {

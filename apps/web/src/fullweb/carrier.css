@@ -61,6 +61,69 @@
   overflow-wrap: anywhere;
 }
 
+.console-navigation {
+  margin: 4px 0 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  overflow-x: auto;
+}
+
+.console-navigation ol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.console-navigation li {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.console-navigation li + li::before {
+  margin-right: 8px;
+  color: var(--text-tertiary);
+  content: '/';
+}
+
+.console-navigation a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.console-navigation a:hover {
+  text-decoration: underline;
+}
+
+.console-section-kicker {
+  margin: 0 0 4px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.retry-editor {
+  scroll-margin-top: 20px;
+}
+
+.retry-input-error {
+  color: var(--danger);
+}
+
+.retry-operation {
+  margin-top: 16px;
+}
+
+.retry-operation code {
+  overflow-wrap: anywhere;
+}
+
 html.light {
   --bg-canvas: #f1f5f9;
   --bg-surface: #ffffff;
@@ -164,8 +227,7 @@ input {
   flex-direction: column;
   background:
     radial-gradient(circle at 15% 0%, var(--accent-soft), transparent 42%),
-    radial-gradient(circle at 85% 0%, var(--info-soft), transparent 38%),
-    var(--bg-canvas);
+    radial-gradient(circle at 85% 0%, var(--info-soft), transparent 38%), var(--bg-canvas);
 }
 
 .bootstrap-header {
@@ -788,6 +850,16 @@ input {
 
   .info-val {
     text-align: left;
+  }
+
+  .console-navigation ol {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .console-navigation li + li::before {
+    display: none;
   }
 
   .input-wrap {

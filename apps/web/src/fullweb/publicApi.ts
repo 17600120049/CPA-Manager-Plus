@@ -3,11 +3,22 @@ import { parseRuntimeJSON, runtimeRequestJSON } from './runtimeGeneration';
 
 export type PublicApiErrorKind = 'routing_unavailable' | 'network' | 'http' | 'authentication';
 
+const retryErrorCodes = new Set([
+  'invalid_retry_request',
+  'operation_not_found',
+  'source_or_operation_conflict',
+  'private_source_not_authorized',
+  'config_key_writer_not_isolated',
+  'original_operation_unknown',
+  'configuration_unavailable',
+]);
+
 export class PublicApiError extends Error {
   constructor(
     readonly kind: PublicApiErrorKind,
     readonly status?: number,
-    readonly operationResult?: unknown
+    readonly operationResult?: unknown,
+    readonly code?: string
   ) {
     super(`Public API ${kind}`);
     this.name = 'PublicApiError';
@@ -63,7 +74,8 @@ export function createPublicApiClient(
     const controller =
       body !== undefined ||
       resource.startsWith('api-keys/') ||
-      resource === 'settings/update-channel'
+      resource === 'settings/update-channel' ||
+      resource.startsWith('gateway/retry/')
         ? new AbortController()
         : undefined;
     const timer = controller ? setTimeout(() => controller.abort(), 15000) : undefined;
@@ -87,27 +99,41 @@ export function createPublicApiClient(
         // Failed operation reads may still carry a durable journal; they must
         // retain their original 409/503 status and cannot authorize writes.
         let operationResult: unknown;
+        let code: string | undefined;
+        const retryResource =
+          resource === 'gateway/retry/request-retry' ||
+          resource.startsWith('gateway/retry/operations/');
+        const operationResource = method === 'GET' && resource.startsWith('api-keys/operations/');
         if (
-          method === 'GET' &&
-          resource.startsWith('api-keys/operations/') &&
-          (response.status === 409 || response.status === 503)
+          (retryResource || operationResource) &&
+          (response.status === 409 ||
+            response.status === 503 ||
+            (retryResource && response.status === 400))
         ) {
           try {
-            const payload: unknown = await response.json();
-            if (
-              payload &&
-              typeof payload === 'object' &&
-              'code' in payload &&
+            const payload = (await response.json()) as Record<string, unknown>;
+            if (retryResource) {
+              if (typeof payload.code === 'string' && retryErrorCodes.has(payload.code))
+                code = payload.code;
+              if (
+                response.status !== 400 &&
+                'result' in payload &&
+                payload.result &&
+                typeof payload.result === 'object'
+              )
+                operationResult = payload.result;
+            } else if (
               typeof payload.code === 'string' &&
               payload.code.startsWith('key_operation_') &&
               'result' in payload
-            )
+            ) {
               operationResult = payload.result;
+            }
           } catch {
             // A malformed failed response does not provide a journal snapshot.
           }
         }
-        throw new PublicApiError('http', response.status, operationResult);
+        throw new PublicApiError('http', response.status, operationResult, code);
       }
       return (
         ['operation', 'strategy', 'complete'].includes(resource)
