@@ -1,0 +1,106 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
+)
+
+func (a *freshApplication) keyOperationTarget(op bootstrap.FreshOperation) bool {
+	return a.keyApply.KeyOperationsEnabled() && op.Strategy.Stage == "committed" && op.Strategy.Strategy == bootstrap.NewManaged && op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID == cpa.PrivateKeyArtifact
+}
+func decodeKeyOperation(w http.ResponseWriter, r *http.Request, v any) bool {
+	if r.Header.Get("Content-Type") != "application/json" {
+		w.WriteHeader(415)
+		return false
+	}
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
+	d.DisallowUnknownFields()
+	if d.Decode(v) != nil || d.Decode(new(any)) != io.EOF {
+		w.WriteHeader(400)
+		return false
+	}
+	return true
+}
+func keyOperationReply(w http.ResponseWriter, result freshkeyapply.OperationResult, err error) {
+	if err == nil {
+		writeFreshJSON(w, result)
+		return
+	}
+	status, code := 503, "key_operation_unknown"
+	switch {
+	case errors.Is(err, freshkeys.ErrRequest):
+		status, code = 400, "key_operation_invalid"
+	case errors.Is(err, freshkeys.ErrNotFound):
+		status, code = 404, "key_operation_not_found"
+	case errors.Is(err, freshkeyapply.ErrLastKey):
+		status, code = 409, "last_effective_key"
+	case errors.Is(err, freshkeys.ErrConflict):
+		status, code = 409, "key_operation_conflict"
+	case errors.Is(err, freshkeyapply.ErrGeneration):
+		status, code = 409, "key_operation_generation_mismatch"
+	case errors.Is(err, freshkeyapply.ErrUnavailable):
+		status, code = 409, "key_operation_host_proof_required"
+	case errors.Is(err, cpa.ErrSourceConflict):
+		status, code = 409, "key_operation_source_conflict"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	writeFreshJSON(w, struct {
+		Code   string                        `json:"code"`
+		Result freshkeyapply.OperationResult `json:"result"`
+	}{code, result})
+}
+func (a *freshApplication) prepareClientKeyOperation(w http.ResponseWriter, r *http.Request, op bootstrap.FreshOperation, target string) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	if !a.keyOperationTarget(op) {
+		w.WriteHeader(409)
+		return
+	}
+	var body struct {
+		RequestID string `json:"requestId"`
+		KeeperID  string `json:"keeperId"`
+		Mode      string `json:"mode"`
+	}
+	if !decodeKeyOperation(w, r, &body) {
+		return
+	}
+	result, err := a.keyApply.Prepare(r.Context(), body.RequestID, target, body.KeeperID, body.Mode, op.Strategy.TargetGeneration)
+	keyOperationReply(w, result, err)
+}
+func (a *freshApplication) clientKeyOperation(w http.ResponseWriter, r *http.Request, op bootstrap.FreshOperation, resource string) {
+	if !a.keyOperationTarget(op) {
+		w.WriteHeader(409)
+		return
+	}
+	id := strings.TrimPrefix(resource, "api-keys/operations/")
+	if r.Method == http.MethodGet && !strings.Contains(id, "/") {
+		result, err := a.keyApply.CheckOperation(r.Context(), id, op.Strategy.TargetGeneration)
+		keyOperationReply(w, result, err)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasSuffix(id, "/continue") && strings.Count(id, "/") == 1 {
+		var body map[string]any
+		if !decodeKeyOperation(w, r, &body) {
+			return
+		}
+		if body == nil || len(body) != 0 {
+			w.WriteHeader(400)
+			return
+		}
+		result, err := a.keyApply.ContinueOperation(r.Context(), strings.TrimSuffix(id, "/continue"), op.Strategy.TargetGeneration)
+		keyOperationReply(w, result, err)
+		return
+	}
+	w.WriteHeader(405)
+}

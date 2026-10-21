@@ -1,0 +1,89 @@
+[
+  {
+    "case": "ku-browser",
+    "browser": "Google Chrome 155.0.8059.85 / Playwright 1.58.0",
+    "report": {
+      "result": "STOP",
+      "checks": [
+        "Browser canonical selection, durable preparation, dedicated add permit and observed replacement",
+        "Manager restart and browser reload recover the original operation",
+        "Browser continues only original revoke step and refreshes retained canonical history"
+      ],
+      "pageErrors": [],
+      "layouts": [
+        "desktop-dark-en-selection",
+        "desktop-light-en",
+        "mobile-dark-zh-CN"
+      ],
+      "apiFailures": [
+        {
+          "path": "/control/api/v2/api-keys/operations/b2743c9e4aca8a642ff32f5bbd6b0e8b/continue",
+          "status": 409
+        }
+      ],
+      "networkFailures": [
+        "/control/api/v2/api-keys/operations/b2743c9e4aca8a642ff32f5bbd6b0e8b/continue"
+      ],
+      "error": "Expected values to be strictly equal:\n\n1 !== 0\n"
+    },
+    "dockerEvidenceSHA256": "c1c811f1bd108d967c5d22cbd7da1682974256d6f4e3f83f8b5d6c2b3906de02"
+  },
+  {
+    "case": "ku-browser-recheck",
+    "browser": "Google Chrome 155.0.8059.85 / Playwright 1.58.0",
+    "report": {
+      "result": "STOP",
+      "checks": [
+        "Browser canonical selection, durable preparation, dedicated add permit and observed replacement",
+        "Manager restart and browser reload recover the original operation",
+        "Browser continues only original revoke step and refreshes retained canonical history"
+      ],
+      "pageErrors": [],
+      "layouts": [
+        "desktop-dark-en-selection",
+        "desktop-light-en",
+        "mobile-dark-zh-CN"
+      ],
+      "apiFailures": [
+        {
+          "path": "/control/api/v2/api-keys/operations/10becb75822a8a5909276062308f4e1c/continue",
+          "status": 409
+        }
+      ],
+      "networkFailures": [
+        "/control/api/v2/api-keys/operations/10becb75822a8a5909276062308f4e1c/continue"
+      ],
+      "error": "Expected values to be strictly equal:\n\n1 !== 0\n"
+    },
+    "dockerEvidenceSHA256": "af2fb7e6f4580e68bdb795f233cd50132ea9b11fee5915cd48538c434ab5354f"
+  },
+  {
+    "case": "ku-browser-diagnostic",
+    "browser": "Google Chrome 155.0.8059.85 / Playwright 1.58.0",
+    "report": {
+      "result": "STOP",
+      "checks": [
+        "Browser canonical selection, durable preparation, dedicated add permit and observed replacement",
+        "Manager restart and browser reload recover the original operation",
+        "Browser continues only original revoke step and refreshes retained canonical history"
+      ],
+      "pageErrors": [],
+      "layouts": [
+        "desktop-dark-en-selection",
+        "desktop-light-en",
+        "mobile-dark-zh-CN"
+      ],
+      "apiFailures": [
+        {
+          "path": "/control/api/v2/api-keys/operations/fed85ba7529ee29629f1dad911639baf/continue",
+          "status": 409
+        }
+      ],
+      "networkFailures": [
+        "/control/api/v2/api-keys/operations/fed85ba7529ee29629f1dad911639baf/continue"
+      ],
+      "error": "Expected values to be strictly equal:\n\n1 !== 0\n"
+    },
+    "dockerEvidenceSHA256": "7c47ea1b6ad774e45c9dca41e0124c7a20d523ec9582c2e96d9ac541426cfe7c"
+  }
+]

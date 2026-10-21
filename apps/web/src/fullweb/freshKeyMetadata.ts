@@ -7,6 +7,7 @@ export interface Key {
   runtimeState: 'not_applied' | 'effect_unknown';
   name: string;
   nameRevision: number;
+  lifecycle?: 'active' | 'superseded';
 }
 
 export function validKey(value: Key): boolean {
@@ -22,6 +23,7 @@ export function validKey(value: Key): boolean {
     typeof value.name === 'string' &&
     [...value.name].length <= 120 &&
     Number.isSafeInteger(value.nameRevision) &&
-    value.nameRevision > 0
+    value.nameRevision > 0 &&
+    (value.lifecycle === undefined || ['active', 'superseded'].includes(value.lifecycle))
   );
 }

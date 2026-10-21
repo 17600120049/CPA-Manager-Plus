@@ -1,0 +1,31 @@
+{
+  "result": "PASS_BROWSER_PRIVATE_REPLACEMENT",
+  "checks": [
+    "Missing dedicated permit returns HTTP 409 and a visible UI refusal",
+    "Browser canonical selection, durable preparation, dedicated add permit and observed replacement",
+    "Manager restart and browser reload recover the original operation",
+    "Browser continues only original revoke step and refreshes retained canonical history"
+  ],
+  "pageErrors": [],
+  "layouts": [
+    "desktop-dark-en-selection",
+    "desktop-light-en",
+    "mobile-dark-zh-CN"
+  ],
+  "apiFailures": [
+    {
+      "path": "/control/api/v2/api-keys/operations/faf90210e8b0fa98ab50c20f95fdebba/continue",
+      "status": 409
+    }
+  ],
+  "networkFailures": [],
+  "expectedDenialCancellations": [
+    {
+      "path": "/control/api/v2/api-keys/operations/faf90210e8b0fa98ab50c20f95fdebba/continue",
+      "method": "POST",
+      "errorText": "net::ERR_ABORTED",
+      "status": 409
+    }
+  ],
+  "operation": "faf90210e8b0fa98ab50c20f95fdebba"
+}

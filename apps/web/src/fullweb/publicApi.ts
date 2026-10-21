@@ -6,7 +6,8 @@ export type PublicApiErrorKind = 'routing_unavailable' | 'network' | 'http' | 'a
 export class PublicApiError extends Error {
   constructor(
     readonly kind: PublicApiErrorKind,
-    readonly status?: number
+    readonly status?: number,
+    readonly operationResult?: unknown
   ) {
     super(`Public API ${kind}`);
     this.name = 'PublicApiError';
@@ -82,7 +83,32 @@ export function createPublicApiClient(
       if (response.status === 401 || response.status === 403) {
         throw new PublicApiError('authentication', response.status);
       }
-      if (!response.ok) throw new PublicApiError('http', response.status);
+      if (!response.ok) {
+        // Failed operation reads may still carry a durable journal; they must
+        // retain their original 409/503 status and cannot authorize writes.
+        let operationResult: unknown;
+        if (
+          method === 'GET' &&
+          resource.startsWith('api-keys/operations/') &&
+          (response.status === 409 || response.status === 503)
+        ) {
+          try {
+            const payload: unknown = await response.json();
+            if (
+              payload &&
+              typeof payload === 'object' &&
+              'code' in payload &&
+              typeof payload.code === 'string' &&
+              payload.code.startsWith('key_operation_') &&
+              'result' in payload
+            )
+              operationResult = payload.result;
+          } catch {
+            // A malformed failed response does not provide a journal snapshot.
+          }
+        }
+        throw new PublicApiError('http', response.status, operationResult);
+      }
       return (
         ['operation', 'strategy', 'complete'].includes(resource)
           ? parseRuntimeJSON(await response.text())

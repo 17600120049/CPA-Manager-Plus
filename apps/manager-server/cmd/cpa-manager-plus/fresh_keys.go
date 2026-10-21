@@ -18,6 +18,10 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 		return
 	}
 	switch {
+	case strings.HasPrefix(resource, "api-keys/operations/"):
+		a.clientKeyOperation(w, r, op, resource)
+	case strings.HasSuffix(resource, "/revocation") && strings.Count(resource, "/") == 2:
+		a.prepareClientKeyOperation(w, r, op, strings.TrimSuffix(strings.TrimPrefix(resource, "api-keys/"), "/revocation"))
 	case strings.HasSuffix(resource, "/initial-install") && strings.Count(resource, "/") == 2:
 		a.initialClientKey(w, r, op, strings.TrimSuffix(strings.TrimPrefix(resource, "api-keys/"), "/initial-install"))
 	case resource == "api-keys" && r.Method == http.MethodGet:
@@ -30,7 +34,7 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 			Keys                []freshkeys.Key `json:"keys"`
 			GatewayPending      bool            `json:"gatewayPending"`
 			RevocationAvailable bool            `json:"revocationAvailable"`
-		}{keys, true, false})
+		}{keys, true, a.keyApply.KeyOperationsEnabled()})
 	case strings.HasPrefix(resource, "api-keys/requests/") && r.Method == http.MethodGet:
 		id := strings.TrimPrefix(resource, "api-keys/requests/")
 		key, err := a.keys.Lookup(r.Context(), id)

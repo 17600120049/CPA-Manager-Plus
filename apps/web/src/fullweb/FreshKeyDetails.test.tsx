@@ -95,6 +95,16 @@ describe('Canonical key detail and rename', () => {
     expect(renderer.root.findByType('input').props.value).toBe(renamed.name);
     expect(view()).not.toContain('admin-memory');
   });
+  it('retains revoked details and name history without offering installation again', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ ...key, lifecycle: 'superseded' }));
+    await mount(fetchMock);
+    expect(view()).toContain(t('keysRevokedHistory'));
+    expect(view()).toContain(key.id);
+    expect(view()).not.toContain(t('keysInstallTitle'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   it('guards duplicate saves and reconciles a committed but lost response without replay', async () => {
     let reject!: (reason: Error) => void;
     const fetchMock = vi

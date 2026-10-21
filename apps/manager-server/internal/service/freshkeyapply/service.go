@@ -38,16 +38,19 @@ type wire interface {
 	AuthSweep(context.Context, string) (bool, error)
 }
 type Service struct {
-	mu      sync.Mutex
-	repo    *repo.Repository
-	keys    *freshkeys.Service
-	runtime runtimeservice.RuntimeClient
-	wire    wire
-	permit  func() (Permit, error)
+	mu            sync.Mutex
+	repo          *repo.Repository
+	keys          *freshkeys.Service
+	runtime       runtimeservice.RuntimeClient
+	wire          wire
+	permit        func() (Permit, error)
+	keyPermit     func() (KeyPermit, error)
+	keyOperations bool
+	startedAtMS   int64
 }
 
 func New(r *repo.Repository, keys *freshkeys.Service, runtime runtimeservice.RuntimeClient) *Service {
-	s := &Service{repo: r, keys: keys, runtime: runtime, wire: cpa.NewTransport(), permit: loadPermit}
+	s := &Service{repo: r, keys: keys, runtime: runtime, wire: cpa.NewTransport(), permit: loadPermit, keyPermit: loadKeyPermit, keyOperations: os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1", startedAtMS: time.Now().UnixMilli()}
 	if os.Getenv("CPAMP_PRIVATE_S2B_CHAT") == "1" {
 		s.wire = cpa.NewPrivateS2BTransport(func() (cpa.PrivateProviderSeed, error) { p, err := s.permit(); return p.S2B, err })
 	}
@@ -77,6 +80,9 @@ func (s *Service) Apply(ctx context.Context, id string, generation uint64) (Stat
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	result := State{KeyID: id, RuntimeState: "effect_unknown"}
+	if op, err := s.repo.LatestOperation(ctx); err != nil || op != nil {
+		return result, repo.ErrConflict
+	}
 	p, err := s.permit()
 	if err != nil {
 		return result, err
@@ -138,7 +144,14 @@ func (s *Service) observe(ctx context.Context, id string, generation uint64) (St
 	}
 	result.RuntimeGeneration = p.Generation
 	result.InstallAvailable = attempt == nil
-	if attempt == nil || attempt.KeyID != id {
+	if attempt == nil {
+		return result, nil
+	}
+	installedID, err := s.installedKey(ctx)
+	if err != nil {
+		return result, err
+	}
+	if installedID != id {
 		return result, nil
 	}
 	if attempt.Generation != p.Generation || attempt.RunID != p.RunID || attempt.ProviderSeedSHA256 != p.S2B.Binding() {

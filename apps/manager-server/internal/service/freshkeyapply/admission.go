@@ -51,7 +51,11 @@ func (s *Service) Admit(ctx context.Context, candidate string, generation uint64
 	if attempt.Generation != p.Generation || attempt.RunID != p.RunID || attempt.ProviderSeedSHA256 != p.S2B.Binding() {
 		return deny, ErrGeneration
 	}
-	err = s.keys.WithStagedSecret(ctx, attempt.KeyID, func(secret string) error {
+	installedID, err := s.installedKey(ctx)
+	if err != nil {
+		return deny, err
+	}
+	err = s.keys.WithStagedSecret(ctx, installedID, func(secret string) error {
 		if subtle.ConstantTimeCompare([]byte(candidate), []byte(secret)) != 1 {
 			return ErrUnavailable
 		}

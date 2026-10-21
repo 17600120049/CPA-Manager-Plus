@@ -1,0 +1,24 @@
+{
+  "result": "STOP",
+  "checks": [
+    "Browser canonical selection, durable preparation, dedicated add permit and observed replacement",
+    "Manager restart and browser reload recover the original operation",
+    "Browser continues only original revoke step and refreshes retained canonical history"
+  ],
+  "pageErrors": [],
+  "layouts": [
+    "desktop-dark-en-selection",
+    "desktop-light-en",
+    "mobile-dark-zh-CN"
+  ],
+  "apiFailures": [
+    {
+      "path": "/control/api/v2/api-keys/operations/5a8c09d703402babf1397445628f1e5c/continue",
+      "status": 409
+    }
+  ],
+  "networkFailures": [
+    "/control/api/v2/api-keys/operations/5a8c09d703402babf1397445628f1e5c/continue"
+  ],
+  "error": "Expected values to be strictly equal:\n\n1 !== 0\n"
+}

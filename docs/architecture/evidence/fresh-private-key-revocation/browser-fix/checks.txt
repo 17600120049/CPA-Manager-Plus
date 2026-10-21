@@ -1,0 +1,33 @@
+$ node --test bin/ci/fresh-ku-network.test.mjs
+TAP version 13
+# Subtest: only the observed deliberate 409 may be cancelled during re-login
+ok 1 - only the observed deliberate 409 may be cancelled during re-login
+  ---
+  duration_ms: 0.74445
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 62.321797
+Exit: 0
+
+$ node --check bin/ci/fresh-ku-browser.mjs
+Exit: 0
+
+$ python3 bin/ci/test_fresh_s1_docker_proof.py -v
+test_names_ids_prefixes_and_joined_consumers_resolve_to_same_owner (__main__.NamespaceReferenceTest.test_names_ids_prefixes_and_joined_consumers_resolve_to_same_owner) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+Exit: 0
+
+$ git diff --check
+Exit: 0

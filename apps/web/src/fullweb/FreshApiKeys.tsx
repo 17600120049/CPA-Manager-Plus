@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { FreshKeyDetails } from './FreshKeyDetails';
+import { FreshKeyRevocation } from './FreshKeyRevocation';
 import { validKey, type Key } from './freshKeyMetadata';
 
 export function FreshApiKeys({
@@ -24,6 +25,8 @@ export function FreshApiKeys({
   const [confirmed, setConfirmed] = useState(false);
   const [selected, setSelected] = useState('');
   const [detailPending, setDetailPending] = useState(false);
+  const [revocationAvailable, setRevocationAvailable] = useState(false);
+  const [operationPending, setOperationPending] = useState(false);
   const detailPendingRef = useRef(false);
   const alive = useRef(true);
   const inFlight = useRef(false);
@@ -58,10 +61,11 @@ export function FreshApiKeys({
         !result.keys.every(validKey) ||
         new Set(result.keys.map((key) => key.id)).size !== result.keys.length ||
         result.gatewayPending !== true ||
-        result.revocationAvailable !== false
+        typeof result.revocationAvailable !== 'boolean'
       )
         throw new Error();
       setKeys(result.keys);
+      setRevocationAvailable(result.revocationAvailable);
     } catch (err) {
       if (alive.current) failure(err);
     } finally {
@@ -81,7 +85,8 @@ export function FreshApiKeys({
       selected ||
       detailPendingRef.current ||
       secret ||
-      (pending && !retryAllowed)
+      (pending && !retryAllowed) ||
+      operationPending
     )
       return;
     inFlight.current = true;
@@ -163,7 +168,14 @@ export function FreshApiKeys({
           className="btn btn-primary"
           onClick={() => void createKey()}
           disabled={
-            busy || !!selected || detailPending || !!secret || !!pending || keys === null || !!error
+            busy ||
+            !!selected ||
+            detailPending ||
+            operationPending ||
+            !!secret ||
+            !!pending ||
+            keys === null ||
+            !!error
           }
         >
           {t('keysCreate')}
@@ -218,7 +230,9 @@ export function FreshApiKeys({
               <span>
                 {t('keysIdentity')}: <code>{key.id}</code>
               </span>
-              <span>{t('keysPersisted')}</span>
+              <span>
+                {t(key.lifecycle === 'superseded' ? 'keysRevokedHistory' : 'keysPersisted')}
+              </span>
             </li>
           ))}
         </ul>
@@ -241,7 +255,22 @@ export function FreshApiKeys({
           onClose={() => setSelected('')}
         />
       )}
-      <p>{t('keysRevokeUnavailable')}</p>
+      {revocationAvailable && keys ? (
+        <FreshKeyRevocation
+          keys={keys}
+          client={client}
+          credential={credential}
+          disabled={busy || !!selected || detailPending || !!pending || !!secret}
+          onUnauthorized={onUnauthorized}
+          onPending={(value) => {
+            setOperationPending(value);
+            onCreationPending(value);
+          }}
+          onChanged={() => void refresh()}
+        />
+      ) : (
+        <p>{t('keysRevokeUnavailable')}</p>
+      )}
       <button
         className="btn btn-secondary"
         disabled={busy || !!selected || detailPending}
