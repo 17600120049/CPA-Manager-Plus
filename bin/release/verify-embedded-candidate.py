@@ -7,6 +7,7 @@ A self-asserted build event is NOT protected-producer provenance.
 import argparse
 import hashlib
 import io
+import gzip
 import json
 import re
 import sys
@@ -38,6 +39,11 @@ WANTED = {
 }
 MAX_BLOB = 512 * 1024 * 1024
 MAX_FILE = 128 * 1024 * 1024
+MAX_UNCOMPRESSED_LAYER = 768 * 1024 * 1024
+MANIFEST_TYPE = "application/vnd.oci.image.manifest.v1+json"
+CONFIG_TYPE = "application/vnd.oci.image.config.v1+json"
+LAYER_GZIP = "application/vnd.oci.image.layer.v1.tar+gzip"
+LAYER_TAR = "application/vnd.oci.image.layer.v1.tar"
 
 
 def digest(data):
@@ -68,6 +74,29 @@ def read_blob(archive, identifier):
     return data
 
 
+
+def read_descriptor(archive, descriptor, allowed_types):
+    require(type(descriptor) is dict, "missing OCI descriptor")
+    require(descriptor.get("mediaType") in allowed_types, "unexpected OCI descriptor mediaType")
+    expected_size = descriptor.get("size")
+    require(type(expected_size) is int and 0 < expected_size <= MAX_BLOB,
+            "invalid OCI descriptor size")
+    raw = read_blob(archive, descriptor.get("digest"))
+    require(len(raw) == expected_size, "OCI descriptor size mismatch")
+    return raw
+
+
+def uncompressed_layer(raw, media_type):
+    if media_type == LAYER_TAR:
+        require(len(raw) <= MAX_UNCOMPRESSED_LAYER, "uncompressed layer is too large")
+        return raw
+    require(media_type == LAYER_GZIP, "unsupported OCI layer encoding")
+    with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:
+        result = stream.read(MAX_UNCOMPRESSED_LAYER + 1)
+    require(len(result) <= MAX_UNCOMPRESSED_LAYER, "uncompressed layer is too large")
+    return result
+
+
 def canonical_path(value):
     require(isinstance(value, str) and not value.startswith("/"), "unsafe layer entry")
     # OCI tar paths are relative to root; do not accept parent traversal.
@@ -78,22 +107,28 @@ def canonical_path(value):
     return "/" + "/".join(parts)
 
 
-def final_files(archive, layers, wanted):
+def final_files(archive, layers, diff_ids, wanted):
     result = {}
-    for descriptor in layers:
-        data = read_blob(archive, descriptor.get("digest"))
-        with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as layer:
+    require(len(layers) == len(diff_ids), "OCI layer/diff_ids count mismatch")
+    for descriptor, diff_id in zip(layers, diff_ids):
+        raw = read_descriptor(archive, descriptor, (LAYER_TAR, LAYER_GZIP))
+        unpacked = uncompressed_layer(raw, descriptor["mediaType"])
+        require(digest(unpacked) == diff_id, "OCI rootfs diff_id mismatch")
+        with tarfile.open(fileobj=io.BytesIO(unpacked), mode="r:") as layer:
             for member in layer:
                 name = canonical_path(member.name)
                 base = PurePosixPath(name).name
                 parent = str(PurePosixPath(name).parent)
                 if base == ".wh..wh..opq":
                     for target in list(result):
-                        if str(PurePosixPath(target).parent) == parent or target.startswith(parent + "/"):
+                        if target.startswith(parent.rstrip("/") + "/"):
                             del result[target]
                     continue
                 if base.startswith(".wh."):
-                    result.pop(parent + "/" + base[4:], None)
+                    removed = parent.rstrip("/") + "/" + base[4:]
+                    for target in list(result):
+                        if target == removed or target.startswith(removed + "/"):
+                            del result[target]
                     continue
                 if name not in wanted:
                     continue
@@ -106,7 +141,6 @@ def final_files(archive, layers, wanted):
             ", ".join(sorted(set(wanted) - set(result))))
     return result
 
-
 def inspect(path, role, source_sha, event, root_license, seed):
     require(path.is_file(), "missing OCI archive: " + str(path))
     with tarfile.open(path, mode="r:*") as archive:
@@ -117,19 +151,32 @@ def inspect(path, role, source_sha, event, root_license, seed):
         require(index.get("schemaVersion") == 2, "invalid OCI index schema")
         descriptors = index.get("manifests")
         require(isinstance(descriptors, list), "missing OCI index descriptors")
-        matches = [m for m in descriptors if isinstance(m, dict) and
-                   m.get("platform") == {"architecture": "amd64", "os": "linux"}]
-        # Reject extra image-platform entries (and all alternate-arch releases).
+        matches = [m for m in descriptors if type(m) is dict and
+                   type(m.get("platform")) is dict and
+                   m["platform"].get("os") == "linux" and
+                   m["platform"].get("architecture") == "amd64"]
+        # R1-1 exports one platform without provenance side manifests.
         require(len(matches) == 1 and len(descriptors) == 1,
                 "candidate must contain exactly one linux/amd64 manifest")
         descriptor = matches[0]
         manifest_id = descriptor.get("digest")
-        manifest = json_object(read_blob(archive, manifest_id), "manifest")
-        require(manifest.get("schemaVersion") == 2, "invalid OCI manifest")
-        config_id = manifest.get("config", {}).get("digest")
-        config = json_object(read_blob(archive, config_id), "config")
+        manifest = json_object(read_descriptor(archive, descriptor, (MANIFEST_TYPE,)), "manifest")
+        require(manifest.get("schemaVersion") == 2 and
+                manifest.get("mediaType", MANIFEST_TYPE) == MANIFEST_TYPE,
+                "invalid OCI manifest schema or mediaType")
+        config_descriptor = manifest.get("config")
+        config = json_object(read_descriptor(archive, config_descriptor, (CONFIG_TYPE,)), "config")
+        config_id = config_descriptor["digest"]
         require(config.get("os") == "linux" and config.get("architecture") == "amd64",
                 "image config architecture mismatch")
+        layers = manifest.get("layers")
+        require(isinstance(layers, list) and len(layers) > 0, "missing image layers")
+        rootfs = config.get("rootfs")
+        require(type(rootfs) is dict and rootfs.get("type") == "layers" and
+                isinstance(rootfs.get("diff_ids"), list) and
+                len(rootfs["diff_ids"]) == len(layers) and
+                all(isinstance(d, str) and SHA.fullmatch(d) for d in rootfs["diff_ids"]),
+                "OCI config rootfs.diff_ids missing or invalid")
         labels = (config.get("config") or {}).get("Labels") or {}
         require(labels.get("org.opencontainers.image.revision") == source_sha,
                 "source identity label mismatch")
@@ -140,9 +187,7 @@ def inspect(path, role, source_sha, event, root_license, seed):
         require(labels.get("io.cpamp.candidate.event") == event and
                 labels.get("io.cpamp.candidate.role") == role,
                 "candidate build event or role mismatch")
-        layers = manifest.get("layers")
-        require(isinstance(layers, list) and len(layers) > 0, "missing image layers")
-        files = final_files(archive, layers, WANTED[role])
+        files = final_files(archive, layers, rootfs["diff_ids"], WANTED[role])
         require(files[LICENSE] == root_license, "CPAMP LICENSE differs from source")
         require(files[NOTICE].startswith(b"NOT_VERIFIED"), "third-party inventory must explicitly remain unverified")
         for path_ in WANTED[role]:
@@ -204,9 +249,9 @@ def verify(paths, source_sha, event, root):
                         "executableSHA256": CPA_SHA},
         "notVerified": [
             "trusted production producer identity or independent registry readback",
-            "Manager ELF source stamp and complete compiled embedded Web bytes/API compatibility",
+            "Manager binary source stamp and independently exercised Web/API compatibility (compile-time Web embed test only)",
             "third-party LICENSE/NOTICE legal sufficiency (inventory only)",
-            "1.x strict consumer replay, Host, network, startup, readiness, rollback",
+            "Host, network, startup, readiness, rollback (historical 1.x contract tested separately)",
             "production release, beta, mutable aliases or channels",
         ],
     }

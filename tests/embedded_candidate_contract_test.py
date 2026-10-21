@@ -41,7 +41,8 @@ def sample_elf():
 
 
 def make_oci(destination, role, license_bytes, *,
-             source=SHA, event=EVENT, arch="amd64", corrupt=False, missing=None):
+             source=SHA, event=EVENT, arch="amd64", corrupt=False, missing=None,
+             bad_descriptor_size=False, bad_descriptor_type=False, bad_diff_id=False):
     files = {
         "/usr/local/share/licenses/cpamp/LICENSE": license_bytes,
         subject.NOTICE: b"NOT_VERIFIED: license inventory only",
@@ -68,10 +69,15 @@ def make_oci(destination, role, license_bytes, *,
         files["/usr/local/share/licenses/cli-proxy-api/LICENSE"] = b"official"
     if missing:
         files.pop(missing)
-    layer = gzip.compress(tar_content(files))
+    uncompressed = tar_content(files)
+    layer = gzip.compress(uncompressed)
     layer_id = blob(layer)
+    diff_id = blob(uncompressed)
     config = json.dumps({
         "os": "linux", "architecture": arch,
+        "rootfs": {"type": "layers", "diff_ids": [
+            "sha256:" + "d" * 64 if bad_diff_id else diff_id,
+        ]},
         "config": {"Labels": {
             "org.opencontainers.image.revision": source,
             "org.opencontainers.image.source": subject.SOURCE,
@@ -81,11 +87,17 @@ def make_oci(destination, role, license_bytes, *,
         }},
     }).encode()
     config_id = blob(config)
-    manifest = json.dumps({"schemaVersion": 2, "config": {"digest": config_id},
-                           "layers": [{"digest": layer_id}]}).encode()
+    manifest = json.dumps({"schemaVersion": 2, "mediaType": subject.MANIFEST_TYPE,
+                           "config": {"digest": config_id, "size": len(config),
+                                      "mediaType": subject.CONFIG_TYPE},
+                           "layers": [{"digest": layer_id, "size": len(layer),
+                                       "mediaType": subject.LAYER_GZIP}]}).encode()
     manifest_id = blob(manifest)
     index = json.dumps({"schemaVersion": 2, "manifests": [{
-        "digest": manifest_id, "platform": {"os": "linux", "architecture": arch},
+        "digest": manifest_id,
+        "size": len(manifest) + (1 if bad_descriptor_size else 0),
+        "mediaType": "application/invalid" if bad_descriptor_type else subject.MANIFEST_TYPE,
+        "platform": {"os": "linux", "architecture": arch},
     }]}).encode()
     items = {
         "oci-layout": b'{"imageLayoutVersion":"1.0.0"}',
@@ -146,6 +158,18 @@ class EmbeddedCandidateContracts(unittest.TestCase):
     def test_ingress_positive(self):
         evidence = self.inspect("ingress")
         self.assertIn("/usr/local/bin/cpamp-ingress", evidence["packagedFiles"])
+
+    def test_reject_invalid_descriptor_size(self):
+        with self.assertRaisesRegex(ValueError, "descriptor size"):
+            self.inspect(bad_descriptor_size=True)
+
+    def test_reject_invalid_descriptor_type(self):
+        with self.assertRaisesRegex(ValueError, "descriptor mediaType"):
+            self.inspect(bad_descriptor_type=True)
+
+    def test_reject_invalid_rootfs_diff_id(self):
+        with self.assertRaisesRegex(ValueError, "rootfs diff_id"):
+            self.inspect(bad_diff_id=True)
 
     def test_reject_modified_oci_blob(self):
         with self.assertRaisesRegex(ValueError, "digest mismatch"):
