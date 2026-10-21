@@ -36,6 +36,7 @@ WORKDIR /app
 COPY --from=web-package-test /out/cpa-manager-plus /usr/local/bin/cpa-manager-plus
 COPY --from=web-build /out/fullweb-manifest.json /usr/local/share/cpamp/release/fullweb-manifest.json
 COPY LICENSE /usr/local/share/licenses/cpamp/LICENSE
+COPY bin/release/embedded-third-party-inventory.txt /usr/local/share/cpamp/release/third-party-inventory.txt
 ENV HTTP_ADDR=0.0.0.0:18317
 ENV USAGE_DATA_DIR=/data
 ENV USAGE_DB_PATH=/data/usage.sqlite
