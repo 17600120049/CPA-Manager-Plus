@@ -28,6 +28,77 @@ type failedTerminalStore struct {
 	calls int
 }
 
+type changedOwnerStore struct {
+	freshstore.Store
+	loads  int
+	change func(*freshstore.Record)
+}
+
+func (s *changedOwnerStore) Load(ctx context.Context) (freshstore.Record, error) {
+	r, e := s.Store.Load(ctx)
+	s.loads++
+	if e == nil && s.loads == 2 {
+		s.change(&r)
+	}
+	return r, e
+}
+
+func TestTargetDriftAfterBeginStopsWithoutReplay(t *testing.T) {
+	for _, drift := range []string{"management-key", "fresh-identity", "target-generation", "target-unavailable"} {
+		t.Run(drift, func(t *testing.T) {
+			s, w, q := retryFixture(t)
+			originalStore, originalTarget := s.store, s.target
+			targetCalls := 0
+			s.target = func(ctx context.Context, generation uint64) (string, error) {
+				targetCalls++
+				if targetCalls == 2 {
+					switch drift {
+					case "management-key":
+						return "different-private-management", nil
+					case "target-unavailable":
+						return "", cpa.ErrProofUnavailable
+					}
+				}
+				return originalTarget(ctx, generation)
+			}
+			if drift == "fresh-identity" || drift == "target-generation" {
+				s.store = &changedOwnerStore{Store: originalStore, change: func(r *freshstore.Record) {
+					if drift == "fresh-identity" {
+						r.Operation.Identity.InstallationID = "different-installation"
+					} else {
+						r.Operation.Strategy.TargetGeneration++
+					}
+				}}
+			}
+			o, e := s.Save(t.Context(), q)
+			if !errors.Is(e, cpa.ErrApplyUnknown) || o.State != "unknown" || w.begins != 1 || w.puts != 0 {
+				t.Fatal("target drift reached PUT", o, e, w.begins, w.puts)
+			}
+			// Removing the transient drift and restarting never authorizes replay.
+			other := New(originalStore, originalTarget)
+			other.wire = w
+			stored, e := other.Operation(t.Context(), q.RequestID, false)
+			if e != nil || stored != o {
+				t.Fatal("original intent was lost", stored, e)
+			}
+			if duplicate, e := other.Save(t.Context(), q); e != nil || duplicate != o {
+				t.Fatal("duplicate changed original intent", duplicate, e)
+			}
+			next := q
+			next.RequestID = strings.Repeat("c", 32)
+			if _, e = other.Save(t.Context(), next); !errors.Is(e, cpa.ErrApplyUnknown) {
+				t.Fatal("unknown intent allowed another operation", e)
+			}
+			if observed, e := other.Operation(t.Context(), q.RequestID, true); !errors.Is(e, cpa.ErrApplyUnknown) || observed != o {
+				t.Fatal("pre-PUT observation changed original intent", observed, e)
+			}
+			if w.begins != 1 || w.puts != 0 || w.source.OperationID != "retry-"+q.RequestID {
+				t.Fatal("original operation replayed or reset", w.begins, w.puts, w.source.OperationID)
+			}
+		})
+	}
+}
+
 func (s *failedTerminalStore) Update(ctx context.Context, id bootstrap.FreshIdentity, revision uint64, fn func(*freshstore.Record) error) (freshstore.Record, error) {
 	s.calls++
 	if s.calls == 2 {

@@ -186,8 +186,10 @@ func (s *Service) Save(ctx context.Context, q Request) (freshstore.RetryOperatio
 	if e = s.wire.BeginRetry(ctx, source, "retry-"+q.RequestID, o.Value); e != nil {
 		return o, cpa.ErrApplyUnknown
 	}
-	// Recheck original Host target/lease after both durable writes.
-	if _, _, e = s.owner(ctx); e != nil {
+	// Recheck original Host target/lease after both durable writes. owner pins
+	// strategy/stage/runtime/artifact; reject any remaining binding or key drift.
+	current, management, e := s.owner(ctx)
+	if e != nil || management != m || current.Operation.Identity != r.Operation.Identity || current.Operation.Strategy.TargetGeneration != r.Operation.Strategy.TargetGeneration {
 		return o, cpa.ErrApplyUnknown
 	}
 	if e = s.wire.PutRetry(ctx, source, "retry-"+q.RequestID, m, o.Value); e != nil {
