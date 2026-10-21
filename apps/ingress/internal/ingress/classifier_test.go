@@ -235,3 +235,59 @@ func TestPrivateKeyConsumersAreDeniedOnPublicIngressTCP(t *testing.T) {
 		})
 	}
 }
+
+// The real public HTTP proxy must hand the entire fixed Bootstrap namespace to
+// Manager, including denied mutations. No such request may reach CPA Gateway.
+func TestFixedBootstrapPreflightPublicProxyOwner(t *testing.T) {
+	var managerHits, gatewayHits atomic.Int32
+	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		managerHits.Add(1)
+		if r.URL.Path == FixedBootstrapDiscoveryPath+"/ui" ||
+			r.URL.Path == FixedBootstrapDiscoveryPath ||
+			r.URL.Path == FixedBootstrapDiscoveryPath+"/assets/index-AbCd1234.js" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer manager.Close()
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		gatewayHits.Add(1)
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	defer gateway.Close()
+	managerURL, _ := url.Parse(manager.URL)
+	gatewayURL, _ := url.Parse(gateway.URL)
+	ingress := httptest.NewServer(NewFreshHandler(&FreshRoutes{}, managerURL, gatewayURL, log.New(io.Discard, "", 0), nil))
+	defer ingress.Close()
+	for _, item := range []struct {
+		method string
+		path   string
+		want   int
+	}{
+		{http.MethodGet, FixedBootstrapDiscoveryPath, http.StatusOK},
+		{http.MethodGet, FixedBootstrapDiscoveryPath + "/ui", http.StatusOK},
+		{http.MethodHead, FixedBootstrapDiscoveryPath + "/assets/index-AbCd1234.js", http.StatusOK},
+		{http.MethodPost, FixedBootstrapDiscoveryPath + "/api/v2/claim/exchange", http.StatusNotFound},
+		{http.MethodGet, FixedBootstrapDiscoveryPath + "/ui/extra", http.StatusNotFound},
+	} {
+		req, err := http.NewRequest(item.method, ingress.URL+item.path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := ingress.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != item.want {
+			t.Fatalf("%s %s: status=%d want=%d", item.method, item.path, resp.StatusCode, item.want)
+		}
+		if resp.Header.Get("X-Cpamp-Route-Owner") != "manager" {
+			t.Fatalf("fixed Bootstrap namespace owner lost: %s", item.path)
+		}
+	}
+	if gatewayHits.Load() != 0 || managerHits.Load() != 5 {
+		t.Fatalf("fixed Bootstrap routing: manager hits=%d gateway hits=%d", managerHits.Load(), gatewayHits.Load())
+	}
+}
