@@ -298,8 +298,16 @@ func TestA3ValidatedFencePersistsAfterSQLiteRestart(t *testing.T) {
 }
 
 func TestA3FixedBootstrapAdmissionMatchesCanonical(t *testing.T) {
-	app, closeApp := newA3TestApp(t)
-	defer closeApp()
+	// The fixed session is intentionally retired at Routing.Committed. Verify
+	// A3 before that transition; canonical admission is covered separately.
+	paths := legacypreflight.DefaultPaths(filepath.Join(t.TempDir(), "manager.sqlite"))
+	paths.Config = filepath.Join(filepath.Dir(paths.Database), "config.json")
+	opened, err := fresh.Open(t.Context(), paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+	if err != nil { t.Fatal(err) }
+	defer opened.Close()
+	app := newFreshApplication(opened, config.Config{}, nil)
+	app.strategy = freshstrategy.New(freshstrategy.Options{Protector: opened.Protector,
+		Qualification: bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true}})
 	handoff, err := app.authority.Issue(t.Context())
 	if err != nil || !handoff.Resume { t.Fatal("fixed session handoff unavailable", err) }
 	encodedSession, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(handoff.Fragment, "#handoff="))
