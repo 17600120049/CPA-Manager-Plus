@@ -476,7 +476,14 @@ assert v['secret'] not in journal and json.loads(journal)['keyId']==v['id']
         assert http(28471,install_path,"POST",{},admin)[0]==409
         assert http(28471,install_path,key=admin)[0]==409
         # The existing canonical strategy must keep its mismatch 409 as well.
-        assert http(28471,api+"strategy","POST",{"identity":operation["identity"],"expectedRevision":operation["revision"],"strategy":"new_managed",**strategy_target},admin)[0]==409
+        # Extensions may persist Config intent via the SAME Fresh CAS. Refresh
+        # that product revision so this negative still reaches the generation
+        # fence; separately retain the stale-checkpoint rejection.
+        code,current_operation=http(28471,api+"operation",key=admin)
+        assert code==200
+        if current_operation["revision"]!=operation["revision"]:
+            assert http(28471,api+"strategy","POST",{"identity":operation["identity"],"expectedRevision":operation["revision"],"strategy":"new_managed",**strategy_target},admin)[0]==400
+        assert http(28471,api+"strategy","POST",{"identity":operation["identity"],"expectedRevision":current_operation["revision"],"strategy":"new_managed",**strategy_target},admin)[0]==409
         assert http(28471,"/v1/models")[0]==503
         if s2b:
             from fresh_s2a_proof import counts
