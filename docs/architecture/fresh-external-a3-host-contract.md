@@ -18,15 +18,19 @@ The Manager requires **both** `CPAMP_PRIVATE_A3_PROFILE=plan77-private-fresh-ext
   "databasePath": "from-original-fresh-identity",
   "operationId": "from-original-fresh-identity",
   "issuedAtMs": 0,
-  "expiresAtMs": 0
+  "expiresAtMs": 0,
+  "expectedRevision": 0,
+  "intentDigest": "64-lowercase-hex-host-intent-commitment"
 }
 ```
+
+The Host must bind the original *complete* request **before enabling the browser POST**. `expectedRevision` is the original Fresh revision; `intentDigest` is the lowercase hexadecimal SHA-256 of the UTF-8 bytes `"cpamp-a3-intent-v1\\0" + runId + "\\0" + decimal(expectedRevision) + "\\0" + normalizedBaseURL + "\\0" + managementKey` (here `\\0` denotes one NUL byte). The source URL must already be normalized by the same strict CPA v8 rules. This digest is a private root-owned Host commitment, never exposed in a GET, URL, browser storage, Manager checkpoint, or logs. A changed target **or** Management Key cannot consume the original intent even when the first request has not yet reached CAS. The Host issuance and trusted intent handoff remain unimplemented and must be independently accepted; a generated value from an untrusted browser alone confers no authority.
 
 Both timestamps are Host-provided Unix milliseconds: issued in the past, expires in the future, lifetime no more than ten minutes. Zero timestamps in this schema are **illustrative invalid placeholders**, not issuance guidance. Issuance, evidence of exclusive Host ownership, scoped read-only mounting, and revocation are **not** automated by this product PR. Do not enable the profile without a verified and independently accepted Host owner. Remove/unmount the grant to close admission; no fallback to S1/H1.
 
 ## One attempt and recovery boundary
 
-Before accessing the external CPA or persisting a Management Key, Manager checks canonical/fixed session authority and A3 Host admission, then CAS-reserves the single Fresh strategy as `connect_external / validated` with the normalized URL SHA256 target. This is a durable **attempt fence**, not successful proof of an External connection. An external source read failure, timeout, process death, permit loss, or unknown response leaves that operation STOP and blocks any new POST, including with a changed target/key. No automatic rollback, replay, or reset is authorized.
+Before accessing the external CPA or persisting a Management Key, Manager checks canonical/fixed session authority, the compiled production consumer, static Management Key/URL shape and original-intent-bound A3 Host admission, then CAS-reserves the single Fresh strategy as `connect_external / validated` with the normalized URL SHA256 target. This is a durable **attempt fence**, not successful proof of an External connection. An external source read failure, timeout, process death, permit loss, or unknown response leaves that operation STOP and blocks any new POST, including with a changed target/key. No automatic rollback, replay, or reset is authorized.
 
 Successful bounded CPA v8 direct GET, Protector encryption, and final CAS transition the same operation to `committed`. Only an acknowledged POST *and* a subsequent matching authenticated GET during the same browser attempt may be displayed as Manager encrypted persistence confirmation. A GET-only `committed` record can be displayed but does not identify the submitted Management Key or resolve an earlier lost POST; the original Host must reconcile the record before any separate authorized follow-up. HTTP 401/403 retires browser Admin authority; other 409/503/transport errors never initiate a second write.
 

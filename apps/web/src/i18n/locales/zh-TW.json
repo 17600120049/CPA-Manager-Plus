@@ -201,6 +201,7 @@
     "externalInvalid": "請輸入有效的 HTTP(S) CPA 位址及管理金鑰。",
     "externalUnknown": "無法只靠 GET 確認原 POST 結果。禁止自動重試；請交由可信 Host 查核。",
     "externalConflict": "策略或 Revision 衝突（409）。請由 Host 查核原操作，勿重新提交。",
+    "externalSourceAuthRejected": "CPA 來源拒絕了 Management Key。原始嘗試保持 STOP，需由可信 Host 核對；請勿重新提交。",
     "externalUnavailable": "無法核實目前 Operation；此前寫入結果尚未確認。",
     "externalConfirmed": "原 POST 已確認且 Manager checkpoint 核對一致。加密連接已儲存，Gateway 仍 Pending；生效未確認。",
     "externalExisting": "已有 External checkpoint，但無法證明遺失回應的特定金鑰已儲存；須由 Host 查核。",

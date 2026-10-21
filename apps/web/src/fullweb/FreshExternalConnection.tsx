@@ -4,14 +4,40 @@ import { sameIdentity, type FreshOperation } from './bootstrapTransport';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 
 type Client = ReturnType<typeof createPublicApiClient>;
+
 const externalDigest = /^external:sha256:[a-f0-9]{64}$/;
+
+// Restrict the browser to URLs whose canonical bytes match Go's strict v8
+// normalizer. An ambiguity is refused before the one-shot POST, not guessed.
+function canonicalExternalURL(raw: string): string | null {
+  if (!raw || /[\\%@?#\s]/.test(raw)) return null;
+  try {
+    const url = new URL(raw);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
+        url.search || url.hash) return null;
+    const canonical = url.origin + url.pathname.replace(/\/+$/, '');
+    return canonical === raw ? canonical : null;
+  } catch {
+    return null;
+  }
+}
+
+async function targetDigest(normalizedURL: string): Promise<string> {
+  if (!globalThis.crypto?.subtle) throw new Error('Secure origin required');
+  const data = new TextEncoder().encode(normalizedURL);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', data);
+  return 'external:sha256:' + Array.from(new Uint8Array(digest), (value) =>
+    value.toString(16).padStart(2, '0')).join('');
+}
+
 
 // A Manager checkpoint is not an acknowledgement of the browser's specific
 // Management Key. Only POST-ack + a matching subsequent GET can confirm it.
 function sameExternalReceipt(
   operation: FreshOperation,
   post: FreshOperation,
-  read: FreshOperation
+  read: FreshOperation,
+  submittedTarget: string
 ): boolean {
   const sameRouting = (next: FreshOperation) =>
     next.routing.committed === true &&
@@ -34,9 +60,10 @@ function sameExternalReceipt(
   return (
     valid(post) &&
     valid(read) &&
-    post.revision >= operation.revision + 2 &&
+    post.revision === operation.revision + 2 &&
     read.revision === post.revision &&
-    read.strategy?.targetIdentity === post.strategy?.targetIdentity
+    read.strategy?.targetIdentity === post.strategy?.targetIdentity &&
+    post.strategy?.targetIdentity === submittedTarget
   );
 }
 
@@ -126,22 +153,23 @@ export function FreshExternalConnection({
 
   async function submit() {
     if (inflight.current || locked || unknown || busy || confirmed) return;
-    const submittedBaseURL = baseURL.trim();
+
+    const submittedBaseURL = canonicalExternalURL(baseURL.trim());
     const submittedKey = managementKey;
-    if (!submittedBaseURL || !submittedKey || submittedKey.trim() !== submittedKey) {
+    if (!submittedBaseURL || !submittedKey || submittedKey.trim() !== submittedKey ||
+        submittedKey.length > 4096 || /[\x00-\x20\x7f]/.test(submittedKey)) {
       setError(t('externalInvalid'));
       return;
     }
+    let submittedTarget: string;
     try {
-      const url = new URL(submittedBaseURL);
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash || url.search) {
-        setError(t('externalInvalid'));
-        return;
-      }
+      submittedTarget = await targetDigest(submittedBaseURL);
     } catch {
-      setError(t('externalInvalid'));
+      setError(t('externalUnavailable'));
       return;
     }
+    // After hashing, another click must not start a parallel request.
+    if (inflight.current || locked || unknown || busy || confirmed) return;
     inflight.current = true;
     setBusy(true);
     setUnknown(true);
@@ -172,7 +200,7 @@ export function FreshExternalConnection({
         throw new Error('No trustworthy POST acknowledgement');
       }
       const read = await readCurrent();
-      if (!sameExternalReceipt(operation, post, read)) {
+      if (!sameExternalReceipt(operation, post, read, submittedTarget)) {
         throw new Error('Unmatched External receipt');
       }
       if (alive.current) {
@@ -188,7 +216,9 @@ export function FreshExternalConnection({
         onUnauthorized();
         return;
       }
-      setError(t(err instanceof PublicApiError && err.status === 409 ? 'externalConflict' : 'externalUnknown'));
+      setError(t(err instanceof PublicApiError && err.code === 'management_authentication_rejected'
+        ? 'externalSourceAuthRejected'
+        : err instanceof PublicApiError && err.status === 409 ? 'externalConflict' : 'externalUnknown'));
       try {
         await readCurrent();
       } catch (readError) {

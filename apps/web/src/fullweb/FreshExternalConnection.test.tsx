@@ -16,7 +16,7 @@ const initial: FreshOperation = {
 };
 const checkpoint = {
   strategy: 'connect_external',
-  targetIdentity: 'external:sha256:' + 'a'.repeat(64),
+  targetIdentity: 'external:sha256:fd4c35afa405c2cb257987151885823ab76cc177741c7c8dab7679ab53c1cbb2',
   targetGeneration: 1, stage: 'committed',
 };
 const committed: FreshOperation = { ...initial, revision: 6, strategy: checkpoint };
@@ -82,6 +82,28 @@ describe('Fresh External one-operation connection', () => {
     expect(ui.renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
   });
 
+
+  it('never confirms a matching POST and GET for the wrong submitted target', async () => {
+    const wrongTarget = { ...committed, strategy: {
+      ...checkpoint, targetIdentity: 'external:sha256:' + 'c'.repeat(64),
+    } };
+    const ui = await mount(vi.fn().mockResolvedValue(wrongTarget),
+      vi.fn().mockResolvedValue(wrongTarget));
+    await ui.prepare();
+    await ui.click('external-connect');
+    expect(ui.pending).toHaveBeenLastCalledWith(true);
+    expect(ui.renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
+  });
+
+  it('rejects a later revision even with matching target and authenticated GET', async () => {
+    const later = { ...committed, revision: initial.revision + 3 };
+    const ui = await mount(vi.fn().mockResolvedValue(later), vi.fn().mockResolvedValue(later));
+    await ui.prepare();
+    await ui.click('external-connect');
+    expect(ui.pending).toHaveBeenLastCalledWith(true);
+    expect(ui.renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
+  });
+
   it('does not mistake a stale revision or a different target for confirmed persistence', async () => {
     const post = vi.fn().mockResolvedValue(committed);
     const mismatch = { ...committed, strategy: {
@@ -103,6 +125,18 @@ describe('Fresh External one-operation connection', () => {
     await ui.click('external-connect');
     expect(ui.unauthorized).toHaveBeenCalledTimes(1);
     expect(get).not.toHaveBeenCalled();
+  });
+
+
+  it('distinguishes CPA Management Key refusal from a strategy CAS conflict', async () => {
+    const post = vi.fn().mockRejectedValue(
+      new PublicApiError('http', 409, undefined, 'management_authentication_rejected'));
+    const ui = await mount(vi.fn().mockResolvedValue(initial), post);
+    await ui.prepare();
+    await ui.click('external-connect');
+    expect(JSON.stringify(ui.renderer.toJSON())).toContain('rejected');
+    expect(ui.pending).toHaveBeenLastCalledWith(true);
+    expect(post).toHaveBeenCalledTimes(1);
   });
 
   it('keeps 409 and source/permit failures STOP without resending', async () => {

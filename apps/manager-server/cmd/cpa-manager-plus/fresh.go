@@ -68,12 +68,14 @@ func freshPaths(cfg config.Config) (sqliterepo.InspectionPaths, error) {
 	return sqliterepo.InspectionPaths{Database: cfg.DBPath, Config: configPath, DataKey: cfg.DataKeyPath, Archives: cfg.UsageArchiveDir}, err
 }
 
+var errFreshExternalPermitRevoked = errors.New("fresh external host permit revoked")
+
 type freshApplication struct {
 	store       freshstore.Store
 	authority   *fresh.Service
 	routing     *freshrouting.Service
 	strategy    *freshstrategy.Service
-	externalPermit func(bootstrap.FreshOperation) bool
+	externalPermit func(bootstrap.FreshOperation, uint64, string, string) bool
 	protector   *security.Protector
 	fixed       http.Handler
 	keys        *freshkeys.Service
@@ -287,25 +289,29 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
+	var externalBaseURL string
 	if request.Strategy == bootstrap.ConnectExternal {
-		// The A3 permit is independent of S1/H1 and is checked before any
-		// External CPA source access or Manager-side strategy persistence.
-		if a.externalPermit == nil || !a.externalPermit(op) {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		// Including committed replay: GET lacks a request-specific receipt and
-		// must never make a second POST safe after a lost browser response.
+		// Replays and inadmissible input must never reserve the only Fresh attempt.
 		if op.Strategy.Strategy != "" {
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
-		baseURL, err := cpa.NormalizeV8BaseURL(request.BaseURL)
-		if err != nil {
-			writeFreshStrategyError(w, &freshstrategy.Blocker{Code: cpa.V8InvalidConnection.Error()})
+		// Reuse the same compiled consumer qualification and static input rules
+		// as Execute, without performing any CPA network request.
+		var preflightErr error
+		externalBaseURL, preflightErr = a.strategy.PreflightExternal(request.Request)
+		if preflightErr != nil {
+			writeFreshStrategyError(w, preflightErr)
 			return
 		}
-		digest := sha256.Sum256([]byte(baseURL))
+		// A Host grant binds the exact original revision, normalized target and
+		// Management Key. A delayed original POST cannot be displaced by a
+		// refreshed browser's different request while GET is still empty.
+		if a.externalPermit == nil || !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		digest := sha256.Sum256([]byte(externalBaseURL))
 		target := "external:sha256:" + hex.EncodeToString(digest[:])
 		// Persist an exclusive durable attempt fence BEFORE contacting CPA.
 		// validated without a stored connection is an intentionally terminal
@@ -313,6 +319,9 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		claimed, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
 			if record.Operation.Strategy.Strategy != "" {
 				return freshstore.ErrConflict
+			}
+			if !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
+				return errFreshExternalPermitRevoked
 			}
 			if token, fixed := freshbootstrap.SessionToken(r); fixed {
 				if err := a.authority.ValidateSession(*record, token); err != nil {
@@ -326,11 +335,15 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 			return nil
 		})
 		if err != nil {
-			w.WriteHeader(http.StatusConflict)
+			if errors.Is(err, errFreshExternalPermitRevoked) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			} else {
+				w.WriteHeader(http.StatusConflict)
+			}
 			return
 		}
 		op = claimed.Operation
-		if !a.externalPermit(op) {
+		if !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
@@ -348,7 +361,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		writeFreshStrategyError(w, err)
 		return
 	}
-	if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(op) {
+	if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
 		// A revoked/expired Host permit cannot complete a previously claimed attempt.
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
@@ -368,6 +381,9 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	next, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
+		if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
+			return errFreshExternalPermitRevoked
+		}
 		if token, fixed := freshbootstrap.SessionToken(r); fixed {
 			if err := a.authority.ValidateSession(*record, token); err != nil {
 				return err
@@ -383,7 +399,11 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		return nil
 	})
 	if err != nil {
-		w.WriteHeader(http.StatusConflict)
+		if errors.Is(err, errFreshExternalPermitRevoked) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusConflict)
+		}
 		return
 	}
 	writeFreshJSON(w, next.Operation)

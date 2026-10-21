@@ -201,6 +201,7 @@
     "externalInvalid": "Enter a valid HTTP(S) CPA URL and nonempty Management Key.",
     "externalUnknown": "The original POST result cannot be established from GET alone. No automatic retry. Keep the original Host record and ask the trusted Host owner to reconcile.",
     "externalConflict": "The strategy or revision is already occupied (409). The original operation must be reconciled by the Host; do not retry.",
+    "externalSourceAuthRejected": "The CPA source rejected the Management Key. The attempt is STOP and the original Host must reconcile it; do not resubmit.",
     "externalUnavailable": "Unable to verify the current Operation. The previous result is not confirmed.",
     "externalConfirmed": "Original POST acknowledged and matching Manager checkpoint read. The connection is encrypted in Manager; CPA/Ingress effect is not confirmed and Gateway remains Pending.",
     "externalExisting": "An existing External checkpoint was read. This browser cannot prove which Management Key was saved for any lost earlier POST. Host verification is required; no new POST is permitted.",

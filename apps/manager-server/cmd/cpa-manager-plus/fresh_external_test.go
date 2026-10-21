@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -67,12 +69,12 @@ func TestA3HostPermitDefaultDenyAndOneAttemptFence(t *testing.T) {
 	}))
 	defer source.Close()
 	op, _ := app.current(t.Context())
-	app.externalPermit = func(bootstrap.FreshOperation) bool { return false }
+	app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return false }
 	denied := a3Post(t, app, op.Revision, source.URL, "private-source-secret")
 	if denied.Code != http.StatusServiceUnavailable || sourceCalls.Load() != 0 { t.Fatal("untrusted Host accessed CPA", denied.Code) }
 	still, _ := app.current(t.Context())
 	if still.Revision != op.Revision || still.Strategy.Strategy != "" { t.Fatal("denied path persisted a checkpoint") }
-	app.externalPermit = func(bootstrap.FreshOperation) bool { return true }
+	app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return true }
 	accepted := a3Post(t, app, op.Revision, source.URL, "private-source-secret")
 	if accepted.Code != http.StatusOK { t.Fatalf("A3 safe connection: %d %s", accepted.Code, accepted.Body.String()) }
 	committed, _ := app.current(t.Context())
@@ -103,7 +105,7 @@ func TestA3LostSourceResultNeverOpensSecondPost(t *testing.T) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer source.Close()
-	app.externalPermit = func(bootstrap.FreshOperation) bool { return true }
+	app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return true }
 	op, _ := app.current(t.Context())
 	result := a3Post(t, app, op.Revision, source.URL, "private-source-secret")
 	if result.Code == http.StatusOK { t.Fatal("source failure incorrectly confirmed saving") }
@@ -118,7 +120,7 @@ func TestA3LostSourceResultNeverOpensSecondPost(t *testing.T) {
 func TestA3CASPreventsCompetingFirstPosts(t *testing.T) {
 	app, closeApp := newA3TestApp(t)
 	defer closeApp()
-	app.externalPermit = func(bootstrap.FreshOperation) bool { return true }
+	app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return true }
 	var reads atomic.Int32
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reads.Add(1)
@@ -148,8 +150,14 @@ func TestA3PermitBoundToOneInstallation(t *testing.T) {
 	p := freshExternalPermit{Scope: freshExternalPrivateProfile, RunID: "fresh-private-run-123",
 		AdmissionID: op.Identity.AdmissionID, InstallationID: op.Identity.InstallationID, Generation: op.Identity.Generation,
 		DatabasePath: op.Identity.DatabasePath, OperationID: string(op.Identity.OperationID),
-		IssuedAtMS: now.Add(-time.Second).UnixMilli(), ExpiresAtMS: now.Add(time.Minute).UnixMilli()}
-	if !p.valid(op, now) { t.Fatal("valid bound private grant denied") }
+		IssuedAtMS: now.Add(-time.Second).UnixMilli(), ExpiresAtMS: now.Add(time.Minute).UnixMilli(),
+		ExpectedRevision: 3, IntentDigest: freshExternalIntentDigest("fresh-private-run-123", 3, "http://cpa.private:8317", "private-source-secret")}
+	if !p.matchesIntent(op, 3, "http://cpa.private:8317", "private-source-secret", now) { t.Fatal("valid bound private grant denied") }
+	if p.matchesIntent(op, 3, "http://foreign.private:8317", "private-source-secret", now) ||
+		p.matchesIntent(op, 3, "http://cpa.private:8317", "different-key", now) ||
+		p.matchesIntent(op, 4, "http://cpa.private:8317", "private-source-secret", now) {
+		t.Fatal("Host permit admitted a different original intent")
+	}
 	other := op
 	other.Identity.Generation = "rotated"
 	if p.valid(other, now) { t.Fatal("foreign generation admitted") }
@@ -158,4 +166,132 @@ func TestA3PermitBoundToOneInstallation(t *testing.T) {
 	p.ExpiresAtMS = now.Add(time.Minute).UnixMilli()
 	p.Scope = "private-s1"
 	if p.valid(op, now) { t.Fatal("S1 permit was accepted as External") }
+}
+
+// A preflight refusal must leave the entire durable Fresh record untouched.
+// In particular a malformed Management Key cannot occupy a one-shot A3 slot.
+func TestA3StaticPreflightDeniedWithoutReservation(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return true }
+	before, err := app.store.Load(t.Context())
+	if err != nil { t.Fatal(err) }
+	for _, item := range []struct{ url, key string }{
+		{"http://cpa.private:8317", ""},
+		{"http://cpa.private:8317", "invalid key with space"},
+		{"http://cpa.private:8317", "bad\nkey"},
+		{"http://cpa.private:8317/%25", "private-source-secret"},
+	} {
+		got := a3Post(t, app, before.Operation.Revision, item.url, item.key)
+		if got.Code != http.StatusConflict { t.Fatalf("preflight %q accepted: %d", item.url, got.Code) }
+		after, err := app.store.Load(t.Context())
+		if err != nil || !reflect.DeepEqual(before, after) { t.Fatal("preflight persisted an attempt", err) }
+	}
+	app.strategy = freshstrategy.New(freshstrategy.Options{Protector: nil})
+	got := a3Post(t, app, before.Operation.Revision, "http://cpa.private:8317", "private-source-secret")
+	if got.Code != http.StatusConflict { t.Fatal("unqualified consumer reserved A3", got.Code) }
+	after, err := app.store.Load(t.Context())
+	if err != nil || !reflect.DeepEqual(before, after) { t.Fatal("unqualified path mutated record", err) }
+}
+
+// The original Host-owned permit binds the exact request, independent of the
+// browser and network arrival order. A delayed first POST can still claim the
+// slot; a fresh browser's different key or source must be refused before CAS.
+func TestA3HostOriginalIntentRejectsReplacement(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	var reads atomic.Int32
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reads.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"auth"},"access":{"api-keys":[]}}`))
+	}))
+	defer source.Close()
+	op, _ := app.current(t.Context())
+	originalKey := "original-private-key"
+	digest := freshExternalIntentDigest("private-host-run-123", op.Revision, source.URL, originalKey)
+	app.externalPermit = func(current bootstrap.FreshOperation, revision uint64, baseURL, key string) bool {
+		return current.Identity == op.Identity && revision == op.Revision &&
+			freshExternalIntentDigest("private-host-run-123", revision, baseURL, key) == digest
+	}
+	for _, altered := range []struct { url, key string }{{source.URL, "replacement-key"}, {"http://127.0.0.1:9", originalKey}} {
+		response := a3Post(t, app, op.Revision, altered.url, altered.key)
+		if response.Code != http.StatusServiceUnavailable { t.Fatal("replacement intent admitted", response.Code) }
+		still, _ := app.current(t.Context())
+		if still.Revision != op.Revision || still.Strategy.Strategy != "" || reads.Load() != 0 {
+			t.Fatal("replacement intent consumed the original grant")
+		}
+	}
+	accepted := a3Post(t, app, op.Revision, source.URL, originalKey)
+	if accepted.Code != http.StatusOK || reads.Load() != 1 { t.Fatal("original request refused", accepted.Code) }
+}
+
+func TestA3PermitRevocationAtBothCASBoundaries(t *testing.T) {
+	for _, revokeAt := range []int{2, 5} {
+		t.Run(strconv.Itoa(revokeAt), func(t *testing.T) {
+			app, closeApp := newA3TestApp(t)
+			defer closeApp()
+			var checks atomic.Int32
+			app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool {
+				return checks.Add(1) < int32(revokeAt)
+			}
+			var reads atomic.Int32
+			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reads.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"auth"},"access":{"api-keys":[]}}`))
+			}))
+			defer source.Close()
+			op, _ := app.current(t.Context())
+			response := a3Post(t, app, op.Revision, source.URL, "private-key")
+			if response.Code != http.StatusServiceUnavailable { t.Fatal("revoked CAS admitted", response.Code, response.Body.String()) }
+			result, err := app.store.Load(t.Context())
+			if err != nil || result.Connection != nil || result.Operation.Strategy.Stage == "committed" {
+				t.Fatal("revoked grant persisted a connection", err)
+			}
+			if revokeAt == 2 && (result.Operation.Revision != op.Revision || reads.Load() != 0) {
+				t.Fatal("first CAS rejection persisted or called source")
+			}
+			if revokeAt == 5 && (result.Operation.Strategy.Stage != "validated" || reads.Load() != 1) {
+				t.Fatal("second CAS rejection did not preserve STOP fence", result.Operation.Strategy, reads.Load())
+			}
+		})
+	}
+}
+
+func TestA3ValidatedFencePersistsAfterSQLiteRestart(t *testing.T) {
+	ctx := t.Context()
+	paths := legacypreflight.DefaultPaths(filepath.Join(t.TempDir(), "manager.sqlite"))
+	paths.Config = filepath.Join(filepath.Dir(paths.Database), "config.json")
+	opened, err := fresh.Open(ctx, paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+	if err != nil { t.Fatal(err) }
+	app := newFreshApplication(opened, config.Config{}, nil)
+	app.strategy = freshstrategy.New(freshstrategy.Options{Protector: opened.Protector,
+		Qualification: bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true}})
+	app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return true }
+	op := opened.Record.Operation
+	_, err = app.store.Update(ctx, op.Identity, op.Revision, func(r *freshstore.Record) error {
+		r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true}
+		return nil
+	})
+	if err != nil { t.Fatal(err) }
+	op, _ = app.current(ctx)
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer source.Close()
+	response := a3Post(t, app, op.Revision, source.URL, "private-source-secret")
+	if response.Code == http.StatusOK { t.Fatal("failed source read was accepted") }
+	staged, _ := app.current(ctx)
+	if staged.Strategy.Stage != "validated" { t.Fatal("no durable fence") }
+	if err := opened.Close(); err != nil { t.Fatal(err) }
+	opened, err = fresh.Open(ctx, paths, fresh.OpenOptions{})
+	if err != nil { t.Fatal(err) }
+	defer opened.Close()
+	app = newFreshApplication(opened, config.Config{}, nil)
+	app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string) bool { return true }
+	response = a3Post(t, app, staged.Revision, source.URL, "replacement-key")
+	if response.Code != http.StatusConflict { t.Fatal("restart allowed a second POST", response.Code) }
+	result, err := app.store.Load(ctx)
+	if err != nil || result.Operation.Revision != staged.Revision || result.Connection != nil { t.Fatal("restart fence lost", err) }
 }

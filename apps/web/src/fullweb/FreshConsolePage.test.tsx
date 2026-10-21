@@ -350,7 +350,7 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       revision: operation.revision + 2,
       strategy: {
         strategy: 'connect_external',
-        targetIdentity: 'external:sha256:' + 'a'.repeat(64),
+        targetIdentity: 'external:sha256:fd4c35afa405c2cb257987151885823ab76cc177741c7c8dab7679ab53c1cbb2',
         targetGeneration: 1,
         stage: 'committed',
       },
