@@ -100,6 +100,30 @@ describe('Canonical revocation recovery UI', () => {
     expect(button('keysOperationContinue').props.disabled).toBe(false);
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
+
+  it('keeps the first request identity when prepare is activated twice in one turn', async () => {
+    let resolvePrepare!: (response: Response) => void;
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(result(null, ''))
+      .mockReturnValueOnce(new Promise<Response>((resolve) => { resolvePrepare = resolve; }));
+    await mount(fetchMock);
+    await select();
+    const random = vi.fn()
+      .mockImplementationOnce((bytes: Uint8Array) => bytes.fill(0xbb))
+      .mockImplementationOnce((bytes: Uint8Array) => bytes.fill(0xcc));
+    vi.stubGlobal('crypto', { getRandomValues: random });
+    await act(async () => {
+      button('keysOperationPrepare').props.onClick();
+      button('keysOperationPrepare').props.onClick();
+    });
+    expect(random).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    await act(async () => resolvePrepare(result()));
+    expect(JSON.stringify(view.toJSON())).toContain(id);
+    expect(button('keysOperationContinue').props.disabled).toBe(false);
+  });
+
   it('recovers original attempted journal from a 503 read without unlocking a write', async () => {
     const attempted = {
       ...operation,
@@ -189,7 +213,7 @@ describe('Canonical revocation recovery UI', () => {
     expect(pending).toHaveBeenLastCalledWith(false);
     expect(JSON.stringify(view.toJSON())).toContain(t('keysOperationCommitted'));
   });
-  it('allows correcting a rejected new selection after the previous operation committed', async () => {
+  it('keeps an issued request locked when its exact lookup has no operation, even after a 409', async () => {
     const committed = {
       ...operation,
       id: 'd'.repeat(32),
@@ -208,7 +232,8 @@ describe('Canonical revocation recovery UI', () => {
     expect(pending).toHaveBeenLastCalledWith(true);
     await click('keysOperationCheck');
     expect(String(fetchMock.mock.calls[2][0])).toContain('/operations/' + id);
-    expect(pending).toHaveBeenLastCalledWith(false);
-    expect(view.root.findByType('fieldset').props.disabled).toBe(false);
+    expect(pending).toHaveBeenLastCalledWith(true);
+    expect(view.root.findByType('fieldset').props.disabled).toBe(true);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 });

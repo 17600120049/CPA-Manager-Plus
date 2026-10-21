@@ -21,12 +21,16 @@ export function FreshKeyInstallation({
   client,
   credential,
   onUnauthorized,
+  onPending,
+  canInstall,
   disabled,
 }: {
   id: string;
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
   onUnauthorized: () => void;
+  onPending: (pending: boolean) => void;
+  canInstall: () => boolean;
   disabled: boolean;
 }) {
   const [state, setState] = useState<State | null>(null);
@@ -36,6 +40,8 @@ export function FreshKeyInstallation({
   const active = useRef(true);
   const inFlight = useRef(false);
   const used = useRef(false);
+  // A lost POST reply stays locked until a fresh read sees the durable S1 attempt.
+  const uncertainInstall = useRef(false);
   useEffect(() => {
     active.current = true;
     return () => {
@@ -53,13 +59,16 @@ export function FreshKeyInstallation({
     if (
       inFlight.current ||
       disabled ||
-      (install && (used.current || !state?.installAvailable || state.attempted))
+      (install &&
+        (!canInstall() || used.current || !state?.installAvailable || state.attempted))
     )
       return;
     inFlight.current = true;
     setBusy(true);
-    setMessage('');
+    setMessage(!install && uncertainInstall.current ? t('keysInstallUnknown') : '');
     if (install) {
+      uncertainInstall.current = true;
+      onPending(true); // synchronous before dispatch, including same-turn close/logout
       setState(null);
       used.current = true;
     }
@@ -96,13 +105,24 @@ export function FreshKeyInstallation({
             value.observedUntilMs > Date.now() + 1000))
       )
         throw new Error();
+      if (install && !value.attempted) throw new Error('Missing durable install attempt');
       used.current ||= value.attempted;
       setState(value);
+      if (uncertainInstall.current && value.attempted) {
+        uncertainInstall.current = false;
+        setMessage('');
+        onPending(false);
+      }
     } catch (err) {
       if (!active.current) return;
       setExpired(true);
       if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
-      else setMessage(t(install ? 'keysInstallUnknown' : 'keysInstallUnavailable'));
+      else
+        setMessage(
+          !install && uncertainInstall.current
+            ? `${t('keysInstallUnknown')} ${t('keysInstallUnavailable')}`
+            : t(install ? 'keysInstallUnknown' : 'keysInstallUnavailable')
+        );
     } finally {
       inFlight.current = false;
       if (active.current) setBusy(false);
