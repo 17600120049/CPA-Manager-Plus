@@ -23,6 +23,7 @@ const OperationKey = "fresh_operation_v1"
 const AuthorityKey = "fresh_authority_v1"
 const adoptionKey = "fresh_adoption_v1"
 const adminKey = "admin_credential_v1"
+const retryKey = "fresh_config_retry_v1"
 
 type repository struct{ db *sql.DB }
 
@@ -43,7 +44,7 @@ func load(ctx context.Context, q queryer) (Record, error) {
 		k        string
 		v        any
 		optional bool
-	}{{OperationKey, &r.Operation, false}, {AuthorityKey, &r.Authority, false}, {adminKey, &r.Admin, true}, {adoptionKey, &r.AdoptionCiphertext, true}} {
+	}{{OperationKey, &r.Operation, false}, {AuthorityKey, &r.Authority, false}, {adminKey, &r.Admin, true}, {adoptionKey, &r.AdoptionCiphertext, true}, {retryKey, &r.Retry, true}} {
 		var data string
 		err := q.QueryRowContext(ctx, "select value from settings where key=?", item.k).Scan(&data)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -55,7 +56,13 @@ func load(ctx context.Context, q queryer) (Record, error) {
 		if err != nil {
 			return Record{}, err
 		}
-		if err = json.Unmarshal([]byte(data), item.v); err != nil {
+		err = json.Unmarshal([]byte(data), item.v)
+		if item.k == retryKey {
+			if err != nil || r.Retry == nil || !validRetry(r.Retry) {
+				r.RetryInvalid = true
+				r.Retry = nil
+			}
+		} else if err != nil {
 			return Record{}, ErrNotFresh
 		}
 	}
@@ -74,7 +81,29 @@ func load(ctx context.Context, q queryer) (Record, error) {
 	}
 	return r, nil
 }
+func validRetry(r *RetryJournal) bool {
+	if r != nil {
+		if _, ok := r.Operations[r.Latest]; !ok {
+			return false
+		}
+		for id, o := range r.Operations {
+			if len(id) != 32 || o.RequestID != id || o.Value < 0 || o.Value > 10 || len(o.SourceID) < 16 || o.Generation == "" || o.Revision == 0 || len(o.SHA256) != 64 || (o.State != "unknown" && o.State != "persisted" && o.State != "recovered") {
+				return false
+			}
+			if b, e := hex.DecodeString(id); e != nil || hex.EncodeToString(b) != id {
+				return false
+			}
+			if b, e := hex.DecodeString(o.SHA256); e != nil || hex.EncodeToString(b) != o.SHA256 {
+				return false
+			}
+		}
+	}
+	return true
+}
 func valid(r Record) error {
+	if !validRetry(r.Retry) || r.RetryInvalid && r.Retry != nil {
+		return ErrNotFresh
+	}
 	if r.Operation.Validate() != nil || r.Operation.AdminInitialized != (r.Admin != nil) || r.Operation.AdminInitialized != r.Authority.ClaimClosed {
 		return ErrNotFresh
 	}
@@ -242,6 +271,13 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		return Record{}, ErrConflict
 	}
 	before := v
+	if v.Retry != nil {
+		copy := &RetryJournal{Latest: v.Retry.Latest, Operations: make(map[string]RetryOperation, len(v.Retry.Operations))}
+		for k, o := range v.Retry.Operations {
+			copy.Operations[k] = o
+		}
+		before.Retry = copy
+	}
 	before.Operation.Strategy.AdoptionDecisions = slices.Clone(v.Operation.Strategy.AdoptionDecisions)
 	before.Operation.Strategy.AdoptionResources = slices.Clone(v.Operation.Strategy.AdoptionResources)
 	if v.Admin != nil {
@@ -254,6 +290,30 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	}
 	if err = fn(&v); err != nil {
 		return Record{}, err
+	}
+	if v.RetryInvalid != before.RetryInvalid || before.RetryInvalid && v.Retry != nil {
+		return Record{}, ErrConflict
+	}
+	// Retry identities and terminal tombstones are immutable. A CAS callback
+	// cannot discard an uncertain intent or make an old request replayable.
+	if before.Retry != nil {
+		if v.Retry == nil {
+			return Record{}, ErrConflict
+		}
+		for id, old := range before.Retry.Operations {
+			next, ok := v.Retry.Operations[id]
+			if !ok {
+				return Record{}, ErrConflict
+			}
+			state := next.State
+			next.State = old.State
+			if next != old || old.State != "unknown" && state != old.State {
+				return Record{}, ErrConflict
+			}
+		}
+		if before.Retry.Operations[before.Retry.Latest].State == "unknown" && v.Retry.Latest != before.Retry.Latest {
+			return Record{}, ErrConflict
+		}
 	}
 	if v.Operation.Identity != id || v.Operation.Revision != revision || before.Admin != nil && !reflect.DeepEqual(before.Admin, v.Admin) || before.Operation.AdminInitialized && !v.Operation.AdminInitialized || before.Authority.ClaimClosed && !v.Authority.ClaimClosed || before.Operation.Routing.Committed && !v.Operation.Routing.Committed {
 		return Record{}, ErrConflict
@@ -288,6 +348,9 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		disabled := false
 		cfg := model.ManagerConfig{CPAConnection: *v.Connection, Collector: model.ManagerCollectorConfig{Enabled: &disabled}, UpdatedAtMS: time.Now().UnixMilli()}
 		err = write(ctx, tx, "manager_config_v1", cfg)
+	}
+	if err == nil && !reflect.DeepEqual(before.Retry, v.Retry) {
+		err = write(ctx, tx, retryKey, v.Retry)
 	}
 	if err != nil {
 		return Record{}, err

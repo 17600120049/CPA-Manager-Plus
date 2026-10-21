@@ -23,6 +23,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshrouting"
@@ -66,15 +67,16 @@ func freshPaths(cfg config.Config) (sqliterepo.InspectionPaths, error) {
 }
 
 type freshApplication struct {
-	store     freshstore.Store
-	authority *fresh.Service
-	routing   *freshrouting.Service
-	strategy  *freshstrategy.Service
-	protector *security.Protector
-	fixed     http.Handler
-	keys      *freshkeys.Service
-	keyApply  *freshkeyapply.Service
-	updates   *updatecheck.Service
+	store       freshstore.Store
+	authority   *fresh.Service
+	routing     *freshrouting.Service
+	strategy    *freshstrategy.Service
+	protector   *security.Protector
+	fixed       http.Handler
+	keys        *freshkeys.Service
+	keyApply    *freshkeyapply.Service
+	updates     *updatecheck.Service
+	configRetry *freshconfig.Service
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
@@ -92,6 +94,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	// v7 profile and existing environments never opt into this consumer.
 	if os.Getenv("CPAMP_PRIVATE_S1_PERMIT") == freshkeyapply.PermitPath && cfg.RuntimeURL == "http://127.0.0.1:9081" && cfg.CPAUpstreamURL == "http://127.0.0.1:8317" {
 		a.keyApply = freshkeyapply.New(keyrepo.New(opened.DB), a.keys, runtime)
+		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
@@ -227,6 +230,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	switch {
+	case resource == "gateway/retry/request-retry" || strings.HasPrefix(resource, "gateway/retry/operations/"):
+		a.retryConfiguration(w, r, resource)
 	case resource == "settings/update-channel":
 		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):

@@ -37,6 +37,26 @@ type Record struct {
 	Connection *model.ManagerCPAConnectionConfig
 	// Same Fresh CAS authority; encrypted resource snapshot is never public.
 	AdoptionCiphertext string
+	Retry              *RetryJournal
+	// Corrupt Config metadata locks only Config. Other Fresh domains must not
+	// erase it or lose their existing Administrator/read-only access.
+	RetryInvalid bool
+}
+
+// RetryJournal uses the existing Fresh CAS/store. It contains metadata only;
+// Runtime alone owns full-file recovery material and source reservations.
+type RetryJournal struct {
+	Latest     string                    `json:"latest"`
+	Operations map[string]RetryOperation `json:"operations"`
+}
+type RetryOperation struct {
+	RequestID  string `json:"requestId"`
+	Value      int    `json:"value"`
+	SourceID   string `json:"sourceId"`
+	Generation string `json:"generation"`
+	Revision   uint64 `json:"revision"`
+	SHA256     string `json:"sha256"`
+	State      string `json:"state"`
 }
 
 // Store exposes only Fresh CAS transactions, not arbitrary workflow execution.

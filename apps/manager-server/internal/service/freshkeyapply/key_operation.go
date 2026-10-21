@@ -3,6 +3,7 @@ package freshkeyapply
 import (
 	"context"
 	"errors"
+	"os"
 	"slices"
 	"strconv"
 	"time"
@@ -48,7 +49,15 @@ type OperationResult struct {
 	NextStep     string          `json:"nextStep"`
 }
 
-func (s *Service) KeyOperationsEnabled() bool { return s != nil && s.keyOperations }
+func (s *Service) KeyOperationsEnabled() bool {
+	if s == nil || !s.keyOperations {
+		return false
+	}
+	// A config-owned source can never use this independent K/U journal. This
+	// additional fail-closed fence does NOT attest Host lifecycle exclusivity.
+	_, e := os.Lstat("/run/cpamp-config/source.json")
+	return os.IsNotExist(e) && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == ""
+}
 
 func (s *Service) installedKey(ctx context.Context) (string, error) {
 	o, err := s.repo.LatestOperation(ctx)
