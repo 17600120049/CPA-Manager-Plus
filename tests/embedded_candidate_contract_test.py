@@ -71,6 +71,7 @@ def make_oci(destination, role, license_bytes, *,
         "config": {"Labels": {
             "org.opencontainers.image.revision": source,
             "org.opencontainers.image.source": subject.SOURCE,
+            "org.opencontainers.image.version": subject.CANDIDATE_VERSION,
             "io.cpamp.candidate.event": event,
             "io.cpamp.candidate.role": role,
         }},
