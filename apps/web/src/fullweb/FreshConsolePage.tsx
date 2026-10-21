@@ -6,6 +6,7 @@ import type { RoutingContext } from './routingContext';
 import { FreshApiKeys } from './FreshApiKeys';
 import { FreshUpdateChannel } from './FreshUpdateChannel';
 import { FreshManagedRuntime } from './FreshManagedRuntime';
+import { FreshRetryConfiguration } from './FreshRetryConfiguration';
 
 const defaultClient = createPublicApiClient();
 
@@ -26,6 +27,9 @@ export function FreshConsolePage({
   const creationPendingRef = useRef(false);
   const [installationPending, setInstallationPending] = useState(false);
   const installationPendingRef = useRef(false);
+  const [retryVisible, setRetryVisible] = useState(false);
+  const [retryPending, setRetryPending] = useState(false);
+  const retryPendingRef = useRef(false);
   const requestId = useRef(0);
   useEffect(() => {
     document.title = t('consoleTitle');
@@ -62,6 +66,9 @@ export function FreshConsolePage({
     reportCreationPending(false);
     installationPendingRef.current = false;
     setInstallationPending(false);
+    retryPendingRef.current = false;
+    setRetryPending(false);
+    setRetryVisible(false);
     setKey('');
     setCredential('');
     setOperation(null);
@@ -70,7 +77,8 @@ export function FreshConsolePage({
   }
 
   function logout() {
-    if (creationPendingRef.current || installationPendingRef.current) return;
+    if (creationPendingRef.current || installationPendingRef.current || retryPendingRef.current)
+      return;
     clearAuthentication();
   }
 
@@ -170,6 +178,24 @@ export function FreshConsolePage({
               ) : (
                 <div data-testid="console-operation">
                   <h2>{t('operation')}</h2>
+                  <nav className="console-navigation" aria-label={t('consoleNavigation')}>
+                    <ol>
+                      <li>{t('systemManagement')}</li>
+                      <li>{t('gatewayManagement')}</li>
+                      <li>
+                        <a
+                          href="#gateway-retry"
+                          data-testid="gateway-retry-navigation"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setRetryVisible(true);
+                          }}
+                        >
+                          {t('retryNavigationLeaf')}
+                        </a>
+                      </li>
+                    </ol>
+                  </nav>
                   <dl className="console-state">
                     <dt>{t('operation')}</dt>
                     <dd>{operation.identity.operationId}</dd>
@@ -200,7 +226,7 @@ export function FreshConsolePage({
                     <button
                       className="btn btn-secondary"
                       onClick={logout}
-                      disabled={creationPending || installationPending}
+                      disabled={creationPending || installationPending || retryPending}
                       aria-describedby={creationPending ? 'key-exit-pending' : undefined}
                     >
                       {t('logout')}
@@ -249,6 +275,20 @@ export function FreshConsolePage({
                       setError(t('authError'));
                     }}
                   />
+                  {retryVisible && (
+                    <FreshRetryConfiguration
+                      client={client}
+                      credential={credential}
+                      onPending={(pending) => {
+                        retryPendingRef.current = pending;
+                        setRetryPending(pending);
+                      }}
+                      onUnauthorized={() => {
+                        clearAuthentication();
+                        setError(t('authError'));
+                      }}
+                    />
+                  )}
                 </div>
               )}
             </div>
