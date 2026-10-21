@@ -8,6 +8,7 @@ import json
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 VERIFIER = Path(__file__).resolve().parents[1] / "bin/release/verify-embedded-candidate.py"
@@ -58,7 +59,10 @@ def make_oci(destination, role, license_bytes, *,
     elif role == "runtime":
         files["/usr/local/bin/cpamp-runtime-supervisor"] = sample_elf()
         files["/usr/local/bin/cli-proxy-api"] = sample_elf()
-        files["/usr/local/share/cpamp/runtime/cpa-artifact.json"] = b"{}"
+        files["/usr/local/share/cpamp/runtime/cpa-artifact.json"] = json.dumps({
+            "schemaVersion": 1, "engine": "cpa", "version": "8.0.13",
+            "artifactId": "sha256:" + subject.CPA_SHA,
+        }).encode()
         files["/usr/local/share/cpamp/runtime/config.seed.yaml"] = b"seed"
         files["/usr/local/bin/cpamp-runtime-v8-entrypoint"] = b"#!/bin/sh"
         files["/usr/local/share/licenses/cli-proxy-api/LICENSE"] = b"official"
@@ -106,6 +110,30 @@ class EmbeddedCandidateContracts(unittest.TestCase):
     def inspect(self, role="manager", **kwargs):
         make_oci(self.file, role, self.license, **kwargs)
         return subject.inspect(self.file, role, SHA, EVENT, self.license, b"seed")
+
+    def test_three_role_structural_receipt_with_mocked_official_fixture(self):
+        # Only this fixture mocks CPA official hashes; production verifier uses immutable pins.
+        (self.root / "LICENSE").write_bytes(self.license)
+        seed = self.root / "docker/runtime/config.v8.default.seed.yaml"
+        seed.parent.mkdir(parents=True)
+        seed.write_bytes(b"seed")
+        fake_cpa = hashlib.sha256(sample_elf()).hexdigest()
+        fake_license = hashlib.sha256(b"official").hexdigest()
+        with patch.object(subject, "CPA_SHA", fake_cpa), patch.object(
+                subject, "CPA_LICENSE_SHA", fake_license):
+            archives = {}
+            for role in subject.ROLES:
+                archive = self.root / (role + ".tar")
+                make_oci(archive, role, self.license)
+                archives[role] = archive
+            receipt = subject.verify(archives, SHA, EVENT, self.root)
+            self.assertEqual(receipt["status"],
+                             "STRUCTURAL_CANDIDATE_EVIDENCE_ONLY_NOT_RELEASE_QUALIFIED")
+            self.assertEqual(set(receipt["images"]), set(subject.ROLES))
+            self.assertEqual(len({x["platformManifestDigest"] for x in receipt["images"].values()}), 3)
+            make_oci(archives["ingress"], "ingress", self.license, event="wrong-event")
+            with self.assertRaisesRegex(ValueError, "build event"):
+                subject.verify(archives, SHA, EVENT, self.root)
 
     def test_manager_positive_manifest_and_binary_hashes(self):
         evidence = self.inspect()
