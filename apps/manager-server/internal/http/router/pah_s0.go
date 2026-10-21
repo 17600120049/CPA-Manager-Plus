@@ -13,7 +13,7 @@ const pahS0ResourcePrefix = "/v0/resource/plugins"
 // Ingress and Manager are separate modules; no shared route-owner registry.
 func pahS0DenyResources(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r != nil && r.URL != nil && pahS0ResourceRequest(r) {
+		if r != nil && r.URL != nil && PAHS0ResourceRequest(r) {
 			w.Header().Set("Cache-Control", "no-store")
 			http.NotFound(w, r)
 			return
@@ -22,7 +22,9 @@ func pahS0DenyResources(next http.Handler) http.Handler {
 	})
 }
 
-func pahS0ResourceRequest(r *http.Request) bool {
+// PAHS0ResourceRequest applies the same conservative raw-path deny predicate
+// to Legacy and Fresh Manager handlers in the private profile.
+func PAHS0ResourceRequest(r *http.Request) bool {
 	for _, initial := range []string{r.URL.Path, r.URL.RawPath, r.URL.EscapedPath(), r.RequestURI} {
 		if index := strings.IndexByte(initial, '?'); index >= 0 {
 			initial = initial[:index]

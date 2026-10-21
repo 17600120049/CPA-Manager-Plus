@@ -15,6 +15,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/freshbootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/router"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	keyrepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
@@ -77,11 +78,12 @@ type freshApplication struct {
 	keyApply    *freshkeyapply.Service
 	updates     *updatecheck.Service
 	configRetry *freshconfig.Service
+	pahS0       bool
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
-	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector}
+	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector, pahS0: cfg.PAHS0Enabled}
 	a.keys = freshkeys.New(keyrepo.New(opened.DB), opened.Protector)
 	// Reuse the existing settings authority without opening a Legacy app,
 	// collector, CPA client, or second SQLite connection.
@@ -160,6 +162,22 @@ func writeFreshStrategyError(w http.ResponseWriter, err error) {
 
 func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	// Fresh New does not mount the Legacy Manager router. The same private
+	// readiness proof and pre-dispatch resource guard must live here as well.
+	if r != nil && r.URL != nil && r.URL.Path == "/internal/pah-s0/resource-guard" {
+		if a.pahS0 && r.Method == http.MethodGet &&
+			r.URL.EscapedPath() == r.URL.Path && r.URL.RawQuery == "" &&
+			(r.RequestURI == "" || r.RequestURI == r.URL.Path) {
+			w.WriteHeader(http.StatusNoContent)
+		} else {
+			http.NotFound(w, r)
+		}
+		return
+	}
+	if a.pahS0 && r != nil && r.URL != nil && router.PAHS0ResourceRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
 	if r != nil && r.URL != nil && r.URL.Path == privateChatAdmissionPath {
 		a.privateChatAdmission(w, r)
 		return
