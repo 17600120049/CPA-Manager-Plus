@@ -22,10 +22,12 @@ const pending = {
 describe('private S1 installation', () => {
   let renderer: ReactTestRenderer;
   const unauthorized = vi.fn();
+  const onPending = vi.fn();
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal('window', { location: new URL('https://manager.example/control') });
     unauthorized.mockClear();
+    onPending.mockClear();
   });
   afterEach(async () => {
     if (renderer) await act(async () => renderer.unmount());
@@ -40,6 +42,7 @@ describe('private S1 installation', () => {
           client={createPublicApiClient(() => context, fetchMock)}
           credential="admin-only"
           onUnauthorized={unauthorized}
+          onPending={onPending}
           disabled={false}
         />
       );
@@ -76,10 +79,42 @@ describe('private S1 installation', () => {
       headers: { Authorization: 'Bearer admin-only' },
     });
     expect(view()).toContain(t('keysInstallUnknown'));
+    expect(onPending).toHaveBeenLastCalledWith(true);
     expect(view()).not.toContain(t('keysInstallOne'));
     await click(t('keysCheckInstallation'));
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
     expect(view()).toContain(t('keysIngressPending'));
+    expect(onPending).toHaveBeenLastCalledWith(false);
+  });
+
+
+  it('holds the exit lock after a lost install until a durable attempt is read, without a second POST', async () => {
+    let rejectInstall!: (reason: Error) => void;
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(pending))
+      .mockReturnValueOnce(
+        new Promise<Response>((_resolve, reject) => {
+          rejectInstall = reject;
+        })
+      )
+      .mockResolvedValueOnce(Response.json(pending))
+      .mockResolvedValueOnce(Response.json({ ...pending, attempted: true, installAvailable: false }));
+    await mount(fetchMock);
+    await click(t('keysCheckInstallation'));
+    await act(async () => {
+      const install = renderer.root.findAllByType('button').find((b) => b.props.children === t('keysInstallOne'))!;
+      install.props.onClick();
+      install.props.onClick();
+    });
+    expect(onPending).toHaveBeenLastCalledWith(true);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    await act(async () => rejectInstall(new Error('reply lost')));
+    await click(t('keysCheckInstallation'));
+    expect(onPending).toHaveBeenLastCalledWith(true);
+    await click(t('keysCheckInstallation'));
+    expect(onPending).toHaveBeenLastCalledWith(false);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 
   it('expires a live observation without a write or reload', async () => {

@@ -21,12 +21,14 @@ export function FreshKeyInstallation({
   client,
   credential,
   onUnauthorized,
+  onPending,
   disabled,
 }: {
   id: string;
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
   onUnauthorized: () => void;
+  onPending: (pending: boolean) => void;
   disabled: boolean;
 }) {
   const [state, setState] = useState<State | null>(null);
@@ -36,6 +38,8 @@ export function FreshKeyInstallation({
   const active = useRef(true);
   const inFlight = useRef(false);
   const used = useRef(false);
+  // A lost POST reply stays locked until a fresh read sees the durable S1 attempt.
+  const uncertainInstall = useRef(false);
   useEffect(() => {
     active.current = true;
     return () => {
@@ -60,6 +64,8 @@ export function FreshKeyInstallation({
     setBusy(true);
     setMessage('');
     if (install) {
+      uncertainInstall.current = true;
+      onPending(true); // synchronous before dispatch, including same-turn close/logout
       setState(null);
       used.current = true;
     }
@@ -96,8 +102,13 @@ export function FreshKeyInstallation({
             value.observedUntilMs > Date.now() + 1000))
       )
         throw new Error();
+      if (install && !value.attempted) throw new Error('Missing durable install attempt');
       used.current ||= value.attempted;
       setState(value);
+      if (uncertainInstall.current && value.attempted) {
+        uncertainInstall.current = false;
+        onPending(false);
+      }
     } catch (err) {
       if (!active.current) return;
       setExpired(true);
