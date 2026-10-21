@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "release": {
+    "version": "v1.14.7",
+    "stage": "stable",
+    "source_commit": "64ce94e6aa1af691555429a3211e67c59c0480ad"
+  },
+  "content": {
+    "summary": {
+      "zh": "改善已加载页面的后台刷新体验，修复 Antigravity 与 Codex 配额统计，并为长窗口延迟分析加入离线构建的覆盖索引。",
+      "en": "Improves background refresh behavior for loaded views, fixes Antigravity and Codex quota accounting, and adds an offline-built covering index for long-window latency analytics."
+    },
+    "notes": {
+      "zh": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.7/docs/release-notes/v1.14.7-zh.md",
+      "en": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.7/docs/release-notes/v1.14.7-en.md"
+    }
+  },
+  "update": {
+    "breaking": false,
+    "migration_required": false,
+    "minimum_direct_upgrade_version": null,
+    "upgrade_guide_url": "https://github.com/seakee/CPA-Manager-Plus/releases/tag/v1.14.7"
+  },
+  "distribution": {
+    "docker": {
+      "image": "seakee/cpa-manager-plus",
+      "version_tag": "v1.14.7"
+    },
+    "native": {
+      "assets": [
+        "cpa-manager-plus_v1.14.7_darwin_amd64.tar.gz",
+        "cpa-manager-plus_v1.14.7_darwin_arm64.tar.gz",
+        "cpa-manager-plus_v1.14.7_linux_amd64.tar.gz",
+        "cpa-manager-plus_v1.14.7_linux_arm64.tar.gz",
+        "cpa-manager-plus_v1.14.7_windows_amd64.zip",
+        "cpa-manager-plus_v1.14.7_windows_arm64.zip"
+      ]
+    }
+  },
+  "compatibility": {
+    "minimum_cpa_version": "v7.3.4"
+  }
+}

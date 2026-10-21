@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { generateReleaseInfo } from '../bin/release/generate-release-info.mjs';
 import { verifyCandidate, verifyImage } from '../bin/release/publish-update-index.mjs';
 import { expectedReleaseAssetNames } from '../bin/release/verify-published-release.mjs';
-import { repository } from '../bin/release/update-contract.mjs';
+import { repository, validateInfo } from '../bin/release/update-contract.mjs';
 
 describe('R1-1 local-only OCI candidate contracts', () => {
   it('requires immutable platform manifests and rejects bad source, platform and byte identities', () => {
@@ -16,19 +17,11 @@ describe('R1-1 local-only OCI candidate contracts', () => {
 
   it('replays the strict published 1.x consumer without R1 fields or single-platform relaxation', () => {
     const tag = 'v1.14.7';
-    const sha = 'a'.repeat(40);
-    const metadata = {
-      summary: { zh: '兼容性检查', en: 'Compatibility fixture' },
-      update: {
-        breaking: false,
-        migration_required: false,
-        minimum_direct_upgrade_version: null,
-        upgrade_guide_url: repository + '/releases/tag/' + tag,
-      },
-      compatibility: { minimum_cpa_version: null },
-    };
-    const notes = '<!-- cpamp-update\n' + JSON.stringify(metadata) + '\n-->';
-    const info = generateReleaseInfo(tag, sha, notes);
+    // Captured from the real published update-channel catalog.
+    const info = JSON.parse(readFileSync(new URL('./fixtures/release-v1.14.7-info.json', import.meta.url), 'utf8'));
+    const sha = info.release.source_commit;
+    expect(sha).toBe('64ce94e6aa1af691555429a3211e67c59c0480ad');
+    expect(validateInfo(info, tag)).toBe(info);
     expect(info.schema_version).toBe(1);
     expect(info.distribution.native.assets).toHaveLength(6);
     expect(info.distribution.embedded).toBeUndefined();
@@ -42,6 +35,7 @@ describe('R1-1 local-only OCI candidate contracts', () => {
       })),
     };
     expect(() => verifyCandidate(published, info, sha)).not.toThrow();
+    expect(() => verifyCandidate({ ...published, tag_name: 'v2.0.0' }, { ...info, release: { ...info.release, version: 'v2.0.0' } }, sha)).toThrow(/v2 Embedded/);
     const labels = {
       'org.opencontainers.image.revision': sha,
       'org.opencontainers.image.version': tag.slice(1),

@@ -12,6 +12,9 @@ import {
 
 export function verifyCandidate(release, info, sha) {
   const tag = info.release.version;
+  // The legacy channel accepts 1.x Manager-only records, not v2 Embedded fallbacks.
+  if (parseVersion(tag).core[0] !== '1')
+    throw new Error('Unqualified v2 Embedded release: R1-2 publication/channel STOP');
   validateInfo(info, tag);
   if (
     release.tag_name !== tag ||

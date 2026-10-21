@@ -28,7 +28,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-X github
 # Packaging smoke without activating production routing authority. The final
 # image consumes the same compiled artifact only after this check passes.
 FROM service-build AS web-package-test
-RUN CPAMP_FULLWEB_PACKAGED_TEST=1 go test -run '^TestPackagedFullWeb(Dist|Manifest)
+RUN CPAMP_FULLWEB_PACKAGED_TEST=1 go test -run '^TestPackagedFullWeb(Dist|Manifest)$' ./internal/httpapi
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates wget tzdata
@@ -37,17 +37,6 @@ COPY --from=web-package-test /out/cpa-manager-plus /usr/local/bin/cpa-manager-pl
 COPY --from=web-build /out/fullweb-manifest.json /usr/local/share/cpamp/release/fullweb-manifest.json
 COPY LICENSE /usr/local/share/licenses/cpamp/LICENSE
 COPY bin/release/embedded-third-party-inventory.txt /usr/local/share/cpamp/release/third-party-inventory.txt
-ENV HTTP_ADDR=0.0.0.0:18317
-ENV USAGE_DATA_DIR=/data
-ENV USAGE_DB_PATH=/data/usage.sqlite
-EXPOSE 18317
-ENTRYPOINT ["cpa-manager-plus"]
- ./internal/httpapi
-
-FROM alpine:3.21
-RUN apk add --no-cache ca-certificates wget tzdata
-WORKDIR /app
-COPY --from=web-package-test /out/cpa-manager-plus /usr/local/bin/cpa-manager-plus
 ENV HTTP_ADDR=0.0.0.0:18317
 ENV USAGE_DATA_DIR=/data
 ENV USAGE_DB_PATH=/data/usage.sqlite

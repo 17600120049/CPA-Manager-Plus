@@ -67,6 +67,11 @@ jobs:
             echo "Release recovery must be dispatched from main; received ${EVENT_REF}." >&2
             exit 1
           fi
+          # R1-1 is candidate-only; recovery must not bypass v2 STOP.
+          if [[ "${RELEASE_TAG}" =~ ^v([0-9]+)\. ]] && (( 10#${BASH_REMATCH[1]} >= 2 )); then
+            echo "v2 Embedded recovery publication is STOP until separate R1-2 approval." >&2
+            exit 1
+          fi
           if [ "${CONFIRM_PUBLISH}" != "true" ]; then
             echo "Release recovery requires explicit publication confirmation." >&2
             exit 1
