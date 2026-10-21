@@ -206,6 +206,7 @@ func runServerWithOptions(options legacypreflight.Options) {
 	// inventory for Fresh/partial sources, or a bounded rollback-mode SQLite
 	// read snapshot for an existing database.
 	startupHandler := newStartupHTTPHandler(bootstrapdiscovery.Unavailable())
+	startupHandler.EnablePAHS0(cfg.PAHS0Enabled)
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		log.Fatalf("http listen: %v", err)
