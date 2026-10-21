@@ -153,6 +153,13 @@ function scenario({
 }
 
 describe('update index publication', () => {
+  it('fails closed on a v2 Manager-only schema1 record before any alias, Release or index write', async () => {
+    const s = scenario({ tags: ['v2.0.0'] });
+    await expect(s.run()).rejects.toThrow(/v2 Embedded/);
+    expect(s.calls.filter((call) => call.method && call.method !== 'GET')).toEqual([]);
+    expect(s.calls.some((call) => call.docker?.includes('create'))).toBe(false);
+  });
+
   it('publishes the index after exact image validation, aliases and GitHub Latest', async () => {
     const s = scenario();
     const index = await s.run();

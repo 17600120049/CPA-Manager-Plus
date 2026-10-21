@@ -24,6 +24,8 @@ COPY --from=web-build /out/fullweb-manifest.json ./apps/manager-server/internal/
 WORKDIR /src/apps/manager-server
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.Version=$VERSION -X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.SourceCommit=$SOURCE_COMMIT" -o /out/cpa-manager-plus ./cmd/cpa-manager-plus
+# Verify the real output binary carries this source stamp, not just image labels.
+RUN go version -m /out/cpa-manager-plus | grep -F "SourceCommit=$SOURCE_COMMIT"
 
 # Packaging smoke without activating production routing authority. The final
 # image consumes the same compiled artifact only after this check passes.

@@ -7,6 +7,13 @@ import { expectedReleaseAssetNames } from '../bin/release/verify-published-relea
 import { repository, validateInfo } from '../bin/release/update-contract.mjs';
 
 describe('R1-1 local-only OCI candidate contracts', () => {
+  it('keeps the no-push candidate builder syntactically valid', () => {
+    execFileSync('bash', ['-n', 'bin/release/build-embedded-candidate.sh'], {
+      cwd: new URL('..', import.meta.url),
+      stdio: 'pipe',
+    });
+  });
+
   it('requires immutable platform manifests and rejects bad source, platform and byte identities', () => {
     execFileSync('python3', ['tests/embedded_candidate_contract_test.py'], {
       cwd: new URL('..', import.meta.url),

@@ -11,6 +11,16 @@ if [[ "$output" != /* ]] || [[ -e "$output" && -n "$(ls -A "$output")" ]]; then
   echo "Use an absolute empty output directory outside the repository." >&2
   exit 2
 fi
+# Never allow the output to enter Docker build context on subsequent roles.
+python3 - "$PWD" "$output" <<'PY'
+import pathlib, sys
+source = pathlib.Path(sys.argv[1]).resolve()
+destination = pathlib.Path(sys.argv[2]).resolve()
+if destination == source or source in destination.parents:
+    raise SystemExit("STOP: OCI output must be outside the source tree")
+if destination.exists() and not destination.is_dir():
+    raise SystemExit("STOP: OCI output path is not a directory")
+PY
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "STOP: build requires a clean source tree." >&2
   exit 1
@@ -18,6 +28,7 @@ fi
 source_sha="$(git rev-parse --verify HEAD)"
 event="local-r1-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 docker buildx version >/dev/null
+# Stamped labels are candidate source claims, NOT signed producer provenance.
 mkdir -p "$output"
 
 for role in manager ingress runtime; do
