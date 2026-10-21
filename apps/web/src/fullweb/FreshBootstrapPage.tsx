@@ -24,7 +24,7 @@ interface ActionFeedback {
 
 // Public discovery never confers write authority. Non-Fresh statuses only
 // provide a Host-side preflight next step; they cannot enter the Fresh claim.
-type DiscoveryGuidance = ActionFeedback & { flow: 'fresh' | 'host' };
+type DiscoveryGuidance = ActionFeedback & { flow: 'fresh' | 'host'; retryable?: true };
 function publicDiscoveryGuidance(payload: unknown): DiscoveryGuidance | null {
   if (!payload || typeof payload !== 'object') return null;
   const value = payload as Record<string, unknown>;
@@ -85,6 +85,7 @@ function publicDiscoveryGuidance(payload: unknown): DiscoveryGuidance | null {
       tone: 'warn',
       flow: 'host',
       title: '来源状态暂无法确认',
+      retryable: true,
       detail:
         '来源只读检查未获得可信分类。请在受信宿主机排查；不能根据此状态认定为 Fresh，也不能据此执行初始化或迁移。',
     };
@@ -174,6 +175,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   const [initErrorKind, setInitErrorKind] = useState<string | null>(null);
   const [discoveryNote, setDiscoveryNote] = useState<DiscoveryGuidance | null>(null);
   const [discoveryChecked, setDiscoveryChecked] = useState(false);
+  const [discoveryAttempt, setDiscoveryAttempt] = useState(0);
 
   const [adminKey, setAdminKey] = useState('');
   const [commitId, setCommitId] = useState<string>(() => createCommitId());
@@ -304,7 +306,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
     return () => {
       active = false;
     };
-  }, [handoff]);
+  }, [handoff, discoveryAttempt]);
 
   useEffect(() => {
     if (!handoff) {
@@ -655,6 +657,22 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       </div>
                     </div>
                   </div>
+                )}
+                {discoveryChecked && (!discoveryNote || discoveryNote.retryable) && (
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    data-testid="bootstrap-recheck-discovery"
+                    onClick={() => {
+                      // Reissue only the public read-only discovery GET.
+                      // An unverified result never grants a claim or write authority.
+                      setDiscoveryChecked(false);
+                      setDiscoveryNote(null);
+                      setDiscoveryAttempt((attempt) => attempt + 1);
+                    }}
+                  >
+                    重新检查来源状态
+                  </button>
                 )}
               </div>
             </section>
