@@ -344,6 +344,41 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 
+  it('locks mode choice and logout before asynchronous External hashing completes', async () => {
+    let finishDigest!: (value: ArrayBuffer) => void;
+    const deferred = new Promise<ArrayBuffer>((resolve) => { finishDigest = resolve; });
+    vi.stubGlobal('crypto', {
+      getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb),
+      subtle: { digest: () => deferred },
+    });
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(operation))
+      .mockResolvedValue(Response.json(operation));
+    await mount(fetchMock);
+    await login();
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'fresh-select-external' }).props.onClick()
+    );
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'external-base-url' })
+      .props.onChange({ target: { value: 'http://cpa.private:8317' } }));
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'external-management-key' })
+      .props.onChange({ target: { value: 'secret' } }));
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'external-connect' }).props.onClick();
+      renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.onClick();
+      buttons().find((button) => button.props.children === t('logout'))?.props.onClick();
+    });
+    expect(renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.disabled).toBe(true);
+    expect(buttons().find((button) => button.props.children === t('logout'))?.props.disabled).toBe(true);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'runtime-observation' })).toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
+    const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode('http://cpa.private:8317'));
+    await act(async () => finishDigest(digest));
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    );
+  });
+
   it('uses one strategy owner and blocks mode switching during an External POST', async () => {
     let finish!: (value: Response) => void;
     const pending = new Promise<Response>((resolve) => { finish = resolve; });

@@ -164,28 +164,34 @@ export function FreshExternalConnection({
       setError(t('externalInvalid'));
       return;
     }
-    let submittedTarget: string;
-    try {
-      submittedTarget = await targetDigest(submittedBaseURL);
-    } catch {
-      setError(t('externalUnavailable'));
-      return;
-    }
-    // After hashing, another click must not start a parallel request.
-    if (inflight.current || locked || unknown || busy || confirmed) return;
+
+    // Obtain the only local and Console-owned submission lock synchronously,
+    // before Web Crypto's asynchronous digest can allow logout/mode switching.
     inflight.current = true;
     setBusy(true);
-    setUnknown(true);
-    setError('');
-    // Never retain/reveal the Management Key once a write may have been sent.
-    setManagementKey('');
     onPending(true);
+    setError('');
+    let dispatched = false;
     try {
+      const bytes = new Uint8Array(16);
+      if (!globalThis.crypto?.getRandomValues) throw new Error('Secure random unavailable');
+      globalThis.crypto.getRandomValues(bytes);
+      const attemptId = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const submittedTarget = await targetDigest(submittedBaseURL);
+      // An unmounted/replaced page has no authority to dispatch a queued POST.
+      if (!alive.current) return;
+
+      // From this point the original request outcome may be unknown. Never
+      // retry it, including after logout, refresh, or a lost response.
+      setUnknown(true);
+      setManagementKey('');
+      dispatched = true;
       const post = await client.post<FreshOperation>(
         'strategy',
         {
           identity: operation.identity,
           expectedRevision: operation.revision,
+          attemptId,
           strategy: 'connect_external',
           baseUrl: submittedBaseURL,
           managementKey: submittedKey,
@@ -213,6 +219,12 @@ export function FreshExternalConnection({
       }
     } catch (err) {
       if (!alive.current) return;
+      if (!dispatched) {
+        // No POST left the browser; retain the Key and allow a fresh attempt.
+        setError(t('externalUnavailable'));
+        onPending(false);
+        return;
+      }
       // A 401/403 retires the Admin credential; a previously issued POST may
       // still have landed. The durable server fence, not this UI, owns it.
       if (err instanceof PublicApiError && err.kind === 'authentication') {

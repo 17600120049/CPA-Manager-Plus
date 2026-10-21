@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -42,23 +43,34 @@ func (p freshExternalPermit) valid(op bootstrap.FreshOperation, now time.Time) b
 // The private Host must commit the original request before issuing the permit.
 // Bind the normalized URL, Management Key and original revision; do not expose
 // this value through the API or persist it in the Fresh operation.
-func freshExternalIntentDigest(runID string, revision uint64, baseURL, key string) string {
-	data := "cpamp-a3-intent-v1\x00" + runID + "\x00" + strconv.FormatUint(revision, 10) + "\x00" + baseURL + "\x00" + key
+func freshExternalIntentDigest(runID string, revision uint64, baseURL, key, attemptID string) string {
+	data := "cpamp-a3-intent-v2\x00" + runID + "\x00" + strconv.FormatUint(revision, 10) + "\x00" + baseURL + "\x00" + key + "\x00" + attemptID
 	digest := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(digest[:])
 }
 
-func (p freshExternalPermit) matchesIntent(op bootstrap.FreshOperation, revision uint64, baseURL, key string, now time.Time) bool {
+func (p freshExternalPermit) matchesIntent(op bootstrap.FreshOperation, revision uint64, baseURL, key, attemptID string, now time.Time) bool {
 	return p.valid(op, now) && p.ExpectedRevision == revision &&
-		p.IntentDigest == freshExternalIntentDigest(p.RunID, revision, baseURL, key)
+		validFreshExternalAttemptID(attemptID) &&
+		p.IntentDigest == freshExternalIntentDigest(p.RunID, revision, baseURL, key, attemptID)
+}
+
+// The browser uses a one-page random 128-bit ID. Its new identity after
+// refresh cannot claim the original Host-committed intent.
+func validFreshExternalAttemptID(id string) bool {
+	if len(id) != 32 || strings.ToLower(id) != id {
+		return false
+	}
+	bytes, err := hex.DecodeString(id)
+	return err == nil && len(bytes) == 16
 }
 
 // A browser header, accepted CPA consumer or S1/H1 permit is not A3 authority.
 // Only the private host owner can mount the A3-specific root-owned permit.
-func privateFreshExternalAdmitted(op bootstrap.FreshOperation, revision uint64, baseURL, key string) bool {
+func privateFreshExternalAdmitted(op bootstrap.FreshOperation, revision uint64, baseURL, key, attemptID string) bool {
 	if os.Getenv("CPAMP_PRIVATE_A3_PROFILE") != freshExternalPrivateProfile {
 		return false
 	}
 	p, ok := loadPrivateFreshExternalPermit(freshExternalPermitPath)
-	return ok && p.matchesIntent(op, revision, baseURL, key, time.Now())
+	return ok && p.matchesIntent(op, revision, baseURL, key, attemptID, time.Now())
 }

@@ -58,7 +58,10 @@ async function mount(
 }
 
 describe('Fresh External one-operation connection', () => {
-  beforeEach(() => vi.stubGlobal('crypto', { subtle: webcrypto.subtle }));
+  beforeEach(() => vi.stubGlobal('crypto', {
+    subtle: webcrypto.subtle,
+    getRandomValues: <T extends Uint8Array>(bytes: T) => webcrypto.getRandomValues(bytes),
+  }));
   afterEach(() => vi.unstubAllGlobals());
   it('acknowledges only one POST plus a matching later GET, with no complete', async () => {
     const get = vi.fn().mockResolvedValue(committed);
@@ -70,7 +73,8 @@ describe('Fresh External one-operation connection', () => {
     expect(post.mock.calls[0]).toEqual([
       'strategy',
       { identity, expectedRevision: 4, strategy: 'connect_external',
-        baseUrl: 'http://cpa.private:8317', managementKey: 'secret' },
+        baseUrl: 'http://cpa.private:8317', managementKey: 'secret',
+        attemptId: expect.stringMatching(/^[0-9a-f]{32}$/) },
       { kind: 'admin', value: 'private-admin' },
     ]);
     expect(get).toHaveBeenCalledTimes(1);
@@ -173,6 +177,62 @@ describe('Fresh External one-operation connection', () => {
     expect(ui.pending).toHaveBeenCalledWith(true);
     await ui.click('external-refresh');
     expect(post).not.toHaveBeenCalled();
+  });
+
+
+  it('locks Console before SHA-256 resolves and ignores a second click', async () => {
+    let resolveDigest!: (value: ArrayBuffer) => void;
+    const pendingDigest = new Promise<ArrayBuffer>((resolve) => { resolveDigest = resolve; });
+    vi.stubGlobal('crypto', {
+      getRandomValues: <T extends Uint8Array>(bytes: T) => webcrypto.getRandomValues(bytes),
+      subtle: { digest: () => pendingDigest },
+    });
+    const post = vi.fn().mockResolvedValue(committed);
+    const ui = await mount(vi.fn().mockResolvedValue(committed), post);
+    await ui.prepare();
+    await act(async () => {
+      ui.node('external-connect').props.onClick();
+      ui.node('external-connect').props.onClick();
+    });
+    expect(ui.pending).toHaveBeenCalledWith(true);
+    expect(ui.node('external-connect').props.disabled).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+    const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode('http://cpa.private:8317'));
+    await act(async () => resolveDigest(digest));
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not send the suspended POST after its owner is unmounted', async () => {
+    let resolveDigest!: (value: ArrayBuffer) => void;
+    const pendingDigest = new Promise<ArrayBuffer>((resolve) => { resolveDigest = resolve; });
+    vi.stubGlobal('crypto', {
+      getRandomValues: <T extends Uint8Array>(bytes: T) => webcrypto.getRandomValues(bytes),
+      subtle: { digest: () => pendingDigest },
+    });
+    const post = vi.fn();
+    const ui = await mount(vi.fn(), post);
+    await ui.prepare();
+    await act(async () => { ui.node('external-connect').props.onClick(); });
+    expect(ui.pending).toHaveBeenCalledWith(true);
+    await act(async () => ui.renderer.unmount());
+    const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode('http://cpa.private:8317'));
+    await act(async () => resolveDigest(digest));
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('releases the Console lock when local digest fails before any POST', async () => {
+    vi.stubGlobal('crypto', {
+      getRandomValues: <T extends Uint8Array>(bytes: T) => webcrypto.getRandomValues(bytes),
+      subtle: { digest: async () => { throw new Error('unsupported secure digest'); } },
+    });
+    const post = vi.fn();
+    const ui = await mount(vi.fn(), post);
+    await ui.prepare();
+    await act(async () => ui.node('external-connect').props.onClick());
+    expect(ui.pending).toHaveBeenLastCalledWith(false);
+    expect(ui.node('external-connect').props.disabled).toBe(false);
+    expect(post).not.toHaveBeenCalled();
+    expect(JSON.stringify(ui.renderer.toJSON())).not.toContain('unsupported secure digest');
   });
 
   it('does not allow a second POST while the first is in flight', async () => {

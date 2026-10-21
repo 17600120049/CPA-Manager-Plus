@@ -75,7 +75,7 @@ type freshApplication struct {
 	authority   *fresh.Service
 	routing     *freshrouting.Service
 	strategy    *freshstrategy.Service
-	externalPermit func(bootstrap.FreshOperation, uint64, string, string) bool
+	externalPermit func(bootstrap.FreshOperation, uint64, string, string, string) bool
 	protector   *security.Protector
 	fixed       http.Handler
 	keys        *freshkeys.Service
@@ -267,6 +267,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 	var request struct {
 		Identity         bootstrap.FreshIdentity `json:"identity"`
 		ExpectedRevision uint64                  `json:"expectedRevision"`
+		AttemptID        string                  `json:"attemptId,omitempty"`
 		freshstrategy.Request
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384))
@@ -304,10 +305,15 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 			writeFreshStrategyError(w, preflightErr)
 			return
 		}
-		// A Host grant binds the exact original revision, normalized target and
-		// Management Key. A delayed original POST cannot be displaced by a
-		// refreshed browser's different request while GET is still empty.
-		if a.externalPermit == nil || !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
+		// The browser-generated attempt ID is ephemeral and never in GET/store.
+		// A new tab/refresh must not consume a Host permit for the first POST.
+		if !validFreshExternalAttemptID(request.AttemptID) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		// A Host grant binds the original revision, URL, Key, and request ID.
+		// Only the original per-page attempt can claim an empty checkpoint.
+		if a.externalPermit == nil || !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
@@ -320,7 +326,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 			if record.Operation.Strategy.Strategy != "" {
 				return freshstore.ErrConflict
 			}
-			if !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
+			if !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
 				return errFreshExternalPermitRevoked
 			}
 			if token, fixed := freshbootstrap.SessionToken(r); fixed {
@@ -343,7 +349,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		op = claimed.Operation
-		if !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
+		if !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
@@ -361,7 +367,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		writeFreshStrategyError(w, err)
 		return
 	}
-	if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
+	if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
 		// A revoked/expired Host permit cannot complete a previously claimed attempt.
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
@@ -381,7 +387,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	next, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
-		if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey) {
+		if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
 			return errFreshExternalPermitRevoked
 		}
 		if token, fixed := freshbootstrap.SessionToken(r); fixed {
