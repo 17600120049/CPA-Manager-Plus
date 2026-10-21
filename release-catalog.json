@@ -688,5 +688,51 @@
       }
     },
     "digest": "sha256:9a74e7b072474078a7ef5d6b371321491f0e049f51a70bb0268b96fa6250f710"
+  },
+  "v1.14.8": {
+    "info": {
+      "schema_version": 1,
+      "release": {
+        "version": "v1.14.8",
+        "stage": "stable",
+        "source_commit": "a6b8e31893bf303d4b15c86141468578f2df1c32"
+      },
+      "content": {
+        "summary": {
+          "zh": "修复后台刷新时的凭证与分析数据闪烁、跨提供商来源识别、Antigravity 配额窗口显示及 xAI OAuth 订阅配额识别。",
+          "en": "Fixes credential and analytics refresh flicker, cross-provider source identification, Antigravity quota-window presentation, and xAI OAuth subscription quota detection."
+        },
+        "notes": {
+          "zh": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.8/docs/release-notes/v1.14.8-zh.md",
+          "en": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.8/docs/release-notes/v1.14.8-en.md"
+        }
+      },
+      "update": {
+        "breaking": false,
+        "migration_required": false,
+        "minimum_direct_upgrade_version": null,
+        "upgrade_guide_url": "https://github.com/seakee/CPA-Manager-Plus/releases/tag/v1.14.8"
+      },
+      "distribution": {
+        "docker": {
+          "image": "seakee/cpa-manager-plus",
+          "version_tag": "v1.14.8"
+        },
+        "native": {
+          "assets": [
+            "cpa-manager-plus_v1.14.8_darwin_amd64.tar.gz",
+            "cpa-manager-plus_v1.14.8_darwin_arm64.tar.gz",
+            "cpa-manager-plus_v1.14.8_linux_amd64.tar.gz",
+            "cpa-manager-plus_v1.14.8_linux_arm64.tar.gz",
+            "cpa-manager-plus_v1.14.8_windows_amd64.zip",
+            "cpa-manager-plus_v1.14.8_windows_arm64.zip"
+          ]
+        }
+      },
+      "compatibility": {
+        "minimum_cpa_version": "v7.3.4"
+      }
+    },
+    "digest": "sha256:217eca585239c3eb74e3154b5784dc6025be3944d4a768b9ba808de806b5ac47"
   }
 }
