@@ -8,6 +8,8 @@ import json
 import tarfile
 import tempfile
 import unittest
+import os
+import subprocess
 from unittest.mock import patch
 from pathlib import Path
 
@@ -226,6 +228,114 @@ class EmbeddedCandidateContracts(unittest.TestCase):
     def test_reject_runtime_with_unpinned_cpa(self):
         with self.assertRaisesRegex(ValueError, "official CPA"):
             self.inspect("runtime")
+
+
+
+class CandidateBuilderSnapshotContracts(unittest.TestCase):
+    def test_all_three_roles_use_one_locked_git_archive_even_if_worktree_changes(self):
+        # A fake buildx inspects the actual --file / build-context arguments.
+        # It mutates the original worktree after Manager has built. If Ingress
+        # or Runtime reads from that worktree, the test fails deterministically.
+        with tempfile.TemporaryDirectory(prefix="cpamp-r1-snapshot-test-") as temp:
+            base = Path(temp)
+            source = base / "source"
+            source.mkdir()
+            for name, content in {
+                "Dockerfile.manager-server": b"FROM scratch\n",
+                "Dockerfile.ingress": b"FROM scratch\n",
+                "Dockerfile.runtime": b"FROM scratch\n",
+                "source.txt": b"original source bytes\n",
+            }.items():
+                (source / name).write_bytes(content)
+            build_script = VERIFIER.parent / "build-embedded-candidate.sh"
+            script_in_source = source / "bin/release/build-embedded-candidate.sh"
+            script_in_source.parent.mkdir(parents=True)
+            script_in_source.write_bytes(build_script.read_bytes())
+            verifier = source / "bin/release/verify-embedded-candidate.py"
+            verifier.write_text("""\
+import json
+import pathlib
+import sys
+a = sys.argv
+root = pathlib.Path(a[a.index("--source-root") + 1])
+assert (root / "source.txt").read_text() == "original source bytes\\n"
+for role in ("manager", "ingress", "runtime"):
+    archive = pathlib.Path(a[a.index("--" + role) + 1])
+    assert archive.read_text() == "fake OCI " + role
+out = pathlib.Path(a[a.index("--out") + 1])
+out.write_text(json.dumps({"sourceRoot": str(root), "testOnly": True}))
+""", encoding="utf-8")
+            subprocess.run(["git", "init", "-q"], cwd=source, check=True)
+            subprocess.run(["git", "add", "."], cwd=source, check=True)
+            subprocess.run(["git", "-c", "user.name=CI Test",
+                            "-c", "user.email=ci@example.invalid", "commit", "-qm",
+                            "snapshot fixture"], cwd=source, check=True)
+            pinned_commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+
+            fakebin = base / "fakebin"
+            fakebin.mkdir()
+            docker = fakebin / "docker"
+            docker.write_text("""\
+#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+if args == ["buildx", "version"]:
+    print("buildx mocked")
+    sys.exit(0)
+assert args[:2] == ["buildx", "build"], args
+context = pathlib.Path(args[-1])
+dockerfile = pathlib.Path(args[args.index("--file") + 1])
+role = [item.split("=", 1)[1] for item in args
+        if item.startswith("io.cpamp.candidate.role=")][0]
+event = [item.split("=", 1)[1] for item in args
+         if item.startswith("io.cpamp.candidate.event=")][0]
+commit = [item.split("=", 1)[1] for item in args
+          if item.startswith("org.opencontainers.image.revision=")][0]
+source = pathlib.Path(os.environ["FAKE_SOURCE_DIR"])
+assert context.resolve() != source.resolve()
+assert dockerfile.parent == context
+assert dockerfile.name == {
+    "manager": "Dockerfile.manager-server",
+    "ingress": "Dockerfile.ingress",
+    "runtime": "Dockerfile.runtime",
+}[role]
+assert (context / "source.txt").read_text() == "original source bytes\\n"
+assert (context / "source.txt").stat().st_mode & 0o222 == 0
+assert commit == os.environ["FAKE_COMMIT"]
+target = [item.removeprefix("type=oci,dest=") for item in args
+          if item.startswith("type=oci,dest=")][0]
+pathlib.Path(target).write_text("fake OCI " + role)
+with open(os.environ["FAKE_RECORD"], "a", encoding="utf-8") as log:
+    log.write(json.dumps({"role": role, "context": str(context),
+                          "event": event, "commit": commit}) + "\\n")
+if role == "manager":
+    (source / "source.txt").write_text("MUTATED AFTER MANAGER BUILD\\n")
+""", encoding="utf-8")
+            docker.chmod(0o755)
+            output = base / "candidate-output"
+            record = base / "docker-record.jsonl"
+            env = dict(os.environ)
+            env["PATH"] = str(fakebin) + os.pathsep + env.get("PATH", "")
+            env["FAKE_SOURCE_DIR"] = str(source)
+            env["FAKE_COMMIT"] = pinned_commit
+            env["FAKE_RECORD"] = str(record)
+            result = subprocess.run(
+                ["bash", str(script_in_source), str(output)],
+                cwd=source, env=env, capture_output=True, text=True, timeout=25)
+            self.assertEqual(result.returncode, 0,
+                             result.stdout + "\n" + result.stderr)
+            events = [json.loads(row) for row in record.read_text().splitlines()]
+            self.assertEqual([row["role"] for row in events],
+                             ["manager", "ingress", "runtime"])
+            self.assertEqual({row["commit"] for row in events}, {pinned_commit})
+            self.assertEqual(len({row["event"] for row in events}), 1)
+            self.assertEqual(len({row["context"] for row in events}), 1)
+            self.assertEqual((source / "source.txt").read_text(),
+                             "MUTATED AFTER MANAGER BUILD\n")
+            snapshot = Path(events[0]["context"])
+            self.assertFalse(snapshot.exists(), "disposable source snapshot was not removed")
+            self.assertTrue((output / "candidate-evidence.json").exists())
 
 
 if __name__ == "__main__":
