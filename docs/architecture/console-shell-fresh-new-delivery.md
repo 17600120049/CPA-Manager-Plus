@@ -22,6 +22,33 @@ the deep route. Explicit logout and rejected authentication clear the credential
 Without **Remember credentials**, reload requires signing in again, consistent
 with the existing login choice. The historical candidate below predates this fix.
 
+The correction was verified at application source
+`e610e3c485b9cbfac0d9d518bf29a079daa745e9` on a new Linux/amd64 Embedded
+Manager + Ingress + official CPA 8.0.13 Runtime installation. The
+[new report](evidence/console-login-refresh/report.json) records the real Fresh
+New journey, original login page across desktop/mobile light/dark, remembered
+login restoring `/console/config` after reload, and explicit logout preventing
+restoration. Its five new screenshots are retained here; the other journey
+screenshots remain in the task-owned local run. There were no uncaught browser
+errors. Targeted tests also verify rejected/stale-scope credentials, temporary
+503 recovery, and in-memory login/revocation when browser persistence throws.
+The focused independent review's confirmed storage-error regression was fixed.
+
+| Original login | Desktop | Mobile |
+| --- | --- | --- |
+| Light | [Screenshot](evidence/console-login-refresh/original-login-desktop-light.png) | [Screenshot](evidence/console-login-refresh/original-login-mobile-light.png) |
+| Dark | [Screenshot](evidence/console-login-refresh/original-login-desktop-dark.png) | [Screenshot](evidence/console-login-refresh/original-login-mobile-dark.png) |
+
+[Console after remembered refresh](evidence/console-login-refresh/remembered-console-after-refresh.png)
+shows the restored original Config page. Candidate images are
+`cpamp-console-auth-e610e3c4-{manager,ingress,runtime}:local`; exact IDs are in
+the new report. Reproduce using the existing build and acceptance commands below,
+substituting source `e610e3c4`, these image names and a new output directory.
+The local build used the existing prebuilt-web packaging approach described below
+and passed the embedded file/manifest and transport-contract checks. No Registry
+push or release was performed. The older `18357` review environment was preserved;
+the new report's loopback origin is a separate task-owned installed candidate.
+
 ## Candidate and reproduction
 
 - Base: merged `v2@b535fd48bd3cdfc4d38c622bc037ae4b1876ec97`.
