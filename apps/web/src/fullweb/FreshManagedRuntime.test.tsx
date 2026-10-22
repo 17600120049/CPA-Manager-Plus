@@ -197,6 +197,63 @@ describe('Fresh New existing Runtime strategy integration', () => {
     expect(ui.pending).toHaveBeenLastCalledWith(true);
   });
 
+  it.each([
+    { action: 'stage', before: initial, after: staged, requiresObservation: true },
+    { action: 'start', before: staged, after: committed, requiresObservation: false },
+    { action: 'complete', before: committed, after: { ...committed, revision: 7, productComplete: true }, requiresObservation: false },
+  ])('keeps $action UNKNOWN while GET only returns the pre-write state', async ({ before, after, requiresObservation }) => {
+    let current = before;
+    const get = vi.fn().mockImplementation(async () => current);
+    const post = vi.fn().mockRejectedValue(new PublicApiError('network'));
+    const ui = await mount(get, post, before);
+    if (requiresObservation) await ui.observe();
+
+    await ui.click('install-runtime');
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(ui.node('install-runtime').props.disabled).toBe(true);
+    expect(ui.pending).toHaveBeenLastCalledWith(true);
+
+    await ui.click('refresh-installation');
+    expect(ui.node('install-runtime').props.disabled).toBe(true);
+    expect(ui.pending).toHaveBeenLastCalledWith(true);
+    expect(post).toHaveBeenCalledTimes(1);
+
+    // Only the original, correctly-targeted transition unlocks this session.
+    current = after;
+    await ui.click('refresh-installation');
+    expect(ui.pending).toHaveBeenLastCalledWith(false);
+    if (after.productComplete) {
+      expect(ui.renderer.root.findAllByProps({ 'data-testid': 'install-runtime' })).toHaveLength(0);
+    } else {
+      expect(ui.node('install-runtime').props.disabled).toBe(false);
+    }
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not unlock a lost Start on an unrelated revision change', async () => {
+    let current: FreshOperation = staged;
+    const get = vi.fn().mockImplementation(async () => current);
+    const post = vi.fn().mockRejectedValue(new PublicApiError('network'));
+    const ui = await mount(get, post, staged);
+    await ui.click('install-runtime');
+    current = { ...staged, revision: 6 };
+    await ui.click('refresh-installation');
+    expect(ui.node('install-runtime').props.disabled).toBe(true);
+    expect(ui.pending).toHaveBeenLastCalledWith(true);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an acknowledged Start locked when the following GET is stale', async () => {
+    const get = vi.fn().mockResolvedValue(staged);
+    const post = vi.fn().mockResolvedValue(committed);
+    const ui = await mount(get, post, staged);
+    await ui.click('install-runtime');
+    expect(ui.node('install-runtime').props.disabled).toBe(true);
+    expect(ui.pending).toHaveBeenLastCalledWith(true);
+    await ui.click('refresh-installation');
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
   it('retires admin authority on authentication failure', async () => {
     const ui = await mount(
       vi.fn(),

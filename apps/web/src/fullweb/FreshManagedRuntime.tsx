@@ -28,6 +28,23 @@ function hostTarget(value: string) {
   };
 }
 
+type PendingManagedWrite = {
+  revision: number;
+  action: 'stage' | 'start' | 'complete';
+  previousStage?: string;
+};
+
+function confirmsManagedWrite(next: FreshOperation, pending: PendingManagedWrite): boolean {
+  if (next.revision <= pending.revision) return false;
+  if (pending.action === 'complete') return next.productComplete === true;
+  if (!validManagedCheckpoint(next.strategy)) return false;
+  if (pending.action === 'stage') return true;
+  // Re-reading the same staged/starting state is not a receipt for Start.
+  return pending.previousStage === 'starting'
+    ? next.strategy?.stage === 'committed'
+    : next.strategy?.stage === 'starting' || next.strategy?.stage === 'committed';
+}
+
 function validManagedCheckpoint(checkpoint: FreshOperation['strategy']) {
   return (
     checkpoint?.strategy === 'new_managed' &&
@@ -62,6 +79,7 @@ export function FreshManagedRuntime({
   const inFlight = useRef(false);
   const alive = useRef(true);
   const expectedTarget = useRef<ReturnType<typeof hostTarget> | null>(null);
+  const pendingWrite = useRef<PendingManagedWrite | null>(null);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -99,6 +117,14 @@ export function FreshManagedRuntime({
           next.strategy.targetArtifactId !== checkpoint.targetArtifactId))
     )
       throw new Error('Invalid installation response');
+    // A successful GET can still be a pre-write snapshot. Only the original
+    // stage/start/complete transition may discharge an ambiguous POST.
+    if (pendingWrite.current) {
+      if (!confirmsManagedWrite(next, pendingWrite.current)) {
+        throw new Error('Original installation write has not been confirmed');
+      }
+      pendingWrite.current = null;
+    }
     onOperation(next);
     setUnknown(false);
     onPending(false);
@@ -143,6 +169,11 @@ export function FreshManagedRuntime({
     onPending(true);
     try {
       if (write) {
+        pendingWrite.current = {
+          revision: operation.revision,
+          action: checkpoint?.stage === 'committed' ? 'complete' : checkpoint?.strategy ? 'start' : 'stage',
+          previousStage: checkpoint?.stage,
+        };
         setUnknown(true);
         await client.post<FreshOperation>(
           checkpoint?.stage === 'committed' ? 'complete' : 'strategy',
