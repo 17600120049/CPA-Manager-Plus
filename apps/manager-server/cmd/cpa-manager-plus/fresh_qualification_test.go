@@ -75,7 +75,7 @@ func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.
 				"identity": before.Operation.Identity, "expectedRevision": before.Operation.Revision,
 				"strategy": item.strategy, "adoptSourceClass": item.class,
 				"attemptId": strings.Repeat("a", 32),
-				"baseUrl": "http://127.0.0.1:0", "managementKey": "private-source-secret",
+				"baseUrl": "http://127.0.0.1:1", "managementKey": "private-source-secret",
 				"expectedRuntimeIdentity": "claimed-runtime", "expectedRuntimeGeneration": 7,
 				"expectedArtifactId": "sha256:b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
 			}
