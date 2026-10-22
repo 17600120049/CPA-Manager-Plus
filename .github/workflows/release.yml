@@ -60,6 +60,14 @@ jobs:
             dry_run=false
           fi
 
+          # R1-1: fail closed before legacy 1.x asset/registry/channel producers.
+          # A v2 Embedded candidate must never fall through the six-Native,
+          # dual-architecture Manager release path. No v2 publication is authorized.
+          if [[ "${release_tag}" =~ ^v([0-9]+)\. ]] && (( 10#${BASH_REMATCH[1]} >= 2 )); then
+            echo "v2 Embedded release is STOP: R1-1 candidate qualification and R1-2 production authorization are not complete." >&2
+            exit 1
+          fi
+
           prerelease="$(node --input-type=module - "${release_tag}" <<'NODE'
           import { parseReleaseTag } from './bin/release/validate-release.mjs';
 

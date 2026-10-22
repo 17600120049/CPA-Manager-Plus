@@ -6,7 +6,7 @@ import { publishUpdateIndex } from '../bin/release/publish-update-index.mjs';
 import { repository, resolveChannels } from '../bin/release/update-contract.mjs';
 
 function scenario({
-  tags = ['v2.0.0'],
+  tags = ['v1.14.7'],
   failImage = false,
   conflict = false,
   existing = false,
@@ -153,13 +153,19 @@ function scenario({
 }
 
 describe('update index publication', () => {
+  it('rejects a v2 Manager-only schema1 record before release candidate construction', () => {
+    // The shared validator now rejects in generateReleaseInfo, before
+    // the channel producer can make any Docker or GitHub write.
+    expect(() => scenario({ tags: ['v2.0.0'] })).toThrow(/v2 Embedded/);
+  });
+
   it('publishes the index after exact image validation, aliases and GitHub Latest', async () => {
     const s = scenario();
     const index = await s.run();
-    expect(index.channels.stable.version).toBe('v2.0.0');
+    expect(index.channels.stable.version).toBe('v1.14.7');
     expect(s.calls.at(-1).body).toEqual({ ref: 'refs/heads/update-channel', sha: 'commit' });
     const tree = s.calls.find((c) => c.url?.endsWith('/git/trees'));
-    expect(tree.body.tree.find((f) => f.path === 'stable-version.txt').content).toBe('v2.0.0\n');
+    expect(tree.body.tree.find((f) => f.path === 'stable-version.txt').content).toBe('v1.14.7\n');
     const latest = s.calls.findIndex((c) => c.url?.endsWith('/releases/123'));
     expect(s.calls.slice(latest + 1).some((c) => c.docker)).toBe(false);
     expect(s.calls.slice(0, latest).some((c) => c.docker?.includes('create'))).toBe(true);
@@ -171,8 +177,8 @@ describe('update index publication', () => {
   });
   it('validates a distinct RC target before any alias or index mutation', async () => {
     const s = scenario({
-      tags: ['v1.13.0', 'v2.0.0-rc.2', 'v2.1.0-beta.1'],
-      failImage: 'v2.0.0-rc.2',
+      tags: ['v1.13.0', 'v1.14.8-rc.2', 'v1.14.9-beta.1'],
+      failImage: 'v1.14.8-rc.2',
     });
     await expect(s.run()).rejects.toThrow('Registry unavailable');
     expect(s.calls.some((c) => c.docker?.includes('create'))).toBe(false);
@@ -209,59 +215,59 @@ describe('update index publication', () => {
     expect(s.calls.at(-1).body).toEqual({ sha: 'commit', force: false });
   });
   it('can bootstrap preview channels before the first metadata-bearing stable release', async () => {
-    const s = scenario({ tags: ['v2.0.0-beta.1'] });
+    const s = scenario({ tags: ['v1.14.8-beta.1'] });
     const index = await s.run();
-    expect(index.channels).toEqual({ stable: null, rc: null, beta: { version: 'v2.0.0-beta.1' } });
+    expect(index.channels).toEqual({ stable: null, rc: null, beta: { version: 'v1.14.8-beta.1' } });
     expect(s.calls.some((c) => c.method === 'PATCH' && c.url?.includes('/releases/'))).toBe(false);
     const tree = s.calls.find((c) => c.url?.endsWith('/git/trees'));
     expect(tree.body.tree.some((f) => f.path === 'stable-version.txt')).toBe(false);
   });
   it('withdraws a preview recommendation and can restore it through the same flow', async () => {
-    const tags = ['v2.0.0', 'v2.1.0-beta.1'];
+    const tags = ['v1.14.7', 'v1.14.9-beta.1'];
     const withdrawn = scenario({ existing: true, tags, withdraw: tags[1] });
     expect((await withdrawn.run()).channels.beta.version).toBe(tags[0]);
     const restored = scenario({ existing: true, tags, withdrawn: [tags[1]], restore: tags[1] });
     expect((await restored.run()).channels.beta.version).toBe(tags[1]);
   });
   it('allows withdrawing the only stable release and generates all-null channels without stable-version.txt', async () => {
-    const s = scenario({ existing: true, tags: ['v2.0.0'], withdraw: 'v2.0.0' });
+    const s = scenario({ existing: true, tags: ['v1.14.7'], withdraw: 'v1.14.7' });
     const index = await s.run();
     expect(index.channels).toEqual({ stable: null, rc: null, beta: null });
     const tree = s.calls.find((c) => c.url?.endsWith('/git/trees'));
     expect(tree.body.tree.some((f) => f.path === 'stable-version.txt')).toBe(false);
     const withdrawnEntry = tree.body.tree.find((f) => f.path === 'withdrawn.json');
-    expect(JSON.parse(withdrawnEntry.content)).toContain('v2.0.0');
+    expect(JSON.parse(withdrawnEntry.content)).toContain('v1.14.7');
   });
 
   it('allows withdrawing stable when beta exists, resulting in stable=null and retaining beta', async () => {
-    const s = scenario({ existing: true, tags: ['v2.0.0', 'v2.1.0-beta.1'], withdraw: 'v2.0.0' });
+    const s = scenario({ existing: true, tags: ['v1.14.7', 'v1.14.9-beta.1'], withdraw: 'v1.14.7' });
     const index = await s.run();
     expect(index.channels.stable).toBeNull();
     expect(index.channels.rc).toBeNull();
-    expect(index.channels.beta.version).toBe('v2.1.0-beta.1');
+    expect(index.channels.beta.version).toBe('v1.14.9-beta.1');
     const tree = s.calls.find((c) => c.url?.endsWith('/git/trees'));
     expect(tree.body.tree.some((f) => f.path === 'stable-version.txt')).toBe(false);
     const withdrawnEntry = tree.body.tree.find((f) => f.path === 'withdrawn.json');
-    expect(JSON.parse(withdrawnEntry.content)).toContain('v2.0.0');
+    expect(JSON.parse(withdrawnEntry.content)).toContain('v1.14.7');
   });
 
   it('restores a withdrawn stable release and republishes stable-version.txt', async () => {
     const s = scenario({
       existing: true,
-      tags: ['v2.0.0'],
-      withdrawn: ['v2.0.0'],
-      restore: 'v2.0.0',
+      tags: ['v1.14.7'],
+      withdrawn: ['v1.14.7'],
+      restore: 'v1.14.7',
     });
     const index = await s.run();
-    expect(index.channels.stable.version).toBe('v2.0.0');
+    expect(index.channels.stable.version).toBe('v1.14.7');
     const tree = s.calls.find((c) => c.url?.endsWith('/git/trees'));
     const stableFile = tree.body.tree.find((f) => f.path === 'stable-version.txt');
     expect(stableFile).toBeDefined();
-    expect(stableFile.content).toBe('v2.0.0\n');
+    expect(stableFile.content).toBe('v1.14.7\n');
   });
 
   it('rejects withdrawing a non-existent or unverified release tag', async () => {
-    const s = scenario({ existing: true, tags: ['v2.0.0'], withdraw: 'v99.99.99' });
+    const s = scenario({ existing: true, tags: ['v1.14.7'], withdraw: 'v99.99.99' });
     await expect(s.run()).rejects.toThrow(
       'Withdraw target must be an existing published release with release-info.json'
     );

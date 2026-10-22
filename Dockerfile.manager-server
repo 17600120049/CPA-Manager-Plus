@@ -6,9 +6,14 @@ COPY package*.json ./
 COPY apps/web/package.json ./apps/web/package.json
 RUN npm ci
 COPY apps/web ./apps/web
+# Full Web TypeScript tests import this source-shared R1 fixture.
+# Keep the in-image module path identical to the repository layout.
+COPY tests/fixtures/r1-embedded-api-transport.json ./tests/fixtures/r1-embedded-api-transport.json
 COPY bin/build ./bin/build
+COPY bin/release/hash-fullweb.mjs ./bin/release/hash-fullweb.mjs
 WORKDIR /app/apps/web
 RUN VITE_CPAMP_PAH_S0=$VITE_CPAMP_PAH_S0 VERSION=$VERSION npm run build
+RUN mkdir -p /out && node /app/bin/release/hash-fullweb.mjs /app/apps/web/dist/fullweb /out/fullweb-manifest.json
 
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS service-build
 ARG VERSION=dev
@@ -18,21 +23,30 @@ ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
 COPY apps/manager-server ./apps/manager-server
+COPY tests/fixtures/r1-embedded-api-transport.json ./apps/manager-server/internal/domain/routing/release-embedded-api-transport.json
 COPY --from=web-build /app/apps/web/dist/panel/management.html ./apps/manager-server/internal/httpapi/web/management.html
 COPY --from=web-build /app/apps/web/dist/fullweb/ ./apps/manager-server/internal/httpapi/web/fullweb/
+COPY --from=web-build /out/fullweb-manifest.json ./apps/manager-server/internal/httpapi/release-fullweb-manifest.json
 WORKDIR /src/apps/manager-server
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.Version=$VERSION -X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.SourceCommit=$SOURCE_COMMIT -X github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo.PAHS0WebBundle=$VITE_CPAMP_PAH_S0" -o /out/cpa-manager-plus ./cmd/cpa-manager-plus
+# Verify the real output binary carries this source stamp, not just image labels.
+RUN go version -m /out/cpa-manager-plus | grep -F "SourceCommit=$SOURCE_COMMIT"
 
 # Packaging smoke without activating production routing authority. The final
 # image consumes the same compiled artifact only after this check passes.
 FROM service-build AS web-package-test
-RUN CPAMP_FULLWEB_PACKAGED_TEST=1 go test -run '^TestPackagedFullWebDist$' ./internal/httpapi
+RUN CPAMP_FULLWEB_PACKAGED_TEST=1 go test -run '^TestPackagedFullWeb(Dist|Manifest)$' ./internal/httpapi
+RUN go test -run '^TestR1EmbeddedPublicAPITransportFixture$' ./internal/domain/routing
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates wget tzdata
 WORKDIR /app
 COPY --from=web-package-test /out/cpa-manager-plus /usr/local/bin/cpa-manager-plus
+COPY --from=web-build /out/fullweb-manifest.json /usr/local/share/cpamp/release/fullweb-manifest.json
+COPY tests/fixtures/r1-embedded-api-transport.json /usr/local/share/cpamp/release/public-api-transport-contract.json
+COPY LICENSE /usr/local/share/licenses/cpamp/LICENSE
+COPY bin/release/embedded-third-party-inventory.txt /usr/local/share/cpamp/release/third-party-inventory.txt
 ENV HTTP_ADDR=0.0.0.0:18317
 ENV USAGE_DATA_DIR=/data
 ENV USAGE_DB_PATH=/data/usage.sqlite

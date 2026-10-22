@@ -41,29 +41,29 @@ describe('update contract', () => {
     corpus.invalid.forEach((tag) => expect(() => parseVersion(tag)).toThrow());
   });
   it('keeps stage and channel distinct and avoids backport alias regression', () => {
-    const infos = ['v2.0.0', 'v2.1.0-beta.1', 'v1.13.10'].map(makeInfo);
+    const infos = ['v1.14.7', 'v1.14.8-beta.1', 'v1.13.10'].map(makeInfo);
     expect(resolveChannels(infos)).toEqual({
-      stable: { version: 'v2.0.0' },
-      rc: { version: 'v2.0.0' },
-      beta: { version: 'v2.1.0-beta.1' },
+      stable: { version: 'v1.14.7' },
+      rc: { version: 'v1.14.7' },
+      beta: { version: 'v1.14.8-beta.1' },
     });
     expect(resolveAliases(infos, []).aliases).toEqual({
-      latest: 'v2.0.0',
-      preview: 'v2.1.0-beta.1',
-      '2.0': 'v2.0.0',
+      latest: 'v1.14.7',
+      preview: 'v1.14.8-beta.1',
+      '1.14': 'v1.14.7',
       1.13: 'v1.13.10',
     });
-    expect(resolveChannels(infos, ['v2.1.0-beta.1']).beta.version).toBe('v2.0.0');
+    expect(resolveChannels(infos, ['v1.14.8-beta.1']).beta.version).toBe('v1.14.7');
   });
   it('fails closed on invalid identity, distribution and incomplete release', () => {
-    const info = makeInfo('v2.0.0');
+    const info = makeInfo('v1.14.7');
     expect(() =>
-      validateInfo({ ...info, release: { ...info.release, stage: 'rc' } }, 'v2.0.0')
+      validateInfo({ ...info, release: { ...info.release, stage: 'rc' } }, 'v1.14.7')
     ).toThrow();
     expect(() =>
       verifyCandidate(
         {
-          tag_name: 'v2.0.0',
+          tag_name: 'v1.14.7',
           draft: false,
           immutable: true,
           published_at: 'now',
@@ -74,12 +74,31 @@ describe('update contract', () => {
         'a'.repeat(40)
       )
     ).toThrow();
-    expect(() => generateReleaseInfo('v2.0.0', 'a'.repeat(40), 'No metadata')).toThrow();
+    expect(() => generateReleaseInfo('v1.14.7', 'a'.repeat(40), 'No metadata')).toThrow();
+  });
+  it('rejects Manager-only v2 schema1 at the shared validator before channels or generator', () => {
+    const historical = makeInfo('v1.14.7');
+    const forged = {
+      ...historical,
+      release: { ...historical.release, version: 'v2.0.0', stage: 'stable' },
+      distribution: {
+        docker: { ...historical.distribution.docker, version_tag: 'v2.0.0' },
+        native: {
+          assets: historical.distribution.native.assets.map((asset) =>
+            asset.replaceAll('v1.14.7', 'v2.0.0')
+          ),
+        },
+      },
+    };
+    expect(validateInfo(historical, 'v1.14.7')).toBe(historical);
+    expect(() => validateInfo(forged, 'v2.0.0')).toThrow(/v2 Embedded/);
+    expect(() => resolveChannels([historical, forged])).toThrow(/v2 Embedded/);
+    expect(() => makeInfo('v2.0.0')).toThrow(/v2 Embedded/);
   });
   it('generates recovery metadata from the explicit release SHA independently of the checkout', () => {
     const cwd = mkdtempSync(path.join(tmpdir(), 'cpamp-release-info-'));
     try {
-      const tag = 'v2.0.0',
+      const tag = 'v1.14.7',
         sha = 'b'.repeat(40),
         expected = makeInfo(tag);
       mkdirSync(path.join(cwd, 'docs/release-notes'), { recursive: true });

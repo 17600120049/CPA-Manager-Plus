@@ -73,6 +73,7 @@ export const buildExpectedReleaseAssets = (assetsDir, tag) => {
 
 const verifyReleaseIdentity = ({ release, tag, prerelease, body, draft }) => {
   parseReleaseTag(tag);
+  if (!/^v1\./.test(tag)) fail('Unqualified v2 Embedded release: publication STOP');
   if (!release || typeof release !== 'object') fail('GitHub Release response must be an object');
   if (release.tag_name !== tag) {
     fail(`Existing GitHub Release tag mismatch: expected ${tag}, received ${release.tag_name}`);

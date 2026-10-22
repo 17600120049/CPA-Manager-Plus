@@ -49,6 +49,10 @@ export const nativeAssets = (tag) =>
     .sort();
 export function validateInfo(info, tag) {
   const v = parseVersion(tag);
+  // R1-1 authorizes disposable candidates, not v2 Manager-only publication.
+  // Keep schema1 strict for released 1.x; no v2 legacy fallback is authorized.
+  if (v.core[0] !== '1')
+    throw new Error('Unqualified v2 Embedded release: R1-2 publication/channel STOP');
   if (
     !/^v/.test(tag) ||
     tag.includes('+') ||
