@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -48,6 +49,16 @@ func NormalizeV8BaseURL(raw string) (string, error) {
 	}
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.Opaque != "" {
+		return "", V8InvalidConnection
+	}
+	// Reject impossible TCP ports before Fresh External claims its one-shot CAS.
+	// net/url accepts 0 and values above 65535; the socket dial cannot use them.
+	if port := u.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return "", V8InvalidConnection
+		}
+	} else if strings.HasSuffix(u.Host, ":") {
 		return "", V8InvalidConnection
 	}
 	for _, segment := range strings.Split(u.Path, "/") {

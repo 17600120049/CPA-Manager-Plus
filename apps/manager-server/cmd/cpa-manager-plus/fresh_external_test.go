@@ -189,6 +189,10 @@ func TestA3StaticPreflightDeniedWithoutReservation(t *testing.T) {
 		{"http://cpa.private:8317", "invalid key with space"},
 		{"http://cpa.private:8317", "bad\nkey"},
 		{"http://cpa.private:8317/%25", "private-source-secret"},
+		{"http://cpa.private:0", "private-source-secret"},
+		{"http://cpa.private:65536", "private-source-secret"},
+		{"http://[::1]:65536", "private-source-secret"},
+		{"http://cpa.private:", "private-source-secret"},
 	} {
 		got := a3Post(t, app, before.Operation.Revision, item.url, item.key)
 		if got.Code != http.StatusConflict { t.Fatalf("preflight %q accepted: %d", item.url, got.Code) }
