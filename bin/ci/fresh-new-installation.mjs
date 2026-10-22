@@ -155,7 +155,7 @@ function pass(name) {
   report.checks.push({ name, result: 'PASS' });
   console.log('PASS ' + name);
 }
-async function screenshot(name) {
+async function screenshot(name, fullPage = true) {
   const overflow = await page.evaluate(() => ({
     width: innerWidth,
     scrollWidth: document.documentElement.scrollWidth,
@@ -174,7 +174,7 @@ async function screenshot(name) {
   );
   await page.screenshot({
     path: resolve(out, name + '.png'),
-    fullPage: true,
+    fullPage,
     animations: 'disabled',
   });
   report.screenshots.push({
@@ -433,7 +433,8 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
       await page.getByRole('button', { name: '主题', exact: true }).click();
     }
     assert.equal(await page.locator('html').getAttribute('data-theme') === 'dark', !light);
-    await screenshot('original-login-' + name);
+    assert.equal(await page.getByRole('button', { name: '主题', exact: true }).count(), 1);
+    await screenshot('original-login-' + name, false);
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   pass('original CPAMP login page, language/theme tools and remember-credential control render on desktop/mobile light/dark');
@@ -840,7 +841,8 @@ except OSError:pass`,
   );
   await page.getByRole('button', { name: '登出', exact: true }).click();
   await page.getByTestId('console-login').waitFor();
-  await page.getByRole('checkbox', { name: '记住凭证', exact: true }).check();
+  await page.getByText('记住凭证', { exact: true }).click();
+  assert(await page.getByRole('checkbox', { name: '记住凭证', exact: true }).isChecked());
   await login(admin);
   await page.getByTestId('legacy-console').waitFor();
   await navigate('/config');
@@ -856,7 +858,8 @@ except OSError:pass`,
   await page.reload();
   await page.getByTestId('console-login').waitFor();
   assert.equal(await page.getByTestId('legacy-console').count(), 0);
-  await page.getByRole('checkbox', { name: '记住凭证', exact: true }).uncheck();
+  if (await page.getByRole('checkbox', { name: '记住凭证', exact: true }).isChecked())
+    await page.getByText('记住凭证', { exact: true }).click();
   await login(admin);
   await page.getByTestId('legacy-console').waitFor();
   pass('explicit logout clears remembered authority; refresh stays on the original login page');

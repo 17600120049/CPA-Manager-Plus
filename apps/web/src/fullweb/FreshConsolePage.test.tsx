@@ -250,6 +250,24 @@ describe('Fresh installation and Console authority boundary', () => {
     expect(hasLogin()).toBe(true);
     expect(read).not.toHaveBeenCalled();
   });
+  it('can sign in and revoke in-memory authority when browser storage is full', async () => {
+    await mount();
+    const original = localStorage.setItem;
+    localStorage.setItem = () => { throw new DOMException('Storage full', 'QuotaExceededError'); };
+    try {
+      await login(true);
+      expect(has('legacy-console')).toBe(true);
+      expect(useAuthStore.getState().isAuthenticated).toBe(true);
+      expect(useAuthStore.getState().rememberPassword).toBe(false);
+      await act(async () => renderer.root.findByType(LegacyConsolePage).props.onUnauthorized());
+      expect(hasLogin()).toBe(true);
+      expect(has('legacy-console')).toBe(false);
+      expect(useAuthStore.getState().managementKey).toBe('');
+      expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    } finally {
+      localStorage.setItem = original;
+    }
+  });
   it('continues incomplete Fresh in its guided journey without mounting management pages', async () => {
     read.mockImplementation(() =>
       Promise.resolve(Response.json({ ...operation, productComplete: false }))
