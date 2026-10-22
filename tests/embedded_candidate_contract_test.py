@@ -47,7 +47,10 @@ def sample_elf():
     # The 64-byte header was the pre-fix false positive: not a loadable binary.
     data = bytearray(64)
     data[0:4] = b"\x7fELF"
+    data[4:7] = b"\x02\x01\x01"
+    data[16:18] = (2).to_bytes(2, "little")
     data[18:20] = (62).to_bytes(2, "little")
+    data[20:24] = (1).to_bytes(4, "little")
     return bytes(data)
 
 
@@ -164,7 +167,11 @@ class EmbeddedCandidateContracts(unittest.TestCase):
             (work / command / "main.go").write_text(source, encoding="utf-8")
             env = dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off",
                        GOOS="linux", GOARCH="amd64", CGO_ENABLED="0")
-            args = ["go", "build", "-trimpath", "-o", str(work / "candidate")]
+            args = ["go", "build", "-o", str(work / "candidate")]
+            if role != "manager":
+                args.insert(2, "-trimpath")
+            # Go omits -ldflags metadata when -trimpath is enabled. The actual
+            # Manager Docker build keeps the non-trimpath linker stamp.
             if role == "manager":
                 stamp = "b" * 40 if key == "manager_wrong_stamp" else SHA
                 args += ["-ldflags",
