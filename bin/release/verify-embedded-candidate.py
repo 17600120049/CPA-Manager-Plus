@@ -10,6 +10,7 @@ import io
 import gzip
 import json
 import re
+import shlex
 import struct
 import subprocess
 import sys
@@ -54,6 +55,13 @@ GO_BINARIES = {
     "manager": "/usr/local/bin/cpa-manager-plus",
     "ingress": "/usr/local/bin/cpamp-ingress",
     "runtime": "/usr/local/bin/cpamp-runtime-supervisor",
+}
+RUNTIME_ENTRYPOINT = "/usr/local/bin/cpamp-runtime-v8-entrypoint"
+# Exact startup contract of the three R1-1 Dockerfile final stages.
+STARTUP = {
+    "manager": (["cpa-manager-plus"], None),
+    "ingress": (["/usr/local/bin/cpamp-ingress"], None),
+    "runtime": ([RUNTIME_ENTRYPOINT], ["/usr/local/bin/cpamp-runtime-supervisor"]),
 }
 MANIFEST_TYPE = "application/vnd.oci.image.manifest.v1+json"
 CONFIG_TYPE = "application/vnd.oci.image.config.v1+json"
@@ -148,6 +156,40 @@ def check_amd64_elf(data, name):
     require(executable_load, "ELF has no executable entry segment: " + name)
 
 
+def check_manager_linker_identity(raw_flags, module, source_sha):
+    require(isinstance(raw_flags, str) and raw_flags, "Manager linker flags missing")
+    try:
+        tokens = shlex.split(raw_flags)
+        # Go metadata records the entire -ldflags argument as a quoted string.
+        if len(tokens) == 1 and tokens[0].startswith("-X "):
+            tokens = shlex.split(tokens[0])
+    except ValueError as exc:
+        raise ValueError("invalid Manager linker flag quoting") from exc
+    assignments = {}
+    for index in range(0, len(tokens), 2):
+        require(index + 1 < len(tokens) and tokens[index] == "-X",
+                "unexpected Manager linker flag")
+        key, separator, value = tokens[index + 1].partition("=")
+        require(separator == "=" and key and key not in assignments,
+                "invalid or duplicate Manager linker assignment")
+        assignments[key] = value
+    expected = {
+        module + "/internal/buildinfo.SourceCommit": source_sha,
+        module + "/internal/buildinfo.Version": CANDIDATE_VERSION,
+    }
+    require(assignments == expected, "Manager compiled source/version stamp mismatch")
+
+
+def check_startup_config(config, role):
+    runtime = config.get("config")
+    require(type(runtime) is dict, "OCI image runtime config missing")
+    entrypoint, command = STARTUP[role]
+    require(runtime.get("Entrypoint") == entrypoint and
+            runtime.get("Cmd") in (None, []) if command is None else
+            runtime.get("Entrypoint") == entrypoint and runtime.get("Cmd") == command,
+            "final image Entrypoint/Cmd mismatch: " + role)
+
+
 def check_go_binary(data, role, source_sha):
     # 'go version -m' reads compiled Go buildinfo without running the candidate.
     # The module/path are derived from the ELF, not OCI labels or file names.
@@ -179,10 +221,7 @@ def check_go_binary(data, role, source_sha):
             options.get("CGO_ENABLED") == "0",
             "Go compiled target mismatch: " + role)
     if role == "manager":
-        flags = options.get("-ldflags", "")
-        require("buildinfo.SourceCommit=" + source_sha in flags and
-                "buildinfo.Version=" + CANDIDATE_VERSION in flags,
-                "Manager compiled source/version stamp mismatch")
+        check_manager_linker_identity(options.get("-ldflags", ""), module, source_sha)
     return {"module": module, "entrypoint": parsed["path"],
             "goTarget": "linux/amd64",
             "managerCompiledSourceClaim": source_sha if role == "manager" else None}
@@ -226,7 +265,7 @@ def final_files(archive, layers, diff_ids, wanted):
             ", ".join(sorted(set(wanted) - set(result))))
     return result, permissions
 
-def inspect(path, role, source_sha, event, root_license, seed):
+def inspect(path, role, source_sha, event, root_license, seed, runtime_entrypoint):
     require(path.is_file(), "missing OCI archive: " + str(path))
     with tarfile.open(path, mode="r:*") as archive:
         layout = json_object(read_member(archive, "oci-layout", 4096), "oci-layout")
@@ -254,6 +293,7 @@ def inspect(path, role, source_sha, event, root_license, seed):
         config_id = config_descriptor["digest"]
         require(config.get("os") == "linux" and config.get("architecture") == "amd64",
                 "image config architecture mismatch")
+        check_startup_config(config, role)
         layers = manifest.get("layers")
         require(isinstance(layers, list) and len(layers) > 0, "missing image layers")
         rootfs = config.get("rootfs")
@@ -286,6 +326,8 @@ def inspect(path, role, source_sha, event, root_license, seed):
                     check_amd64_elf(files[path_], path_)
         compiled_identity = check_go_binary(files[GO_BINARIES[role]], role, source_sha)
         if role == "runtime":
+            require(files[RUNTIME_ENTRYPOINT] == runtime_entrypoint,
+                    "Runtime entrypoint differs from locked source")
             require(hashlib.sha256(files["/usr/local/bin/cli-proxy-api"]).hexdigest() == CPA_SHA,
                     "official CPA v8.0.13 executable hash mismatch")
             manifest_file = json_object(files["/usr/local/share/cpamp/runtime/cpa-artifact.json"],
@@ -331,9 +373,11 @@ def verify(paths, source_sha, event, root):
     require(re.fullmatch(r"[A-Za-z0-9._-]{8,128}", event) is not None, "invalid build event")
     license_bytes = (root / "LICENSE").read_bytes()
     seed = (root / "docker/runtime/config.v8.default.seed.yaml").read_bytes()
+    runtime_entrypoint = (root / "docker/runtime/v8-entrypoint.sh").read_bytes()
     inventory_bytes = (root / "bin/release/embedded-third-party-inventory.txt").read_bytes()
     api_contract_bytes = (root / "tests/fixtures/r1-embedded-api-transport.json").read_bytes()
-    result = {role: inspect(paths[role], role, source_sha, event, license_bytes, seed)
+    result = {role: inspect(paths[role], role, source_sha, event,
+                            license_bytes, seed, runtime_entrypoint)
               for role in ROLES}
     for role in ROLES:
         require(result[role]["packagedFiles"][NOTICE] == digest(inventory_bytes),
