@@ -39,7 +39,6 @@ export function FreshConsolePage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [light, setLight] = useState(true);
-  const [, setThemeMode] = useState<'auto' | 'white' | 'dark'>('white');
   const [refreshEpoch, setRefreshEpoch] = useState(0);
   const [creationPending, setCreationPending] = useState(false);
   const creationPendingRef = useRef(false);
@@ -63,13 +62,6 @@ export function FreshConsolePage({
     document.documentElement.classList.toggle('light', light);
     document.documentElement.setAttribute('data-theme', light ? 'white' : 'dark');
   }, [light]);
-
-  function changeTheme(mode: 'auto' | 'white' | 'dark') {
-    setThemeMode(mode);
-    if (mode === 'dark') setLight(false);
-    else if (mode === 'white') setLight(true);
-    else setLight(window.matchMedia?.('(prefers-color-scheme: dark)').matches !== true);
-  }
 
   function reportCreationPending(pending: boolean) {
     creationPendingRef.current = pending;
@@ -287,7 +279,6 @@ export function FreshConsolePage({
       blocked={blocked}
       light={light}
       onTheme={() => setLight(!light)}
-      onThemeMode={changeTheme}
       onLanguage={() => updateLanguage((revision) => revision + 1)}
     >
       {error && (

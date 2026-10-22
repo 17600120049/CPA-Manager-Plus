@@ -19,7 +19,6 @@ import {
   IconSidebarPlugins,
   IconSidebarSystem,
   IconSidebarUsage,
-  IconGithub,
 } from '../components/ui/icons';
 import { FullWebIcon } from './FullWebIcon';
 import './consoleShell.css';
@@ -135,7 +134,6 @@ export function ConsoleShell({
   blocked,
   light,
   onTheme,
-  onThemeMode,
   page,
   onNavigate,
   onLanguage,
@@ -149,7 +147,6 @@ export function ConsoleShell({
   blocked: boolean;
   light: boolean;
   onTheme: () => void;
-  onThemeMode?: (mode: 'auto' | 'white' | 'dark') => void;
   onLanguage: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(readSidebarCookie);
@@ -174,10 +171,6 @@ export function ConsoleShell({
     [page, collapsed]
   );
   const [language, setLanguage] = useState(fullWebLanguage());
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
-  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
-  const [effectsMenuOpen, setEffectsMenuOpen] = useState(false);
-  const [effectsReduced, setEffectsReduced] = useState(false);
   const sidebar = useRef<HTMLElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const main = useRef<HTMLElement>(null);
@@ -199,36 +192,6 @@ export function ConsoleShell({
     setCollapsed(!collapsed);
   }
   useEffect(() => writeSidebarCookie(collapsed), [collapsed]);
-  useEffect(() => {
-    const root = document.documentElement as HTMLElement | undefined;
-    if (!root) return;
-    if (typeof root.toggleAttribute === 'function') root.toggleAttribute('data-reduced-motion', effectsReduced);
-    else if (effectsReduced) root.setAttribute?.('data-reduced-motion', 'true');
-    else root.removeAttribute?.('data-reduced-motion');
-  }, [effectsReduced]);
-  useEffect(() => {
-    if (!languageMenuOpen && !themeMenuOpen && !effectsMenuOpen) return;
-    const closeMenus = (event: PointerEvent) => {
-      const target = event.target as Element | null;
-      if (!target?.closest('.console-tool-menu')) {
-        setLanguageMenuOpen(false);
-        setThemeMenuOpen(false);
-        setEffectsMenuOpen(false);
-      }
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setLanguageMenuOpen(false);
-      setThemeMenuOpen(false);
-      setEffectsMenuOpen(false);
-    };
-    document.addEventListener('pointerdown', closeMenus);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('pointerdown', closeMenus);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [languageMenuOpen, themeMenuOpen, effectsMenuOpen]);
   useEffect(() => {
     const viewport = window.matchMedia?.('(max-width: 768px)');
     if (!viewport) return;
@@ -487,21 +450,23 @@ export function ConsoleShell({
             </nav>
           </div>
           <div className="console-tools navbar-right">
-            <select
-              className="console-language-select"
-              aria-label={s('language')}
-              value={language}
-              onChange={(event) => {
-                setFullWebLanguage(event.target.value);
-                setLanguage(event.target.value);
-                onLanguage();
-              }}
-            >
-              <option value="zh-CN">简体中文</option>
-              <option value="zh-TW">繁體中文</option>
-              <option value="en">English</option>
-              <option value="ru">Русский</option>
-            </select>
+            <label className="console-language">
+              <FullWebIcon name="globe" size={16} />
+              <select
+                aria-label={s('language')}
+                value={language}
+                onChange={(event) => {
+                  setFullWebLanguage(event.target.value);
+                  setLanguage(event.target.value);
+                  onLanguage();
+                }}
+              >
+                <option value="zh-CN">简体中文</option>
+                <option value="zh-TW">繁體中文</option>
+                <option value="en">English</option>
+                <option value="ru">Русский</option>
+              </select>
+            </label>
             <button
               className="console-icon-button console-refresh btn btn-ghost"
               aria-label={t('refresh')}
@@ -510,119 +475,14 @@ export function ConsoleShell({
             >
               <FullWebIcon name="refresh" />
             </button>
-            <a
+            <button
               className="console-icon-button btn btn-ghost"
-              href="https://github.com/seakee/CPA-Manager-Plus"
-              target="_blank"
-              rel="noreferrer"
-              aria-label={s('github')}
-              title={s('github')}
+              aria-label={t('theme')}
+              title={t('theme')}
+              onClick={onTheme}
             >
-              <IconGithub size={16} />
-            </a>
-            <div className="console-tool-menu">
-              <button
-                className="console-icon-button btn btn-ghost"
-                aria-label={s('language')}
-                title={s('language')}
-                aria-haspopup="menu"
-                aria-expanded={languageMenuOpen}
-                onClick={() => {
-                  setLanguageMenuOpen((open) => !open);
-                  setThemeMenuOpen(false);
-                  setEffectsMenuOpen(false);
-                }}
-              >
-                <FullWebIcon name="globe" />
-              </button>
-              {languageMenuOpen && (
-                <div className="console-tool-popover" role="menu" aria-label={s('language')}>
-                  {[
-                    ['zh-CN', '简体中文'],
-                    ['zh-TW', '繁體中文'],
-                    ['en', 'English'],
-                    ['ru', 'Русский'],
-                  ].map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={language === value}
-                      className={language === value ? 'active' : ''}
-                      onClick={() => {
-                        setFullWebLanguage(value);
-                        setLanguage(value);
-                        setLanguageMenuOpen(false);
-                        onLanguage();
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="console-tool-menu">
-              <button
-                className="console-icon-button btn btn-ghost"
-                aria-label={s('theme')}
-                title={s('theme')}
-                aria-haspopup="menu"
-                aria-expanded={themeMenuOpen}
-                onClick={() => {
-                  setThemeMenuOpen((open) => !open);
-                  setLanguageMenuOpen(false);
-                  setEffectsMenuOpen(false);
-                }}
-              >
-                <FullWebIcon name={light ? 'sun' : 'moon'} />
-              </button>
-              {themeMenuOpen && (
-                <div className="console-tool-popover console-theme-popover" role="menu" aria-label={s('theme')}>
-                  {[
-                    ['auto', s('themeAuto')],
-                    ['white', s('themeWhite')],
-                    ['dark', s('themeDark')],
-                  ].map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      role="menuitemradio"
-                      className={(value === 'dark' ? !light : light) ? 'active' : ''}
-                      onClick={() => {
-                        onThemeMode?.(value as 'auto' | 'white' | 'dark');
-                        if (!onThemeMode && ((value === 'dark') === light)) onTheme();
-                        setThemeMenuOpen(false);
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="console-tool-menu">
-              <button
-                className="console-icon-button btn btn-ghost"
-                aria-label={s('visualEffects')}
-                title={s('visualEffects')}
-                aria-haspopup="menu"
-                aria-expanded={effectsMenuOpen}
-                onClick={() => {
-                  setEffectsMenuOpen((open) => !open);
-                  setLanguageMenuOpen(false);
-                  setThemeMenuOpen(false);
-                }}
-              >
-                <FullWebIcon name="sparkle" />
-              </button>
-              {effectsMenuOpen && (
-                <div className="console-tool-popover" role="menu" aria-label={s('visualEffects')}>
-                  <button type="button" role="menuitemradio" aria-checked={!effectsReduced} className={!effectsReduced ? 'active' : ''} onClick={() => { setEffectsReduced(false); setEffectsMenuOpen(false); }}>{s('effectsFull')}</button>
-                  <button type="button" role="menuitemradio" aria-checked={effectsReduced} className={effectsReduced ? 'active' : ''} onClick={() => { setEffectsReduced(true); setEffectsMenuOpen(false); }}>{s('effectsReduced')}</button>
-                </div>
-              )}
-            </div>
+              <FullWebIcon name={light ? 'sun' : 'moon'} />
+            </button>
             <button
               className="console-icon-button btn btn-ghost"
               aria-label={t('logout')}
