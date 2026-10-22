@@ -1,6 +1,6 @@
 {
   "result": "PASS",
-  "project": "cpamp-fresh-new-1c3d50969cc0",
+  "project": "cpamp-fresh-new-dad597f8986d",
   "checks": [
     {
       "name": "first boot waits for Host initialize without creating database or data key",
@@ -101,6 +101,16 @@
   ],
   "screenshots": [
     {
+      "name": "bootstrap-administrator-desktop-light",
+      "path": "bootstrap-administrator-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/.well-known/cpamp-bootstrap/ui"
+    },
+    {
       "name": "installation-choice-desktop-dark",
       "path": "installation-choice-desktop-dark.png",
       "viewport": {
@@ -133,6 +143,46 @@
     {
       "name": "installation-choice-mobile-dark",
       "path": "installation-choice-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "installation-configure-desktop-dark",
+      "path": "installation-configure-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "installation-configure-desktop-light",
+      "path": "installation-configure-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-configure-mobile-light",
+      "path": "installation-configure-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-configure-mobile-dark",
+      "path": "installation-configure-mobile-dark.png",
       "viewport": {
         "width": 390,
         "height": 1000
@@ -271,6 +321,16 @@
       "route": "/console/system/settings"
     },
     {
+      "name": "home-desktop-dark",
+      "path": "home-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
       "name": "api-keys-desktop-dark",
       "path": "api-keys-desktop-dark.png",
       "viewport": {
@@ -319,6 +379,16 @@
       },
       "theme": "light",
       "route": "/console/system/settings"
+    },
+    {
+      "name": "home-desktop-light",
+      "path": "home-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
     },
     {
       "name": "api-keys-desktop-light",
@@ -371,6 +441,16 @@
       "route": "/console/system/settings"
     },
     {
+      "name": "home-mobile-light",
+      "path": "home-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
       "name": "api-keys-mobile-light",
       "path": "api-keys-mobile-light.png",
       "viewport": {
@@ -421,6 +501,16 @@
       "route": "/console/system/settings"
     },
     {
+      "name": "home-mobile-dark",
+      "path": "home-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
       "name": "api-keys-mobile-dark",
       "path": "api-keys-mobile-dark.png",
       "viewport": {
@@ -468,28 +558,26 @@
     "Non-Chinese locale layouts, other browser engines"
   ],
   "images": {
-    "cpamp-runtime": "sha256:b04e40d06f48a5cd887b5fe7860234d6228921662f48394e807eda0e0c529285",
-    "cpamp-manager": "sha256:83879cdae5b97bb72479b40e54e2361f9b9dfe381a41cb754a52909d34d15fc0",
-    "cpamp-ingress": "sha256:42afa41f4f769ba41490941ce6ae54f5fb7df503a60ff65b5ab30ca4b60963f2"
+    "cpamp-runtime": "sha256:d3b252149b292cc04ea43594357039a4e9070acce6876ba96e3956126fb0e96b",
+    "cpamp-manager": "sha256:2b5311c151309903b3cb03b4bf33211bdd0d39e5d0cade4e5c907a795bc5c048",
+    "cpamp-ingress": "sha256:c5037f7d1aa429799e12023ba3263bc2eff0cfeab767a0a48b6363e3704a1190"
   },
   "imageSourceRevisions": {
-    "cpamp-runtime": "e37f3fb8d966ffa95e0b45570176c2779691674d",
-    "cpamp-manager": "e37f3fb8d966ffa95e0b45570176c2779691674d",
-    "cpamp-ingress": "e37f3fb8d966ffa95e0b45570176c2779691674d"
+    "cpamp-runtime": "ee41d214a1ab6b3856d4526b37528af495de9bce",
+    "cpamp-manager": "ee41d214a1ab6b3856d4526b37528af495de9bce",
+    "cpamp-ingress": "ee41d214a1ab6b3856d4526b37528af495de9bce"
   },
-  "testedSourceCommit": "e37f3fb8d966ffa95e0b45570176c2779691674d",
+  "testedSourceCommit": "ee41d214a1ab6b3856d4526b37528af495de9bce",
   "source": "linux/amd64",
-  "gitHead": "e37f3fb8d966ffa95e0b45570176c2779691674d",
-  "diffSha256": "ea1de46fed528e400c361087961bf7f9e900ebdb2a06d92c88bf3a61a6b4844d",
-  "sourceFiles": {
-    "bin/ci/fresh-new-installation.mjs": "893e7a94d8e01ba8812cecefb434de53a52f3e57f67eeb2b70932f71d5d7179c"
-  },
-  "origin": "http://127.0.0.1:61546",
+  "gitHead": "ee41d214a1ab6b3856d4526b37528af495de9bce",
+  "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sourceFiles": {},
+  "origin": "http://127.0.0.1:59595",
   "strategyGenerations": [
-    "17486582467214426535",
-    "17486582467214426535"
+    "15596485746630923279",
+    "15596485746630923279"
   ],
-  "operationId": "fresh-3ab6e05435bde4840e0721be54c60447",
+  "operationId": "fresh-63cb7e459e30d1fda15e195e985a0949",
   "runtimeAfterRestart": {
     "state": "offline",
     "generationChanged": true

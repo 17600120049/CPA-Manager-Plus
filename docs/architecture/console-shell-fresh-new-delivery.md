@@ -11,12 +11,17 @@ authorization behavior.
 ## Candidate and reproduction
 
 - Base: merged `v2@b535fd48bd3cdfc4d38c622bc037ae4b1876ec97`.
-- **Tested application source:** `e37f3fb8d966ffa95e0b45570176c2779691674d`.
-  All three images were built from one `git archive` snapshot of this commit.
-  Later evidence/runner-only commits do not change the tested application.
-- Local image tags: `cpamp-console-e37f3fb8-manager:local`,
-  `cpamp-console-e37f3fb8-ingress:local`,
-  `cpamp-console-e37f3fb8-runtime:local`.
+- **Tested application source:** `ee41d214a1ab6b3856d4526b37528af495de9bce`.
+  The Manager, Ingress and Runtime images were built from the same final
+  application source. The later evidence-only documentation commit does not
+  change those application bytes.
+- Local image tags: `cpamp-console-v2-ee41d214-manager:local`,
+  `cpamp-console-v2-ee41d214-ingress:local`,
+  `cpamp-console-v2-ee41d214-runtime:local`.
+- Candidate image IDs: Manager
+  `sha256:2b5311c151309903b3cb03b4bf33211bdd0d39e5d0cade4e5c907a795bc5c048`,
+  Ingress `sha256:c5037f7d1aa429799e12023ba3263bc2eff0cfeab767a0a48b6363e3704a1190`,
+  Runtime `sha256:d3b252149b292cc04ea43594357039a4e9070acce6876ba96e3956126fb0e96b`.
 - Scope: disposable, loopback-published **Linux/amd64 Embedded** installation,
   official checksum-pinned CPA **8.0.13**, ordinary isolated Compose services.
   No Registry push, production data, shared queue, merge, tag or publication.
@@ -28,23 +33,29 @@ and UI steps. To rebuild from the source worktree:
 
 ```sh
 git rev-parse HEAD
-# For the exact tested bytes, use the e37f3fb8 commit snapshot as the context.
+# The tested application bytes are ee41d214a1ab6b3856d4526b37528af495de9bce.
 docker build --platform linux/amd64 -f Dockerfile.runtime \
-  -t cpamp-console-e37f3fb8-runtime:local .
+  -t cpamp-console-v2-ee41d214-runtime:local .
 docker build --platform linux/amd64 -f Dockerfile.ingress \
-  -t cpamp-console-e37f3fb8-ingress:local .
+  -t cpamp-console-v2-ee41d214-ingress:local .
 docker build --platform linux/amd64 -f Dockerfile.manager-server \
-  --build-arg SOURCE_COMMIT=e37f3fb8d966ffa95e0b45570176c2779691674d \
+  --build-arg SOURCE_COMMIT=ee41d214a1ab6b3856d4526b37528af495de9bce \
   --build-arg VERSION=2.0.0-console-candidate \
-  -t cpamp-console-e37f3fb8-manager:local .
+  -t cpamp-console-v2-ee41d214-manager:local .
 PLAYWRIGHT_MODULE=/absolute/path/to/node_modules/playwright \
 PLAYWRIGHT_CHANNEL=chrome \
 node bin/ci/fresh-new-installation.mjs \
-  cpamp-console-e37f3fb8-runtime:local \
-  cpamp-console-e37f3fb8-manager:local \
-  cpamp-console-e37f3fb8-ingress:local \
+  cpamp-console-v2-ee41d214-runtime:local \
+  cpamp-console-v2-ee41d214-manager:local \
+  cpamp-console-v2-ee41d214-ingress:local \
   /absolute/path/to/a/new/disposable-result
 ```
+
+For this macOS review run, the web bundle was built first with
+`npm --workspace apps/web run build`; the Manager image used the task-owned
+prebuilt packaging Dockerfile under `bin/tmp/cpamp-console-v2-ee41d214/`
+because the product Manager Dockerfile's Alpine `npm ci` step could not resolve
+the dependency cache in that environment. No product Dockerfile was changed.
 
 The runner launches its own random Compose project and loopback port, initializes
 only new volumes, exercises the browser and removes only that project's
@@ -103,9 +114,11 @@ Passed: Manager complete Go tests and vet; race checks for affected Fresh
 admission/store/routing/strategy paths; full Web tests and repository contracts;
 TypeScript; ESLint (no errors, six warnings); Full Web and single-file Panel
 builds and demo-isolation guard. The final Shell delta passed its focused
-regressions and type/lint checks. Independent review of the tested application
-source found no confirmed High/Medium defects. Applicable remote Required CI
-is reported on the Draft PR; local checks do not stand in for it.
+regressions and type/lint checks. The final same-source disposable candidate
+report records 22 PASS checks, 45 screenshots and no page errors. Independent
+review of the tested application source found no confirmed High/Medium defects.
+Applicable remote Required CI is reported on the Draft PR; local checks do not
+stand in for it.
 
 The accepted prototype is implemented for this delivery slice, not for every
 prototype page. Full Key/Config workspace modernization, models, Runtime status
