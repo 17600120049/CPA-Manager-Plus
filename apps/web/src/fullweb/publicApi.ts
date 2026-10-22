@@ -105,7 +105,8 @@ export function createPublicApiClient(
           resource.startsWith('gateway/retry/operations/');
         const operationResource = method === 'GET' && resource.startsWith('api-keys/operations/');
         if (
-          (retryResource || operationResource) &&
+          (retryResource || operationResource ||
+            (resource === 'strategy' && response.status === 409)) &&
           (response.status === 409 ||
             response.status === 503 ||
             (retryResource && response.status === 400))
@@ -122,6 +123,11 @@ export function createPublicApiClient(
                 typeof payload.result === 'object'
               )
                 operationResult = payload.result;
+            } else if (resource === 'strategy') {
+              // Only one bounded CPA-source error is actionable to this UI.
+              // Admin authentication errors remain separate 401/403 responses.
+              if (payload.Code === 'management_authentication_rejected')
+                code = 'management_authentication_rejected';
             } else if (
               typeof payload.code === 'string' &&
               payload.code.startsWith('key_operation_') &&

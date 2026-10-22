@@ -118,6 +118,7 @@ func TestFreshCommittedStrategyReplayChecksTargetsWithoutUpdating(t *testing.T) 
 			}
 			for restart := 0; restart < 2; restart++ {
 				app.strategy = freshstrategy.New(options)
+				app.externalPermit = func(bootstrap.FreshOperation, uint64, string, string, string) bool { return true }
 				for complete := 0; complete < 2; complete++ {
 					assertFreshAuthority(http.StatusOK)
 					before, err := app.store.Load(ctx)
@@ -145,6 +146,9 @@ func TestFreshCommittedStrategyReplayChecksTargetsWithoutUpdating(t *testing.T) 
 						response := httptest.NewRecorder()
 						app.canonicalAPI(response, httpRequest)
 						want := http.StatusOK
+						if strategy == bootstrap.ConnectExternal {
+							want = http.StatusConflict // A3 never replays a committed POST.
+						}
 						if mutate != nil {
 							want = http.StatusConflict
 							if sourceCalls.Load() != calls {
@@ -163,8 +167,12 @@ func TestFreshCommittedStrategyReplayChecksTargetsWithoutUpdating(t *testing.T) 
 					req.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
 					response := httptest.NewRecorder()
 					app.canonicalAPI(response, req)
-					if response.Code != http.StatusOK {
-						t.Fatalf("valid strategy could not complete: %d", response.Code)
+					wantComplete := http.StatusOK
+					if strategy == bootstrap.ConnectExternal {
+						wantComplete = http.StatusConflict
+					}
+					if response.Code != wantComplete {
+						t.Fatalf("strategy completion boundary failed: %d (want %d)", response.Code, wantComplete)
 					}
 				}
 				if restart == 0 {
