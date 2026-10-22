@@ -30,33 +30,46 @@ def blob(data):
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
-def tar_content(files):
+def tar_content(files, bad_mode=None):
     output = io.BytesIO()
     with tarfile.open(fileobj=output, mode="w") as archive:
         for path, data in files.items():
             entry = tarfile.TarInfo(path.lstrip("/"))
             entry.size = len(data)
+            entry.mode = 0o755 if path.startswith("/usr/local/bin/") else 0o644
+            if path == bad_mode:
+                entry.mode = 0o644
             archive.addfile(entry, io.BytesIO(data))
     return output.getvalue()
 
 
 def sample_elf():
+    # The 64-byte header was the pre-fix false positive: not a loadable binary.
     data = bytearray(64)
     data[0:4] = b"\x7fELF"
     data[18:20] = (62).to_bytes(2, "little")
     return bytes(data)
 
 
+ROLE_BINARIES = {}
+
+
 def make_oci(destination, role, license_bytes, *,
              source=SHA, event=EVENT, arch="amd64", corrupt=False, missing=None,
              bad_descriptor_size=False, bad_descriptor_type=False, bad_diff_id=False,
-             notice_bytes=MOCK_NOTICE, api_contract=MOCK_API_CONTRACT):
+             notice_bytes=MOCK_NOTICE, api_contract=MOCK_API_CONTRACT,
+             bad_mode=None, invalid_elf=False, wrong_module=False, wrong_source_stamp=False):
     files = {
         "/usr/local/share/licenses/cpamp/LICENSE": license_bytes,
         subject.NOTICE: notice_bytes,
     }
     if role == "manager":
-        files["/usr/local/bin/cpa-manager-plus"] = sample_elf()
+        files["/usr/local/bin/cpa-manager-plus"] = (
+            sample_elf() if invalid_elf else
+            ROLE_BINARIES["ingress"] if wrong_module else
+            ROLE_BINARIES["manager_wrong_stamp"] if wrong_source_stamp else
+            ROLE_BINARIES["manager"]
+        )
         files[subject.API_CONTRACT] = api_contract
         files[subject.WEB_MANIFEST] = json.dumps({
             "schemaVersion": 1, "files": [
@@ -65,10 +78,14 @@ def make_oci(destination, role, license_bytes, *,
             ],
         }).encode()
     elif role == "ingress":
-        files["/usr/local/bin/cpamp-ingress"] = sample_elf()
+        files["/usr/local/bin/cpamp-ingress"] = (
+            sample_elf() if invalid_elf else ROLE_BINARIES["ingress"]
+        )
     elif role == "runtime":
-        files["/usr/local/bin/cpamp-runtime-supervisor"] = sample_elf()
-        files["/usr/local/bin/cli-proxy-api"] = sample_elf()
+        files["/usr/local/bin/cpamp-runtime-supervisor"] = (
+            sample_elf() if invalid_elf else ROLE_BINARIES["runtime"]
+        )
+        files["/usr/local/bin/cli-proxy-api"] = ROLE_BINARIES["ingress"]
         files["/usr/local/share/cpamp/runtime/cpa-artifact.json"] = json.dumps({
             "schemaVersion": 1, "engine": "cpa", "version": "8.0.13",
             "artifactId": "sha256:" + subject.CPA_SHA,
@@ -78,7 +95,7 @@ def make_oci(destination, role, license_bytes, *,
         files["/usr/local/share/licenses/cli-proxy-api/LICENSE"] = b"official"
     if missing:
         files.pop(missing)
-    uncompressed = tar_content(files)
+    uncompressed = tar_content(files, bad_mode=bad_mode)
     layer = gzip.compress(uncompressed)
     layer_id = blob(layer)
     diff_id = blob(uncompressed)
@@ -121,6 +138,46 @@ def make_oci(destination, role, license_bytes, *,
 
 
 class EmbeddedCandidateContracts(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Real, offline Go ELF fixtures: synthetic 64-byte ELF headers must
+        # never be accepted as a valid CPAMP binary. No CPA upstream code used.
+        cls.go_fixture_tmp = tempfile.TemporaryDirectory(prefix="cpamp-go-binary-fixture-")
+        cls.addClassCleanup(cls.go_fixture_tmp.cleanup)
+        base = Path(cls.go_fixture_tmp.name)
+        for key in ("manager", "manager_wrong_stamp", "ingress", "runtime"):
+            role = "manager" if key.startswith("manager") else key
+            module, command = subject.GO_MODULES[role]
+            work = base / key
+            (work / command).mkdir(parents=True)
+            (work / "go.mod").write_text("module " + module + "\n\ngo 1.20\n", encoding="utf-8")
+            source = "package main\nfunc main() {}\n"
+            if role == "manager":
+                buildinfo = work / "internal/buildinfo"
+                buildinfo.mkdir(parents=True)
+                (buildinfo / "buildinfo.go").write_text(
+                    'package buildinfo\nvar Version = "dev"\nvar SourceCommit = "unknown"\n',
+                    encoding="utf-8",
+                )
+                source = ('package main\nimport ("fmt"; "' + module + '/internal/buildinfo")\n'
+                          'func main() { fmt.Println(buildinfo.Version, buildinfo.SourceCommit) }\n')
+            (work / command / "main.go").write_text(source, encoding="utf-8")
+            env = dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off",
+                       GOOS="linux", GOARCH="amd64", CGO_ENABLED="0")
+            args = ["go", "build", "-trimpath", "-o", str(work / "candidate")]
+            if role == "manager":
+                stamp = "b" * 40 if key == "manager_wrong_stamp" else SHA
+                args += ["-ldflags",
+                         "-X " + module + "/internal/buildinfo.Version=" +
+                         subject.CANDIDATE_VERSION +
+                         " -X " + module + "/internal/buildinfo.SourceCommit=" + stamp]
+            args += ["./" + command]
+            completed = subprocess.run(args, cwd=work, env=env, capture_output=True,
+                                       text=True, timeout=75)
+            if completed.returncode != 0:
+                raise AssertionError("cannot create local Go fixture: " + completed.stderr)
+            ROLE_BINARIES[key] = (work / "candidate").read_bytes()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -144,7 +201,7 @@ class EmbeddedCandidateContracts(unittest.TestCase):
         api = self.root / "tests/fixtures/r1-embedded-api-transport.json"
         api.parent.mkdir(parents=True)
         api.write_bytes(MOCK_API_CONTRACT)
-        fake_cpa = hashlib.sha256(sample_elf()).hexdigest()
+        fake_cpa = hashlib.sha256(ROLE_BINARIES["ingress"]).hexdigest()
         fake_license = hashlib.sha256(b"official").hexdigest()
         with patch.object(subject, "CPA_SHA", fake_cpa), patch.object(
                 subject, "CPA_LICENSE_SHA", fake_license):
@@ -200,6 +257,26 @@ class EmbeddedCandidateContracts(unittest.TestCase):
     def test_reject_mismatched_api_contract(self):
         with self.assertRaisesRegex(ValueError, "Web/API transport contract"):
             self.inspect(api_contract=b"{}")
+
+    def test_reject_non_executable_manager(self):
+        with self.assertRaisesRegex(ValueError, "not safely executable"):
+            self.inspect(bad_mode=subject.GO_BINARIES["manager"])
+
+    def test_reject_non_executable_entrypoint(self):
+        with self.assertRaisesRegex(ValueError, "not safely executable"):
+            self.inspect("runtime", bad_mode="/usr/local/bin/cpamp-runtime-v8-entrypoint")
+
+    def test_reject_fake_elf_header_without_loadable_segments(self):
+        with self.assertRaisesRegex(ValueError, "invalid ELF program headers"):
+            self.inspect(invalid_elf=True)
+
+    def test_reject_wrong_compiled_go_module(self):
+        with self.assertRaisesRegex(ValueError, "Go compiled module/entrypoint mismatch"):
+            self.inspect(wrong_module=True)
+
+    def test_reject_wrong_manager_compiled_source_stamp(self):
+        with self.assertRaisesRegex(ValueError, "Manager compiled source/version stamp mismatch"):
+            self.inspect(wrong_source_stamp=True)
 
     def test_reject_modified_oci_blob(self):
         with self.assertRaisesRegex(ValueError, "digest mismatch"):
