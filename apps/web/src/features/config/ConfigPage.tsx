@@ -505,7 +505,7 @@ export function ConfigPage() {
     let cancelled = false;
     const detectUsageServiceHost = async () => {
       try {
-        const info = await usageServiceApi.getInfo(detectedPanelBase);
+        const info = await usageServiceApi.getInfo(detectedPanelBase, managementKey);
         if (!cancelled) {
           setPanelHostedByUsageService(isUsageServiceId(info.service));
         }
@@ -519,7 +519,7 @@ export function ConfigPage() {
     return () => {
       cancelled = true;
     };
-  }, [detectedPanelBase]);
+  }, [detectedPanelBase, managementKey]);
 
   useEffect(() => {
     if (panelHostedByUsageService !== false || activeTab !== 'manager') return;

@@ -55,7 +55,7 @@ function runtimeImports(file) {
   return imports;
 }
 
-function graph(entry, panel = false) {
+function graph(entry, panel = false, { skipLegacyCompatibility = false } = {}) {
   const seen = new Set();
   const pending = [path.join(src, entry)];
   while (pending.length) {
@@ -63,6 +63,17 @@ function graph(entry, panel = false) {
     if (seen.has(file)) continue;
     seen.add(file);
     for (const specifier of runtimeImports(file)) {
+      // Fresh bootstrap must remain isolated before installation. After a
+      // verified ProductComplete checkpoint the explicit compatibility seam
+      // intentionally mounts the existing CPAMP pages; those pages use the
+      // canonical bridge configured by LegacyConsolePage below.
+      if (
+        skipLegacyCompatibility &&
+        file.endsWith('/fullweb/FreshConsolePage.tsx') &&
+        specifier === './LegacyConsolePage'
+      ) {
+        continue;
+      }
       const resolution = ts.resolveModuleName(
         specifier,
         file,
@@ -125,7 +136,12 @@ describe('Full Web / Panel Lite runtime dependency isolation', () => {
   });
 
   it('Full Web does not import legacy CPA transport/auth/base or Panel modules, including lazy chunks', () => {
-    const files = [...new Set([...graph('fullweb/main.tsx'), ...graph('fullweb/publicApi.ts')])];
+    const files = [
+      ...new Set([
+        ...graph('fullweb/main.tsx', false, { skipLegacyCompatibility: true }),
+        ...graph('fullweb/publicApi.ts'),
+      ]),
+    ];
     expect(files.length).toBeGreaterThan(2);
     expect(
       files.filter(
@@ -138,6 +154,14 @@ describe('Full Web / Panel Lite runtime dependency isolation', () => {
       const source = readFileSync(path.join(src, file), 'utf8');
       expect(source, file).not.toMatch(/localStorage|sessionStorage|\/v0\/management/);
     }
+  });
+
+  it('mounts the existing Console only through the authenticated canonical bridge seam', () => {
+    const seam = readFileSync(path.join(src, 'fullweb/LegacyConsolePage.tsx'), 'utf8');
+    expect(seam).toContain("new URL(`${verified.apiBase}/cpamp`, window.location.origin)");
+    expect(seam).toContain('apiClient.setConfig({ apiBase, managementKey: credential })');
+    expect(seam).toContain('useAuthStore.setState');
+    expect(seam).toContain('resolveRoutingContext');
   });
 
   it('Panel graph excludes Full Web transport/auth and replaces the legacy Manager transport', () => {

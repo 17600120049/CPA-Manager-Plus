@@ -2597,7 +2597,7 @@ const getDemoModelPriceSyncResponse = (models?: string[]): ModelPriceSyncRespons
 };
 
 export const usageServiceApi = {
-  getInfo: async (base: string): Promise<UsageServiceInfo> => {
+  getInfo: async (base: string, managementKey?: string): Promise<UsageServiceInfo> => {
     if (__DEMO_SITE__ && isDemoMode()) {
       return getDemoUsageServiceInfo();
     }
@@ -2605,6 +2605,7 @@ export const usageServiceApi = {
     return withUsageServiceError(async () => {
       const response = await axios.get<UsageServiceInfo>(buildUrl(base, '/usage-service/info'), {
         timeout: USAGE_SERVICE_TIMEOUT_MS,
+        headers: authHeaders(managementKey),
       });
       return response.data;
     });

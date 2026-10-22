@@ -227,7 +227,7 @@ async function detectPanelFeatureAvailability({
   let panelHostedByUsageService = false;
   let panelHostConfirmed = false;
   try {
-    const info = await usageServiceApi.getInfo(normalizedPanelBase);
+    const info = await usageServiceApi.getInfo(normalizedPanelBase, managementKey);
     panelHostConfirmed = true;
     panelHostedByUsageService = isUsageServiceId(info.service);
   } catch (error) {
@@ -243,7 +243,7 @@ async function detectPanelFeatureAvailability({
 
   for (const candidate of candidates) {
     try {
-      const info = await usageServiceApi.getInfo(candidate);
+      const info = await usageServiceApi.getInfo(candidate, managementKey);
       if (!isUsageServiceId(info.service)) continue;
       const response = await usageServiceApi.getManagerConfig(candidate, managementKey);
       if (
