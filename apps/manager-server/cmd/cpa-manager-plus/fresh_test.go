@@ -88,6 +88,9 @@ func TestFreshHostInitializeActivatesExistingReadOnlyListenerAndResumes(t *testi
 			server.stop(t)
 		}
 	}()
+	if status, _ := waitForManagerResponse(t, server.addr, http.MethodGet, "/health"); status != http.StatusServiceUnavailable {
+		t.Fatalf("uninitialized Manager health = %d", status)
+	}
 	handoff := runFreshInitializeProcess(t, env)
 	waitFreshClaim(t, server.addr)
 	data, err := base64.RawURLEncoding.DecodeString(strings.SplitN(handoff, "#handoff=", 2)[1])
@@ -101,6 +104,9 @@ func TestFreshHostInitializeActivatesExistingReadOnlyListenerAndResumes(t *testi
 	var session fresh.SessionResult
 	if freshRequest(t, server.addr, "claim/exchange", "", claim, &session) != http.StatusOK {
 		t.Fatal("claim exchange failed")
+	}
+	if status, body := waitForManagerResponse(t, server.addr, http.MethodGet, "/health"); status != http.StatusOK || !strings.Contains(body, `"service":"cpa-manager-plus"`) {
+		t.Fatalf("Fresh takeover health = %d: %s", status, body)
 	}
 	weakCommit := fresh.AdminCommitRequest{Identity: session.Operation.Identity, CommitID: "weak-commit", Key: "too-short"}
 	if status := freshRequest(t, server.addr, "admin/commit", session.Token, weakCommit, nil); status != http.StatusBadRequest {
@@ -141,6 +147,9 @@ func TestFreshHostInitializeActivatesExistingReadOnlyListenerAndResumes(t *testi
 	}
 	if !resumed || op.Identity != claim.Identity || !op.AdminInitialized {
 		t.Fatal("restart lost same-operation continuation")
+	}
+	if status, _ := waitForManagerResponse(t, server.addr, http.MethodGet, "/health"); status != http.StatusOK {
+		t.Fatalf("resumed Fresh health = %d", status)
 	}
 	if freshRequest(t, server.addr, "claim/exchange", "", claim, nil) == http.StatusOK {
 		t.Fatal("restart reopened claim")
