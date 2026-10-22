@@ -156,9 +156,21 @@ function pass(name) {
   console.log('PASS ' + name);
 }
 async function screenshot(name) {
+  const overflow = await page.evaluate(() => ({
+    width: innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    elements: [...document.querySelectorAll('body *')]
+      .filter((element) => element.getBoundingClientRect().right > innerWidth + 1)
+      .slice(0, 15)
+      .map((element) => ({
+        tag: element.tagName,
+        class: element.getAttribute('class'),
+        right: element.getBoundingClientRect().right,
+      })),
+  }));
   assert(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-    'horizontal overflow: ' + name
+    'horizontal overflow: ' + name + ' ' + JSON.stringify(overflow)
   );
   await page.screenshot({
     path: resolve(out, name + '.png'),

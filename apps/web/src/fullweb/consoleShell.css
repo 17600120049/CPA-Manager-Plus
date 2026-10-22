@@ -352,6 +352,11 @@
 }
 
 @media (max-width: 768px) {
+  .console-workspace {
+    /* A viewport change must not animate the old desktop sidebar offset into
+       the narrow layout and temporarily push form actions off screen. */
+    transition: none;
+  }
   .console-shell,
   .console-shell.is-collapsed {
     --sidebar-active-width: 0px;
