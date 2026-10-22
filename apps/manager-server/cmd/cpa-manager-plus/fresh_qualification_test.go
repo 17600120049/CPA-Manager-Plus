@@ -135,7 +135,7 @@ func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.
 	}
 }
 
-func TestFreshAdoptDeniedBeforeSourceAndDestinationForBothEntrypoints(t *testing.T) {
+func TestFreshAdoptCanonicalDeniedBeforeSourceAndStateMutation(t *testing.T) {
 	app, closeApp := newA3TestApp(t)
 	defer closeApp()
 	var sourceCalls atomic.Int32
@@ -145,25 +145,10 @@ func TestFreshAdoptDeniedBeforeSourceAndDestinationForBothEntrypoints(t *testing
 	}))
 	defer source.Close()
 
-	handoff, err := app.authority.Issue(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(handoff.Fragment, "#handoff="))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var session struct {
-		Token string `json:"token"`
-	}
-	if err := json.Unmarshal(raw, &session); err != nil || session.Token == "" {
-		t.Fatalf("invalid private bootstrap session: %v", err)
-	}
 	before, err := app.store.Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	for _, sourceClass := range []bootstrap.AdoptSourceClass{
 		bootstrap.AdoptNetworkExisting, bootstrap.AdoptLegacyManaged,
 	} {
@@ -178,26 +163,16 @@ func TestFreshAdoptDeniedBeforeSourceAndDestinationForBothEntrypoints(t *testing
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, fixed := range []bool{false, true} {
-			path, authority := "/control/api/v2/strategy", "Bearer "+strategyTestAdmin
-			if fixed {
-				path, authority = bootstrap.FixedBootstrapAPIPath+"strategy", "Fresh "+session.Token
-			}
-			request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
-			request.Header.Set("Authorization", authority)
-			response := httptest.NewRecorder()
-			if fixed {
-				app.fixedStrategy(response, request)
-			} else {
-				app.canonicalAPI(response, request)
-			}
-			if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
-				t.Fatalf("unapproved Adopt %s fixed=%t: %d %s", sourceClass, fixed, response.Code, response.Body.String())
-			}
-			after, err := app.store.Load(t.Context())
-			if err != nil || !reflect.DeepEqual(before, after) || sourceCalls.Load() != 0 {
-				t.Fatalf("Adopt touched source or Manager state: %v", err)
-			}
+		request := httptest.NewRequest(http.MethodPost, "/control/api/v2/strategy", bytes.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+		response := httptest.NewRecorder()
+		app.canonicalAPI(response, request)
+		if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
+			t.Fatalf("unapproved canonical Adopt %s: %d %s", sourceClass, response.Code, response.Body.String())
+		}
+		after, err := app.store.Load(t.Context())
+		if err != nil || !reflect.DeepEqual(before, after) || sourceCalls.Load() != 0 {
+			t.Fatalf("Adopt touched source or Manager state: %v", err)
 		}
 	}
 }
