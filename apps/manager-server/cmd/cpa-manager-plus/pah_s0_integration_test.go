@@ -157,7 +157,12 @@ func TestPAHS0RealFreshHTTPRejectsExternalAndAdoptBeforeNetworkAndCAS(t *testing
 		r.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
 		w := httptest.NewRecorder()
 		app.canonicalAPI(w, r)
-		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "fresh_strategy_owner_conflict") {
+		if strategy == bootstrap.AdoptExisting {
+			// The global unapproved-takeover gate runs before the PAH-S0 policy.
+			if w.Code != http.StatusServiceUnavailable || w.Body.Len() != 0 {
+				t.Fatalf("unapproved Adopt was not denied before PAH-S0: %d: %s", w.Code, w.Body.String())
+			}
+		} else if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "fresh_strategy_owner_conflict") {
 			t.Fatalf("strategy %s was not denied by PAH-S0 policy: %d: %s", strategy, w.Code, w.Body.String())
 		}
 		after, err := app.store.Load(ctx)
@@ -168,7 +173,7 @@ func TestPAHS0RealFreshHTTPRejectsExternalAndAdoptBeforeNetworkAndCAS(t *testing
 	if upstream.Load() != 0 { t.Fatalf("external CPA contacted before P-S0 deny: %d", upstream.Load()) }
 	// Positive contrast: with the *same* legitimate External input and
 	// qualification, the underlying adapter actually reaches CPA. Therefore
-	// the HTTP 409 above proves the PAH-S0 policy, not some other blocker.
+	// the External HTTP 409 above proves the PAH-S0 policy, not some other blocker.
 	before, err := app.store.Load(ctx)
 	if err != nil { t.Fatal(err) }
 	result, err := app.strategy.Execute(ctx, before.Operation, freshstrategy.Request{
@@ -182,4 +187,51 @@ func TestPAHS0RealFreshHTTPRejectsExternalAndAdoptBeforeNetworkAndCAS(t *testing
 		t.Fatal("direct adapter control accidentally wrote Fresh checkpoint", err)
 	}
 	if rec.Operation.Routing.Target != "/control" { t.Fatal("test fixture lost actual routing") }
+}
+
+func TestFreshAdoptCommittedCannotComplete(t *testing.T) {
+	ctx := t.Context()
+	paths := legacypreflight.DefaultPaths(filepath.Join(t.TempDir(), "manager.sqlite"))
+	paths.Config = filepath.Join(filepath.Dir(paths.Database), "config.json")
+	opened, err := fresh.Open(ctx, paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+
+	checkpoint, ciphertext := pahS0Adoption(t, opened)
+	destination := "http://destination.invalid:8317"
+	digest := sha256.Sum256([]byte(destination))
+	checkpoint.Stage = "committed"
+	checkpoint.DestinationConnectionIdentity = "external:sha256:" + hex.EncodeToString(digest[:])
+	key, err := opened.Protector.ProtectString("disposable-destination-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := opened.Record.Operation
+	before, err := freshstore.New(opened.DB).Update(ctx, op.Identity, op.Revision, func(r *freshstore.Record) error {
+		r.Operation.Strategy = checkpoint
+		r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{
+			OperationID: r.Operation.Identity.OperationID, Revision: 1,
+			Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true,
+		}
+		r.AdoptionCiphertext = ciphertext
+		r.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: destination, ManagementKey: key}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("could not persist valid committed Adopt checkpoint: %v", err)
+	}
+	app := newFreshApplication(opened, config.Config{}, nil)
+	request := httptest.NewRequest(http.MethodPost, "/control/api/v2/complete", nil)
+	request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+	response := httptest.NewRecorder()
+	app.canonicalAPI(response, request)
+	if response.Code != http.StatusConflict || response.Body.Len() != 0 {
+		t.Fatalf("Adopt ProductComplete was not denied: %d %s", response.Code, response.Body.String())
+	}
+	after, err := app.store.Load(ctx)
+	if err != nil || !reflect.DeepEqual(before, after) || after.Operation.ProductComplete {
+		t.Fatalf("rejected Adopt completion changed durable state: %v", err)
+	}
 }
