@@ -10,8 +10,11 @@ import io
 import gzip
 import json
 import re
+import struct
+import subprocess
 import sys
 import tarfile
+import tempfile
 from pathlib import Path, PurePosixPath
 
 ROLES = ("manager", "ingress", "runtime")
@@ -42,6 +45,16 @@ WANTED = {
 MAX_BLOB = 512 * 1024 * 1024
 MAX_FILE = 128 * 1024 * 1024
 MAX_UNCOMPRESSED_LAYER = 768 * 1024 * 1024
+GO_MODULES = {
+    "manager": ("github.com/seakee/cpa-manager-plus/apps/manager-server", "cmd/cpa-manager-plus"),
+    "ingress": ("github.com/seakee/cpa-manager-plus/apps/ingress", "cmd/cpamp-ingress"),
+    "runtime": ("github.com/seakee/cpa-manager-plus/apps/runtime-supervisor", "cmd/cpamp-runtime-supervisor"),
+}
+GO_BINARIES = {
+    "manager": "/usr/local/bin/cpa-manager-plus",
+    "ingress": "/usr/local/bin/cpamp-ingress",
+    "runtime": "/usr/local/bin/cpamp-runtime-supervisor",
+}
 MANIFEST_TYPE = "application/vnd.oci.image.manifest.v1+json"
 CONFIG_TYPE = "application/vnd.oci.image.config.v1+json"
 LAYER_GZIP = "application/vnd.oci.image.layer.v1.tar+gzip"
@@ -109,8 +122,75 @@ def canonical_path(value):
     return "/" + "/".join(parts)
 
 
+def check_amd64_elf(data, name):
+    # Only the linux/amd64 ELF64 format required by R1-1; no generic ELF parser.
+    require(len(data) >= 64 and data[:7] == b"\x7fELF\x02\x01\x01",
+            "invalid ELF64 header: " + name)
+    elf_type, machine, version = struct.unpack_from("<HHI", data, 16)
+    require(elf_type in (2, 3) and machine == 62 and version == 1,
+            "binary is not linux/amd64 ELF: " + name)
+    entry, phoff = struct.unpack_from("<QQ", data, 24)
+    phentsize, phnum = struct.unpack_from("<HH", data, 54)
+    require(phnum > 0 and phnum <= 256 and phentsize >= 56 and
+            phoff >= 64 and phoff + phentsize * phnum <= len(data),
+            "invalid ELF program headers: " + name)
+    executable_load = False
+    for index in range(phnum):
+        offset = phoff + index * phentsize
+        kind, flags = struct.unpack_from("<II", data, offset)
+        file_offset, virtual_address = struct.unpack_from("<QQ", data, offset + 8)
+        file_size, mem_size = struct.unpack_from("<QQ", data, offset + 32)
+        require(file_size <= mem_size and file_offset + file_size <= len(data),
+                "invalid ELF segment bounds: " + name)
+        if kind == 1 and flags & 1 and file_size > 0 and (
+                virtual_address <= entry < virtual_address + mem_size):
+            executable_load = True
+    require(executable_load, "ELF has no executable entry segment: " + name)
+
+
+def check_go_binary(data, role, source_sha):
+    # 'go version -m' reads compiled Go buildinfo without running the candidate.
+    # The module/path are derived from the ELF, not OCI labels or file names.
+    with tempfile.TemporaryDirectory(prefix="cpamp-r1-go-meta-") as directory:
+        file = Path(directory) / "candidate"
+        file.write_bytes(data)
+        try:
+            result = subprocess.run(["go", "version", "-m", str(file)],
+                                    capture_output=True, text=True, timeout=20, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("Go binary metadata inspection unavailable: " + role) from exc
+    require(result.returncode == 0, "unreadable Go build metadata: " + role)
+    parsed = {}
+    options = {}
+    for line in result.stdout.splitlines():
+        parts = line.strip().split("\t")
+        if len(parts) < 2:
+            continue
+        if parts[0] in ("path", "mod"):
+            parsed[parts[0]] = parts[1]
+        elif parts[0] == "build" and "=" in parts[1]:
+            key, value = parts[1].split("=", 1)
+            options[key] = value
+    module, command = GO_MODULES[role]
+    require(parsed.get("mod") == module and
+            parsed.get("path") == module + "/" + command,
+            "Go compiled module/entrypoint mismatch: " + role)
+    require(options.get("GOOS") == "linux" and options.get("GOARCH") == "amd64" and
+            options.get("CGO_ENABLED") == "0",
+            "Go compiled target mismatch: " + role)
+    if role == "manager":
+        flags = options.get("-ldflags", "")
+        require("buildinfo.SourceCommit=" + source_sha in flags and
+                "buildinfo.Version=" + CANDIDATE_VERSION in flags,
+                "Manager compiled source/version stamp mismatch")
+    return {"module": module, "entrypoint": parsed["path"],
+            "goTarget": "linux/amd64",
+            "managerCompiledSourceClaim": source_sha if role == "manager" else None}
+
+
 def final_files(archive, layers, diff_ids, wanted):
     result = {}
+    permissions = {}
     require(len(layers) == len(diff_ids), "OCI layer/diff_ids count mismatch")
     for descriptor, diff_id in zip(layers, diff_ids):
         raw = read_descriptor(archive, descriptor, (LAYER_TAR, LAYER_GZIP))
@@ -125,12 +205,14 @@ def final_files(archive, layers, diff_ids, wanted):
                     for target in list(result):
                         if target.startswith(parent.rstrip("/") + "/"):
                             del result[target]
+                            permissions.pop(target, None)
                     continue
                 if base.startswith(".wh."):
                     removed = parent.rstrip("/") + "/" + base[4:]
                     for target in list(result):
                         if target == removed or target.startswith(removed + "/"):
                             del result[target]
+                            permissions.pop(target, None)
                     continue
                 if name not in wanted:
                     continue
@@ -139,9 +221,10 @@ def final_files(archive, layers, diff_ids, wanted):
                 stream = layer.extractfile(member)
                 require(stream is not None, "unreadable final image file: " + name)
                 result[name] = stream.read()
+                permissions[name] = member.mode
     require(set(result) == set(wanted), "missing packaged files: " +
             ", ".join(sorted(set(wanted) - set(result))))
-    return result
+    return result, permissions
 
 def inspect(path, role, source_sha, event, root_license, seed):
     require(path.is_file(), "missing OCI archive: " + str(path))
@@ -189,14 +272,19 @@ def inspect(path, role, source_sha, event, root_license, seed):
         require(labels.get("io.cpamp.candidate.event") == event and
                 labels.get("io.cpamp.candidate.role") == role,
                 "candidate build event or role mismatch")
-        files = final_files(archive, layers, rootfs["diff_ids"], WANTED[role])
+        files, modes = final_files(archive, layers, rootfs["diff_ids"], WANTED[role])
         require(files[LICENSE] == root_license, "CPAMP LICENSE differs from source")
         require(files[NOTICE].startswith(b"NOT_VERIFIED"), "third-party inventory must explicitly remain unverified")
         for path_ in WANTED[role]:
-            if path_.startswith("/usr/local/bin/") and path_ != "/usr/local/bin/cpamp-runtime-v8-entrypoint":
-                binary = files[path_]
-                require(binary[:4] == b"\x7fELF" and int.from_bytes(binary[18:20], "little") == 62,
-                        "binary is not linux/amd64 ELF: " + path_)
+            if path_.startswith("/usr/local/bin/"):
+                require(modes[path_] & 0o111 and not modes[path_] & 0o6000,
+                        "final image file is not safely executable: " + path_)
+                if path_ == "/usr/local/bin/cpamp-runtime-v8-entrypoint":
+                    require(files[path_].startswith(b"#!/"),
+                            "runtime entrypoint script lacks shebang")
+                else:
+                    check_amd64_elf(files[path_], path_)
+        compiled_identity = check_go_binary(files[GO_BINARIES[role]], role, source_sha)
         if role == "runtime":
             require(hashlib.sha256(files["/usr/local/bin/cli-proxy-api"]).hexdigest() == CPA_SHA,
                     "official CPA v8.0.13 executable hash mismatch")
@@ -233,6 +321,7 @@ def inspect(path, role, source_sha, event, root_license, seed):
             "platformManifestDigest": manifest_id,
             "imageConfigDigest": config_id,
             "platform": "linux/amd64",
+            "goBinaryIdentity": compiled_identity,
             "packagedFiles": {key: digest(value) for key, value in sorted(files.items())},
         }
 
