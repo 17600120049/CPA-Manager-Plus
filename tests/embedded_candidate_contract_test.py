@@ -64,7 +64,8 @@ def make_oci(destination, role, license_bytes, *,
              notice_bytes=MOCK_NOTICE, api_contract=MOCK_API_CONTRACT,
              bad_mode=None, invalid_elf=False, wrong_module=False, wrong_source_stamp=False,
              wrong_sha_suffix=False, wrong_version_suffix=False, wrong_entrypoint=False,
-             wrong_cmd=False, runtime_script=MOCK_RUNTIME_ENTRYPOINT):
+             wrong_cmd=False, runtime_script=MOCK_RUNTIME_ENTRYPOINT,
+             wrong_pah_enabled=False):
     files = {
         "/usr/local/share/licenses/cpamp/LICENSE": license_bytes,
         subject.NOTICE: notice_bytes,
@@ -76,6 +77,7 @@ def make_oci(destination, role, license_bytes, *,
             ROLE_BINARIES["manager_wrong_stamp"] if wrong_source_stamp else
             ROLE_BINARIES["manager_sha_suffix"] if wrong_sha_suffix else
             ROLE_BINARIES["manager_version_suffix"] if wrong_version_suffix else
+            ROLE_BINARIES["manager_pah_enabled"] if wrong_pah_enabled else
             ROLE_BINARIES["manager"]
         )
         files[subject.API_CONTRACT] = api_contract
@@ -158,7 +160,7 @@ class EmbeddedCandidateContracts(unittest.TestCase):
         cls.addClassCleanup(cls.go_fixture_tmp.cleanup)
         base = Path(cls.go_fixture_tmp.name)
         for key in ("manager", "manager_wrong_stamp", "manager_sha_suffix",
-                    "manager_version_suffix", "ingress", "runtime"):
+                    "manager_version_suffix", "manager_pah_enabled", "ingress", "runtime"):
             role = "manager" if key.startswith("manager") else key
             module, command = subject.GO_MODULES[role]
             work = base / key
@@ -169,11 +171,12 @@ class EmbeddedCandidateContracts(unittest.TestCase):
                 buildinfo = work / "internal/buildinfo"
                 buildinfo.mkdir(parents=True)
                 (buildinfo / "buildinfo.go").write_text(
-                    'package buildinfo\nvar Version = "dev"\nvar SourceCommit = "unknown"\n',
+                    'package buildinfo\nvar Version = "dev"\nvar SourceCommit = "unknown"\n'
+                    'var PAHS0WebBundle = "0"\n',
                     encoding="utf-8",
                 )
                 source = ('package main\nimport ("fmt"; "' + module + '/internal/buildinfo")\n'
-                          'func main() { fmt.Println(buildinfo.Version, buildinfo.SourceCommit) }\n')
+                          'func main() { fmt.Println(buildinfo.Version, buildinfo.SourceCommit, buildinfo.PAHS0WebBundle) }\n')
             (work / command / "main.go").write_text(source, encoding="utf-8")
             env = dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off",
                        GOOS="linux", GOARCH="amd64", CGO_ENABLED="0")
@@ -192,7 +195,9 @@ class EmbeddedCandidateContracts(unittest.TestCase):
                 args += ["-ldflags",
                          "-X " + module + "/internal/buildinfo.Version=" +
                          version +
-                         " -X " + module + "/internal/buildinfo.SourceCommit=" + stamp]
+                         " -X " + module + "/internal/buildinfo.SourceCommit=" + stamp +
+                         " -X " + module + "/internal/buildinfo.PAHS0WebBundle=" +
+                         ("1" if key == "manager_pah_enabled" else "0")]
             args += ["./" + command]
             completed = subprocess.run(args, cwd=work, env=env, capture_output=True,
                                        text=True, timeout=75)
@@ -327,6 +332,11 @@ class EmbeddedCandidateContracts(unittest.TestCase):
     def test_reject_manager_version_with_correct_prefix(self):
         with self.assertRaisesRegex(ValueError, "Manager compiled source/version stamp mismatch"):
             self.inspect(wrong_version_suffix=True)
+
+    def test_reject_pah_s0_enabled_manager_binary(self):
+        # The R1-1 Embedded candidate must not silently enable PAH-S0.
+        with self.assertRaisesRegex(ValueError, "Manager compiled source/version stamp mismatch"):
+            self.inspect(wrong_pah_enabled=True)
 
     def test_reject_modified_oci_blob(self):
         with self.assertRaisesRegex(ValueError, "digest mismatch"):

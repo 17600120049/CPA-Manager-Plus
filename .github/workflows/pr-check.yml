@@ -441,6 +441,9 @@ jobs:
         working-directory: apps/ingress
         run: go test ./...
 
+      - name: Audit PAH-S0 Host profile offline (never starts Docker)
+        run: python3 -m unittest discover -s bin/ci -p 'test_pah_s0_host_admission.py' -v
+
       - name: Race test
         working-directory: apps/ingress
         run: go test -race ./...
@@ -630,6 +633,9 @@ jobs:
           set -euo pipefail
           docker compose config --format json | node bin/ci/validate-runtime12-compose.mjs
           docker compose -f docker-compose.manager.yml config >/dev/null
+          # Validate the private fixed P-S0 proof topology too, not just
+          # ordinary Compose. This is syntax only, not Host qualification.
+          docker compose -f docker-compose.pah-s0-proof.yml config >/dev/null
 
       - name: Build Manager Server image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -640,6 +646,21 @@ jobs:
           load: true
           build-args: |
             VERSION=ci
+
+      # Only the private P-S0 image proves that Web and Manager share the
+      # same compile-time P-S0 flag. Default Manager builds cannot do so.
+      - name: Build private PAH-S0 Manager/Web pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --platform linux/amd64 \
+            --target web-package-test \
+            -f Dockerfile.manager-server \
+            --build-arg VERSION=ci \
+            --build-arg VITE_CPAMP_PAH_S0=1 .
+          docker build --platform linux/amd64 \
+            -f Dockerfile.ingress \
+            --build-arg CPAMP_PAH_S0_BUILD=1 .
 
       - name: Build Ingress images
         if: needs.changes.outputs.docker_all_images == 'true'

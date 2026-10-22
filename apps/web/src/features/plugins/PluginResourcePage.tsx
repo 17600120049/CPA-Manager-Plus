@@ -34,7 +34,30 @@ const parseMenuIndex = (value = '') => {
   return Number.isInteger(index) && index >= 0 ? index : -1;
 };
 
+// This branch is compiled into the disposable P-S0 Manager image. It never
+// evaluates, navigates to or creates an iframe from any plugin menu URL.
 export function PluginResourcePage() {
+  if (import.meta.env.VITE_CPAMP_PAH_S0 === '1') {
+    return <PAHS0UnsupportedPluginPage />;
+  }
+  return <LegacyPluginResourcePage />;
+}
+
+function PAHS0UnsupportedPluginPage() {
+  const { t } = useTranslation();
+  return (
+    <div className={styles.page}>
+      <div className={styles.stateShell}>
+        <EmptyState
+          title={t('plugin_resource.unavailable')}
+          description={t('plugin_resource.pah_s0_unsupported')}
+        />
+      </div>
+    </div>
+  );
+}
+
+function LegacyPluginResourcePage() {
   const { t } = useTranslation();
   const params = useParams<{ pluginId: string; menuIndex: string }>();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);

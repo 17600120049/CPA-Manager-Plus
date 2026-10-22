@@ -96,7 +96,7 @@ export function FreshKeyRevocation({
   function accept(value: Result, expected?: string, selection = request, observed = true) {
     if (
       !validResult(value) ||
-      (expected && value.operation !== null && value.operation.id !== expected)
+      (expected && (!value.operation || value.operation.id !== expected))
     )
       throw new Error();
     if (
@@ -186,6 +186,7 @@ export function FreshKeyRevocation({
   }
   async function prepare() {
     if (
+      flight.current ||
       disabled ||
       !checked ||
       request ||
@@ -219,7 +220,7 @@ export function FreshKeyRevocation({
   }
   async function proceed() {
     const o = result?.operation;
-    if (disabled || !checked || !o || !result.nextStep || o.outcome === 'committed' || request)
+    if (flight.current || disabled || !checked || !o || !result.nextStep || o.outcome === 'committed' || request)
       return;
     setChecked(false);
     onPending(true);

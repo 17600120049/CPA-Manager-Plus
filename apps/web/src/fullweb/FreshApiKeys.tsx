@@ -29,6 +29,8 @@ export function FreshApiKeys({
   const [revocationAvailable, setRevocationAvailable] = useState(false);
   const [operationPending, setOperationPending] = useState(false);
   const detailPendingRef = useRef(false);
+  const creationPendingRef = useRef(false);
+  const operationPendingRef = useRef(false);
   const alive = useRef(true);
   const inFlight = useRef(false);
   const copyAttempt = useRef(0);
@@ -40,6 +42,14 @@ export function FreshApiKeys({
       alive.current = false;
     };
   }, []);
+
+  // Multiple Key operations share the Console exit lock; a completed read in
+  // one panel must not release another panel's unresolved write.
+  function reportPending() {
+    onCreationPending(
+      creationPendingRef.current || detailPendingRef.current || operationPendingRef.current
+    );
+  }
 
   function failure(err: unknown) {
     if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
@@ -107,7 +117,7 @@ export function FreshApiKeys({
       detailPendingRef.current ||
       secret ||
       (pending && !retryAllowed) ||
-      operationPending
+      operationPendingRef.current
     )
       return;
     inFlight.current = true;
@@ -124,7 +134,8 @@ export function FreshApiKeys({
           byte.toString(16).padStart(2, '0')
         ).join('');
       setPending(requestId);
-      onCreationPending(true);
+      creationPendingRef.current = true;
+      reportPending();
       const result = await client.post<{ key: Key; createdSecret?: string }>(
         'api-keys',
         { requestId },
@@ -146,7 +157,8 @@ export function FreshApiKeys({
       setSecret(result.createdSecret || '');
       setConfirmed(true);
       setPending('');
-      onCreationPending(false);
+      creationPendingRef.current = false;
+      reportPending();
     } catch (err) {
       if (alive.current) {
         // HTTP errors are also reconciled: a proxy failure can lose a committed reply.
@@ -170,7 +182,8 @@ export function FreshApiKeys({
       setKeys((previous) => [...(previous || []).filter((item) => item.id !== key.id), key]);
       setConfirmed(true);
       setPending('');
-      onCreationPending(false);
+      creationPendingRef.current = false;
+      reportPending();
       setRetryAllowed(false);
     } catch (err) {
       if (alive.current) {
@@ -282,7 +295,7 @@ export function FreshApiKeys({
           onPending={(value) => {
             detailPendingRef.current = value;
             setDetailPending(value);
-            onCreationPending(value);
+            reportPending();
           }}
           onSaved={(key) =>
             setKeys((previous) => (previous || []).map((item) => (item.id === key.id ? key : item)))
@@ -298,8 +311,9 @@ export function FreshApiKeys({
           disabled={busy || !!selected || detailPending || !!pending || !!secret}
           onUnauthorized={onUnauthorized}
           onPending={(value) => {
+            operationPendingRef.current = value;
             setOperationPending(value);
-            onCreationPending(value);
+            reportPending();
           }}
           onChanged={() => void refresh()}
         />

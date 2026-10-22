@@ -187,7 +187,25 @@
     "retryWriterNotIsolated": "The Key writer is not isolated from this configuration source. Editing is locked.",
     "retryJournalInvalid": "The configuration journal is damaged. Editing is locked; its bytes were not replaced.",
     "retryNeedsReconciliation": "An existing operation or source requires reconciliation. Editing is locked.",
-    "retryRequestIdUnavailable": "This browser could not create a secure unique Request ID. Nothing was submitted."
+    "retryRequestIdUnavailable": "This browser could not create a secure unique Request ID. Nothing was submitted.",
+    "strategyChoiceTitle": "Choose Fresh strategy",
+    "strategyChoiceHelp": "Choose exactly one connection mode for this Fresh installation. A saved or unknown attempt cannot switch mode.",
+    "strategyNewManaged": "New Managed CPA",
+    "strategyExternal": "Connect an existing external CPA",
+    "externalTitle": "Connect CPA v8 (private profile)",
+    "externalHelp": "Enter the CPA v8 Management endpoint and key for a source you control. Manager saves an encrypted connection checkpoint only; Gateway stays Pending. A trusted Host permit is required.",
+    "externalBaseURL": "CPA v8 Base URL",
+    "externalManagementKey": "CPA Management Key",
+    "externalSubmit": "Validate and save connection once",
+    "externalSubmitting": "Connecting…",
+    "externalInvalid": "Enter a valid HTTP(S) CPA URL and nonempty Management Key.",
+    "externalUnknown": "The original POST result cannot be established from GET alone. No automatic retry. Keep the original Host record and ask the trusted Host owner to reconcile.",
+    "externalConflict": "The strategy or revision is already occupied (409). The original operation must be reconciled by the Host; do not retry.",
+    "externalSourceAuthRejected": "The CPA source rejected the Management Key. The attempt is STOP and the original Host must reconcile it; do not resubmit.",
+    "externalUnavailable": "Unable to verify the current Operation. The previous result is not confirmed.",
+    "externalConfirmed": "Original POST acknowledged and matching Manager checkpoint read. The connection is encrypted in Manager; CPA/Ingress effect is not confirmed and Gateway remains Pending.",
+    "externalExisting": "An existing External checkpoint was read. This browser cannot prove which Management Key was saved for any lost earlier POST. Host verification is required; no new POST is permitted.",
+    "externalHostStop": "An External attempt was reserved before the CPA read, but no confirmed connection exists. Remain STOP until the trusted Host reconciles the original attempt."
   },
   "cpa_updates": {
     "title": "CPA Engine",
@@ -4642,6 +4660,7 @@
     "gate_step3_hint": "Enter the exact identifier shown above."
   },
   "plugin_resource": {
+    "pah_s0_unsupported": "Plugin pages are disabled in this private security profile. Plugin management remains available.",
     "title": "Plugin Page",
     "page_count": "{{count}} pages",
     "load_failed": "Failed to load plugin page",

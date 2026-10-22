@@ -1,3 +1,5 @@
+// @ts-expect-error Node-only Vitest fixture; production Web excludes Node types.
+import { webcrypto } from 'node:crypto';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FreshConsolePage } from './FreshConsolePage';
@@ -56,7 +58,7 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     scrollRetry = vi.fn();
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal('window', { location: new URL('https://manager.example/console') });
-    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb) });
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb), subtle: webcrypto.subtle });
     vi.stubGlobal('document', {
       documentElement: { classList: { toggle: vi.fn<typeof fetch>() } },
     });
@@ -74,6 +76,7 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
   afterEach(async () => {
     if (renderer) await act(async () => renderer.unmount());
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
   const input = () => renderer.root.findByType('input');
   const buttons = () => renderer.root.findAllByType('button');
@@ -115,6 +118,19 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       await renderer.root.findByType('form').props.onSubmit({ preventDefault: vi.fn() });
     });
   }
+
+  it('private PAH-S0 Web offers only Embedded Fresh New', async () => {
+    vi.stubEnv('VITE_CPAMP_PAH_S0', '1');
+    const read = vi.fn<typeof fetch>().mockResolvedValue(Response.json(operation));
+    await mount(read);
+    await login();
+    expect(renderer.root.findAllByProps({ 'data-testid': 'fresh-select-new' })).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'fresh-select-external' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.onClick());
+    expect(renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
+    expect(read.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
+  });
 
   it('scrolls and focuses the editor on first and repeated navigation without remounting', async () => {
     const retryFetch = vi.fn<typeof fetch>().mockResolvedValue(Response.json(retryView));
@@ -320,6 +336,7 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     await mount(fetchMock);
     await login();
     await act(async () => buttons()[1].props.onClick());
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.onClick());
     await act(async () => {
       renderer.root
         .findByProps({ 'data-testid': 'runtime-observation' })
@@ -339,6 +356,89 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
     expect(revision()).toBe(7);
     expect(stage()).toBe('staged');
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+  });
+
+  it('locks mode choice and logout before asynchronous External hashing completes', async () => {
+    let finishDigest!: (value: ArrayBuffer) => void;
+    const deferred = new Promise<ArrayBuffer>((resolve) => { finishDigest = resolve; });
+    vi.stubGlobal('crypto', {
+      getRandomValues: (bytes: Uint8Array) => bytes.fill(0xbb),
+      subtle: { digest: () => deferred },
+    });
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(operation))
+      .mockResolvedValue(Response.json(operation));
+    await mount(fetchMock);
+    await login();
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'fresh-select-external' }).props.onClick()
+    );
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'external-base-url' })
+      .props.onChange({ target: { value: 'http://cpa.private:8317' } }));
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'external-management-key' })
+      .props.onChange({ target: { value: 'secret' } }));
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'external-connect' }).props.onClick();
+      renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.onClick();
+      buttons().find((button) => button.props.children === t('logout'))?.props.onClick();
+    });
+    expect(renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.disabled).toBe(true);
+    expect(buttons().find((button) => button.props.children === t('logout'))?.props.disabled).toBe(true);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'runtime-observation' })).toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
+    const digest = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode('http://cpa.private:8317'));
+    await act(async () => finishDigest(digest));
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    );
+  });
+
+  it('uses one strategy owner and blocks mode switching during an External POST', async () => {
+    let finish!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => { finish = resolve; });
+    const external = {
+      ...operation,
+      revision: operation.revision + 2,
+      strategy: {
+        strategy: 'connect_external',
+        targetIdentity: 'external:sha256:fd4c35afa405c2cb257987151885823ab76cc177741c7c8dab7679ab53c1cbb2',
+        targetGeneration: 1,
+        stage: 'committed',
+      },
+    };
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(operation))
+      .mockReturnValueOnce(pending)
+      .mockResolvedValueOnce(Response.json(external));
+    await mount(fetchMock);
+    await login();
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'fresh-select-external' }).props.onClick()
+    );
+    expect(renderer.root.findAllByProps({ 'data-testid': 'runtime-observation' })).toHaveLength(0);
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'external-base-url' })
+        .props.onChange({ target: { value: 'http://cpa.private:8317' } })
+    );
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'external-management-key' })
+        .props.onChange({ target: { value: 'secret' } })
+    );
+    await act(async () => {
+      renderer.root.findByProps({ 'data-testid': 'external-connect' }).props.onClick();
+      // Wait for network dispatch, not for React to flush UI state inside act.
+      await vi.waitFor(() =>
+        expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+      );
+    });
+    expect(renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.disabled).toBe(true);
+    expect(buttons().find((button) => button.props.children === t('logout'))?.props.disabled).toBe(true);
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.onClick());
+    expect(renderer.root.findAllByProps({ 'data-testid': 'runtime-observation' })).toHaveLength(0);
+    await act(async () => finish(Response.json(external)));
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'fresh-select-new' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
   });
 
   it.each([401, 403, 503, 409])(

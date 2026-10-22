@@ -107,6 +107,18 @@ func TestFreshV8CancellationAndURLBoundary(t *testing.T) {
 			t.Errorf("accepted invalid URL %q", raw)
 		}
 	}
+	// External-only admission validates impossible ports before Fresh CAS,
+	// while the accepted CPA v8 safe-read implementation remains byte-identical.
+	for _, raw := range []string{"http://host:0", "http://host:65536", "http://[::1]:65536", "http://host:999999999999999999999", "http://host:"} {
+		if ValidV8SourcePort(raw) {
+			t.Errorf("External preflight accepted impossible TCP port %q", raw)
+		}
+	}
+	for _, raw := range []string{"http://host", "https://host:1", "http://host:65535", "http://[::1]:65535"} {
+		if !ValidV8SourcePort(raw) {
+			t.Errorf("External preflight refused valid TCP port %q", raw)
+		}
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)

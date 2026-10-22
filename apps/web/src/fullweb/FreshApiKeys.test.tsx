@@ -48,14 +48,17 @@ describe('Fresh client key persistence UI', () => {
   const view = () => JSON.stringify(renderer.toJSON());
   const button = (text: string) =>
     renderer.root.findAllByType('button').find((item) => item.props.children === text)!;
-  async function mount(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
+  async function mount(
+    fetchMock: ReturnType<typeof vi.fn<typeof fetch>>,
+    onCreationPending = vi.fn()
+  ) {
     await act(async () => {
       renderer = create(
         <FreshApiKeys
           client={createPublicApiClient(() => context, fetchMock)}
           credential="admin-test-only"
           onUnauthorized={unauthorized}
-          onCreationPending={vi.fn()}
+          onCreationPending={onCreationPending}
         />
       );
     });
@@ -63,6 +66,104 @@ describe('Fresh client key persistence UI', () => {
   async function click(text: string) {
     await act(async () => button(text).props.onClick());
   }
+
+  it('keeps the Console exit lock when a revocation read finishes during an unknown S1 install', async () => {
+    const onCreationPending = vi.fn();
+    let finishOperation!: (response: Response) => void;
+    let rejectInstall!: (reason: Error) => void;
+    let initialReads = 0;
+    const initial = {
+      keyId: key.id,
+      managerStaged: true,
+      cpaConfigured: false,
+      runtimeState: 'effect_unknown',
+      runtimeGeneration: '7',
+      observedFromMs: 0,
+      observedUntilMs: 0,
+      expiresAtMs: 0,
+      ingressAuthorized: false,
+      installAvailable: true,
+      attempted: false,
+    };
+    const fetchMock = vi.fn<typeof fetch>((url, options) => {
+      const address = String(url);
+      if (address.endsWith('/api-keys') && options?.method === 'GET')
+        return Promise.resolve(
+          Response.json({ keys: [key], gatewayPending: true, revocationAvailable: true })
+        );
+      if (address.endsWith('/api-keys/operations/latest'))
+        return new Promise<Response>((resolve) => { finishOperation = resolve; });
+      if (address.endsWith('/api-keys/' + key.id) && options?.method === 'GET')
+        return Promise.resolve(Response.json(key));
+      if (address.endsWith('/initial-install') && options?.method === 'GET')
+        return Promise.resolve(
+          Response.json(
+            initialReads++ === 0 ? initial : { ...initial, attempted: true, installAvailable: false }
+          )
+        );
+      if (address.endsWith('/initial-install') && options?.method === 'POST')
+        return new Promise<Response>((_resolve, reject) => { rejectInstall = reject; });
+      return Promise.reject(new Error('unexpected Key API: ' + address));
+    });
+    await mount(fetchMock, onCreationPending);
+    await act(async () => renderer.root.findAllByType('li')[0].findByType('button').props.onClick());
+    await click(t('keysCheckInstallation'));
+    await act(async () => button(t('keysInstallOne')).props.onClick());
+    expect(onCreationPending).toHaveBeenLastCalledWith(true);
+
+    // The separate Revocation component remains mounted while Key Details is open.
+    await act(async () =>
+      finishOperation(
+        Response.json({
+          operation: null,
+          nextStep: '',
+          runtimeState: 'effect_unknown',
+          expiresAtMs: 0,
+        })
+      )
+    );
+    expect(onCreationPending).toHaveBeenLastCalledWith(true);
+    await act(async () => rejectInstall(new Error('install response lost')));
+    expect(onCreationPending).toHaveBeenLastCalledWith(true);
+    await click(t('keysCheckInstallation'));
+    expect(onCreationPending).toHaveBeenLastCalledWith(false);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+  });
+
+  it('keeps a pending revocation lock when an unrelated Key detail is read', async () => {
+    const onCreationPending = vi.fn();
+    const pendingOperation = {
+      id: 'd'.repeat(32),
+      targetId: key.id,
+      keeperId: 'e'.repeat(32),
+      mode: 'replace',
+      outcome: 'pending',
+      revision: 1,
+      steps: [
+        { name: 'add', state: 'unattempted', returned: false },
+        { name: 'revoke', state: 'unattempted', returned: false },
+      ],
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ keys: [key], gatewayPending: true, revocationAvailable: true })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          operation: pendingOperation,
+          nextStep: 'add',
+          runtimeState: 'effect_unknown',
+          expiresAtMs: 0,
+        })
+      )
+      .mockResolvedValueOnce(Response.json(key));
+    await mount(fetchMock, onCreationPending);
+    expect(onCreationPending).toHaveBeenLastCalledWith(true);
+    await act(async () => renderer.root.findAllByType('li')[0].findByType('button').props.onClick());
+    expect(onCreationPending).toHaveBeenLastCalledWith(true);
+    expect(fetchMock.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
+  });
 
   it('uses real Public API, shows creation secret once, preserves identity and never persists browser secrets', async () => {
     const fetchMock = vi

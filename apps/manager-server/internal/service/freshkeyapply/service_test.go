@@ -98,6 +98,33 @@ func TestUnknownAttemptSurvivesNewConsumerAndKeyChoice(t *testing.T) {
 	}
 }
 
+func TestObserveForeignInitialJournalDoesNotProveThisKeyAttempt(t *testing.T) {
+	s, w, _, installedID := fixture(t)
+	w.fail = cpa.ErrApplyUnknown
+	if _, err := s.Apply(t.Context(), installedID, 7); !errors.Is(err, cpa.ErrApplyUnknown) {
+		t.Fatal(err)
+	}
+	other, _, err := s.keys.Create(t.Context(), strings.Repeat("c", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherID := string(other.Key.ID)
+	status, err := s.Observe(t.Context(), otherID, 7)
+	if err != nil || status.KeyID != otherID || status.Attempted || status.InstallAvailable ||
+		status.RuntimeState != "effect_unknown" || status.CPAConfigured {
+		t.Fatal("foreign S1 journal certified this Key", status, err)
+	}
+	// A missing Host permit does not turn the foreign journal into evidence.
+	s.permit = func() (Permit, error) { return Permit{}, ErrUnavailable }
+	status, err = s.Observe(t.Context(), otherID, 7)
+	if err != nil || status.Attempted || status.InstallAvailable {
+		t.Fatal("foreign journal certified this Key without Host permit", status, err)
+	}
+	if w.calls != 1 {
+		t.Fatal("foreign status check replayed the one-shot write")
+	}
+}
+
 func TestConcurrentConsumersClaimExactlyOneAttempt(t *testing.T) {
 	s, w, _, id := fixture(t)
 	w.fail = cpa.ErrApplyUnknown
