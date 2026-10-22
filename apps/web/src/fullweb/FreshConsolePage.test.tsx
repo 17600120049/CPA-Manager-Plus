@@ -10,6 +10,7 @@ import { LoginPage } from '../features/login/LoginPage';
 import { useAuthStore } from '../stores/useAuthStore';
 import { obfuscatedStorage } from '../services/storage/secureStorage';
 import { STORAGE_KEY_AUTH } from '../utils/constants';
+import { usageServiceApi } from '../services/api/usageService';
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
 const operation: FreshOperation = {
   identity: {
@@ -95,6 +96,7 @@ describe('Fresh installation and Console authority boundary', () => {
   afterEach(async () => {
     if (renderer) await act(async () => renderer.unmount());
     useAuthStore.getState().logout();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
   const find = (id: string) => renderer.root.findByProps({ 'data-testid': id });
@@ -191,6 +193,20 @@ describe('Fresh installation and Console authority boundary', () => {
     // payload while allowing those normal cache writes.
     expect(persist.mock.calls.flat().some((value) => String(value).includes(key))).toBe(false);
     expect(obfuscatedStorage.getItem<{ state: { managementKey?: string } }>(STORAGE_KEY_AUTH)?.state.managementKey).toBeUndefined();
+  });
+  it('never calls legacy discovery or legacy login/restore before the business Console is admitted', async () => {
+    const discovery = vi.spyOn(usageServiceApi, 'getInfo').mockRejectedValue(new Error('Legacy discovery is forbidden'));
+    const legacyLogin = vi.spyOn(useAuthStore.getState(), 'login').mockRejectedValue(new Error('Legacy login is forbidden'));
+    const legacyRestore = vi.spyOn(useAuthStore.getState(), 'restoreSession').mockResolvedValue(false);
+    read.mockImplementation(() => Promise.resolve(Response.json({ ...operation, productComplete: false })));
+    await mount();
+    await login(true);
+    expect(has('legacy-console')).toBe(false);
+    expect(renderer.root.findByType(FreshManagedRuntime).props.guided).toBe(true);
+    expect(discovery).not.toHaveBeenCalled();
+    expect(legacyLogin).not.toHaveBeenCalled();
+    expect(legacyRestore).not.toHaveBeenCalled();
+    expect(read.mock.calls[0][0]).toBe('https://manager.example/console/api/v2/operation');
   });
   it('restores a remembered session through canonical authentication after refresh and clears it on logout', async () => {
     await mount();
