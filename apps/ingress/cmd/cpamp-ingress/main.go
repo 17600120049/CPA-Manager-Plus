@@ -25,11 +25,15 @@ const (
 	defaultGatewayURL = "http://cpamp-runtime:8317"
 )
 
+// pahS0Binary is embedded at compile time, not supplied by container ENV.
+var pahS0Binary = "0"
+
 type config struct {
 	addr        string
 	managerURL  *url.URL
 	gatewayURL  *url.URL
 	controlAddr string
+	pahS0     bool
 }
 
 func main() {
@@ -41,6 +45,11 @@ func main() {
 	fresh := &ingress.FreshRoutes{}
 	authority := managerFreshAuthority(cfg.managerURL)
 	handler := ingress.NewFreshHandler(fresh, cfg.managerURL, cfg.gatewayURL, logger, managerLegacyGateway(authority))
+	// The existing Legacy fallback stays unchanged outside the paired
+	// private proof profile; P-S0 ownership is enabled only by its binary.
+	if cfg.pahS0 {
+		handler.EnablePAHS0(managerPAHS0Guard(cfg.managerURL))
+	}
 	s2a, s2b := os.Getenv("CPAMP_PRIVATE_S2A_CHAT") == "1", os.Getenv("CPAMP_PRIVATE_S2B_CHAT") == "1"
 	if s2a && s2b {
 		logger.Fatal("conflicting private chat profiles")
@@ -85,6 +94,10 @@ func main() {
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
+	return loadConfigWithBuild(getenv, pahS0Binary)
+}
+
+func loadConfigWithBuild(getenv func(string) string, compiled string) (config, error) {
 	addr := strings.TrimSpace(getenv("CPAMP_INGRESS_ADDR"))
 	if addr == "" {
 		addr = defaultAddr
@@ -101,7 +114,23 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if controlAddr == "" {
 		controlAddr = "0.0.0.0:9082"
 	}
-	return config{addr: addr, managerURL: managerURL, gatewayURL: gatewayURL, controlAddr: controlAddr}, nil
+	flag := strings.TrimSpace(getenv("CPAMP_PRIVATE_PAH_S0"))
+	if (flag != "" && flag != "0" && flag != "1") ||
+		(compiled != "0" && compiled != "1") {
+		return config{}, errors.New("PAH-S0 Ingress build and runtime modes must be 0 or 1")
+	}
+	if (flag == "1") != (compiled == "1") {
+		return config{}, errors.New("PAH-S0 Ingress runtime does not match compiled binary")
+	}
+	if flag == "1" {
+		if managerURL.Hostname() != "127.0.0.1" || gatewayURL.Hostname() != "127.0.0.1" {
+			return config{}, errors.New("PAH-S0 requires loopback Manager and CPA upstreams")
+		}
+		if !strings.HasPrefix(controlAddr, "127.0.0.1:") {
+			return config{}, errors.New("PAH-S0 requires loopback Ingress control listener")
+		}
+	}
+	return config{addr: addr, managerURL: managerURL, gatewayURL: gatewayURL, controlAddr: controlAddr, pahS0: flag == "1"}, nil
 }
 
 var errLegacyManager = errors.New("Manager is serving the legacy application")
@@ -185,4 +214,34 @@ func parseUpstream(name, value, fallback string) (*url.URL, error) {
 	}
 	parsed.Path = ""
 	return parsed, nil
+}
+
+// managerPAHS0Guard is an uncached private readiness probe; 404, redirects,
+// connection failure, missing header and Manager restarts all deny the request.
+func managerPAHS0Guard(managerURL *url.URL) func(context.Context) bool {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   2 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	endpoint := *managerURL
+	endpoint.Path = "/internal/pah-s0/resource-guard"
+	endpoint.RawPath, endpoint.RawQuery, endpoint.Fragment = "", "", ""
+	return func(ctx context.Context) bool {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return false
+		}
+		req.Header.Set("Cache-Control", "no-store")
+		res, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		defer res.Body.Close()
+		return res.StatusCode == http.StatusNoContent && res.Header.Get("Cache-Control") == "no-store"
+	}
 }

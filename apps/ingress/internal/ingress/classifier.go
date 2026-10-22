@@ -39,6 +39,14 @@ func (f ControlMatcherFunc) Matches(path string) bool {
 type Classifier struct {
 	control ControlMatcher
 	retired ControlMatcher
+	pahS0   bool
+}
+
+// NewPAHS0Classifier activates resource ownership only in the private proof profile.
+func NewPAHS0Classifier(control ControlMatcher) Classifier {
+	c := NewClassifier(control)
+	c.pahS0 = true
+	return c
 }
 
 func NewClassifier(control ControlMatcher) Classifier {
@@ -59,6 +67,9 @@ func NewOwnershipClassifier(control ControlMatcher, retired ControlMatcher) Clas
 }
 
 func (c Classifier) Classify(path string) Route {
+	if c.pahS0 && pahS0ResourceCandidate(path) {
+		return RouteDeny // There is no method proof in a path-only query.
+	}
 	candidates := routeCandidates(path)
 	if privateRoutingCandidate(candidates) {
 		return RouteDeny
@@ -75,6 +86,11 @@ func (c Classifier) Classify(path string) Route {
 func (c Classifier) ClassifyRequest(r *http.Request) Route {
 	if r == nil || r.URL == nil {
 		return RouteGateway
+	}
+	if c.pahS0 {
+		if route, handled := classifyPAHS0Resource(r); handled {
+			return route
+		}
 	}
 	if exactBrandResource(r) {
 		return RouteManager
@@ -185,7 +201,7 @@ func privateRoutingCandidate(candidates []string) bool {
 				return true
 			}
 		}
-		for _, private := range []string{FreshRoutingControlPath, FreshRoutingAuthorityPath, "/internal/fresh-client-key-stage/probe", PrivateChatAdmissionPath} {
+		for _, private := range []string{FreshRoutingControlPath, FreshRoutingAuthorityPath, pahS0GuardPath, "/internal/fresh-client-key-stage/probe", PrivateChatAdmissionPath} {
 			if value == private || strings.HasPrefix(value, private+"/") {
 				return true
 			}

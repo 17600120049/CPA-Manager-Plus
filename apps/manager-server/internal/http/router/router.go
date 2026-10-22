@@ -54,6 +54,18 @@ func New(appCtx *app.Context) http.Handler {
 	mux.HandleFunc("/usage-service/runtime/updates", middleware.WithCORS(appCtx.Config, cpaUpdates.Handle))
 	mux.HandleFunc("/usage-service/runtime/updates/", middleware.WithCORS(appCtx.Config, cpaUpdates.Handle))
 	mux.HandleFunc("/health", middleware.WithCORS(appCtx.Config, healthHandler.Health))
+	// Never published by Ingress; only the private shared Host namespace can
+	// check that the same Manager process enforces the resource-deny guard.
+	mux.HandleFunc("/internal/pah-s0/resource-guard", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if !appCtx.Config.PAHS0Enabled || r.Method != http.MethodGet ||
+			r.URL.Path != "/internal/pah-s0/resource-guard" ||
+			r.URL.EscapedPath() != r.URL.Path || r.URL.RawQuery != "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	// The legacy application is selected only after startup admission and
 	// initialization. Fresh and pending startup use separate handlers and must
 	// never emit this explicit legacy-mode acknowledgement. Public Ingress
@@ -80,7 +92,11 @@ func New(appCtx *app.Context) http.Handler {
 	mux.HandleFunc("/management.html", panelHandler.ManagementHTML)
 	mux.HandleFunc("/", rootHandler(appCtx, usageHandler, modelPriceHandler, apiKeyAliasHandler, accountActionHandler, codexInspectionHandler, dashboardHandler, monitoringHandler, quotaSnapshotHandler, managerConfigHandler, proxyHandler))
 
-	return middleware.Recovery(middleware.RequestLogger(routingdomain.ProtectFixedDiscovery(mux, routingdomain.DiscoveryHandler{})))
+		var routes http.Handler = mux
+	if appCtx.Config.PAHS0Enabled {
+		routes = pahS0DenyResources(routes)
+	}
+	return middleware.Recovery(middleware.RequestLogger(routingdomain.ProtectFixedDiscovery(routes, routingdomain.DiscoveryHandler{})))
 }
 
 func rootHandler(

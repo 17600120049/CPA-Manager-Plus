@@ -22,6 +22,8 @@ export function FreshConsolePage({
   const [credential, setCredential] = useState('');
   const [operation, setOperation] = useState<FreshOperation | null>(null);
   const [strategyChoice, setStrategyChoice] = useState<'new_managed' | 'connect_external' | null>(null);
+  // Paired private P-S0 image supports Embedded Fresh New only.
+  const pahS0EmbeddedOnly = import.meta.env.VITE_CPAMP_PAH_S0 === '1';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [light, setLight] = useState(false);
@@ -276,14 +278,14 @@ export function FreshConsolePage({
                           }}>
                           {t('strategyNewManaged')}
                         </button>
-                        <button type="button" className="btn btn-secondary" data-testid="fresh-select-external"
+                        {!pahS0EmbeddedOnly && <button type="button" className="btn btn-secondary" data-testid="fresh-select-external"
                           disabled={installationPending}
                           aria-pressed={strategyChoice === 'connect_external'}
                           onClick={() => {
                             if (!installationPendingRef.current) setStrategyChoice('connect_external');
                           }}>
                           {t('strategyExternal')}
-                        </button>
+                        </button>}
                       </div>
                     </section>
                   )}
@@ -305,7 +307,7 @@ export function FreshConsolePage({
                       }}
                     />
                   )}
-                  {(operation.strategy?.strategy === 'connect_external' ||
+                  {!pahS0EmbeddedOnly && (operation.strategy?.strategy === 'connect_external' ||
                     (!operation.strategy?.strategy && strategyChoice === 'connect_external')) && (
                     <FreshExternalConnection
                       key={`external-${credential}`}

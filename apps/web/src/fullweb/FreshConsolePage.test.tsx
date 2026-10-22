@@ -76,6 +76,7 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
   afterEach(async () => {
     if (renderer) await act(async () => renderer.unmount());
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
   const input = () => renderer.root.findByType('input');
   const buttons = () => renderer.root.findAllByType('button');
@@ -117,6 +118,19 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
       await renderer.root.findByType('form').props.onSubmit({ preventDefault: vi.fn() });
     });
   }
+
+  it('private PAH-S0 Web offers only Embedded Fresh New', async () => {
+    vi.stubEnv('VITE_CPAMP_PAH_S0', '1');
+    const read = vi.fn<typeof fetch>().mockResolvedValue(Response.json(operation));
+    await mount(read);
+    await login();
+    expect(renderer.root.findAllByProps({ 'data-testid': 'fresh-select-new' })).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'fresh-select-external' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'fresh-select-new' }).props.onClick());
+    expect(renderer.root.findAllByProps({ 'data-testid': 'external-connect' })).toHaveLength(0);
+    expect(read.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
+  });
 
   it('scrolls and focuses the editor on first and repeated navigation without remounting', async () => {
     const retryFetch = vi.fn<typeof fetch>().mockResolvedValue(Response.json(retryView));

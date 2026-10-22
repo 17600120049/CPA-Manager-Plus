@@ -32,6 +32,7 @@ type startupHTTPHandler struct {
 	lifecycle         atomic.Value // routingdomain.DiscoveryLifecycle
 	ready             atomic.Bool
 	fresh             atomic.Pointer[startupHandlerTarget]
+	pahS0             bool
 }
 
 type startupHandlerTarget struct {
@@ -134,6 +135,9 @@ func (h *startupHTTPHandler) SetCompleted() {
 }
 
 func (h *startupHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.servePAHS0(w, r) {
+		return
+	}
 	if target := h.fresh.Load(); target != nil {
 		target.handler.ServeHTTP(w, r)
 		return

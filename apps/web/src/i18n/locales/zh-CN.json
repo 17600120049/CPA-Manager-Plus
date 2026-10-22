@@ -4658,6 +4658,7 @@
     "gate_step3_hint": "请输入上方显示的完整标识。"
   },
   "plugin_resource": {
+    "pah_s0_unsupported": "当前私有安全配置已禁用插件页面；插件管理功能仍可使用。",
     "title": "插件页面",
     "page_count": "{{count}} 个页面",
     "load_failed": "加载插件页面失败",

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
 )
 
 const configEnvKey = "CPA_MANAGER_CONFIG"
@@ -41,6 +43,7 @@ type Config struct {
 	AdminAuthorityConfigured     bool
 	DataKey                      string
 	DataKeyPath                  string
+	PAHS0Enabled                bool
 	RuntimeURL                   string
 	RuntimeTokenFile             string
 	CollectorMode                string
@@ -125,7 +128,24 @@ func InspectionConfigPath() (string, error) {
 	return executableConfigPath()
 }
 
+func validatePAHS0Build(runtimeFlag, compiledWeb string) error {
+	if runtimeFlag != "" && runtimeFlag != "0" && runtimeFlag != "1" {
+		return fmt.Errorf("CPAMP_PRIVATE_PAH_S0 must be 0 or 1")
+	}
+	if compiledWeb != "0" && compiledWeb != "1" {
+		return fmt.Errorf("invalid compiled PAH-S0 Web mode")
+	}
+	if (runtimeFlag == "1") != (compiledWeb == "1") {
+		return fmt.Errorf("PAH-S0 Manager runtime does not match compiled Web assets")
+	}
+	return nil
+}
+
 func LoadWithOptions(options LoadOptions) (Config, error) {
+	pahS0 := strings.TrimSpace(os.Getenv("CPAMP_PRIVATE_PAH_S0"))
+	if err := validatePAHS0Build(pahS0, buildinfo.PAHS0WebBundle); err != nil {
+		return Config{}, err
+	}
 	cfgFile, cfgDir, err := loadFileConfig(options)
 	if err != nil {
 		return Config{}, err
@@ -189,6 +209,7 @@ func LoadWithOptions(options LoadOptions) (Config, error) {
 		AdminAuthorityConfigured:     adminAuthorityConfigured,
 		DataKey:                      readSecret("CPA_MANAGER_DATA_KEY", "CPA_MANAGER_DATA_KEY_FILE", dataKeyFile),
 		DataKeyPath:                  env("CPA_MANAGER_DATA_KEY_PATH", dataKeyPath),
+		PAHS0Enabled:                pahS0 == "1",
 		RuntimeURL:                   strings.TrimSpace(os.Getenv("CPAMP_RUNTIME_URL")),
 		RuntimeTokenFile:             strings.TrimSpace(os.Getenv("CPAMP_RUNTIME_TOKEN_FILE")),
 		CollectorMode:                normalizeCollectorMode(env("USAGE_COLLECTOR_MODE", stringFallback(cfgFile.CollectorMode, "auto"))),
