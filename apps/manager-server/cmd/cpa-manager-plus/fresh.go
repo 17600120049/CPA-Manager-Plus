@@ -225,7 +225,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		a.executeStrategy(w, r, op)
 	case resource == "complete" && r.Method == http.MethodPost:
 		// External is a connection checkpoint, not an activated product.
-		if op.Strategy.Strategy == bootstrap.ConnectExternal {
+		if op.Strategy.Strategy == bootstrap.ConnectExternal || op.Strategy.Strategy == bootstrap.AdoptExisting {
+			// Neither External nor Adopt has ProductComplete authorization.
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
@@ -280,6 +281,14 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 	var trailing any
 	if d.Decode(&trailing) != io.EOF {
 		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	// Accepted CPA source/destination qualification is not Host takeover
+	// authority. Fresh Adopt has no approved production writer or Host permit.
+	// Keep both canonical and fixed Bootstrap fail-closed before source GET,
+	// Runtime stage/start or any Manager checkpoint mutation.
+	if request.Strategy == bootstrap.AdoptExisting {
+		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
 	// Private P-S0 denies External/Adopt before Host permit,
