@@ -184,10 +184,14 @@ def check_startup_config(config, role):
     runtime = config.get("config")
     require(type(runtime) is dict, "OCI image runtime config missing")
     entrypoint, command = STARTUP[role]
-    require(runtime.get("Entrypoint") == entrypoint and
-            runtime.get("Cmd") in (None, []) if command is None else
-            runtime.get("Entrypoint") == entrypoint and runtime.get("Cmd") == command,
+    require(runtime.get("Entrypoint") == entrypoint,
             "final image Entrypoint/Cmd mismatch: " + role)
+    if command is None:
+        require(runtime.get("Cmd") in (None, []),
+                "final image Entrypoint/Cmd mismatch: " + role)
+    else:
+        require(runtime.get("Cmd") == command,
+                "final image Entrypoint/Cmd mismatch: " + role)
 
 
 def check_go_binary(data, role, source_sha):
