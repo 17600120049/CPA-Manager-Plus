@@ -73,18 +73,19 @@ func freshPaths(cfg config.Config) (sqliterepo.InspectionPaths, error) {
 var errFreshExternalPermitRevoked = errors.New("fresh external host permit revoked")
 
 type freshApplication struct {
-	store       freshstore.Store
-	authority   *fresh.Service
-	routing     *freshrouting.Service
-	strategy    *freshstrategy.Service
+	store          freshstore.Store
+	authority      *fresh.Service
+	routing        *freshrouting.Service
+	strategy       *freshstrategy.Service
+	runtime        runtimeservice.RuntimeClient
 	externalPermit func(bootstrap.FreshOperation, uint64, string, string, string) bool
-	protector   *security.Protector
-	fixed       http.Handler
-	keys        *freshkeys.Service
-	keyApply    *freshkeyapply.Service
-	updates     *updatecheck.Service
-	configRetry *freshconfig.Service
-	pahS0       bool
+	protector      *security.Protector
+	fixed          http.Handler
+	keys           *freshkeys.Service
+	keyApply       *freshkeyapply.Service
+	updates        *updatecheck.Service
+	configRetry    *freshconfig.Service
+	pahS0          bool
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
@@ -114,6 +115,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
 	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL})
+	a.runtime = runtime
 	a.externalPermit = privateFreshExternalAdmitted
 	a.fixed = freshbootstrap.Handler{Authority: a.authority, Routing: a.routing, Current: a.current,
 		Shell: httpapi.BootstrapWebHandler(), Strategy: http.HandlerFunc(a.fixedStrategy)}
@@ -234,6 +236,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		a.clientKeys(w, r, op, resource)
 	case resource == "operation" && r.Method == http.MethodGet:
 		writeFreshJSON(w, op)
+	case resource == "installation/runtime" && r.Method == http.MethodGet:
+		a.installationRuntime(w, r, op)
 	case resource == "strategy" && r.Method == http.MethodPost:
 		a.executeStrategy(w, r, op)
 	case resource == "complete" && r.Method == http.MethodPost:
@@ -245,6 +249,10 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		}
 		if op.ProductComplete {
 			writeFreshJSON(w, op)
+			return
+		}
+		if !a.managedInstallationReady(r.Context(), op) {
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		next, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {

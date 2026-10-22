@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
+import { shellText as s } from '../i18n/consoleShell';
 import { sameIdentity, type FreshOperation } from './bootstrapTransport';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { parseRuntimeJSON, validRuntimeGeneration } from './runtimeGeneration';
@@ -63,6 +64,8 @@ export function FreshManagedRuntime({
   onOperation,
   onUnauthorized,
   onPending,
+  guided = false,
+  onContinue,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
@@ -70,12 +73,20 @@ export function FreshManagedRuntime({
   onOperation: (operation: FreshOperation) => void;
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
+  guided?: boolean;
+  onContinue?: () => void;
 }) {
   const [observation, setObservation] = useState('');
   const [busy, setBusy] = useState(false);
   const [unknown, setUnknown] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [error, setError] = useState('');
+  const [step, setStep] = useState(operation.strategy?.strategy ? 3 : 0);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [readiness, setReadiness] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const runningRef = useRef(false);
   const inFlight = useRef(false);
   const alive = useRef(true);
   const expectedTarget = useRef<ReturnType<typeof hostTarget> | null>(null);
@@ -133,22 +144,24 @@ export function FreshManagedRuntime({
   async function reconcile() {
     const next = await client.get<FreshOperation>('operation', auth);
     if (alive.current) accept(next);
+    return next;
   }
 
-  async function act(write: boolean) {
+  async function act(write: boolean, current = operation) {
     if (
       inFlight.current ||
-      (write && (unknown || conflict || foreign || invalidCheckpoint || operation.productComplete))
+      (write && (unknown || conflict || foreign || invalidCheckpoint || current.productComplete))
     )
       return;
     let body: Record<string, unknown> = {};
+    const checkpoint = current.strategy;
     if (write && checkpoint?.stage !== 'committed') {
       try {
         if (!checkpoint?.strategy && !expectedTarget.current)
           expectedTarget.current = hostTarget(observation);
         body = {
-          identity: operation.identity,
-          expectedRevision: operation.revision,
+          identity: current.identity,
+          expectedRevision: current.revision,
           strategy: 'new_managed',
           ...(checkpoint?.strategy
             ? {
@@ -170,8 +183,13 @@ export function FreshManagedRuntime({
     try {
       if (write) {
         pendingWrite.current = {
-          revision: operation.revision,
-          action: checkpoint?.stage === 'committed' ? 'complete' : checkpoint?.strategy ? 'start' : 'stage',
+          revision: current.revision,
+          action:
+            checkpoint?.stage === 'committed'
+              ? 'complete'
+              : checkpoint?.strategy
+                ? 'start'
+                : 'stage',
           previousStage: checkpoint?.stage,
         };
         setUnknown(true);
@@ -182,7 +200,7 @@ export function FreshManagedRuntime({
         );
         // Read the durable checkpoint even when the write reply was received.
       }
-      await reconcile();
+      return await reconcile();
     } catch (err) {
       if (!alive.current) return;
       if (err instanceof PublicApiError && err.kind === 'authentication') {
@@ -194,8 +212,9 @@ export function FreshManagedRuntime({
       setError(t(stopped ? 'installConflict' : 'installUnavailable'));
       try {
         if (!write) throw err;
-        await reconcile();
+        const next = await reconcile();
         if (!stopped) setError('');
+        if (!stopped) return next;
       } catch (readError) {
         if (!alive.current) return;
         if (readError instanceof PublicApiError && readError.kind === 'authentication')
@@ -216,7 +235,296 @@ export function FreshManagedRuntime({
     }
   }
 
+  async function inspect() {
+    if (checking || running) return;
+    setChecking(true);
+    setError('');
+    try {
+      const status = await client.get<unknown>('installation/runtime', auth);
+      const raw = JSON.stringify(status);
+      const target = hostTarget(raw);
+      if (alive.current) {
+        expectedTarget.current = target;
+        setObservation(raw);
+        setStep(2);
+      }
+    } catch (err) {
+      if (alive.current) {
+        if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
+        else setError(s('unavailable'));
+      }
+    } finally {
+      if (alive.current) setChecking(false);
+    }
+  }
+
+  async function run() {
+    if (runningRef.current || inFlight.current || unknown || conflict) return;
+    runningRef.current = true;
+    setRunning(true);
+    setStep(3);
+    let current = operation;
+    try {
+      // Every next action consumes a confirmed durable read of this operation.
+      // A lost reply with no confirming read pauses, never retries the write.
+      for (let attempt = 0; attempt < 4 && alive.current && !current.productComplete; attempt++) {
+        if (current.strategy?.stage === 'committed') {
+          let ready = false;
+          for (let probe = 0; probe < 30 && alive.current; probe++) {
+            const status = await client.get<{ state: string }>('installation/runtime', auth);
+            const target = hostTarget(JSON.stringify(status));
+            if (
+              target.expectedRuntimeIdentity !== current.strategy.targetIdentity ||
+              target.expectedRuntimeGeneration !== current.strategy.targetGeneration ||
+              target.expectedArtifactId !== current.strategy.targetArtifactId
+            )
+              throw new Error('Runtime identity changed');
+            if (status.state === 'ready') {
+              ready = true;
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          if (!alive.current) return;
+          if (!ready) throw new Error('Readiness unavailable');
+          setReadiness(true);
+        }
+        const next = await act(true, current);
+        if (!next || !alive.current) return;
+        current = next;
+        if (current.strategy?.stage === 'starting') return;
+      }
+    } catch (err) {
+      if (alive.current) {
+        if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
+        else setError(s('failureHelp'));
+      }
+    } finally {
+      runningRef.current = false;
+      if (alive.current) setRunning(false);
+    }
+  }
+
   if (foreign) return null;
+
+  if (guided) {
+    const complete = operation.productComplete === true;
+    const progress = complete
+      ? 4
+      : checkpoint?.stage === 'committed'
+        ? readiness
+          ? 3
+          : 2
+        : checkpoint?.stage === 'starting'
+          ? 1
+          : checkpoint?.stage === 'staged'
+            ? 1
+            : 0;
+    return (
+      <section
+        className="installation-flow"
+        data-testid="fresh-managed-runtime"
+        aria-busy={running || checking}
+      >
+        <ol className="installation-steps" aria-label={s('installation')}>
+          {(['choose', 'configure', 'confirm', 'execute', 'finish'] as const).map(
+            (label, index) => (
+              <li key={label} aria-current={(complete ? 4 : step) === index ? 'step' : undefined}>
+                <span>{index + 1}</span>
+                {s(label)}
+              </li>
+            )
+          )}
+        </ol>
+        <div className="wizard-card">
+          <div className="wizard-card-header">
+            <h1>
+              {complete
+                ? s('ready')
+                : step === 2
+                  ? s('reviewTitle')
+                  : step === 3
+                    ? s('execute')
+                    : s('newTitle')}
+            </h1>
+            <p className="wizard-desc">
+              {complete ? s('readyHelp') : step === 2 ? s('reviewHelp') : s('newHelp')}
+            </p>
+          </div>
+          <div className="wizard-card-body">
+            {error && (
+              <p className="alert alert-warn" role="alert">
+                {error}
+              </p>
+            )}
+            {unknown && (
+              <div role="status" className="alert alert-warn">
+                <strong>{s('unknown')}</strong>
+                <p>{s('unknownHelp')}</p>
+              </div>
+            )}
+            {invalidCheckpoint && <p role="alert">{s('failureHelp')}</p>}
+            {!complete && step === 0 && (
+              <div className="installation-choices">
+                <div className="installation-choice selected">
+                  <h2>{s('newManaged')}</h2>
+                  <p>{s('newDetail')}</p>
+                </div>
+                <div className="installation-choice">
+                  <h2>{s('adopt')}</h2>
+                  <p>{s('adoptHelp')}</p>
+                </div>
+                <div className="installation-choice">
+                  <h2>{s('external')}</h2>
+                  <p>{s('externalHelp')}</p>
+                </div>
+                <p>{s('upgradeHelp')}</p>
+                <button className="btn btn-primary" onClick={() => setStep(1)}>
+                  {s('next')}
+                </button>
+              </div>
+            )}
+            {!complete && step === 1 && (
+              <>
+                <p>{s('configHelp')}</p>
+                <dl className="console-state">
+                  <dt>{s('consoleAddress')}</dt>
+                  <dd>{operation.routing.target}</dd>
+                  <dt>{s('destination')}</dt>
+                  <dd>
+                    {s('host')} · {s('version')}
+                  </dd>
+                </dl>
+                <div className="wizard-card-footer">
+                  <button
+                    className="btn btn-secondary"
+                    disabled={checking}
+                    onClick={() => setStep(0)}
+                  >
+                    {s('back')}
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    data-testid="inspect-installation"
+                    disabled={checking}
+                    onClick={() => void inspect()}
+                  >
+                    {s(checking ? 'inspecting' : 'inspect')}
+                  </button>
+                </div>
+              </>
+            )}
+            {!complete && step === 2 && (
+              <>
+                <dl className="console-state">
+                  <dt>{s('destination')}</dt>
+                  <dd>{s('host')}</dd>
+                  <dt>CPA</dt>
+                  <dd>{s('version')}</dd>
+                  <dt>{s('consoleAddress')}</dt>
+                  <dd>{operation.routing.target}</dd>
+                  <dt>{s('observation')}</dt>
+                  <dd>✓</dd>
+                </dl>
+                <label className="checkbox-card">
+                  <input
+                    type="checkbox"
+                    checked={acknowledged}
+                    onChange={(event) => setAcknowledged(event.target.checked)}
+                  />
+                  {s('acknowledgement')}
+                </label>
+                <div className="wizard-card-footer">
+                  <button className="btn btn-secondary" onClick={() => setStep(1)}>
+                    {s('back')}
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    data-testid="install-runtime"
+                    disabled={!acknowledged || running}
+                    onClick={() => void run()}
+                  >
+                    {s('submit')}
+                  </button>
+                </div>
+              </>
+            )}
+            {(step === 3 || complete) && (
+              <>
+                <ol className="installation-progress" aria-live="polite">
+                  {(['stage', 'start', 'verify', 'complete'] as const).map((label, index) => (
+                    <li key={label}>
+                      <span aria-hidden="true">{index < progress ? '✓' : index + 1}</span>
+                      <strong>{s(label)}</strong>
+                      <small>
+                        {s(
+                          index < progress
+                            ? 'done'
+                            : running && index === progress
+                              ? 'active'
+                              : 'pending'
+                        )}
+                      </small>
+                    </li>
+                  ))}
+                </ol>
+                <p data-testid="install-stage">
+                  {complete
+                    ? t('installComplete')
+                    : unknown
+                      ? s('unknown')
+                      : running
+                        ? s('installing')
+                        : s('failure')}
+                </p>
+                <div className="wizard-card-footer">
+                  {complete ? (
+                    <button className="btn btn-primary" onClick={onContinue}>
+                      {s('console')}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        className="btn btn-secondary"
+                        data-testid="refresh-installation"
+                        disabled={running || busy}
+                        onClick={() => void act(false)}
+                      >
+                        {s('refresh')}
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        data-testid="install-runtime"
+                        disabled={running || busy || unknown || conflict || invalidCheckpoint}
+                        onClick={() => void run()}
+                      >
+                        {s(running ? 'installing' : 'recover')}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+            <details className="installation-diagnostics">
+              <summary>{s('technical')}</summary>
+              <dl className="console-state">
+                <dt>{t('operation')}</dt>
+                <dd>{operation.identity.operationId}</dd>
+                <dt>{t('revision')}</dt>
+                <dd>{operation.revision}</dd>
+                <dt>{s('destination')}</dt>
+                <dd>
+                  {checkpoint?.targetIdentity ||
+                    expectedTarget.current?.expectedRuntimeIdentity ||
+                    '—'}
+                </dd>
+              </dl>
+            </details>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="info-card" data-testid="fresh-managed-runtime">

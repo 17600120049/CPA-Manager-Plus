@@ -2,7 +2,8 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOOTSTRAP_UI, createBootstrapTransport } from './bootstrapTransport';
 import { FreshBootstrapPage } from './FreshBootstrapPage';
-import { fullWebText } from '../i18n/fullweb';
+import { fullWebText, setFullWebLanguage } from '../i18n/fullweb';
+import { bootstrapJourneyText } from '../i18n/bootstrapJourney';
 
 const identity = {
   admissionId: 'admission-01',
@@ -38,6 +39,7 @@ function textOf(node: ReactTestInstance): string {
 
 describe('FreshBootstrapPage product preview workflow', () => {
   beforeEach(() => {
+    setFullWebLanguage('zh-CN');
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const location = new URL('https://manager.example' + BOOTSTRAP_UI);
     vi.stubGlobal('window', {
@@ -397,8 +399,8 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(textOf(findByTestId(renderer.root, 'host-preflight-command'))).toBe(
       'cpa-manager-plus legacy-preflight --db /path/to/usage.sqlite --summary'
     );
-    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).not.toContain('Fresh New Preview');
-    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).toContain('Source Preflight · Read Only');
+    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).not.toContain(bootstrapJourneyText('preview'));
+    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).toContain(bootstrapJourneyText('preflight'));
     expect(discovery).toHaveBeenCalledTimes(1);
   });
 
@@ -528,7 +530,8 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(commitCallBody.commitId).toMatch(/^commit_/);
 
     const completePanel = findByTestId(renderer.root, 'admin-init-complete-panel');
-    expect(textOf(completePanel)).toContain('本次管理员密钥初始化已成功写入服务端');
+    expect(textOf(completePanel)).toContain(bootstrapJourneyText('saved'));
+    expect(textOf(completePanel)).toContain(bootstrapJourneyText('pending'));
     expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('已初始化');
 
     const refreshBtn = findByTestId(renderer.root, 'refresh-operation-btn');
@@ -700,7 +703,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('/.well-known/cpamp-bootstrap/api/v2/operation');
     expect(textOf(findByTestId(renderer.root, 'op-session-mode'))).toContain('恢复会话');
     expect(textOf(findByTestId(renderer.root, 'admin-init-complete-panel'))).toContain(
-      '已从服务端恢复管理员已初始化状态'
+      bootstrapJourneyText('restored')
     );
   });
 
@@ -950,6 +953,10 @@ describe('FreshBootstrapPage product preview workflow', () => {
       findByTestId(renderer.root, 'routing-form').props.onSubmit({ preventDefault: vi.fn() })
     );
     expect(findByTestId(renderer.root, 'continue-console').props.href).toBe('/console');
+    expect(textOf(findByTestId(renderer.root, 'continue-console'))).toBe(bootstrapJourneyText('continue'));
+    expect(textOf(findByTestId(renderer.root, 'admin-init-complete-panel'))).toContain(
+      bootstrapJourneyText('routeReady')
+    );
     expect(findByTestId(renderer.root, 'op-routing-status').children.join('')).toBe(
       fullWebText('routeVerifiedState')
     );
@@ -1010,4 +1017,48 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(renderer.root.findAllByProps({ 'data-testid': 'continue-console' })).toHaveLength(0);
     expect(JSON.stringify(renderer.toJSON())).toContain('503');
   });
+
+  it.each(['zh-CN', 'zh-TW', 'en'])(
+    'keeps normal %s setup readable and diagnostics collapsed',
+    async (language) => {
+      setFullWebLanguage(language);
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json({ token: 'session-token-1', operation: pendingOperation })
+        );
+      let renderer!: ReactTestRenderer;
+      await act(async () => {
+        renderer = create(
+          <FreshBootstrapPage handoff={handoff} transport={createBootstrapTransport(fetchMock)} />
+        );
+      });
+      expect(textOf(renderer.root.findByType('h1'))).toBe(bootstrapJourneyText('adminTitle'));
+      expect(textOf(findByTestId(renderer.root, 'commit-admin-btn'))).toBe(
+        bootstrapJourneyText('save')
+      );
+      const diagnostics = findByTestId(renderer.root, 'bootstrap-diagnostics');
+      expect(diagnostics.type).toBe('details');
+      expect(diagnostics.props.open).toBeUndefined();
+      expect(textOf(diagnostics)).toContain(identity.operationId);
+      expect(textOf(diagnostics)).not.toContain(handoff.token);
+      expect(textOf(diagnostics)).not.toContain('session-token-1');
+      const visibleText = (node: ReactTestInstance): string => {
+        if (node.type === 'details') return textOf(node.findByType('summary'));
+        return node.children
+          .map((child) => (typeof child === 'string' ? child : visibleText(child)))
+          .join('');
+      };
+      const visible = visibleText(renderer.root);
+      expect(visible).not.toContain('Operation');
+      expect(visible).not.toContain('Revision');
+      expect(visible).not.toContain('Fail-Closed');
+      expect(visible).not.toContain(identity.operationId);
+      expect(visible).toContain(bootstrapJourneyText('claim'));
+      expect(visible).toContain(bootstrapJourneyText('administrator'));
+      expect(visible).toContain(bootstrapJourneyText('address'));
+      expect(visible).toContain(bootstrapJourneyText('continue'));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
 });

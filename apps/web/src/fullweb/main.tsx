@@ -26,7 +26,7 @@ if (window.location.pathname === BOOTSTRAP_UI) {
   const router = createBrowserRouter(
     [
       {
-        path: '/',
+        path: '*',
         hydrateFallbackElement: <></>,
         lazy: async () => {
           const { FreshConsolePage } = await import('./FreshConsolePage');

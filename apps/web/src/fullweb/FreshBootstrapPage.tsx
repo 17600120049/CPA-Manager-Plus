@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
+import { bootstrapJourneyText as journey } from '../i18n/bootstrapJourney';
 import { validControlBasePath } from './routingContext';
 import {
   BootstrapTransportClient,
@@ -349,8 +350,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
       setConfirmedSaved(false);
       setFeedback({
         tone: 'info',
-        title: '已由 Manager 服务端生成高强度管理员密钥',
-        detail: '请立即复制并妥善保存该密钥，勾选下方保存确认框后即可提交初始化。',
+        title: journey('generated'),
+        detail: journey('generatedHelp'),
       });
     } catch (err) {
       setFeedback(describeBootstrapError(err, 'generate'));
@@ -399,10 +400,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
       }
       setFeedback({
         tone: 'info',
-        title: '已同步最新服务端 Operation 状态',
-        detail: `当前状态版本 Revision #${next.revision}，管理员初始化状态：${
-          next.adminInitialized ? '已完成' : '待初始化'
-        }。`,
+        title: journey('progressRead'),
+        detail: journey(next.adminInitialized ? 'adminComplete' : 'adminPending'),
       });
     } catch (err) {
       setFeedback(describeBootstrapError(err, 'refresh'));
@@ -454,8 +453,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
       setCommitCompletedInSession(true);
       setFeedback({
         tone: 'success',
-        title: '管理员密钥初始化已提交生效',
-        detail: `已通过幂等提交标识 ${commitId} 完成初始化，服务端状态已推进至 Revision #${updated.revision}。`,
+        title: journey('commitSaved'),
+        detail: journey('commitSavedHelp'),
       });
     } catch (err) {
       if (err instanceof BootstrapTransportError && err.kind === 'bad_request') {
@@ -474,8 +473,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
             setShowKey(false);
             setFeedback({
               tone: 'info',
-              title: '服务端已完成管理员初始化',
-              detail: `经同步确认，当前 Operation（Revision #${latest.revision}）已处于管理员已初始化状态。`,
+              title: journey('reconciled'),
+              detail: journey('reconciledHelp'),
             });
             return;
           }
@@ -514,34 +513,31 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
             <span className="brand-title">CPA Manager Plus</span>
             <span className="brand-sub">
               {phase === 'no_handoff' && discoveryNote?.flow !== 'fresh'
-                ? 'v2 Source Preflight · 只读来源检查'
-                : 'v2 Fresh Bootstrap · 受控安装初始化入口'}
+                ? journey('preflight')
+                : journey('subtitle')}
             </span>
           </div>
           <span className="badge badge-indigo">
             {phase === 'no_handoff' && discoveryNote?.flow !== 'fresh'
-              ? 'Source Preflight · Read Only'
-              : 'Fresh New Preview'}
+              ? journey('preflight')
+              : journey('preview')}
           </span>
           {operation && (
             <span
               className={`badge ${operation.gatewayPending ? 'badge-amber' : 'badge-emerald'}`}
               data-testid="gateway-status-badge"
             >
-              {operation.gatewayPending
-                ? 'CPA Gateway: Pending (Fail-Closed)'
-                : 'CPA Gateway: Ready'}
+              {operation.gatewayPending ? journey('pending') : journey('gatewayReady')}
             </span>
           )}
         </div>
         <div className="header-actions">
-          <span className="badge badge-neutral">无浏览器持久化密钥存储</span>
           <button
             type="button"
             className="btn-icon"
             onClick={() => setLightTheme((prev) => !prev)}
-            aria-label="切换明暗主题"
-            title="切换明暗主题"
+            aria-label={journey('theme')}
+            title={journey('theme')}
           >
             {lightTheme ? '☾' : '☀'}
           </button>
@@ -551,14 +547,14 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
       <main className="bootstrap-main">
         <div className="wizard-container">
           {!(phase === 'no_handoff' && discoveryNote?.flow !== 'fresh') && (
-            <div className="stepper" aria-label="Fresh Bootstrap 进度">
+            <div className="stepper" aria-label={journey('progress')}>
               <div
                 className={`step-item ${
                   phase === 'ready' ? 'completed' : phase === 'connecting' ? 'active' : ''
                 }`}
               >
                 <span className="step-dot">{phase === 'ready' ? '✓' : '1'}</span>
-                <span>Handoff 认领与会话绑定</span>
+                <span>{journey('claim')}</span>
               </div>
               <div className={`step-line ${phase === 'ready' ? 'completed' : ''}`} />
               <div
@@ -567,12 +563,19 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 }`}
               >
                 <span className="step-dot">{isAdminDone ? '✓' : '2'}</span>
-                <span>管理员密钥初始化</span>
+                <span>{journey('administrator')}</span>
               </div>
               <div className={`step-line ${isAdminDone ? 'completed' : ''}`} />
-              <div className={`step-item ${isAdminDone ? 'active' : ''}`}>
-                <span className="step-dot">3</span>
-                <span>Operation 状态确认（Gateway Fail-Closed）</span>
+              <div
+                className={`step-item ${verifiedRoute ? 'completed' : isAdminDone ? 'active' : ''}`}
+              >
+                <span className="step-dot">{verifiedRoute ? '✓' : '3'}</span>
+                <span>{journey('address')}</span>
+              </div>
+              <div className={`step-line ${verifiedRoute ? 'completed' : ''}`} />
+              <div className={`step-item ${verifiedRoute ? 'active' : ''}`}>
+                <span className="step-dot">4</span>
+                <span>{journey('continue')}</span>
               </div>
             </div>
           )}
@@ -583,25 +586,25 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 <div className="wizard-step-tag">
                   <span>
                     {discoveryNote?.flow === 'fresh'
-                       ? 'Bootstrap Gate · 需要安装主机授权'
-                       : 'Source Preflight · 只读来源检查'}
+                      ? 'Bootstrap Gate · 需要安装主机授权'
+                      : 'Source Preflight · 只读来源检查'}
                   </span>
                 </div>
                 <h1 className="wizard-title">
                   {discoveryNote?.flow === 'host'
-                     ? '当前来源需要宿主机预检，不能直接 Fresh 初始化'
-                     : discoveryNote?.flow === 'fresh'
-                       ? '未检测到有效的 Fresh Bootstrap Handoff 凭证'
-                       : discoveryChecked
-                         ? '来源状态无法确认，禁止直接初始化'
-                         : '正在确认来源状态，禁止直接初始化'}
+                    ? '当前来源需要宿主机预检，不能直接 Fresh 初始化'
+                    : discoveryNote?.flow === 'fresh'
+                      ? journey('claimRequired')
+                      : discoveryChecked
+                        ? '来源状态无法确认，禁止直接初始化'
+                        : '正在确认来源状态，禁止直接初始化'}
                 </h1>
                 <p className="wizard-desc">
                   {discoveryNote?.flow === 'host'
-                     ? '公共 Discovery 仅提供来源类型提示，不读取或修改现有数据；后续操作必须在受信宿主机执行。'
-                     : discoveryNote?.flow === 'fresh'
-                       ? '一次性认领令牌在进入页面时已从地址栏剥离，且不会写入浏览器本地存储；请从受信宿主机重新获取 Handoff。'
-                       : '尚未取得可信的 Fresh 来源分类；请检查宿主机上的来源与服务状态，不能依据当前页面执行初始化或迁移。'}
+                    ? '公共 Discovery 仅提供来源类型提示，不读取或修改现有数据；后续操作必须在受信宿主机执行。'
+                    : discoveryNote?.flow === 'fresh'
+                      ? journey('claimRequiredHelp')
+                      : '尚未取得可信的 Fresh 来源分类；请检查宿主机上的来源与服务状态，不能依据当前页面执行初始化或迁移。'}
                 </p>
               </div>
               <div className="wizard-card-body">
@@ -633,12 +636,14 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 ) : discoveryNote?.flow === 'fresh' ? (
                   <>
                     <div className="alert alert-warn">
-                      <span className="alert-icon" aria-hidden="true">!</span>
+                      <span className="alert-icon" aria-hidden="true">
+                        !
+                      </span>
                       <div className="alert-content">
                         <div className="alert-title">如何获取或恢复 Bootstrap 授权链接？</div>
                         <div className="alert-desc">
-                          请在受信宿主机运行初始化命令，并使用输出的带{' '}
-                          <code>#handoff=...</code> 片段的完整 URL 重新打开本页面：
+                          请在受信宿主机运行初始化命令，并使用输出的带 <code>#handoff=...</code>{' '}
+                          片段的完整 URL 重新打开本页面：
                         </div>
                       </div>
                     </div>
@@ -647,13 +652,18 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                     </div>
                   </>
                 ) : (
-                  <div className="alert alert-warn" data-testid="bootstrap-discovery-unconfirmed" role="status">
+                  <div
+                    className="alert alert-warn"
+                    data-testid="bootstrap-discovery-unconfirmed"
+                    role="status"
+                  >
                     <div className="alert-content">
                       <div className="alert-title">
                         {discoveryChecked ? '来源状态无法确认' : '正在读取来源状态'}
                       </div>
                       <div className="alert-desc">
-                        不提供 Fresh 初始化命令；请在受信宿主机确认来源、日志与服务状态。未知结果不会授予任何写入权限。
+                        不提供 Fresh
+                        初始化命令；请在受信宿主机确认来源、日志与服务状态。未知结果不会授予任何写入权限。
                       </div>
                     </div>
                   </div>
@@ -682,43 +692,41 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
             <section className="wizard-card" data-testid="bootstrap-connecting">
               <div className="wizard-card-header">
                 <div className="wizard-step-tag">
-                  <span>Step 1 · Bootstrap Authority Exchange</span>
+                  <span>{journey('claim')}</span>
                 </div>
                 <h1 className="wizard-title">
-                  {handoff?.resume
-                    ? '正在恢复 Fresh Bootstrap 受控会话…'
-                    : '正在验证一次性 Handoff 并建立受控会话…'}
+                  {handoff?.resume ? journey('resuming') : journey('claiming')}
                 </h1>
-                <p className="wizard-desc">
-                  正在与 Manager Bootstrap 后端核验安装身份（Admission / Installation / Generation /
-                  Operation）并同步最新初始化状态。
-                </p>
+                <p className="wizard-desc">{journey('claimingHelp')}</p>
               </div>
               <div className="wizard-card-body">
-                <div className="info-card">
-                  <div className="info-row">
-                    <span className="info-key">授权模式</span>
-                    <span className="info-val">
-                      {handoff?.resume
-                        ? 'Resume Session (GET operation)'
-                        : 'Claim Exchange (POST claim/exchange)'}
-                    </span>
+                <details>
+                  <summary>{journey('diagnostics')}</summary>
+                  <div className="info-card">
+                    <div className="info-row">
+                      <span className="info-key">授权模式</span>
+                      <span className="info-val">
+                        {handoff?.resume
+                          ? 'Resume Session (GET operation)'
+                          : 'Claim Exchange (POST claim/exchange)'}
+                      </span>
+                    </div>
+                    {handoff && (
+                      <>
+                        <div className="info-row">
+                          <span className="info-key">Operation ID</span>
+                          <span className="info-val">{handoff.identity.operationId}</span>
+                        </div>
+                        <div className="info-row">
+                          <span className="info-key">Installation / Gen</span>
+                          <span className="info-val">
+                            {handoff.identity.installationId} · {handoff.identity.generation}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  {handoff && (
-                    <>
-                      <div className="info-row">
-                        <span className="info-key">Operation ID</span>
-                        <span className="info-val">{handoff.identity.operationId}</span>
-                      </div>
-                      <div className="info-row">
-                        <span className="info-key">Installation / Gen</span>
-                        <span className="info-val">
-                          {handoff.identity.installationId} · {handoff.identity.generation}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </div>
+                </details>
               </div>
             </section>
           )}
@@ -795,24 +803,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
             <section className="wizard-card" data-testid="bootstrap-operation-ready">
               <div className="wizard-card-header">
                 <div className="wizard-step-tag">
-                  <span>
-                    {isAdminDone
-                      ? 'Step 3 · 管理员初始化已完成'
-                      : 'Step 2 · Fresh New 管理员密钥初始化'}
-                  </span>
-                  <span className="badge badge-neutral">
-                    {t('lastRead')} · Revision #{operation.revision}
-                  </span>
+                  <span>{journey(isAdminDone ? 'address' : 'administrator')}</span>
                 </div>
                 <h1 className="wizard-title">
-                  {isAdminDone
-                    ? 'Fresh Bootstrap 管理员密钥已完成初始化'
-                    : '设置 CPAMP 管理员主密钥（Admin Key）'}
+                  {isAdminDone ? journey('addressTitle') : journey('adminTitle')}
                 </h1>
                 <p className="wizard-desc">
-                  {isAdminDone
-                    ? '当前 Fresh 安装实例已完成管理员凭据绑定。服务端仅保存不可逆密钥校验值，不保存明文，后续状态查询与控制操作均受该安装身份约束。'
-                    : '首次认领会话已建立。请通过 UI 生成或输入高强度管理员密钥并提交至 Manager 后端完成绑定，无需从容器日志读取随机初始密码。'}
+                  {isAdminDone ? journey('addressHelp') : journey('adminHelp')}
                 </p>
               </div>
 
@@ -837,68 +834,77 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                   </div>
                 )}
 
-                <div className="info-card" data-testid="operation-status-card">
-                  <div className="info-row">
-                    <span className="info-key">Operation ID</span>
-                    <span className="info-val" data-testid="op-id">
-                      {operation.identity.operationId}
-                    </span>
+                <details data-testid="bootstrap-diagnostics">
+                  <summary>{journey('diagnostics')}</summary>
+                  <div className="info-card" data-testid="operation-status-card">
+                    <div className="info-row">
+                      <span className="info-key">{journey('revision')}</span>
+                      <span className="info-val">#{operation.revision}</span>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-key">Operation ID</span>
+                      <span className="info-val" data-testid="op-id">
+                        {operation.identity.operationId}
+                      </span>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-key">Installation / Generation</span>
+                      <span className="info-val" data-testid="op-install-gen">
+                        {operation.identity.installationId} / {operation.identity.generation}
+                      </span>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-key">Admission ID</span>
+                      <span className="info-val" data-testid="op-admission-id">
+                        {operation.identity.admissionId}
+                      </span>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-key">会话建立方式</span>
+                      <span className="info-val" data-testid="op-session-mode">
+                        {handoff?.resume
+                          ? '恢复会话（Resume Session）'
+                          : '首次认领交换（Claim Exchange）'}
+                      </span>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-key">管理员初始化状态</span>
+                      <span
+                        className="info-val"
+                        data-testid="op-admin-status"
+                        style={{
+                          color: isAdminDone ? 'var(--emerald)' : 'var(--amber)',
+                        }}
+                      >
+                        {isAdminDone
+                          ? '已初始化（Admin Initialized）'
+                          : '待初始化（Pending Commit）'}
+                      </span>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-key">CPA 数据面网关状态</span>
+                      <span
+                        className="info-val"
+                        data-testid="op-gateway-status"
+                        style={{ color: 'var(--amber)' }}
+                      >
+                        {operation.gatewayPending
+                          ? 'Pending · Fail-Closed（未激活，保持受控阻断）'
+                          : 'Active'}
+                      </span>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-key">正式路由切流状态</span>
+                      <span className="info-val" data-testid="op-routing-status">
+                        {verifiedRoute
+                          ? t('routeVerifiedState')
+                          : operation.routing.committed
+                            ? `Committed (${operation.routing.target || 'console'})`
+                            : '未切换 · 当前位于独立受控 Bootstrap 入口'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="info-row">
-                    <span className="info-key">Installation / Generation</span>
-                    <span className="info-val" data-testid="op-install-gen">
-                      {operation.identity.installationId} / {operation.identity.generation}
-                    </span>
-                  </div>
-                  <div className="info-row">
-                    <span className="info-key">Admission ID</span>
-                    <span className="info-val" data-testid="op-admission-id">
-                      {operation.identity.admissionId}
-                    </span>
-                  </div>
-                  <div className="info-row">
-                    <span className="info-key">会话建立方式</span>
-                    <span className="info-val" data-testid="op-session-mode">
-                      {handoff?.resume
-                        ? '恢复会话（Resume Session）'
-                        : '首次认领交换（Claim Exchange）'}
-                    </span>
-                  </div>
-                  <div className="info-row">
-                    <span className="info-key">管理员初始化状态</span>
-                    <span
-                      className="info-val"
-                      data-testid="op-admin-status"
-                      style={{
-                        color: isAdminDone ? 'var(--emerald)' : 'var(--amber)',
-                      }}
-                    >
-                      {isAdminDone ? '已初始化（Admin Initialized）' : '待初始化（Pending Commit）'}
-                    </span>
-                  </div>
-                  <div className="info-row">
-                    <span className="info-key">CPA 数据面网关状态</span>
-                    <span
-                      className="info-val"
-                      data-testid="op-gateway-status"
-                      style={{ color: 'var(--amber)' }}
-                    >
-                      {operation.gatewayPending
-                        ? 'Pending · Fail-Closed（未激活，保持受控阻断）'
-                        : 'Active'}
-                    </span>
-                  </div>
-                  <div className="info-row">
-                    <span className="info-key">正式路由切流状态</span>
-                    <span className="info-val" data-testid="op-routing-status">
-                      {verifiedRoute
-                        ? t('routeVerifiedState')
-                        : operation.routing.committed
-                          ? `Committed (${operation.routing.target || 'console'})`
-                          : '未切换 · 当前位于独立受控 Bootstrap 入口'}
-                    </span>
-                  </div>
-                </div>
+                </details>
 
                 {!isAdminDone ? (
                   <form
@@ -919,16 +925,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                     )}
                     {candidateSubmitted && !commitUnresolved && (
                       <p className="alert alert-info" role="status">
-                        已保留首次提交的密钥与
-                        commitId。即使当前读取为待初始化，仍只可重试原提交，不能更换密钥。
+                        {journey('original')}
                       </p>
                     )}
                     <div className="form-group">
                       <div className="form-label">
-                        <label htmlFor="fresh-admin-key-input">管理员主密钥（Admin Key）</label>
-                        <span className="form-hint">
-                          24~256 字节，无空白字符，至少包含 3 类字符且不少于 12 个不同字符
-                        </span>
+                        <label htmlFor="fresh-admin-key-input">{journey('key')}</label>
+                        <span className="form-hint">{journey('keyRules')}</span>
                       </div>
                       <div className="input-wrap">
                         <input
@@ -939,7 +942,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                           className="form-input"
                           value={adminKey}
                           onChange={(e) => handleKeyInputChange(e.target.value)}
-                          placeholder="输入自定义高强度密钥，或点击右侧“一键生成”"
+                          placeholder={journey('keyPlaceholder')}
                           autoComplete="off"
                           autoCorrect="off"
                           autoCapitalize="off"
@@ -966,7 +969,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                               candidateSubmitted
                             }
                           >
-                            {showKey ? '隐藏' : '显示'}
+                            {journey(showKey ? 'hide' : 'show')}
                           </button>
                           <button
                             type="button"
@@ -981,7 +984,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                               candidateSubmitted
                             }
                           >
-                            {generating ? '生成中…' : '一键生成'}
+                            {journey(generating ? 'generating' : 'generate')}
                           </button>
                           <button
                             type="button"
@@ -990,7 +993,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                             onClick={() => void handleCopyKey()}
                             disabled={!adminKey || submitting || generating}
                           >
-                            复制
+                            {journey('copy')}
                           </button>
                         </div>
                       </div>
@@ -1047,8 +1050,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         }
                       />
                       <span className="checkbox-text">
-                        <strong>我已复制并妥善保存该管理员密钥。</strong>
-                        我理解提交后服务端仅保存不可逆密钥校验值，不保存明文，明文密钥不会保存在浏览器中，也无法再次从服务端查看。
+                        <strong>{journey('savedConfirm')}</strong>
+                        {journey('savedWarning')}
                       </span>
                     </label>
 
@@ -1063,7 +1066,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         onClick={() => void handleRefreshOperation()}
                         disabled={submitting || generating || refreshing}
                       >
-                        {refreshing ? '同步中…' : '同步服务端状态'}
+                        {journey(refreshing ? 'refreshing' : 'refresh')}
                       </button>
                       <button
                         type="submit"
@@ -1071,7 +1074,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         data-testid="commit-admin-btn"
                         disabled={submitting || generating || refreshing || commitUnresolved}
                       >
-                        {submitting ? '正在提交初始化…' : '提交并完成管理员初始化'}
+                        {journey(submitting ? 'saving' : 'save')}
                       </button>
                     </div>
                   </form>
@@ -1083,15 +1086,9 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       </span>
                       <div className="alert-content">
                         <div className="alert-title">
-                          {commitCompletedInSession
-                            ? '本次管理员密钥初始化已成功写入服务端'
-                            : '已从服务端恢复管理员已初始化状态'}
+                          {commitCompletedInSession ? journey('saved') : journey('restored')}
                         </div>
-                        <div className="alert-desc">
-                          内存中的明文密钥已清理。当前 Fresh Bootstrap
-                          第一个真实用户操作已完成，服务端 <code>adminInitialized = true</code>
-                          （Revision #{operation.revision}）。
-                        </div>
+                        <div className="alert-desc">{journey('savedHelp')}</div>
                       </div>
                     </div>
 
@@ -1100,14 +1097,8 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         i
                       </span>
                       <div className="alert-content">
-                        <div className="alert-title">
-                          安全与范围边界提示（CPA 数据面保持 Fail-Closed）
-                        </div>
-                        <div className="alert-desc">
-                          管理员初始化完成不等同于 CPA
-                          数据面就绪。在数据面安全条件获准并通过验收前，<code>gatewayPending</code>{' '}
-                          保持为 <code>true</code>，CPA Gateway 不对公网开放数据面流量。
-                        </div>
+                        <div className="alert-title">{journey('pending')}</div>
+                        <div className="alert-desc">{journey('gatewayHelp')}</div>
                       </div>
                     </div>
 
@@ -1116,9 +1107,9 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       data-testid="routing-form"
                       style={{ marginTop: 24 }}
                     >
-                      <h2>{t('routeTitle')}</h2>
+                      <h2>{journey('routeTitle')}</h2>
                       <label className="form-label" htmlFor="console-path">
-                        {t('pathLabel')}
+                        {journey('path')}
                       </label>
                       <div className="input-wrap">
                         <input
@@ -1132,7 +1123,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                           spellCheck={false}
                         />
                       </div>
-                      <p className="form-hint">{t('pathHelp')}</p>
+                      <p className="form-hint">{journey('pathHelp')}</p>
                       {routingError && (
                         <p role="alert" className="alert alert-warn">
                           {routingError}
@@ -1140,13 +1131,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       )}
                       {verifiedRoute ? (
                         <div role="status">
-                          <p>{t('routeReady')}</p>
+                          <p>{journey('routeReady')}</p>
                           <a
                             className="btn btn-primary"
                             href={verifiedRoute}
                             data-testid="continue-console"
                           >
-                            {t('continue')}
+                            {journey('continue')}
                           </a>
                         </div>
                       ) : (
@@ -1156,7 +1147,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                           data-testid="enable-console"
                           disabled={routingBusy || refreshing}
                         >
-                          {routingBusy ? t('activating') : t('activate')}
+                          {journey(routingBusy ? 'enabling' : 'enable')}
                         </button>
                       )}
                     </form>
@@ -1166,9 +1157,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       style={{ marginTop: 18, padding: '16px 0 0' }}
                     >
                       <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                        {verifiedRoute
-                          ? t('loginHelp')
-                          : '可通过受控会话令牌随时核验服务端实时 Operation 状态'}
+                        {verifiedRoute ? journey('loginHelp') : journey('refresh')}
                       </span>
                       <button
                         type="button"
@@ -1177,7 +1166,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         onClick={() => void handleRefreshOperation()}
                         disabled={refreshing || routingBusy || !!verifiedRoute}
                       >
-                        {refreshing ? '正在刷新…' : '刷新操作状态'}
+                        {journey(refreshing ? 'refreshing' : 'refresh')}
                       </button>
                     </div>
                   </div>

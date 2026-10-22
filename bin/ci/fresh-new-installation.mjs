@@ -26,10 +26,12 @@ const report = {
   result: 'FAIL',
   project,
   checks: [],
+  screenshots: [],
   pageErrors: [],
   notRun: [
     'Real Provider/model traffic, public Gateway, other four journeys, arm64, power-loss and production rollback',
     'Natural ten-minute claim expiry (expired server timestamp is injected offline only in this disposable fixture)',
+    'Non-Chinese locale layouts, other browser engines',
   ],
 };
 // Pin a free loopback port in HostConfig. Publishing port 0 can allocate a new
@@ -95,7 +97,9 @@ report.sourceFiles = Object.fromEntries(
         .split('\n')
     ),
   ]
-    .filter((file) => /^(apps\/web\/src\/|bin\/ci\/fresh-new-installation)/.test(file))
+    .filter((file) =>
+      /^(apps\/(web\/src|manager-server\/cmd)\/|bin\/ci\/fresh-new-installation)/.test(file)
+    )
     .map((file) => [
       file,
       createHash('sha256')
@@ -141,6 +145,40 @@ const dc = (...args) => run([...compose, ...args]).stdout.trim();
 function pass(name) {
   report.checks.push({ name, result: 'PASS' });
   console.log('PASS ' + name);
+}
+async function screenshot(name) {
+  assert(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    'horizontal overflow: ' + name
+  );
+  await page.screenshot({
+    path: resolve(out, name + '.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
+  report.screenshots.push({
+    name,
+    path: name + '.png',
+    viewport: page.viewportSize(),
+    theme: await page
+      .locator('html')
+      .evaluate((html) => (html.classList.contains('light') ? 'light' : 'dark')),
+    route: new URL(page.url()).pathname,
+  });
+}
+async function installationScreenshots(stage) {
+  for (const [name, width, light] of [
+    ['desktop-dark', 1440, false],
+    ['desktop-light', 1440, true],
+    ['mobile-light', 390, true],
+    ['mobile-dark', 390, false],
+  ]) {
+    await page.setViewportSize({ width, height: 1000 });
+    if ((await page.locator('html').evaluate((html) => html.classList.contains('light'))) !== light)
+      await page.getByRole('button', { name: '切换明暗主题', exact: true }).click();
+    await screenshot('installation-' + stage + '-' + name);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
 }
 async function wait(check, label, timeout = 45000) {
   const end = Date.now() + timeout;
@@ -353,8 +391,22 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   await page.getByRole('alert').waitFor();
   assert(await page.getByTestId('console-login').isVisible());
   await login(admin);
-  await page.getByTestId('console-operation').waitFor();
+  await page.getByTestId('fresh-managed-runtime').waitFor();
   pass('Console rejects missing/wrong Admin Key and accepts the installed Admin Key');
+  const adminGet = async (path) => {
+    const response = await fetch(origin + '/console/api/v2/' + path, {
+      headers: { Authorization: 'Bearer ' + admin },
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  for (const key of ['', 'incorrect-admin-key']) {
+    const denied = await fetch(origin + '/console/api/v2/installation/runtime', {
+      headers: key ? { Authorization: 'Bearer ' + key } : {},
+    });
+    assert.equal(denied.status, 401);
+  }
+  pass('deployment Runtime observation rejects missing/wrong administrator credentials');
   const runtimeToken = dc('exec', '-T', 'cpamp-runtime', 'cat', '/run/cpamp/runtime-secret/token');
   secretValues.push(runtimeToken);
   const statusProgram = `import urllib.request,json,sys
@@ -384,28 +436,71 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     pin
   );
   assert.equal(status.state, 'offline');
-  await page.getByTestId('runtime-observation').fill(statusJSON);
-  await page.getByTestId('install-runtime').click();
-  await wait(
-    async () => (await page.getByTestId('install-stage').innerText()) === 'staged',
-    'saved Runtime target'
+  await installationScreenshots('choice');
+  assert.equal(await page.getByTestId('runtime-observation').count(), 0);
+  await page.getByRole('button', { name: '下一步', exact: true }).click();
+  await page.route(
+    '**/console/api/v2/installation/runtime',
+    (route) => route.fulfill({ status: 503, body: '' }),
+    { times: 1 }
   );
-  assert.equal(report.strategyGenerations[0], status.runtimeGeneration);
+  await page.getByTestId('inspect-installation').click();
+  await page.getByRole('alert').filter({ hasText: '暂时无法读取部署环境' }).waitFor();
+  assert.equal(report.strategyGenerations.length, 0);
+  assert.equal((await adminGet('operation')).identity.operationId, operationId);
+  pass(
+    'failed deployment check preserves the original operation and performs no installation write'
+  );
+  await page.getByTestId('inspect-installation').click();
+  await page.getByTestId('install-runtime').waitFor();
+  assert(await page.getByTestId('install-runtime').isDisabled());
+  await page.getByRole('checkbox').check();
+  await installationScreenshots('review');
   let starts = 0;
+  let strategyWrites = 0;
+  let disconnected = false;
+  await page.route('**/console/api/v2/operation', async (route) => {
+    if (disconnected) await route.abort('failed');
+    else await route.continue();
+  });
   await page.route('**/console/api/v2/strategy', async (route) => {
-    starts++;
+    strategyWrites++;
     const reply = await route.fetch();
     assert.equal(reply.status(), 200);
-    await route.abort('failed');
+    if (strategyWrites === 1) await route.fulfill({ response: reply });
+    else {
+      starts++;
+      disconnected = true;
+      await route.abort('failed'); // Real Start committed; subsequent status reads disconnected.
+    }
   });
   await page.getByTestId('install-runtime').click();
+  await wait(async () => starts === 1, 'real Runtime Start with lost browser reply');
   await wait(
-    async () => (await page.getByTestId('install-stage').innerText()) === 'committed',
-    'started Runtime'
+    async () => (await page.getByTestId('install-stage').innerText()) === '结果待确认',
+    'unconfirmed original installation'
   );
+  assert(await page.getByTestId('install-runtime').isDisabled());
   assert.equal(starts, 1);
+  assert.equal(strategyWrites, 2);
+  assert.equal(report.strategyGenerations[0], status.runtimeGeneration);
   assert.equal(report.strategyGenerations[1], status.runtimeGeneration);
+  await installationScreenshots('result-unconfirmed');
+  disconnected = false;
+  await page.unroute('**/console/api/v2/operation');
   await page.unroute('**/console/api/v2/strategy');
+  await page.reload();
+  await page.getByTestId('console-login').waitFor();
+  await login(admin);
+  await page.getByTestId('fresh-managed-runtime').waitFor();
+  assert.equal((await adminGet('operation')).identity.operationId, operationId);
+  assert.equal((await adminGet('operation')).strategy.stage, 'committed');
+  await page.getByTestId('install-runtime').click();
+  await wait(
+    async () => (await adminGet('operation')).productComplete === true,
+    'original installation recovered and completed after reload'
+  );
+  assert.equal(report.strategyGenerations.length, 2);
   const started = JSON.parse(
     run(
       [
@@ -445,21 +540,17 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
       .update(readFileSync(resolve(root, 'docker/runtime/config.v8.default.seed.yaml')))
       .digest('hex')
   );
-  await page.getByTestId('install-runtime').click();
   await wait(
     async () => (await page.getByTestId('install-stage').innerText()) === '安装已完成',
     'completed installation'
   );
   pass(
-    'official default CPA v8 target staged, started through existing strategy, and installation completed after lost Start reply'
+    'one user install submission staged and started official CPA; reload recovered the same operation after lost reply without repeating Start'
   );
-  const adminGet = async (path) => {
-    const response = await fetch(origin + '/console/api/v2/' + path, {
-      headers: { Authorization: 'Bearer ' + admin },
-    });
-    assert.equal(response.status, 200);
-    return response.json();
-  };
+  await installationScreenshots('complete');
+  await page.getByRole('button', { name: '进入 Console', exact: true }).click();
+  await page.getByTestId('console-shell').waitFor();
+  await page.locator('a[href="/console/system/settings"]').click();
   const before = await adminGet('operation');
   assert.equal(before.productComplete, true);
   assert.equal(before.gatewayPending, true);
@@ -470,22 +561,65 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     async () => (await adminGet('settings/update-channel')).channel_preference === 'beta',
     'persisted channel'
   );
-  for (const [name, width, theme] of [
+  const navigate = async (path) => {
+    if (page.viewportSize().width < 768)
+      await page.getByTestId('console-toggle-navigation').click();
+    await page.locator('a[href="/console' + path + '"]').click();
+    await wait(
+      async () => new URL(page.url()).pathname === '/console' + path,
+      'navigation ' + path
+    );
+    assert.equal(await page.locator('a[aria-current="page"]').count(), 1);
+    assert.equal(
+      await page.locator('a[href="/console' + path + '"]').getAttribute('aria-current'),
+      'page'
+    );
+    assert((await page.getByTestId('console-breadcrumb').innerText()).length > 0);
+  };
+  for (const [name, width, light] of [
     ['desktop-dark', 1440, false],
+    ['desktop-light', 1440, true],
     ['mobile-light', 390, true],
+    ['mobile-dark', 390, false],
   ]) {
     await page.setViewportSize({ width, height: 1000 });
-    if (theme) await page.getByRole('button', { name: '切换明暗主题', exact: true }).click();
-    assert(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-      'horizontal overflow'
-    );
-    await page.screenshot({
-      path: resolve(out, name + '.png'),
-      fullPage: true,
-      animations: 'disabled',
-    });
+    if ((await page.locator('html').evaluate((html) => html.classList.contains('light'))) !== light)
+      await page.getByRole('button', { name: '切换明暗主题', exact: true }).click();
+    await screenshot('settings-' + name);
+    await navigate('/api-keys');
+    await page.locator('#client-key-title').waitFor();
+    await screenshot('api-keys-' + name);
+    if (width < 768) {
+      await page.getByTestId('console-toggle-navigation').click();
+      await screenshot('navigation-' + name);
+      await page.keyboard.press('Escape');
+    } else {
+      await page.getByTestId('console-collapse-sidebar').click();
+      await screenshot('navigation-collapsed-' + name);
+      await page.getByTestId('console-collapse-sidebar').click();
+    }
+    await navigate('/system/gateway');
+    await page.getByTestId('retry-editor').waitFor();
+    await screenshot('gateway-' + name);
+    await navigate('/system/installation');
+    await screenshot('installation-' + name);
+    await navigate('/system/settings');
+    await page.locator('#update-channel').waitFor();
   }
+  await page.goBack();
+  assert.equal(new URL(page.url()).pathname, '/console/system/installation');
+  await page.goForward();
+  assert.equal(new URL(page.url()).pathname, '/console/system/settings');
+  pass(
+    'two-level routes, current leaf, breadcrumbs, history, desktop collapse and mobile drawer work in light/dark themes'
+  );
+  await page.getByRole('combobox', { name: '语言', exact: true }).selectOption('en');
+  await page.getByRole('heading', { name: 'System settings', exact: true }).waitFor();
+  await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('zh-CN');
+  await page.getByRole('heading', { name: '系统配置', exact: true }).waitFor();
+  pass(
+    'language selection updates Shell and restores Chinese without persisting credentials or preferences'
+  );
   for (const storage of await page.evaluate(() => [
     Object.keys(localStorage),
     Object.keys(sessionStorage),
@@ -536,6 +670,7 @@ except OSError:pass`,
   await page.getByTestId('console-login').waitFor();
   await login(admin);
   await page.getByTestId('console-operation').waitFor();
+  await page.getByTestId('console-shell').waitFor();
   const after = await adminGet('operation');
   assert.deepEqual(after, before);
   assert.equal((await adminGet('settings/update-channel')).channel_preference, 'beta');

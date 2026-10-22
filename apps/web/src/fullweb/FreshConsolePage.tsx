@@ -8,6 +8,8 @@ import { FreshUpdateChannel } from './FreshUpdateChannel';
 import { FreshManagedRuntime } from './FreshManagedRuntime';
 import { FreshExternalConnection } from './FreshExternalConnection';
 import { FreshRetryConfiguration } from './FreshRetryConfiguration';
+import { ConsoleShell, consolePage, type ConsolePage } from './ConsoleShell';
+import { shellText as s } from '../i18n/consoleShell';
 
 const defaultClient = createPublicApiClient();
 
@@ -21,9 +23,12 @@ export function FreshConsolePage({
   const [key, setKey] = useState('');
   const [credential, setCredential] = useState('');
   const [operation, setOperation] = useState<FreshOperation | null>(null);
-  const [strategyChoice, setStrategyChoice] = useState<'new_managed' | 'connect_external' | null>(null);
-  // Paired private P-S0 image supports Embedded Fresh New only.
-  const pahS0EmbeddedOnly = import.meta.env.VITE_CPAMP_PAH_S0 === '1';
+  const [enteredConsole, setEnteredConsole] = useState(false);
+  const [page, setPage] = useState<ConsolePage>(() =>
+    consolePage(window.location.pathname, context.basePath)
+  );
+  const [visited, setVisited] = useState<ConsolePage[]>([page]);
+  const [, updateLanguage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [light, setLight] = useState(false);
@@ -31,10 +36,11 @@ export function FreshConsolePage({
   const creationPendingRef = useRef(false);
   const [installationPending, setInstallationPending] = useState(false);
   const installationPendingRef = useRef(false);
-  const [retryNavigation, setRetryNavigation] = useState(0);
+  const [retryNavigation, setRetryNavigation] = useState(page === 'gateway' ? 1 : 0);
   const [retryPending, setRetryPending] = useState(false);
   const retryPendingRef = useRef(false);
   const requestId = useRef(0);
+  const currentRoute = useRef(window.location.pathname);
   useEffect(() => {
     document.title = t('consoleTitle');
   }, []);
@@ -76,7 +82,7 @@ export function FreshConsolePage({
     setKey('');
     setCredential('');
     setOperation(null);
-    setStrategyChoice(null);
+    setEnteredConsole(false);
     setBusy(false);
     setError('');
   }
@@ -124,6 +130,7 @@ export function FreshConsolePage({
         setError(t('invalidOperation'));
         return;
       }
+      setEnteredConsole(next.productComplete === true);
       setCredential(candidate);
       acceptOperation(next);
     } catch (err) {
@@ -139,29 +146,62 @@ export function FreshConsolePage({
     }
   }
 
-  return (
-    <div className="bootstrap-shell">
-      <header className="bootstrap-header">
-        <h1>{t('consoleTitle')}</h1>
-        <button className="btn-icon" aria-label={t('theme')} onClick={() => setLight(!light)}>
-          ☀
-        </button>
-      </header>
-      <main className="bootstrap-main">
-        <div className="wizard-container">
-          <section className="wizard-card">
-            <div className="wizard-card-body">
-              {error && (
-                <p className="alert alert-warn" role="alert">
-                  {error}
-                </p>
-              )}
-              {!operation ? (
-                <form onSubmit={(event) => void readOperation(event)} data-testid="console-login">
-                  <label className="form-label" htmlFor="console-admin-key">
-                    {t('keyLabel')}
-                  </label>
-                  <div className="input-wrap">
+  function visit(next: ConsolePage) {
+    setPage(next);
+    setVisited((current) => (current.includes(next) ? current : [...current, next]));
+    if (next === 'gateway') setRetryNavigation((activation) => activation + 1);
+  }
+  useEffect(() => {
+    const pop = () => {
+      if (creationPendingRef.current || installationPendingRef.current || retryPendingRef.current) {
+        window.history.replaceState(null, '', currentRoute.current);
+        return;
+      }
+      currentRoute.current = window.location.pathname;
+      visit(consolePage(window.location.pathname, context.basePath));
+    };
+    window.addEventListener?.('popstate', pop);
+    return () => window.removeEventListener?.('popstate', pop);
+  }, [context.basePath]);
+  function navigate(path: string) {
+    if (creationPendingRef.current || installationPendingRef.current || retryPendingRef.current)
+      return;
+    window.history.pushState(null, '', path);
+    currentRoute.current = path;
+    visit(consolePage(path, context.basePath));
+  }
+  const unauthorized = () => {
+    clearAuthentication();
+    setError(t('authError'));
+  };
+  const blocked = creationPending || installationPending || retryPending;
+  if (!operation || !enteredConsole)
+    return (
+      <div className="bootstrap-shell">
+        <header className="bootstrap-header">
+          <h1>CPAMP</h1>
+          <button className="btn-icon" aria-label={t('theme')} onClick={() => setLight(!light)}>
+            ☀
+          </button>
+        </header>
+        <main className="bootstrap-main">
+          <div className="wizard-container">
+            {error && (
+              <p className="alert alert-warn" role="alert">
+                {error}
+              </p>
+            )}
+            {!operation ? (
+              <section className="wizard-card installation-login">
+                <div className="wizard-card-header">
+                  <h1>{s('loginTitle')}</h1>
+                  <p>{s('loginInstall')}</p>
+                </div>
+                <div className="wizard-card-body">
+                  <form onSubmit={(event) => void readOperation(event)} data-testid="console-login">
+                    <label className="form-label" htmlFor="console-admin-key">
+                      {t('keyLabel')}
+                    </label>
                     <input
                       id="console-admin-key"
                       className="form-input"
@@ -172,180 +212,134 @@ export function FreshConsolePage({
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck={false}
-                      disabled={busy || installationPending}
-                    />
-                  </div>
-                  <p>{t('loginHelp')}</p>
-                  <button className="btn btn-primary" type="submit" disabled={busy || !key}>
-                    {busy ? t('loggingIn') : t('login')}
-                  </button>
-                </form>
-              ) : (
-                <div data-testid="console-operation">
-                  <h2>{t('operation')}</h2>
-                  <nav className="console-navigation" aria-label={t('consoleNavigation')}>
-                    <ol>
-                      <li>{t('systemManagement')}</li>
-                      <li>{t('gatewayManagement')}</li>
-                      <li>
-                        <a
-                          href="#gateway-retry"
-                          data-testid="gateway-retry-navigation"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            setRetryNavigation((activation) => activation + 1);
-                          }}
-                        >
-                          {t('retryNavigationLeaf')}
-                        </a>
-                      </li>
-                    </ol>
-                  </nav>
-                  <dl className="console-state">
-                    <dt>{t('operation')}</dt>
-                    <dd>{operation.identity.operationId}</dd>
-                    <dt>{t('revision')}</dt>
-                    <dd>{operation.revision}</dd>
-                    <dt>{t('adminState')}</dt>
-                    <dd>{String(operation.adminInitialized)}</dd>
-                    <dt>{t('routingStage')}</dt>
-                    <dd>{operation.routing.stage}</dd>
-                    <dt>{t('pathLabel')}</dt>
-                    <dd>{operation.routing.target}</dd>
-                    <dt>{t('gatewayState')}</dt>
-                    <dd>{String(operation.gatewayPending)}</dd>
-                    <dt>{t('productComplete')}</dt>
-                    <dd>{String(operation.productComplete ?? false)}</dd>
-                  </dl>
-                  {operation.gatewayPending && (
-                    <p className="alert alert-info">{t('gatewayPending')}</p>
-                  )}
-                  <div className="wizard-card-footer">
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => void readOperation()}
                       disabled={busy}
-                    >
-                      {t('refresh')}
+                    />
+                    <button className="btn btn-primary" type="submit" disabled={busy || !key}>
+                      {busy ? t('loggingIn') : t('login')}
                     </button>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={logout}
-                      disabled={creationPending || installationPending || retryPending}
-                      aria-describedby={creationPending ? 'key-exit-pending' : undefined}
-                    >
-                      {t('logout')}
-                    </button>
-                  </div>
-                  {creationPending && (
-                    <p id="key-exit-pending" role="status" className="alert alert-warn">
-                      {t('keysExitBlocked')}
-                    </p>
-                  )}
-                  {installationPending && (
-                    <p role="status" className="alert alert-warn">
-                      {t('installUnknown')}
-                    </p>
-                  )}
-                  <FreshApiKeys
-                    key={credential}
-                    client={client}
-                    credential={credential}
-                    onCreationPending={reportCreationPending}
-                    onUnauthorized={() => {
-                      clearAuthentication();
-                      setError(t('authError'));
-                    }}
-                  />
-                  <FreshUpdateChannel
-                    client={client}
-                    credential={credential}
-                    onUnauthorized={() => {
-                      clearAuthentication();
-                      setError(t('authError'));
-                    }}
-                  />
-                  {!operation.strategy?.strategy && (
-                    <section className="info-card" data-testid="fresh-strategy-selection">
-                      <h2>{t('strategyChoiceTitle')}</h2>
-                      <p>{t('strategyChoiceHelp')}</p>
-                      <div className="wizard-card-footer">
-                        <button type="button" className="btn btn-secondary" data-testid="fresh-select-new"
-                          disabled={installationPending}
-                          aria-pressed={strategyChoice === 'new_managed'}
-                          onClick={() => {
-                            if (!installationPendingRef.current) setStrategyChoice('new_managed');
-                          }}>
-                          {t('strategyNewManaged')}
-                        </button>
-                        {!pahS0EmbeddedOnly && <button type="button" className="btn btn-secondary" data-testid="fresh-select-external"
-                          disabled={installationPending}
-                          aria-pressed={strategyChoice === 'connect_external'}
-                          onClick={() => {
-                            if (!installationPendingRef.current) setStrategyChoice('connect_external');
-                          }}>
-                          {t('strategyExternal')}
-                        </button>}
-                      </div>
-                    </section>
-                  )}
-                  {(operation.strategy?.strategy === 'new_managed' ||
-                    (!operation.strategy?.strategy && strategyChoice === 'new_managed')) && (
-                    <FreshManagedRuntime
-                      key={`runtime-${credential}`}
-                      client={client}
-                      credential={credential}
-                      operation={operation}
-                      onOperation={acceptOperation}
-                      onPending={(pending) => {
-                        installationPendingRef.current = pending;
-                        setInstallationPending(pending);
-                      }}
-                      onUnauthorized={() => {
-                        clearAuthentication();
-                        setError(t('authError'));
-                      }}
-                    />
-                  )}
-                  {!pahS0EmbeddedOnly && (operation.strategy?.strategy === 'connect_external' ||
-                    (!operation.strategy?.strategy && strategyChoice === 'connect_external')) && (
-                    <FreshExternalConnection
-                      key={`external-${credential}`}
-                      client={client}
-                      credential={credential}
-                      operation={operation}
-                      onOperation={acceptOperation}
-                      onPending={(pending) => {
-                        installationPendingRef.current = pending;
-                        setInstallationPending(pending);
-                      }}
-                      onUnauthorized={() => {
-                        clearAuthentication();
-                        setError(t('authError'));
-                      }}
-                    />
-                  )}
-                  {retryNavigation > 0 && (
-                    <FreshRetryConfiguration
-                      navigationRequest={retryNavigation}
-                      client={client}
-                      credential={credential}
-                      onPending={(pending) => {
-                        retryPendingRef.current = pending;
-                        setRetryPending(pending);
-                      }}
-                      onUnauthorized={() => {
-                        clearAuthentication();
-                        setError(t('authError'));
-                      }}
-                    />
-                  )}
+                  </form>
                 </div>
-              )}
-            </div>
-          </section>
+              </section>
+            ) : operation.strategy?.strategy === 'connect_external' ? (
+              <FreshExternalConnection
+                client={client}
+                credential={credential}
+                operation={operation}
+                onOperation={acceptOperation}
+                onUnauthorized={unauthorized}
+                onPending={(pending) => {
+                  installationPendingRef.current = pending;
+                  setInstallationPending(pending);
+                }}
+              />
+            ) : (
+              <FreshManagedRuntime
+                guided
+                client={client}
+                credential={credential}
+                operation={operation}
+                onOperation={acceptOperation}
+                onUnauthorized={unauthorized}
+                onPending={(pending) => {
+                  installationPendingRef.current = pending;
+                  setInstallationPending(pending);
+                }}
+                onContinue={() => {
+                  setEnteredConsole(true);
+                  navigate(context.basePath + '/api-keys');
+                }}
+              />
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  return (
+    <ConsoleShell
+      basePath={context.basePath}
+      page={page}
+      onNavigate={navigate}
+      onLogout={logout}
+      onRefresh={() => void readOperation()}
+      blocked={blocked}
+      light={light}
+      onTheme={() => setLight(!light)}
+      onLanguage={() => updateLanguage((revision) => revision + 1)}
+    >
+      {error && (
+        <p className="alert alert-warn" role="alert">
+          {error}
+        </p>
+      )}
+      {creationPending && (
+        <p id="key-exit-pending" role="status" className="alert alert-warn">
+          {t('keysExitBlocked')}
+        </p>
+      )}
+      {retryPending && (
+        <p role="status" className="alert alert-warn">
+          {t('retryNeedsReconciliation')}
+        </p>
+      )}
+      {visited.includes('keys') && (
+        <div className="console-page-panel" hidden={page !== 'keys'}>
+          <FreshApiKeys
+            key={credential}
+            client={client}
+            credential={credential}
+            onCreationPending={reportCreationPending}
+            onUnauthorized={unauthorized}
+          />
         </div>
-      </main>
-    </div>
+      )}
+      {visited.includes('gateway') && (
+        <div className="console-page-panel" hidden={page !== 'gateway'}>
+          <p>{s('retryHelp')}</p>
+          <FreshRetryConfiguration
+            navigationRequest={retryNavigation}
+            client={client}
+            credential={credential}
+            onPending={(pending) => {
+              retryPendingRef.current = pending;
+              setRetryPending(pending);
+            }}
+            onUnauthorized={unauthorized}
+          />
+        </div>
+      )}
+      {visited.includes('settings') && (
+        <div className="console-page-panel" hidden={page !== 'settings'}>
+          <p>{s('settingsHelp')}</p>
+          <FreshUpdateChannel
+            client={client}
+            credential={credential}
+            onUnauthorized={unauthorized}
+          />
+        </div>
+      )}
+      {page === 'installation' && (
+        <section className="console-page-panel">
+          <h2>{s('ready')}</h2>
+          <p>{s('readyHelp')}</p>
+          <dl className="console-state">
+            <dt>{s('consoleAddress')}</dt>
+            <dd>{operation.routing.target}</dd>
+            <dt>{t('productComplete')}</dt>
+            <dd>{String(operation.productComplete)}</dd>
+          </dl>
+          <details>
+            <summary>{s('technical')}</summary>
+            <dl className="console-state">
+              <dt>{t('operation')}</dt>
+              <dd>{operation.identity.operationId}</dd>
+              <dt>{t('revision')}</dt>
+              <dd>{operation.revision}</dd>
+              <dt>{s('destination')}</dt>
+              <dd>{operation.strategy?.targetIdentity}</dd>
+            </dl>
+          </details>
+        </section>
+      )}
+    </ConsoleShell>
   );
 }
