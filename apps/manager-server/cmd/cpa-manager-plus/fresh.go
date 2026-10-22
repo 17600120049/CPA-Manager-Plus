@@ -12,12 +12,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/collector"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/freshbootstrap"
 	healthcontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/health"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/router"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	keyrepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
@@ -85,12 +88,22 @@ type freshApplication struct {
 	keyApply       *freshkeyapply.Service
 	updates        *updatecheck.Service
 	configRetry    *freshconfig.Service
+	legacy         http.Handler
 	pahS0          bool
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
 	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector, pahS0: cfg.PAHS0Enabled}
+	// Fresh owns the SQLite admission and keeps the old app bootstrap bypassed,
+	// but the already-built CPAMP services remain the source of truth for
+	// Full Web's shared Dashboard/Config/System resources. This context reuses
+	// the admitted connection and starts no collector until a user explicitly
+	// saves a supported Manager configuration.
+	legacyStore := store.New(opened.DB, opened.Protector)
+	legacyCollector := collector.NewManager(cfg, legacyStore)
+	legacyContext := app.FromExistingWithModelsDev(cfg, legacyStore, legacyCollector, time.Now().UnixMilli(), nil, nil, nil, nil, "cpa-manager-plus")
+	a.legacy = router.New(legacyContext)
 	a.keys = freshkeys.New(keyrepo.New(opened.DB), opened.Protector)
 	// Reuse the existing settings authority without opening a Legacy app,
 	// collector, CPA client, or second SQLite connection.
@@ -236,6 +249,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		a.clientKeys(w, r, op, resource)
 	case resource == "operation" && r.Method == http.MethodGet:
 		writeFreshJSON(w, op)
+	case strings.HasPrefix(resource, "cpamp/"):
+		a.legacyResource(w, r, resource)
 	case resource == "installation/runtime" && r.Method == http.MethodGet:
 		a.installationRuntime(w, r, op)
 	case resource == "strategy" && r.Method == http.MethodPost:

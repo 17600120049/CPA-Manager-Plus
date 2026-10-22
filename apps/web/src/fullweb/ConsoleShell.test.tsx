@@ -12,6 +12,9 @@ describe('Console routes', () => {
     expect(consolePage('/console/system/gateway/', '/console')).toBe('gateway');
     expect(consolePage('/console/system/settings', '/console')).toBe('settings');
     expect(consolePage('/console/system/installation', '/console')).toBe('installation');
+    expect(consolePage('/console/dashboard', '/console')).toBe('home');
+    expect(consolePage('/console/accounts', '/console')).toBe('accounts');
+    expect(consolePage('/console/model-prices', '/console')).toBe('prices');
     expect(consolePage('/console-system/gateway', '/console')).toBe('missing');
     expect(consolePage('/elsewhere', '/console')).toBe('missing');
     expect(consolePage('/console/unknown', '/console')).toBe('missing');
@@ -134,7 +137,13 @@ describe('Console navigation', () => {
   it('opens the current route group and updates its breadcrumb after browser navigation', async () => {
     await mount('gateway');
     expect(link('/system/gateway').props['aria-current']).toBe('page');
-    expect(groups().map((node) => node.props['aria-expanded'])).toEqual([false, true]);
+    expect(groups().map((node) => node.props['aria-expanded'])).toEqual([
+      false,
+      false,
+      false,
+      true,
+      false,
+    ]);
     expect(testid('console-breadcrumb').findByType('strong').props.children).toBe(s('gateway'));
     await act(async () => renderer!.update(<ConsoleShell {...props('keys')} />));
     expect(link('/api-keys').props['aria-current']).toBe('page');
@@ -161,7 +170,13 @@ describe('Console navigation', () => {
     await clickGroup(0);
     expect(groups()[0].props['aria-expanded']).toBe(true);
     await clickGroup(1);
-    expect(groups().map((node) => node.props['aria-expanded'])).toEqual([false, true]);
+    expect(groups().map((node) => node.props['aria-expanded'])).toEqual([
+      false,
+      true,
+      false,
+      false,
+      false,
+    ]);
     await emit('pointerdown', { target: { closest: () => null } });
     expect(groups().every((node) => !node.props['aria-expanded'])).toBe(true);
     await clickGroup(1);
@@ -173,7 +188,7 @@ describe('Console navigation', () => {
   it('navigates real links, closes flyouts and leaves modified clicks to the browser', async () => {
     await mount();
     await act(async () => testid('console-collapse-sidebar').props.onClick());
-    await clickGroup(1);
+    await clickGroup(3);
     const preventDefault = vi.fn();
     await act(async () =>
       link('/system/settings').props.onClick({ ctrlKey: true, preventDefault })

@@ -154,6 +154,52 @@
   color: var(--app-text-primary);
   background: var(--app-surface-strong);
 }
+.console-tool-menu {
+  position: relative;
+  display: inline-flex;
+}
+.console-language-select {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.console-tool-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  min-width: 150px;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--floating-border);
+  border-radius: var(--app-radius-md);
+  background: var(--floating-surface);
+  box-shadow: var(--floating-shadow);
+  backdrop-filter: var(--glass-backdrop-filter);
+  -webkit-backdrop-filter: var(--glass-backdrop-filter);
+}
+.console-tool-popover button {
+  border: 0;
+  border-radius: var(--app-radius-sm);
+  padding: 8px 10px;
+  color: var(--app-text-regular);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.console-tool-popover button:hover,
+.console-tool-popover button.active {
+  color: var(--app-text-primary);
+  background: var(--app-accent-soft);
+}
 .console-content {
   padding: var(--app-gap);
   width: 100%;

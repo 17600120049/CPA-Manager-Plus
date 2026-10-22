@@ -31,6 +31,7 @@ const paths = {
   chevronRight: 'M9 5l7 7-7 7',
   arrowLeft: 'M20 12H4 M10 6l-6 6 6 6',
   info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M12 11v6 M12 7h.01',
+  sparkle: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3 M5 17v4 M3 19h4 M19 3v4 M17 5h4',
 } as const;
 
 export type FullWebIconName = keyof typeof paths;
