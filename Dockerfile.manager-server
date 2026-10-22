@@ -5,6 +5,9 @@ COPY package*.json ./
 COPY apps/web/package.json ./apps/web/package.json
 RUN npm ci
 COPY apps/web ./apps/web
+# Full Web TypeScript tests import this source-shared R1 fixture.
+# Keep the in-image module path identical to the repository layout.
+COPY tests/fixtures/r1-embedded-api-transport.json ./tests/fixtures/r1-embedded-api-transport.json
 COPY bin/build ./bin/build
 COPY bin/release/hash-fullweb.mjs ./bin/release/hash-fullweb.mjs
 WORKDIR /app/apps/web
