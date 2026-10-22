@@ -2,8 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 
-const retryResource = 'gateway/retry/request-retry';
-const retryOperationResource = 'gateway/retry/operations/';
 
 type RetryTextKey =
   | 'retryPresenceMissing'
@@ -29,7 +27,13 @@ type RetryTextKey =
   | 'retryPermission'
   | 'retryValueRequired'
   | 'retryValueInvalid'
-  | 'retryRequestIdUnavailable';
+  | 'retryRequestIdUnavailable'
+  | 'retryIntervalTitle'
+  | 'retryIntervalHelp'
+  | 'retryIntervalEditLabel'
+  | 'retryIntervalEditHint'
+  | 'retryIntervalValueRequired'
+  | 'retryIntervalValueInvalid';
 
 type RetryPresence = 'missing' | 'null' | 'present' | 'unknown';
 type RetryOperationState = 'unknown' | 'persisted' | 'recovered';
@@ -43,6 +47,7 @@ interface RetryExpected {
 
 interface RetryOperation {
   requestId: string;
+  field?: "max-retry-interval";
   value: number;
   sourceId: string;
   generation: string;
@@ -52,7 +57,7 @@ interface RetryOperation {
 }
 
 interface RetryView {
-  field: 'routing.retry.request-retry';
+  field: 'routing.retry.request-retry' | 'routing.retry.max-retry-interval';
   presence: RetryPresence;
   value: number | null;
   source: string;
@@ -79,8 +84,8 @@ function isHex(value: unknown, length: number): value is string {
   return typeof value === 'string' && new RegExp(`^[a-f0-9]{${length}}$`).test(value);
 }
 
-function isRetryValue(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 10;
+function isRetryValue(value: unknown, variant: "count" | "interval" = "count"): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= (variant === "interval" ? 300 : 10);
 }
 
 function isRevision(value: unknown): value is number {
@@ -112,11 +117,12 @@ function parseExpected(value: unknown): RetryExpected {
   };
 }
 
-function parseOperation(value: unknown): RetryOperation {
+function parseOperation(value: unknown, variant: "count" | "interval" = "count"): RetryOperation {
   if (
     !isRecord(value) ||
     !isHex(value.requestId, 32) ||
-    !isRetryValue(value.value) ||
+    !isRetryValue(value.value, variant) ||
+    (variant === "interval" ? value.field !== "max-retry-interval" : value.field !== undefined) ||
     typeof value.sourceId !== 'string' ||
     value.sourceId.length === 0 ||
     value.sourceId.length > 256 ||
@@ -130,6 +136,7 @@ function parseOperation(value: unknown): RetryOperation {
     throw new Error('Invalid retry operation');
   return {
     requestId: value.requestId,
+    ...(variant === "interval" ? {field: "max-retry-interval" as const} : {}),
     value: value.value,
     sourceId: value.sourceId,
     generation: value.generation,
@@ -139,7 +146,7 @@ function parseOperation(value: unknown): RetryOperation {
   };
 }
 
-function parseRetryView(value: unknown): RetryView {
+function parseRetryView(value: unknown, variant: "count" | "interval" = "count"): RetryView {
   if (!isRecord(value)) throw new Error('Invalid retry view');
   const presence = value.presence;
   if (
@@ -151,8 +158,8 @@ function parseRetryView(value: unknown): RetryView {
     throw new Error('Invalid retry presence');
   const parsedValue = presence === 'present' ? value.value : null;
   if (
-    (presence === 'present' && !isRetryValue(parsedValue)) ||
-    value.field !== 'routing.retry.request-retry' ||
+    (presence === "present" && !isRetryValue(parsedValue, variant)) ||
+    value.field !== (variant === "interval" ? "routing.retry.max-retry-interval" : "routing.retry.request-retry") ||
     typeof value.source !== 'string' ||
     typeof value.authority !== 'string' ||
     typeof value.editable !== 'boolean' ||
@@ -167,7 +174,7 @@ function parseRetryView(value: unknown): RetryView {
   if (value.expected !== undefined) expected = parseExpected(value.expected);
   let operation: RetryOperation | undefined;
   if (value.operation !== undefined && value.operation !== null)
-    operation = parseOperation(value.operation);
+    operation = parseOperation(value.operation, variant);
   return {
     field: value.field,
     presence,
@@ -184,10 +191,10 @@ function parseRetryView(value: unknown): RetryView {
   };
 }
 
-function parseRetryOperationResponse(value: unknown): RetryOperationResponse {
+function parseRetryOperationResponse(value: unknown, variant: "count" | "interval" = "count"): RetryOperationResponse {
   if (!isRecord(value) || value.effective !== 'unknown')
     throw new Error('Invalid retry operation result');
-  return { operation: parseOperation(value.operation), effective: 'unknown' };
+  return { operation: parseOperation(value.operation, variant), effective: 'unknown' };
 }
 
 function createRequestId(issued: Set<string>): string {
@@ -200,10 +207,10 @@ function createRequestId(issued: Set<string>): string {
   return id;
 }
 
-function parseDraft(value: string): number | null {
+function parseDraft(value: string, variant: "count" | "interval" = "count"): number | null {
   if (!/^(?:0|[1-9][0-9]*)$/.test(value)) return null;
   const parsed = Number(value);
-  return isRetryValue(parsed) ? parsed : null;
+  return isRetryValue(parsed, variant) ? parsed : null;
 }
 
 function lockReasonKey(reason: string, code?: string): RetryTextKey {
@@ -225,29 +232,40 @@ function lockReasonKey(reason: string, code?: string): RetryTextKey {
   }
 }
 
-function responseOperation(error: unknown, expectedId?: string): RetryOperation | null {
+function responseOperation(error: unknown, variant: "count" | "interval", expectedId?: string): RetryOperation | null {
   if (!(error instanceof PublicApiError) || !error.operationResult) return null;
   try {
-    const operation = parseRetryOperationResponse(error.operationResult).operation;
+    const operation = parseRetryOperationResponse(error.operationResult, variant).operation;
     return !expectedId || operation.requestId === expectedId ? operation : null;
   } catch {
     return null;
   }
 }
 
-export function FreshRetryConfiguration({
+function RetryScalarEditor({
   client,
   credential,
   onUnauthorized,
   onPending,
   navigationRequest = 0,
+  variant,
+  onCommitted,
+  refreshEpoch,
+  siblingPending,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
   navigationRequest?: number;
+  variant: "count" | "interval";
+  onCommitted: () => void;
+  refreshEpoch: number;
+  siblingPending: boolean;
 }) {
+  const retryResource = variant === "interval" ? "gateway/retry/max-retry-interval" : "gateway/retry/request-retry";
+  const retryOperationResource = variant === "interval" ? "gateway/retry/interval-operations/" : "gateway/retry/operations/";
+  const testPrefix = variant === "interval" ? "retry-interval" : "retry";
   const [view, setView] = useState<RetryView | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -289,7 +307,11 @@ export function FreshRetryConfiguration({
   function acceptView(next: RetryView) {
     if (!alive.current) return;
     setView(next);
-    setDraft(next.presence === 'present' && next.value !== null ? String(next.value) : '');
+    setDraft((current) => {
+      const previous = view?.presence === "present" && view.value !== null ? String(view.value) : "";
+      // A background read must not erase an unsaved administrator edit.
+      return view && current !== previous ? current : next.presence === "present" && next.value !== null ? String(next.value) : "";
+    });
     setReadUnavailable(false);
     setLockCode('');
     const existingId = pendingIdRef.current || pendingId;
@@ -309,7 +331,7 @@ export function FreshRetryConfiguration({
       onUnauthorized();
       return;
     }
-    const recovered = responseOperation(err, pendingIdRef.current || pendingId || undefined);
+    const recovered = responseOperation(err, variant, pendingIdRef.current || pendingId || undefined);
     if (recovered) acceptOperation(recovered);
     if (err instanceof PublicApiError && err.status === 409) {
       setLockCode(err.code || 'source_or_operation_conflict');
@@ -322,7 +344,7 @@ export function FreshRetryConfiguration({
 
   async function readView(): Promise<boolean> {
     try {
-      const next = parseRetryView(await client.get(retryResource, auth));
+      const next = parseRetryView(await client.get(retryResource, auth), variant);
       acceptView(next);
       return true;
     } catch (err) {
@@ -374,12 +396,11 @@ export function FreshRetryConfiguration({
       setMessage('retrySaveRejected');
       return;
     }
-    const recovered = responseOperation(err, id);
+    const recovered = responseOperation(err, variant, id);
     if (recovered) {
       acceptOperation(recovered);
       if (recovered.state !== 'unknown') {
-        if (await readView())
-          setMessage(recovered.state === 'recovered' ? 'retryRecovered' : 'retryReconciled');
+        if (await readView()) { onCommitted(); setMessage(recovered.state === 'recovered' ? 'retryRecovered' : 'retryReconciled'); }
         else setMessage('retrySavedReadUnknown');
         return;
       }
@@ -393,6 +414,7 @@ export function FreshRetryConfiguration({
   async function save() {
     if (
       !view ||
+      siblingPending ||
       !view.editable ||
       view.presence === 'unknown' ||
       view.persisted !== 'persisted' ||
@@ -401,12 +423,12 @@ export function FreshRetryConfiguration({
       operationUnknown ||
       readUnavailable ||
       draft === '' ||
-      parseDraft(draft) === null ||
+      parseDraft(draft, variant) === null ||
       (view.presence === 'present' && String(view.value) === draft) ||
       !beginFlight()
     )
       return;
-    const value = parseDraft(draft)!;
+    const value = parseDraft(draft, variant)!;
     let id = pendingIdRef.current;
     if (!id) {
       try {
@@ -428,13 +450,14 @@ export function FreshRetryConfiguration({
     setError('');
     try {
       const result = parseRetryOperationResponse(
-        await client.put(retryResource, { requestId: id, value, expected: view.expected }, auth)
+        await client.put(retryResource, { requestId: id, value, expected: view.expected }, auth), variant
       );
       if (result.operation.requestId !== id) throw new Error('Retry operation identity changed');
       acceptOperation(result.operation);
       if (result.operation.state === 'unknown') {
         setMessage('retryOperationUnknown');
       } else if (await readView()) {
+        onCommitted();
         setMessage(result.operation.state === 'recovered' ? 'retryRecovered' : 'retrySaved');
       } else {
         setMessage('retrySavedReadUnknown');
@@ -458,13 +481,14 @@ export function FreshRetryConfiguration({
       const result = parseRetryOperationResponse(
         reconcile
           ? await client.post(retryOperationResource + id + '/reconcile', {}, auth)
-          : await client.get(retryOperationResource + id, auth)
+          : await client.get(retryOperationResource + id, auth), variant
       );
       if (result.operation.requestId !== id) throw new Error('Retry operation identity changed');
       acceptOperation(result.operation);
       if (result.operation.state === 'unknown') {
         setMessage('retryOperationUnknown');
       } else if (await readView()) {
+        onCommitted();
         setMessage(result.operation.state === 'recovered' ? 'retryRecovered' : 'retryReconciled');
       } else {
         setMessage('retrySavedReadUnknown');
@@ -473,7 +497,7 @@ export function FreshRetryConfiguration({
       if (err instanceof PublicApiError && err.kind === 'authentication') {
         onUnauthorized();
       } else {
-        const recovered = responseOperation(err, id);
+        const recovered = responseOperation(err, variant, id);
         if (recovered) acceptOperation(recovered);
         else keepOriginalUnknown(id, reconcile ? 'retrySaveUnknown' : 'retryOperationUnknown');
         setMessage(
@@ -504,6 +528,10 @@ export function FreshRetryConfiguration({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (refreshEpoch > 0 && !flight.current && !pendingIdRef.current) void refresh();
+  }, [refreshEpoch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!navigationRequest) return;
     titleRef.current?.focus({ preventScroll: true });
     sectionRef.current?.scrollIntoView({ block: 'start' });
@@ -511,7 +539,7 @@ export function FreshRetryConfiguration({
 
   const currentValue =
     view?.presence === 'present' && view.value !== null
-      ? String(view.value)
+      ? String(view.value) + (variant === "interval" ? " s" : "")
       : view?.presence === 'missing'
         ? t('retryPresenceMissing')
         : view?.presence === 'null'
@@ -519,6 +547,7 @@ export function FreshRetryConfiguration({
           : t('retryPresenceUnknown');
   const canEdit =
     !!view?.editable &&
+    !siblingPending &&
     view.presence !== 'unknown' &&
     view.persisted === 'persisted' &&
     view.reason === '' &&
@@ -526,30 +555,30 @@ export function FreshRetryConfiguration({
     !operationUnknown &&
     !readUnavailable;
   const inputError =
-    draft === '' ? 'retryValueRequired' : parseDraft(draft) === null ? 'retryValueInvalid' : '';
+    draft === '' ? (variant === 'interval' ? 'retryIntervalValueRequired' : 'retryValueRequired') : parseDraft(draft, variant) === null ? (variant === 'interval' ? 'retryIntervalValueInvalid' : 'retryValueInvalid') : '';
   const lockReason = view ? lockReasonKey(view.reason, lockCode) : '';
 
   return (
     <section
       ref={sectionRef}
-      id="gateway-retry"
+      id={variant === "interval" ? "gateway-retry-interval" : "gateway-retry"}
       className="console-keys retry-editor"
-      aria-labelledby="gateway-retry-title"
+      aria-labelledby={variant === "interval" ? "gateway-retry-interval-title" : "gateway-retry-title"}
       aria-busy={busy}
-      data-testid="retry-editor"
+      data-testid={`${testPrefix}-editor`}
     >
       <div className="console-keys-heading">
         <div>
           <p className="console-section-kicker">{t('retryNavigation')}</p>
-          <h2 id="gateway-retry-title" ref={titleRef} tabIndex={-1}>
-            {t('retryTitle')}
+          <h2 id={variant === 'interval' ? 'gateway-retry-interval-title' : 'gateway-retry-title'} ref={titleRef} tabIndex={-1}>
+            {t(variant === 'interval' ? 'retryIntervalTitle' : 'retryTitle')}
           </h2>
         </div>
         <span className={`badge ${canEdit ? 'badge-emerald' : 'badge-amber'}`}>
           {busy ? t('retryBusy') : canEdit ? t('retryEditable') : t('retryReadonly')}
         </span>
       </div>
-      <p>{t('retryHelp')}</p>
+      <p>{t(variant === 'interval' ? 'retryIntervalHelp' : 'retryHelp')}</p>
       {message && (
         <p className="alert alert-info" role="status">
           {t(message)}
@@ -561,7 +590,7 @@ export function FreshRetryConfiguration({
         </p>
       )}
       {readUnavailable && lockCode && (
-        <p className="alert alert-warn" data-testid="retry-read-lock-reason">
+        <p className="alert alert-warn" data-testid={`${testPrefix}-read-lock-reason`}>
           {t(lockReasonKey('', lockCode))}
         </p>
       )}
@@ -625,13 +654,13 @@ export function FreshRetryConfiguration({
           )}
           <div className="form-group">
             <div className="form-label">
-              <label htmlFor="gateway-retry-value">{t('retryEditLabel')}</label>
-              <span className="form-hint">{t('retryEditHint')}</span>
+              <label htmlFor={variant === "interval" ? "gateway-retry-interval-value" : "gateway-retry-value"}>{t(variant === "interval" ? "retryIntervalEditLabel" : "retryEditLabel")}</label>
+              <span className="form-hint">{t(variant === 'interval' ? 'retryIntervalEditHint' : 'retryEditHint')}</span>
             </div>
             <div className="input-wrap">
               <input
-                id="gateway-retry-value"
-                data-testid="retry-value"
+                id={variant === "interval" ? "gateway-retry-interval-value" : "gateway-retry-value"}
+                data-testid={`${testPrefix}-value`}
                 className="form-input"
                 type="text"
                 inputMode="numeric"
@@ -645,7 +674,7 @@ export function FreshRetryConfiguration({
               />
             </div>
             {canEdit && inputError && (
-              <span className="form-hint retry-input-error" data-testid="retry-input-error">
+              <span className="form-hint retry-input-error" data-testid={`${testPrefix}-input-error`}>
                 {t(inputError)}
               </span>
             )}
@@ -653,7 +682,7 @@ export function FreshRetryConfiguration({
           <div className="wizard-card-footer">
             <button
               className="btn btn-primary"
-              data-testid="retry-save"
+              data-testid={`${testPrefix}-save`}
               disabled={
                 busy ||
                 !canEdit ||
@@ -666,7 +695,7 @@ export function FreshRetryConfiguration({
             </button>
             <button
               className="btn btn-secondary"
-              data-testid="retry-refresh"
+              data-testid={`${testPrefix}-refresh`}
               disabled={busy}
               onClick={() => void refresh()}
             >
@@ -678,11 +707,11 @@ export function FreshRetryConfiguration({
         !error && <p role="status">{t('retryLoading')}</p>
       )}
       {(operation || (operationUnknown && pendingId)) && (
-        <div className="console-key-result retry-operation" data-testid="retry-operation">
+        <div className="console-key-result retry-operation" data-testid={`${testPrefix}-operation`}>
           <h3>{t('retryOperationTitle')}</h3>
           <p>
             {t('retryOperationId')}:{' '}
-            <code data-testid="retry-operation-id">{pendingId || operation?.requestId}</code>
+            <code data-testid={`${testPrefix}-operation-id`}>{pendingId || operation?.requestId}</code>
           </p>
           {operation ? (
             <p>
@@ -701,7 +730,7 @@ export function FreshRetryConfiguration({
             <div className="wizard-card-footer">
               <button
                 className="btn btn-secondary"
-                data-testid="retry-check-operation"
+                data-testid={`${testPrefix}-check-operation`}
                 disabled={busy}
                 onClick={() => void inspectOriginal(false)}
               >
@@ -709,7 +738,7 @@ export function FreshRetryConfiguration({
               </button>
               <button
                 className="btn btn-primary"
-                data-testid="retry-reconcile"
+                data-testid={`${testPrefix}-reconcile`}
                 disabled={busy}
                 onClick={() => void inspectOriginal(true)}
               >
@@ -720,5 +749,33 @@ export function FreshRetryConfiguration({
         </div>
       )}
     </section>
+  );
+}
+
+export function FreshRetryConfiguration(props: {
+  client: ReturnType<typeof createPublicApiClient>;
+  credential: string;
+  onUnauthorized: () => void;
+  onPending: (pending: boolean) => void;
+  navigationRequest?: number;
+}) {
+  const pending = useRef({count: false, interval: false});
+  const [busyOwners, setBusyOwners] = useState({count: false, interval: false});
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
+  const setPending = (which: "count" | "interval", value: boolean) => {
+    if (pending.current[which] === value) return;
+    pending.current[which] = value;
+    setBusyOwners({...pending.current});
+    props.onPending(pending.current.count || pending.current.interval);
+  };
+  return (
+    <>
+      <RetryScalarEditor {...props} variant="count" refreshEpoch={refreshEpoch} siblingPending={busyOwners.interval}
+        onCommitted={() => setRefreshEpoch((n) => n + 1)}
+        onPending={(value) => setPending("count", value)} />
+      <RetryScalarEditor {...props} variant="interval" refreshEpoch={refreshEpoch} siblingPending={busyOwners.count}
+        onCommitted={() => setRefreshEpoch((n) => n + 1)}
+        onPending={(value) => setPending("interval", value)} />
+    </>
   );
 }

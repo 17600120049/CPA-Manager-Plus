@@ -68,11 +68,19 @@ describe('Full Web request retry editor', () => {
     vi.unstubAllGlobals();
   });
 
-  async function mount(transport: ReturnType<typeof vi.fn<typeof fetch>>) {
+  async function mount(transport: ReturnType<typeof vi.fn<typeof fetch>>, intervalTransport?: ReturnType<typeof vi.fn<typeof fetch>>) {
     await act(async () => {
       renderer = create(
         <FreshRetryConfiguration
-          client={createPublicApiClient(() => context, transport)}
+          client={createPublicApiClient(() => context, ((url, init) =>
+            String(url).includes('/gateway/retry/max-retry-interval')
+              ? (intervalTransport
+                  ? intervalTransport(url, init)
+                  : Promise.resolve(Response.json(retryView({
+                      field: 'routing.retry.max-retry-interval',
+                      value: 0,
+                    }))))
+              : transport(url, init)) as typeof fetch)}
           credential={credential}
           onUnauthorized={vi.fn()}
           onPending={(value) => pendingEvents.push(value)}
@@ -102,6 +110,66 @@ describe('Full Web request retry editor', () => {
     });
   }
 
+
+  it.each([
+    ['missing', null, ''],
+    ['null', null, ''],
+    ['present', 0, '0'],
+    ['present', 300, '300'],
+  ] as const)('B3 preserves %s presence and explicit zero', async (presence, value, draft) => {
+    const b2 = vi.fn<typeof fetch>().mockResolvedValue(Response.json(retryView()));
+    const b3 = vi.fn<typeof fetch>().mockResolvedValue(Response.json(retryView({
+      field: 'routing.retry.max-retry-interval', presence, value,
+    })));
+    await mount(b2, b3);
+    expect(renderer.root.findByProps({'data-testid':'retry-interval-value'}).props.value).toBe(draft);
+    expect(b2.mock.calls.every(([url]) => String(url).includes('/request-retry'))).toBe(true);
+  });
+
+  it('B3 saves 300 exactly once without changing B2 editor or claiming effective', async () => {
+    const b2 = vi.fn<typeof fetch>().mockResolvedValue(Response.json(retryView()));
+    const b3 = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(retryView({
+        field: 'routing.retry.max-retry-interval', presence: 'missing', value: null,
+      })))
+      .mockResolvedValueOnce(Response.json({ operation: {
+        ...operation('persisted', 300), field: 'max-retry-interval',
+      }, effective: 'unknown' }))
+      .mockResolvedValueOnce(Response.json(retryView({
+        field: 'routing.retry.max-retry-interval', value: 300,
+      })));
+    await mount(b2, b3);
+    await act(async () => renderer.root.findByProps({'data-testid':'retry-interval-value'}).props.onChange({target:{value:'300'}}));
+    await click('retry-interval-save');
+    expect(b3.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+    expect(JSON.parse(String(b3.mock.calls.find(([, init]) => init?.method === 'PUT')?.[1]?.body)).value).toBe(300);
+    expect(renderer.root.findByProps({'data-testid':'retry-value'}).props.value).toBe('2');
+    expect(JSON.stringify(renderer.toJSON())).toContain(t('retryEffectiveUnknown'));
+  });
+
+  it('B3 rejects invalid input and preserves an unknown operation without replay', async () => {
+    const b2 = vi.fn<typeof fetch>().mockResolvedValue(Response.json(retryView()));
+    const b3 = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(retryView({
+        field: 'routing.retry.max-retry-interval', value: 2,
+      })))
+      .mockRejectedValueOnce(new Error('lost response'))
+      .mockResolvedValueOnce(Response.json({ operation: {
+        ...operation('unknown', 5), field: 'max-retry-interval',
+      }, effective: 'unknown' }));
+    await mount(b2, b3);
+    const input = renderer.root.findByProps({'data-testid':'retry-interval-value'});
+    for (const invalid of ['-1', '1.5', '301', 'xyz']) {
+      await act(async () => input.props.onChange({target:{value:invalid}}));
+      expect(button('retry-interval-save').props.disabled).toBe(true);
+    }
+    await act(async () => input.props.onChange({target:{value:'5'}}));
+    await click('retry-interval-save');
+    expect(button('retry-interval-save').props.disabled).toBe(true);
+    expect(button('retry-save').props.disabled).toBe(true);
+    await click('retry-interval-check-operation');
+    expect(b3.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+  });
   it.each([
     ['missing', null, '', 'retryPresenceMissing'],
     ['null', null, '', 'retryPresenceNull'],

@@ -17,6 +17,8 @@ type H1Intent struct {
 	TargetSHA256 string `json:"targetSHA256"`
 	KeeperSHA256 string `json:"keeperSHA256"`
 	Retry        int    `json:"retry"`
+	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
 }
 
 func (i H1Intent) parentID() string {
@@ -27,6 +29,7 @@ func (i H1Intent) parentID() string {
 }
 func (i H1Intent) scopes() []string {
 	if i.Domain == "config" {
+		if i.Mode == "interval" { return []string{"max-retry-interval"} }
 		return []string{"request-retry"}
 	}
 	if i.Mode == "replace" {
@@ -43,7 +46,7 @@ func (i H1Intent) valid() bool {
 		return false
 	}
 	if i.Domain == "config" {
-		return i.Mode == "retry" && i.TargetID == "" && i.KeeperID == "" && i.TargetSHA256 == "" && i.KeeperSHA256 == "" && i.Retry >= 0 && i.Retry <= 10
+		return i.TargetID == "" && i.KeeperID == "" && i.TargetSHA256 == "" && i.KeeperSHA256 == "" && ((i.Mode == "retry" && !i.MaxRetryIntervalSet && i.MaxRetryInterval == 0 && i.Retry >= 0 && i.Retry <= 10) || (i.Mode == "interval" && i.Retry == 0 && i.MaxRetryIntervalSet && i.MaxRetryInterval >= 0 && i.MaxRetryInterval <= 300))
 	}
 	return i.Domain == "key" && (i.Mode == "replace" || i.Mode == "revoke") && h1ID(i.TargetID) && h1ID(i.KeeperID) && i.TargetID != i.KeeperID && validHex(i.TargetSHA256) && validHex(i.KeeperSHA256) && i.TargetSHA256 != i.KeeperSHA256 && i.Retry == 0
 }

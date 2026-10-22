@@ -99,7 +99,8 @@ func (a *freshApplication) retryConfiguration(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(400)
 		return
 	}
-	if resource == "gateway/retry/request-retry" {
+	interval := resource == "gateway/retry/max-retry-interval" || strings.HasPrefix(resource, "gateway/retry/interval-operations/")
+	if resource == "gateway/retry/request-retry" || resource == "gateway/retry/max-retry-interval" {
 		if r.Method != "GET" && r.Method != "PUT" {
 			w.Header().Set("Allow", "GET, PUT")
 			w.WriteHeader(405)
@@ -112,7 +113,7 @@ func (a *freshApplication) retryConfiguration(w http.ResponseWriter, r *http.Req
 				return
 			}
 			var raw map[string]json.RawMessage
-			if !retryObject(b, "requestId", "value", "expected") || json.Unmarshal(b, &raw) != nil || !retryObject(raw["expected"], "sourceId", "generation", "revision", "sha256") || json.Unmarshal(b, &q) != nil || q.Value == nil || *q.Value < 0 || *q.Value > 10 {
+			if !retryObject(b, "requestId", "value", "expected") || json.Unmarshal(b, &raw) != nil || !retryObject(raw["expected"], "sourceId", "generation", "revision", "sha256") || json.Unmarshal(b, &q) != nil || q.Value == nil || *q.Value < 0 || (!interval && *q.Value > 10) || (interval && *q.Value > 300) {
 				retryReply(w, nil, freshconfig.ErrInvalid)
 				return
 			}
@@ -122,15 +123,14 @@ func (a *freshApplication) retryConfiguration(w http.ResponseWriter, r *http.Req
 			return
 		}
 		if r.Method == "GET" {
-			v, e := a.configRetry.Read(r.Context())
-			retryReply(w, v, e)
+			if interval { v, e := a.configRetry.ReadInterval(r.Context()); retryReply(w, v, e) } else { v, e := a.configRetry.Read(r.Context()); retryReply(w, v, e) }
 		} else {
-			v, e := a.configRetry.Save(r.Context(), q)
-			retryReply(w, v, e)
+			if interval { v, e := a.configRetry.SaveInterval(r.Context(), q); retryReply(w, v, e) } else { v, e := a.configRetry.Save(r.Context(), q); retryReply(w, v, e) }
 		}
 		return
 	}
 	id := strings.TrimPrefix(resource, "gateway/retry/operations/")
+	if interval { id = strings.TrimPrefix(resource, "gateway/retry/interval-operations/") }
 	reconcile := strings.HasSuffix(id, "/reconcile")
 	if reconcile {
 		id = strings.TrimSuffix(id, "/reconcile")
@@ -162,6 +162,5 @@ func (a *freshApplication) retryConfiguration(w http.ResponseWriter, r *http.Req
 		retryReply(w, nil, cpa.ErrProofUnavailable)
 		return
 	}
-	v, e := a.configRetry.Operation(r.Context(), id, reconcile)
-	retryReply(w, v, e)
+	if interval { v, e := a.configRetry.IntervalOperation(r.Context(), id, reconcile); retryReply(w, v, e) } else { v, e := a.configRetry.Operation(r.Context(), id, reconcile); retryReply(w, v, e) }
 }

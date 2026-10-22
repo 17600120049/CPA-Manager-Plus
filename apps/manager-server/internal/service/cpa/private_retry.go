@@ -10,6 +10,7 @@ import (
 )
 
 const retryPath = "/v8/management/config/routing/retry/request-retry"
+const intervalPath = "/v8/management/config/routing/retry/max-retry-interval"
 
 var ErrWriterIsolation = errors.New("private config source has a reachable key writer")
 
@@ -29,10 +30,12 @@ type RetrySource struct {
 	OperationState string `json:"operationState"`
 	OperationScope string `json:"operationScope"`
 	OperationRetry int    `json:"operationRetry"`
+	OperationInterval int `json:"operationInterval,omitempty"`
+	OperationIntervalSet bool `json:"operationIntervalSet,omitempty"`
 }
 
 func retrySource(v configObservation) RetrySource {
-	out := RetrySource{SourceID: v.SourceID, Generation: v.Generation, Revision: v.Revision, SHA256: v.SHA256, State: v.State, Installed: v.Installed, OperationID: v.Operation.ID, OperationState: v.Operation.State, OperationScope: v.Operation.Scope, OperationRetry: v.Operation.Retry}
+	out := RetrySource{SourceID: v.SourceID, Generation: v.Generation, Revision: v.Revision, SHA256: v.SHA256, State: v.State, Installed: v.Installed, OperationID: v.Operation.ID, OperationState: v.Operation.State, OperationScope: v.Operation.Scope, OperationRetry: v.Operation.Retry, OperationInterval: v.Operation.MaxRetryInterval, OperationIntervalSet: v.Operation.MaxRetryIntervalSet}
 	if v.H1 != nil {
 		out.H1 = true
 		if v.H1.Parent != nil {

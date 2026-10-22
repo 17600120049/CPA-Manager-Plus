@@ -175,6 +175,9 @@ func validChange(before, after []byte, op Operation) bool {
 		if set(a, next, "access", "api-keys") != nil {
 			return false
 		}
+	case "max-retry-interval":
+		next := leaf(b, "routing", "retry", "max-retry-interval")
+		if !op.MaxRetryIntervalSet || next == nil || next.Tag != "!!int" || next.Value != strconv.Itoa(op.MaxRetryInterval) || set(a, next, "routing", "retry", "max-retry-interval") != nil { return false }
 	case "request-retry":
 		next := leaf(b, "routing", "retry", "request-retry")
 		if next == nil || next.Tag != "!!int" || next.Value != strconv.Itoa(op.Retry) ||

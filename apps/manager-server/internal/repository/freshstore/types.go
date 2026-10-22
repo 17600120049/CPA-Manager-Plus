@@ -38,6 +38,8 @@ type Record struct {
 	// Same Fresh CAS authority; encrypted resource snapshot is never public.
 	AdoptionCiphertext string
 	Retry              *RetryJournal
+	Interval           *RetryJournal
+	IntervalInvalid    bool
 	// Corrupt Config metadata locks only Config. Other Fresh domains must not
 	// erase it or lose their existing Administrator/read-only access.
 	RetryInvalid bool
@@ -57,6 +59,7 @@ type RetryOperation struct {
 	BeginRevision uint64 `json:"beginRevision,omitempty"`
 	HTTP200       bool   `json:"http200,omitempty"`
 	Receipt       string `json:"receipt,omitempty"`
+	Field         string `json:"field,omitempty"`
 	RequestID     string `json:"requestId"`
 	Value         int    `json:"value"`
 	SourceID      string `json:"sourceId"`
