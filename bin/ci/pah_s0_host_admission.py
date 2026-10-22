@@ -69,7 +69,22 @@ def check_config(config, port=PORT):
     require(set(config.get("volumes", {})) == set(VOLUMES),
             "unknown/missing private Compose volume")
     require(set(services) == set(SERVICES), "unknown/missing Compose service")
+    for logical in VOLUMES:
+        volume = config["volumes"][logical]
+        require(volume.get("name") == VOLUME_NAMES[logical] and
+                not volume.get("external") and
+                volume.get("driver", "local") == "local",
+                "private volume redirected or externally managed: " + logical)
     runtime, manager, ingress = (services[n] for n in SERVICES)
+    for service, dockerfile, target in (
+        (runtime, "Dockerfile.runtime", "v8-amd64-loopback-proof"),
+        (manager, "Dockerfile.manager-server", None),
+        (ingress, "Dockerfile.ingress", None),
+    ):
+        build = service.get("build", {})
+        require(build.get("dockerfile") == dockerfile and
+                (target is None or build.get("target") == target),
+                "unexpected P-S0 image build recipe: " + dockerfile)
     require(runtime.get("platform") == manager.get("platform") ==
             ingress.get("platform") == "linux/amd64", "wrong architecture")
     for name, service in zip(SERVICES, (runtime, manager, ingress)):

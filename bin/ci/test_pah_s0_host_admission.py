@@ -13,6 +13,7 @@ def configuration():
     return {"volumes": {v: {"name": VOLUME_NAMES[v]} for v in VOLUMES},
             "services": {
         r: {"platform": "linux/amd64", "image": IMAGES[r], "restart": "no",
+            "build": {"dockerfile": "Dockerfile.runtime", "target": "v8-amd64-loopback-proof"},
             "ports": [{"host_ip": "127.0.0.1", "published": PORT,
                        "target": PORT, "protocol": "tcp"}],
             "environment": dict(RUNTIME_LISTENERS),
@@ -21,7 +22,8 @@ def configuration():
                         for dest, (key, writable) in MOUNTS[r].items()]},
         m: {"platform": "linux/amd64", "image": IMAGES[m], "restart": "no",
             "network_mode": "service:cpamp-runtime",
-            "build": {"args": {"VITE_CPAMP_PAH_S0": "1"}},
+            "build": {"dockerfile": "Dockerfile.manager-server",
+                      "args": {"VITE_CPAMP_PAH_S0": "1"}},
             "environment": {"CPAMP_PRIVATE_PAH_S0": "1",
                             "HTTP_ADDR": "127.0.0.1:18319"},
             "volumes": [{"type": "volume", "source": key, "target": dest,
@@ -29,7 +31,8 @@ def configuration():
                         for dest, (key, writable) in MOUNTS[m].items()]},
         i: {"platform": "linux/amd64", "image": IMAGES[i], "restart": "no",
             "network_mode": "service:cpamp-runtime",
-            "build": {"args": {"CPAMP_PAH_S0_BUILD": "1"}},
+            "build": {"dockerfile": "Dockerfile.ingress",
+                      "args": {"CPAMP_PAH_S0_BUILD": "1"}},
             "environment": {"CPAMP_PRIVATE_PAH_S0": "1",
                             "CPAMP_INGRESS_CONTROL_ADDR": "127.0.0.1:9082",
                             "CPAMP_MANAGER_URL": "http://127.0.0.1:18319",
@@ -69,7 +72,7 @@ class PrivateGraphTests(unittest.TestCase):
         check_config(configuration())
         for mutation in ("build", "manager_off", "side_port", "ipv6", "namespace",
                          "arm", "cpa_wildcard", "runtime_wildcard", "secret_writable",
-                         "extra_volume"):
+                         "extra_volume", "volume_alias", "external_volume", "runtime_recipe"):
             with self.subTest(mutation=mutation):
                 cfg = configuration()
                 srv = cfg["services"]
@@ -95,6 +98,12 @@ class PrivateGraphTests(unittest.TestCase):
                     srv["cpamp-ingress"]["volumes"] = [{
                         "type": "volume", "source": "cpamp-pah-s0-runtime-secret",
                         "target": "/secrets"}]
+                elif mutation == "volume_alias":
+                    cfg["volumes"]["cpamp-pah-s0-runtime-secret"]["name"] = "foreign-credential-volume"
+                elif mutation == "external_volume":
+                    cfg["volumes"]["cpamp-pah-s0-manager-data"]["external"] = True
+                elif mutation == "runtime_recipe":
+                    srv["cpamp-runtime"]["build"]["target"] = "latest-unverified-runtime"
                 with self.assertRaises(RuntimeError):
                     check_config(cfg)
 
