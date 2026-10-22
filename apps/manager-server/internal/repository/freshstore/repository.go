@@ -24,6 +24,7 @@ const AuthorityKey = "fresh_authority_v1"
 const adoptionKey = "fresh_adoption_v1"
 const adminKey = "admin_credential_v1"
 const retryKey = "fresh_config_retry_v1"
+const intervalKey = "fresh_config_retry_interval_v1"
 
 type repository struct{ db *sql.DB }
 
@@ -44,7 +45,7 @@ func load(ctx context.Context, q queryer) (Record, error) {
 		k        string
 		v        any
 		optional bool
-	}{{OperationKey, &r.Operation, false}, {AuthorityKey, &r.Authority, false}, {adminKey, &r.Admin, true}, {adoptionKey, &r.AdoptionCiphertext, true}, {retryKey, &r.Retry, true}} {
+	}{{OperationKey, &r.Operation, false}, {AuthorityKey, &r.Authority, false}, {adminKey, &r.Admin, true}, {adoptionKey, &r.AdoptionCiphertext, true}, {retryKey, &r.Retry, true}, {intervalKey, &r.Interval, true}} {
 		var data string
 		err := q.QueryRowContext(ctx, "select value from settings where key=?", item.k).Scan(&data)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -58,10 +59,9 @@ func load(ctx context.Context, q queryer) (Record, error) {
 		}
 		err = json.Unmarshal([]byte(data), item.v)
 		if item.k == retryKey {
-			if err != nil || r.Retry == nil || !validRetry(r.Retry) {
-				r.RetryInvalid = true
-				r.Retry = nil
-			}
+			if err != nil || r.Retry == nil || !validRetry(r.Retry) { r.RetryInvalid = true; r.Retry = nil }
+		} else if item.k == intervalKey {
+			if err != nil || r.Interval == nil || !validInterval(r.Interval) { r.IntervalInvalid = true; r.Interval = nil }
 		} else if err != nil {
 			return Record{}, ErrNotFresh
 		}
@@ -87,7 +87,7 @@ func validRetry(r *RetryJournal) bool {
 			return false
 		}
 		for id, o := range r.Operations {
-			if len(id) != 32 || o.RequestID != id || o.Value < 0 || o.Value > 10 || len(o.SourceID) < 16 || o.Generation == "" || o.Revision == 0 || len(o.SHA256) != 64 || (o.State != "unknown" && o.State != "persisted" && o.State != "recovered") {
+			if len(id) != 32 || o.RequestID != id || o.Value < 0 || o.Value > 10 || o.Field != "" || len(o.SourceID) < 16 || o.Generation == "" || o.Revision == 0 || len(o.SHA256) != 64 || (o.State != "unknown" && o.State != "persisted" && o.State != "recovered") {
 				return false
 			}
 			if b, e := hex.DecodeString(id); e != nil || hex.EncodeToString(b) != id {
@@ -107,6 +107,33 @@ func validRetry(r *RetryJournal) bool {
 	}
 	return true
 }
+func validInterval(r *RetryJournal) bool {
+	if r != nil {
+		if _, ok := r.Operations[r.Latest]; !ok {
+			return false
+		}
+		for id, o := range r.Operations {
+			if len(id) != 32 || o.RequestID != id || o.Value < 0 || o.Value > 300 || o.Field != "max-retry-interval" || len(o.SourceID) < 16 || o.Generation == "" || o.Revision == 0 || len(o.SHA256) != 64 || (o.State != "unknown" && o.State != "persisted" && o.State != "recovered") {
+				return false
+			}
+			if b, e := hex.DecodeString(id); e != nil || hex.EncodeToString(b) != id {
+				return false
+			}
+			if b, e := hex.DecodeString(o.SHA256); e != nil || hex.EncodeToString(b) != o.SHA256 {
+				return false
+			}
+			if o.ParentID == "" { return false }
+			if o.ParentID != "" {
+				if o.ParentID != "c:"+id || !o.Attempted || o.ClaimRevision <= o.Revision || !retryHash(o.IntentDigest) || (o.HTTP200 && o.BeginRevision <= o.ClaimRevision) || (!o.HTTP200 && (o.BeginRevision != 0 || o.Receipt != "")) || (o.State != "unknown" && (o.State != "persisted" || !o.HTTP200 || !retryHash(o.Receipt))) || (o.State == "unknown" && o.Receipt != "") {
+					return false
+				}
+			} else if o.ClaimRevision != 0 || o.IntentDigest != "" || o.Attempted || o.BeginRevision != 0 || o.HTTP200 || o.Receipt != "" {
+				return false
+			}
+		}
+	}
+	return true
+}
 func retryHash(s string) bool {
 	b, e := hex.DecodeString(s)
 	return e == nil && len(b) == 32 && hex.EncodeToString(b) == s
@@ -115,8 +142,9 @@ func retryHash(s string) bool {
 // ValidateRetryJournal lets the shared admission checkpoint reject a damaged
 // Config journal with exactly the same rules as its owning repository.
 func ValidateRetryJournal(r *RetryJournal) bool { return r != nil && validRetry(r) }
+func ValidateIntervalJournal(r *RetryJournal) bool { return r != nil && validInterval(r) }
 func valid(r Record) error {
-	if !validRetry(r.Retry) || r.RetryInvalid && r.Retry != nil {
+	if !validRetry(r.Retry) || r.RetryInvalid && r.Retry != nil || !validInterval(r.Interval) || r.IntervalInvalid && r.Interval != nil {
 		return ErrNotFresh
 	}
 	if r.Operation.Validate() != nil || r.Operation.AdminInitialized != (r.Admin != nil) || r.Operation.AdminInitialized != r.Authority.ClaimClosed {
@@ -293,6 +321,11 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		}
 		before.Retry = copy
 	}
+	if v.Interval != nil {
+		copy := &RetryJournal{Latest: v.Interval.Latest, Operations: make(map[string]RetryOperation, len(v.Interval.Operations))}
+		for k, o := range v.Interval.Operations { copy.Operations[k] = o }
+		before.Interval = copy
+	}
 	before.Operation.Strategy.AdoptionDecisions = slices.Clone(v.Operation.Strategy.AdoptionDecisions)
 	before.Operation.Strategy.AdoptionResources = slices.Clone(v.Operation.Strategy.AdoptionResources)
 	if v.Admin != nil {
@@ -306,7 +339,7 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	if err = fn(&v); err != nil {
 		return Record{}, err
 	}
-	if v.RetryInvalid != before.RetryInvalid || before.RetryInvalid && v.Retry != nil {
+	if v.IntervalInvalid != before.IntervalInvalid || before.IntervalInvalid && v.Interval != nil || v.RetryInvalid != before.RetryInvalid || before.RetryInvalid && v.Retry != nil {
 		return Record{}, ErrConflict
 	}
 	// Retry identities and terminal tombstones are immutable. A CAS callback
@@ -344,6 +377,39 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 			return Record{}, ErrConflict
 		}
 	}
+	if before.Interval != nil {
+		if v.Interval == nil {
+			return Record{}, ErrConflict
+		}
+		for id, old := range before.Interval.Operations {
+			next, ok := v.Interval.Operations[id]
+			if !ok {
+				return Record{}, ErrConflict
+			}
+			state := next.State
+			next.State = old.State
+			if old.ParentID != "" && old.State == "unknown" {
+				if !next.Attempted || (old.HTTP200 && (!next.HTTP200 || old.BeginRevision != next.BeginRevision)) || (!old.HTTP200 && next.HTTP200 && (next.BeginRevision <= old.ClaimRevision || next.Receipt != "" || state != "unknown")) {
+					return Record{}, ErrConflict
+				}
+				if next.Receipt != old.Receipt && (old.Receipt != "" || !old.HTTP200 || state != "persisted" || len(next.Receipt) != 64) {
+					return Record{}, ErrConflict
+				}
+				if state != "unknown" && (state != "persisted" || !next.HTTP200 || len(next.Receipt) != 64) {
+					return Record{}, ErrConflict
+				}
+				next.HTTP200 = old.HTTP200
+				next.BeginRevision = old.BeginRevision
+				next.Receipt = old.Receipt
+			}
+			if next != old || old.State != "unknown" && state != old.State {
+				return Record{}, ErrConflict
+			}
+		}
+		if before.Interval.Operations[before.Interval.Latest].State == "unknown" && v.Interval.Latest != before.Interval.Latest {
+			return Record{}, ErrConflict
+		}
+	}
 	if v.Operation.Identity != id || v.Operation.Revision != revision || before.Admin != nil && !reflect.DeepEqual(before.Admin, v.Admin) || before.Operation.AdminInitialized && !v.Operation.AdminInitialized || before.Authority.ClaimClosed && !v.Authority.ClaimClosed || before.Operation.Routing.Committed && !v.Operation.Routing.Committed {
 		return Record{}, ErrConflict
 	}
@@ -378,9 +444,8 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		cfg := model.ManagerConfig{CPAConnection: *v.Connection, Collector: model.ManagerCollectorConfig{Enabled: &disabled}, UpdatedAtMS: time.Now().UnixMilli()}
 		err = write(ctx, tx, "manager_config_v1", cfg)
 	}
-	if err == nil && !reflect.DeepEqual(before.Retry, v.Retry) {
-		err = write(ctx, tx, retryKey, v.Retry)
-	}
+	if err == nil && !reflect.DeepEqual(before.Retry, v.Retry) { err = write(ctx, tx, retryKey, v.Retry) }
+	if err == nil && !reflect.DeepEqual(before.Interval, v.Interval) { err = write(ctx, tx, intervalKey, v.Interval) }
 	if err != nil {
 		return Record{}, err
 	}

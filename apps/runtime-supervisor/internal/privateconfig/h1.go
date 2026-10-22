@@ -17,6 +17,8 @@ type H1Intent struct {
 	TargetSHA256 string `json:"targetSHA256"`
 	KeeperSHA256 string `json:"keeperSHA256"`
 	Retry        int    `json:"retry"`
+	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
 }
 
 func (i H1Intent) parentID() string {
@@ -27,6 +29,7 @@ func (i H1Intent) parentID() string {
 }
 func (i H1Intent) scopes() []string {
 	if i.Domain == "config" {
+		if i.Mode == "interval" { return []string{"max-retry-interval"} }
 		return []string{"request-retry"}
 	}
 	if i.Mode == "replace" {
@@ -43,9 +46,9 @@ func (i H1Intent) valid() bool {
 		return false
 	}
 	if i.Domain == "config" {
-		return i.Mode == "retry" && i.TargetID == "" && i.KeeperID == "" && i.TargetSHA256 == "" && i.KeeperSHA256 == "" && i.Retry >= 0 && i.Retry <= 10
+		return i.TargetID == "" && i.KeeperID == "" && i.TargetSHA256 == "" && i.KeeperSHA256 == "" && ((i.Mode == "retry" && !i.MaxRetryIntervalSet && i.MaxRetryInterval == 0 && i.Retry >= 0 && i.Retry <= 10) || (i.Mode == "interval" && i.Retry == 0 && i.MaxRetryIntervalSet && i.MaxRetryInterval >= 0 && i.MaxRetryInterval <= 300))
 	}
-	return i.Domain == "key" && (i.Mode == "replace" || i.Mode == "revoke") && h1ID(i.TargetID) && h1ID(i.KeeperID) && i.TargetID != i.KeeperID && hashValid(i.TargetSHA256) && hashValid(i.KeeperSHA256) && i.TargetSHA256 != i.KeeperSHA256 && i.Retry == 0
+	return i.Domain == "key" && (i.Mode == "replace" || i.Mode == "revoke") && h1ID(i.TargetID) && h1ID(i.KeeperID) && i.TargetID != i.KeeperID && hashValid(i.TargetSHA256) && hashValid(i.KeeperSHA256) && i.TargetSHA256 != i.KeeperSHA256 && i.Retry == 0 && i.MaxRetryInterval == 0 && !i.MaxRetryIntervalSet
 }
 func h1StepID(i H1Intent, n int) string {
 	name := i.scopes()[n]
@@ -148,7 +151,7 @@ func validH1Record(r *record) bool {
 		if s.BeforeSHA256 != lastSHA || s.BeginRevision <= lastRev {
 			return false
 		}
-		op := Operation{ID: s.ID, Scope: s.Scope, Generation: p.Generation, State: "unknown", Retry: p.Intent.Retry, KeySHA256: p.Intent.TargetSHA256, KeeperSHA256: p.Intent.KeeperSHA256}
+		op := Operation{ID: s.ID, Scope: s.Scope, Generation: p.Generation, State: "unknown", Retry: p.Intent.Retry, MaxRetryInterval: p.Intent.MaxRetryInterval, MaxRetryIntervalSet: p.Intent.MaxRetryIntervalSet, KeySHA256: p.Intent.TargetSHA256, KeeperSHA256: p.Intent.KeeperSHA256}
 		if s.TransitionDigest != h1Digest(op) {
 			return false
 		}
@@ -190,7 +193,7 @@ func validH1Record(r *record) bool {
 		if s.CommitRevision != 0 {
 			lastSHA, lastRev = s.AfterSHA256, s.CommitRevision
 		}
-		if n == len(p.Steps)-1 && (r.Operation.ID != s.ID || r.Operation.Scope != s.Scope || r.Operation.Generation != s.Generation || r.Operation.State != s.State || r.Operation.KeySHA256 != op.KeySHA256 || r.Operation.KeeperSHA256 != op.KeeperSHA256 || r.Operation.Retry != op.Retry) {
+		if n == len(p.Steps)-1 && (r.Operation.ID != s.ID || r.Operation.Scope != s.Scope || r.Operation.Generation != s.Generation || r.Operation.State != s.State || r.Operation.KeySHA256 != op.KeySHA256 || r.Operation.KeeperSHA256 != op.KeeperSHA256 || r.Operation.Retry != op.Retry || r.Operation.MaxRetryInterval != op.MaxRetryInterval || r.Operation.MaxRetryIntervalSet != op.MaxRetryIntervalSet) {
 			return false
 		}
 	}
@@ -289,7 +292,7 @@ func (a *Authority) doH1(q Request, g Grant, r *record, b []byte, running bool) 
 		if (!configClaim && !stepGrant) || x.StepID != id || q.OperationID != id || q.Scope != scope {
 			return fail()
 		}
-		op := Operation{ID: id, Scope: scope, Generation: g.Generation, State: "unknown", Retry: p.Intent.Retry, KeySHA256: p.Intent.TargetSHA256, KeeperSHA256: p.Intent.KeeperSHA256}
+		op := Operation{ID: id, Scope: scope, Generation: g.Generation, State: "unknown", Retry: p.Intent.Retry, MaxRetryInterval: p.Intent.MaxRetryInterval, MaxRetryIntervalSet: p.Intent.MaxRetryIntervalSet, KeySHA256: p.Intent.TargetSHA256, KeeperSHA256: p.Intent.KeeperSHA256}
 		r.Revision++
 		p.Steps = append(p.Steps, H1Step{ParentID: p.ID, SourceID: p.SourceID, Generation: p.Generation, ID: id, Scope: scope, State: "unknown", BeforeSHA256: sha, BeginRevision: r.Revision, TransitionDigest: h1Digest(op)})
 		r.Operation = op
@@ -335,6 +338,10 @@ func (a *Authority) doH1(q Request, g Grant, r *record, b []byte, running bool) 
 		r.Operation.State = "persisted"
 		r.LastGood = b
 		r.LastGoodSHA256 = sha
+		if s.Scope == "max-retry-interval" {
+			n := p.Intent.MaxRetryInterval
+			r.CommittedMaxRetryInterval = &n
+		}
 		if s.Scope == "request-retry" {
 			n := p.Intent.Retry
 			r.CommittedRetry = &n

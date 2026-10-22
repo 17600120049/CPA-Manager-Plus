@@ -101,8 +101,7 @@ export function createPublicApiClient(
         let operationResult: unknown;
         let code: string | undefined;
         const retryResource =
-          resource === 'gateway/retry/request-retry' ||
-          resource.startsWith('gateway/retry/operations/');
+          resource.startsWith('gateway/retry/');
         const operationResource = method === 'GET' && resource.startsWith('api-keys/operations/');
         if (
           (retryResource || operationResource ||

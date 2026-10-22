@@ -38,6 +38,8 @@ type configOperation struct {
 	Scope        string `json:"scope"`
 	KeySHA256    string `json:"keySHA256,omitempty"`
 	Retry        int    `json:"retry"`
+	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
 	Generation   string `json:"generation"`
 	State        string `json:"state"`
 }
@@ -52,6 +54,8 @@ type configRequest struct {
 	Scope            string     `json:"scope"`
 	KeySHA256        string     `json:"keySHA256,omitempty"`
 	Retry            int        `json:"retry"`
+	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
 }
 type configObservation struct {
 	H1             *H1Record       `json:"h1,omitempty"`
@@ -61,7 +65,8 @@ type configObservation struct {
 	SHA256         string          `json:"sha256"`
 	State          string          `json:"state"`
 	Installed      bool            `json:"installed"`
-	CommittedRetry *int            `json:"committedRetry"`
+	CommittedRetry *int `json:"committedRetry"`
+	CommittedMaxRetryInterval *int `json:"committedMaxRetryInterval,omitempty"`
 	Operation      configOperation `json:"operation"`
 	Created        bool            `json:"created"`
 }
@@ -247,20 +252,23 @@ func (t *Transport) postInstallProjection(ctx context.Context, body []byte) ([]b
 	}
 	routing, exists := root["routing"]
 	if !exists {
-		if v.CommittedRetry != nil {
+		if v.CommittedRetry != nil || v.CommittedMaxRetryInterval != nil {
 			return nil, ErrSourceConflict
 		}
 		return body, nil
 	}
-	if v.CommittedRetry == nil {
+	if v.CommittedRetry == nil && v.CommittedMaxRetryInterval == nil {
 		return nil, ErrSourceConflict
 	}
 	var r, retry map[string]json.RawMessage
-	var value *int
-	if json.Unmarshal(routing, &r) != nil || len(r) != 1 || json.Unmarshal(r["retry"], &retry) != nil || len(retry) != 1 ||
-		json.Unmarshal(retry["request-retry"], &value) != nil || value == nil || *value != *v.CommittedRetry {
-		return nil, ErrSourceConflict
+	if json.Unmarshal(routing, &r) != nil || len(r) != 1 || json.Unmarshal(r["retry"], &retry) != nil || len(retry) != boolCount(v.CommittedRetry != nil, v.CommittedMaxRetryInterval != nil) { return nil, ErrSourceConflict }
+	for _, field := range []struct{name string; expected *int}{{"request-retry", v.CommittedRetry}, {"max-retry-interval", v.CommittedMaxRetryInterval}} {
+		if field.expected == nil { if _, ok := retry[field.name]; ok { return nil, ErrSourceConflict }; continue }
+		var n *int
+		if json.Unmarshal(retry[field.name], &n) != nil || n == nil || *n != *field.expected { return nil, ErrSourceConflict }
 	}
 	delete(root, "routing")
 	return json.Marshal(root)
 }
+
+func boolCount(xs ...bool) int { n := 0; for _, v := range xs { if v { n++ } }; return n }

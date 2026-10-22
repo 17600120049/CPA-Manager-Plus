@@ -88,7 +88,7 @@ func (s *Service) owner(ctx context.Context) (freshstore.Record, string, error) 
 	if e != nil {
 		return r, "", e
 	}
-	if r.RetryInvalid {
+	if r.RetryInvalid || r.IntervalInvalid {
 		return r, "", cpa.ErrSourceConflict
 	}
 	op := r.Operation
@@ -104,7 +104,7 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 	v := empty()
 	r, m, e := s.owner(ctx)
 	if e != nil {
-		if r.RetryInvalid {
+		if r.RetryInvalid || r.IntervalInvalid {
 			v.Reason = "configuration_journal_invalid"
 		}
 		if errors.Is(e, cpa.ErrWriterIsolation) {
@@ -214,7 +214,7 @@ func (s *Service) Operation(ctx context.Context, id string, reconcile bool) (fre
 	if e != nil {
 		return freshstore.RetryOperation{}, e
 	}
-	if r.RetryInvalid {
+	if r.RetryInvalid || r.IntervalInvalid {
 		return freshstore.RetryOperation{}, cpa.ErrSourceConflict
 	}
 	if r.Retry == nil {

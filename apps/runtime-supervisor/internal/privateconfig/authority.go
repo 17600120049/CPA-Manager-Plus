@@ -39,6 +39,8 @@ type Operation struct {
 	Scope        string `json:"scope"`
 	KeySHA256    string `json:"keySHA256,omitempty"`
 	Retry        int    `json:"retry"`
+	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
 	Generation   string `json:"generation"`
 	State        string `json:"state"`
 }
@@ -52,7 +54,8 @@ type record struct {
 	Inode          uint64    `json:"inode"`
 	Revision       uint64    `json:"revision"`
 	Installed      bool      `json:"installed"`
-	CommittedRetry *int      `json:"committedRetry"`
+	CommittedRetry *int `json:"committedRetry"`
+	CommittedMaxRetryInterval *int `json:"committedMaxRetryInterval,omitempty"`
 	LastGood       []byte    `json:"lastGood"`
 	LastGoodSHA256 string    `json:"lastGoodSHA256"`
 	Operation      Operation `json:"operation"`
@@ -68,6 +71,8 @@ type Request struct {
 	Scope            string     `json:"scope"`
 	KeySHA256        string     `json:"keySHA256,omitempty"`
 	Retry            int        `json:"retry"`
+	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
 }
 
 // Result contains no raw configuration, Key or recovery material.
@@ -79,7 +84,8 @@ type Result struct {
 	SHA256         string    `json:"sha256"`
 	State          string    `json:"state"`
 	Installed      bool      `json:"installed"`
-	CommittedRetry *int      `json:"committedRetry"`
+	CommittedRetry *int `json:"committedRetry"`
+	CommittedMaxRetryInterval *int `json:"committedMaxRetryInterval,omitempty"`
 	Operation      Operation `json:"operation"`
 	Created        bool      `json:"created"`
 }
@@ -156,6 +162,11 @@ func (a *Authority) load(g Grant) (*record, error) {
 	if (r.Version == 2 && !validH1Record(&r)) || (r.Version == 1 && r.H1 != nil) {
 		return nil, ErrStop
 	}
+	if r.CommittedMaxRetryInterval != nil {
+		n, _ := tree(r.LastGood)
+		v := leaf(n, "routing", "retry", "max-retry-interval")
+		if !r.Installed || *r.CommittedMaxRetryInterval < 0 || *r.CommittedMaxRetryInterval > 300 || v == nil || v.Tag != "!!int" || v.Value != strconv.Itoa(*r.CommittedMaxRetryInterval) { return nil, ErrStop }
+	}
 	if r.CommittedRetry != nil {
 		n, _ := tree(r.LastGood)
 		v := leaf(n, "routing", "retry", "request-retry")
@@ -170,7 +181,7 @@ func (a *Authority) load(g Grant) (*record, error) {
 		}
 	case "unknown", "persisted", "recovered":
 		if r.Operation.ID == "" || r.Operation.Generation == "" ||
-			(r.Operation.Scope != "initial-key" && r.Operation.Scope != "request-retry" && !(r.Version == 2 && (r.Operation.Scope == "key-add" || r.Operation.Scope == "key-revoke"))) {
+			(r.Operation.Scope != "initial-key" && r.Operation.Scope != "request-retry" && !(r.Version == 2 && (r.Operation.Scope == "key-add" || r.Operation.Scope == "key-revoke" || r.Operation.Scope == "max-retry-interval"))) {
 			return nil, ErrStop
 		}
 	default:
@@ -298,6 +309,10 @@ func (a *Authority) Do(q Request, running bool) (Result, error) {
 			return Result{}, e
 		}
 		r.Installed = true
+		if r.Operation.Scope == "max-retry-interval" {
+			value := r.Operation.MaxRetryInterval
+			r.CommittedMaxRetryInterval = &value
+		}
 		if r.Operation.Scope == "request-retry" {
 			value := r.Operation.Retry
 			r.CommittedRetry = &value
@@ -340,5 +355,5 @@ func (a *Authority) result(r *record, sha string, created bool) Result {
 	if sha != r.LastGoodSHA256 || r.Operation.State == "unknown" {
 		state = "unknown"
 	}
-	return Result{H1: r.H1, SourceID: r.SourceID, Generation: a.generation, Revision: r.Revision, SHA256: sha, State: state, Installed: r.Installed, CommittedRetry: r.CommittedRetry, Operation: r.Operation, Created: created}
+	return Result{H1: r.H1, SourceID: r.SourceID, Generation: a.generation, Revision: r.Revision, SHA256: sha, State: state, Installed: r.Installed, CommittedRetry: r.CommittedRetry, CommittedMaxRetryInterval: r.CommittedMaxRetryInterval, Operation: r.Operation, Created: created}
 }

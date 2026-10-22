@@ -76,24 +76,21 @@ func (r *Repository) H1Idle(ctx context.Context) error {
 	if k != nil && k.Outcome != "committed" {
 		return ErrConflict
 	}
-	var raw string
-	e = r.db.QueryRowContext(ctx, "select value from settings where key='fresh_config_retry_v1'").Scan(&raw)
-	if errors.Is(e, sql.ErrNoRows) {
-		return nil
-	}
-	if e != nil {
-		return e
-	}
-	var j freshstore.RetryJournal
-	if json.Unmarshal([]byte(raw), &j) != nil || !freshstore.ValidateRetryJournal(&j) {
-		return ErrConflict
-	}
-	if _, ok := j.Operations[j.Latest]; !ok {
-		return ErrConflict
-	}
-	for id, o := range j.Operations {
-		if id != o.RequestID || (o.State != "persisted" && o.State != "recovered") {
-			return ErrConflict
+	for _, entry := range []struct {
+		key string
+		valid func(*freshstore.RetryJournal) bool
+	}{
+		{"fresh_config_retry_v1", freshstore.ValidateRetryJournal},
+		{"fresh_config_retry_interval_v1", freshstore.ValidateIntervalJournal},
+	} {
+		var raw string
+		e = r.db.QueryRowContext(ctx, "select value from settings where key=?", entry.key).Scan(&raw)
+		if errors.Is(e, sql.ErrNoRows) { continue }
+		if e != nil { return e }
+		var j freshstore.RetryJournal
+		if json.Unmarshal([]byte(raw), &j) != nil || !entry.valid(&j) { return ErrConflict }
+		for id, o := range j.Operations {
+			if id != o.RequestID || (o.State != "persisted" && o.State != "recovered") { return ErrConflict }
 		}
 	}
 	return nil
