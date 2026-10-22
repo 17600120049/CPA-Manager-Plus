@@ -1,6 +1,6 @@
 {
   "result": "PASS",
-  "project": "cpamp-fresh-new-dad597f8986d",
+  "project": "cpamp-fresh-new-f772cb9241ee",
   "checks": [
     {
       "name": "first boot waits for Host initialize without creating database or data key",
@@ -51,11 +51,15 @@
       "result": "PASS"
     },
     {
-      "name": "two-level routes, current leaf, breadcrumbs, history, desktop collapse and mobile drawer work in light/dark themes",
+      "name": "Fresh New completion enters the existing CPAMP MainLayout; authenticated Config GET/PUT remains readable",
       "result": "PASS"
     },
     {
-      "name": "language selection updates Shell and restores Chinese without persisting credentials or preferences",
+      "name": "existing CPAMP two-level navigation, breadcrumbs, history, desktop collapse and mobile drawer work in light/dark themes",
+      "result": "PASS"
+    },
+    {
+      "name": "language selection updates the existing Console and restores Chinese",
       "result": "PASS"
     },
     {
@@ -311,18 +315,8 @@
       "route": "/console"
     },
     {
-      "name": "settings-desktop-dark",
-      "path": "settings-desktop-dark.png",
-      "viewport": {
-        "width": 1440,
-        "height": 1000
-      },
-      "theme": "dark",
-      "route": "/console/system/settings"
-    },
-    {
-      "name": "home-desktop-dark",
-      "path": "home-desktop-dark.png",
+      "name": "legacy-home-desktop-dark",
+      "path": "legacy-home-desktop-dark.png",
       "viewport": {
         "width": 1440,
         "height": 1000
@@ -331,58 +325,38 @@
       "route": "/console"
     },
     {
-      "name": "api-keys-desktop-dark",
-      "path": "api-keys-desktop-dark.png",
+      "name": "legacy-config-desktop-dark",
+      "path": "legacy-config-desktop-dark.png",
       "viewport": {
         "width": 1440,
         "height": 1000
       },
       "theme": "dark",
-      "route": "/console/api-keys"
+      "route": "/console/config"
     },
     {
-      "name": "navigation-collapsed-desktop-dark",
-      "path": "navigation-collapsed-desktop-dark.png",
+      "name": "legacy-navigation-collapsed-desktop-dark",
+      "path": "legacy-navigation-collapsed-desktop-dark.png",
       "viewport": {
         "width": 1440,
         "height": 1000
       },
       "theme": "dark",
-      "route": "/console/api-keys"
+      "route": "/console/config"
     },
     {
-      "name": "gateway-desktop-dark",
-      "path": "gateway-desktop-dark.png",
+      "name": "legacy-system-desktop-dark",
+      "path": "legacy-system-desktop-dark.png",
       "viewport": {
         "width": 1440,
         "height": 1000
       },
       "theme": "dark",
-      "route": "/console/system/gateway"
+      "route": "/console/system"
     },
     {
-      "name": "installation-desktop-dark",
-      "path": "installation-desktop-dark.png",
-      "viewport": {
-        "width": 1440,
-        "height": 1000
-      },
-      "theme": "dark",
-      "route": "/console/system/installation"
-    },
-    {
-      "name": "settings-desktop-light",
-      "path": "settings-desktop-light.png",
-      "viewport": {
-        "width": 1440,
-        "height": 1000
-      },
-      "theme": "light",
-      "route": "/console/system/settings"
-    },
-    {
-      "name": "home-desktop-light",
-      "path": "home-desktop-light.png",
+      "name": "legacy-home-desktop-light",
+      "path": "legacy-home-desktop-light.png",
       "viewport": {
         "width": 1440,
         "height": 1000
@@ -391,58 +365,38 @@
       "route": "/console"
     },
     {
-      "name": "api-keys-desktop-light",
-      "path": "api-keys-desktop-light.png",
+      "name": "legacy-config-desktop-light",
+      "path": "legacy-config-desktop-light.png",
       "viewport": {
         "width": 1440,
         "height": 1000
       },
       "theme": "light",
-      "route": "/console/api-keys"
+      "route": "/console/config"
     },
     {
-      "name": "navigation-collapsed-desktop-light",
-      "path": "navigation-collapsed-desktop-light.png",
+      "name": "legacy-navigation-collapsed-desktop-light",
+      "path": "legacy-navigation-collapsed-desktop-light.png",
       "viewport": {
         "width": 1440,
         "height": 1000
       },
       "theme": "light",
-      "route": "/console/api-keys"
+      "route": "/console/config"
     },
     {
-      "name": "gateway-desktop-light",
-      "path": "gateway-desktop-light.png",
+      "name": "legacy-system-desktop-light",
+      "path": "legacy-system-desktop-light.png",
       "viewport": {
         "width": 1440,
         "height": 1000
       },
       "theme": "light",
-      "route": "/console/system/gateway"
+      "route": "/console/system"
     },
     {
-      "name": "installation-desktop-light",
-      "path": "installation-desktop-light.png",
-      "viewport": {
-        "width": 1440,
-        "height": 1000
-      },
-      "theme": "light",
-      "route": "/console/system/installation"
-    },
-    {
-      "name": "settings-mobile-light",
-      "path": "settings-mobile-light.png",
-      "viewport": {
-        "width": 390,
-        "height": 1000
-      },
-      "theme": "light",
-      "route": "/console/system/settings"
-    },
-    {
-      "name": "home-mobile-light",
-      "path": "home-mobile-light.png",
+      "name": "legacy-home-mobile-light",
+      "path": "legacy-home-mobile-light.png",
       "viewport": {
         "width": 390,
         "height": 1000
@@ -451,58 +405,38 @@
       "route": "/console"
     },
     {
-      "name": "api-keys-mobile-light",
-      "path": "api-keys-mobile-light.png",
+      "name": "legacy-config-mobile-light",
+      "path": "legacy-config-mobile-light.png",
       "viewport": {
         "width": 390,
         "height": 1000
       },
       "theme": "light",
-      "route": "/console/api-keys"
+      "route": "/console/config"
     },
     {
-      "name": "navigation-mobile-light",
-      "path": "navigation-mobile-light.png",
+      "name": "legacy-navigation-mobile-light",
+      "path": "legacy-navigation-mobile-light.png",
       "viewport": {
         "width": 390,
         "height": 1000
       },
       "theme": "light",
-      "route": "/console/api-keys"
+      "route": "/console/config"
     },
     {
-      "name": "gateway-mobile-light",
-      "path": "gateway-mobile-light.png",
+      "name": "legacy-system-mobile-light",
+      "path": "legacy-system-mobile-light.png",
       "viewport": {
         "width": 390,
         "height": 1000
       },
       "theme": "light",
-      "route": "/console/system/gateway"
+      "route": "/console/system"
     },
     {
-      "name": "installation-mobile-light",
-      "path": "installation-mobile-light.png",
-      "viewport": {
-        "width": 390,
-        "height": 1000
-      },
-      "theme": "light",
-      "route": "/console/system/installation"
-    },
-    {
-      "name": "settings-mobile-dark",
-      "path": "settings-mobile-dark.png",
-      "viewport": {
-        "width": 390,
-        "height": 1000
-      },
-      "theme": "dark",
-      "route": "/console/system/settings"
-    },
-    {
-      "name": "home-mobile-dark",
-      "path": "home-mobile-dark.png",
+      "name": "legacy-home-mobile-dark",
+      "path": "legacy-home-mobile-dark.png",
       "viewport": {
         "width": 390,
         "height": 1000
@@ -511,44 +445,34 @@
       "route": "/console"
     },
     {
-      "name": "api-keys-mobile-dark",
-      "path": "api-keys-mobile-dark.png",
+      "name": "legacy-config-mobile-dark",
+      "path": "legacy-config-mobile-dark.png",
       "viewport": {
         "width": 390,
         "height": 1000
       },
       "theme": "dark",
-      "route": "/console/api-keys"
+      "route": "/console/config"
     },
     {
-      "name": "navigation-mobile-dark",
-      "path": "navigation-mobile-dark.png",
+      "name": "legacy-navigation-mobile-dark",
+      "path": "legacy-navigation-mobile-dark.png",
       "viewport": {
         "width": 390,
         "height": 1000
       },
       "theme": "dark",
-      "route": "/console/api-keys"
+      "route": "/console/config"
     },
     {
-      "name": "gateway-mobile-dark",
-      "path": "gateway-mobile-dark.png",
+      "name": "legacy-system-mobile-dark",
+      "path": "legacy-system-mobile-dark.png",
       "viewport": {
         "width": 390,
         "height": 1000
       },
       "theme": "dark",
-      "route": "/console/system/gateway"
-    },
-    {
-      "name": "installation-mobile-dark",
-      "path": "installation-mobile-dark.png",
-      "viewport": {
-        "width": 390,
-        "height": 1000
-      },
-      "theme": "dark",
-      "route": "/console/system/installation"
+      "route": "/console/system"
     }
   ],
   "pageErrors": [],
@@ -558,26 +482,26 @@
     "Non-Chinese locale layouts, other browser engines"
   ],
   "images": {
-    "cpamp-runtime": "sha256:d3b252149b292cc04ea43594357039a4e9070acce6876ba96e3956126fb0e96b",
-    "cpamp-manager": "sha256:2b5311c151309903b3cb03b4bf33211bdd0d39e5d0cade4e5c907a795bc5c048",
-    "cpamp-ingress": "sha256:c5037f7d1aa429799e12023ba3263bc2eff0cfeab767a0a48b6363e3704a1190"
+    "cpamp-runtime": "sha256:ef3ba5168a3b76d75e14e6182f6e5ac4b5784a867530eb4c8ffaf6ffb46d2702",
+    "cpamp-manager": "sha256:041933850b9cabf8b60a7761053ce83c9db8d2d4b78d052392235d23c5d04de4",
+    "cpamp-ingress": "sha256:07b665ec58af9c5dd3fe1a0eeed9d68d4e9309c845da65ddb58da906ae791992"
   },
   "imageSourceRevisions": {
-    "cpamp-runtime": "ee41d214a1ab6b3856d4526b37528af495de9bce",
-    "cpamp-manager": "ee41d214a1ab6b3856d4526b37528af495de9bce",
-    "cpamp-ingress": "ee41d214a1ab6b3856d4526b37528af495de9bce"
+    "cpamp-runtime": "unknown",
+    "cpamp-manager": "unknown",
+    "cpamp-ingress": "unknown"
   },
-  "testedSourceCommit": "ee41d214a1ab6b3856d4526b37528af495de9bce",
+  "testedSourceCommit": "unknown",
   "source": "linux/amd64",
-  "gitHead": "ee41d214a1ab6b3856d4526b37528af495de9bce",
+  "gitHead": "7dd532e61ff91206bba6c9ded7f8e8f0be1b8d27",
   "diffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "sourceFiles": {},
-  "origin": "http://127.0.0.1:59595",
+  "origin": "http://127.0.0.1:49979",
   "strategyGenerations": [
-    "15596485746630923279",
-    "15596485746630923279"
+    "13007624591393976119",
+    "13007624591393976119"
   ],
-  "operationId": "fresh-63cb7e459e30d1fda15e195e985a0949",
+  "operationId": "fresh-e9bca55e8e1ea1eadf00eeaaf0507075",
   "runtimeAfterRestart": {
     "state": "offline",
     "generationChanged": true

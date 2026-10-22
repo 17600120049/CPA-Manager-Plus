@@ -1,4 +1,4 @@
-# Console Shell and guided Fresh New delivery — 2026-10-22
+# Console Shell and guided Fresh New delivery — 2026-10-23
 
 An administrator can now claim a new installation, configure the administrator
 key and Console address, sign in, review the embedded destination, submit
@@ -11,49 +11,51 @@ authorization behavior.
 ## Candidate and reproduction
 
 - Base: merged `v2@b535fd48bd3cdfc4d38c622bc037ae4b1876ec97`.
-- **Tested application source:** `ee41d214a1ab6b3856d4526b37528af495de9bce`.
-  The Manager, Ingress and Runtime images were built from the same final
-  application source. The later evidence-only documentation commit does not
-  change those application bytes.
-- Local image tags: `cpamp-console-v2-ee41d214-manager:local`,
-  `cpamp-console-v2-ee41d214-ingress:local`,
-  `cpamp-console-v2-ee41d214-runtime:local`.
+- **Tested application source:** `7dd532e61ff91206bba6c9ded7f8e8f0be1b8d27`.
+  The Manager, Ingress and Runtime images were built from this final
+  application source. The machine report records the same worktree `gitHead`
+  and the exact candidate image IDs.
+- Local image tags: `cpamp-console-v2-7dd532e6-manager:local`,
+  `cpamp-console-v2-7dd532e6-ingress:local`,
+  `cpamp-console-v2-7dd532e6-runtime:local`.
 - Candidate image IDs: Manager
-  `sha256:2b5311c151309903b3cb03b4bf33211bdd0d39e5d0cade4e5c907a795bc5c048`,
-  Ingress `sha256:c5037f7d1aa429799e12023ba3263bc2eff0cfeab767a0a48b6363e3704a1190`,
-  Runtime `sha256:d3b252149b292cc04ea43594357039a4e9070acce6876ba96e3956126fb0e96b`.
+  `sha256:041933850b9cabf8b60a7761053ce83c9db8d2d4b78d052392235d23c5d04de4`,
+  Ingress `sha256:07b665ec58af9c5dd3fe1a0eeed9d68d4e9309c845da65ddb58da906ae791992`,
+  Runtime `sha256:ef3ba5168a3b76d75e14e6182f6e5ac4b5784a867530eb4c8ffaf6ffb46d2702`.
 - Scope: disposable, loopback-published **Linux/amd64 Embedded** installation,
   official checksum-pinned CPA **8.0.13**, ordinary isolated Compose services.
   No Registry push, production data, shared queue, merge, tag or publication.
-- Exact image IDs, same-source revision labels and observed generations:
-  [machine report](evidence/console-shell-fresh-new/report.json).
+- Exact image IDs, the final worktree `gitHead` and observed generations are in
+  the [machine report](evidence/console-shell-fresh-new/report.json). The
+  report's image-source revision fields are unavailable for this disposable
+  local build; the build command above pins the application source explicitly.
 
 Use the [operator guide](fresh-new-installation.md) for manual Host admission
 and UI steps. To rebuild from the source worktree:
 
 ```sh
 git rev-parse HEAD
-# The tested application bytes are ee41d214a1ab6b3856d4526b37528af495de9bce.
+# The tested application bytes are 7dd532e61ff91206bba6c9ded7f8e8f0be1b8d27.
 docker build --platform linux/amd64 -f Dockerfile.runtime \
-  -t cpamp-console-v2-ee41d214-runtime:local .
+  -t cpamp-console-v2-7dd532e6-runtime:local .
 docker build --platform linux/amd64 -f Dockerfile.ingress \
-  -t cpamp-console-v2-ee41d214-ingress:local .
+  -t cpamp-console-v2-7dd532e6-ingress:local .
 docker build --platform linux/amd64 -f Dockerfile.manager-server \
-  --build-arg SOURCE_COMMIT=ee41d214a1ab6b3856d4526b37528af495de9bce \
+  --build-arg SOURCE_COMMIT=7dd532e61ff91206bba6c9ded7f8e8f0be1b8d27 \
   --build-arg VERSION=2.0.0-console-candidate \
-  -t cpamp-console-v2-ee41d214-manager:local .
+  -t cpamp-console-v2-7dd532e6-manager:local .
 PLAYWRIGHT_MODULE=/absolute/path/to/node_modules/playwright \
 PLAYWRIGHT_CHANNEL=chrome \
 node bin/ci/fresh-new-installation.mjs \
-  cpamp-console-v2-ee41d214-runtime:local \
-  cpamp-console-v2-ee41d214-manager:local \
-  cpamp-console-v2-ee41d214-ingress:local \
+  cpamp-console-v2-7dd532e6-runtime:local \
+  cpamp-console-v2-7dd532e6-manager:local \
+  cpamp-console-v2-7dd532e6-ingress:local \
   /absolute/path/to/a/new/disposable-result
 ```
 
 For this macOS review run, the web bundle was built first with
 `npm --workspace apps/web run build`; the Manager image used the task-owned
-prebuilt packaging Dockerfile under `bin/tmp/cpamp-console-v2-ee41d214/`
+prebuilt packaging Dockerfile under `bin/tmp/cpamp-console-v2-7dd532e6/`
 because the product Manager Dockerfile's Alpine `npm ci` step could not resolve
 the dependency cache in that environment. No product Dockerfile was changed.
 
@@ -101,9 +103,9 @@ report in the same directory.
 
 | View | Desktop | Mobile |
 | --- | --- | --- |
-| API keys, light | [Desktop](evidence/console-shell-fresh-new/api-keys-desktop-light.png) | [Mobile](evidence/console-shell-fresh-new/api-keys-mobile-light.png) |
-| API keys, dark | [Desktop](evidence/console-shell-fresh-new/api-keys-desktop-dark.png) | [Mobile](evidence/console-shell-fresh-new/api-keys-mobile-dark.png) |
-| Navigation | [Folded](evidence/console-shell-fresh-new/navigation-collapsed-desktop-dark.png) | [Drawer](evidence/console-shell-fresh-new/navigation-mobile-light.png) |
+| Existing CPAMP Console, light | [Home](evidence/console-shell-fresh-new/legacy-home-desktop-light.png) | [Home](evidence/console-shell-fresh-new/legacy-home-mobile-light.png) |
+| Existing CPAMP Console, dark | [Config](evidence/console-shell-fresh-new/legacy-config-desktop-dark.png) | [Config](evidence/console-shell-fresh-new/legacy-config-mobile-dark.png) |
+| Navigation | [Folded](evidence/console-shell-fresh-new/legacy-navigation-collapsed-desktop-dark.png) | [Drawer](evidence/console-shell-fresh-new/legacy-navigation-mobile-light.png) |
 | Installation review | [Desktop](evidence/console-shell-fresh-new/installation-review-desktop-light.png) | [Mobile](evidence/console-shell-fresh-new/installation-review-mobile-light.png) |
 | Unconfirmed result | [Desktop](evidence/console-shell-fresh-new/installation-result-unconfirmed-desktop-dark.png) | [Mobile](evidence/console-shell-fresh-new/installation-result-unconfirmed-mobile-dark.png) |
 | Installation complete | [Desktop](evidence/console-shell-fresh-new/installation-complete-desktop-light.png) | [Mobile](evidence/console-shell-fresh-new/installation-complete-mobile-light.png) |
@@ -115,7 +117,7 @@ admission/store/routing/strategy paths; full Web tests and repository contracts;
 TypeScript; ESLint (no errors, six warnings); Full Web and single-file Panel
 builds and demo-isolation guard. The final Shell delta passed its focused
 regressions and type/lint checks. The final same-source disposable candidate
-report records 22 PASS checks, 45 screenshots and no page errors. Independent
+report records 25 checks, 37 screenshots and no page errors. Independent
 review of the tested application source found no confirmed High/Medium defects.
 Applicable remote Required CI is reported on the Draft PR; local checks do not
 stand in for it.
