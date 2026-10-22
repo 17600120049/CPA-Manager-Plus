@@ -111,9 +111,7 @@ describe('Fresh New existing Runtime strategy integration', () => {
     });
     const ui = await mount(get, post, initial, true);
     expect(ui.renderer.root.findAllByType('textarea')).toHaveLength(0);
-    const next = ui.renderer.root
-      .findAllByType('button')
-      .find((button) => button.props.children === s('next'))!;
+    const next = ui.node('choose-installation');
     await act(async () => next.props.onClick());
     await ui.click('inspect-installation');
     expect(post).not.toHaveBeenCalled();

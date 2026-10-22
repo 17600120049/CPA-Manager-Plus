@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
+import { workspaceText as w } from '../i18n/consoleWorkspace';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 
 
@@ -593,6 +594,8 @@ function RetryScalarEditor({
       )}
       {view ? (
         <>
+          <div className="retry-current-value"><span>{t('retryCurrentValue')}</span><strong>{currentValue}</strong><span>{view.persisted === 'persisted' ? t('retryPersistedConfirmed') : view.persisted === 'recovered' ? t('retryPersistedRecovered') : t('retryStatusUnknown')}</span></div>
+          <details className="retry-diagnostics"><summary>{w('diagnostic')}</summary>
           <div className="info-card retry-facts">
             <div className="info-row">
               <span className="info-key">{t('retryField')}</span>
@@ -643,6 +646,7 @@ function RetryScalarEditor({
               <span className="info-val">{view.concurrentProtection}</span>
             </div>
           </div>
+          </details>
           {!canEdit && !readUnavailable && !operationUnknown && (
             <p className="alert alert-warn">{t(lockReason || 'retryPermission')}</p>
           )}

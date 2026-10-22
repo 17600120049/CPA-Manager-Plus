@@ -343,6 +343,7 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   await page.goto(origin + handoff);
   await page.getByTestId('bootstrap-operation-ready').waitFor();
   assert.equal(new URL(page.url()).hash, '');
+  await screenshot('bootstrap-administrator-desktop-light');
   const operationId = (await page.getByTestId('op-id').textContent()).trim();
   assert(operationId, 'claimed operation identity must be present');
   report.operationId = operationId;
@@ -462,6 +463,7 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
   await installationScreenshots('choice');
   assert.equal(await page.getByTestId('runtime-observation').count(), 0);
   await page.getByRole('button', { name: '下一步', exact: true }).click();
+  await installationScreenshots('configure');
   await page.route(
     '**/console/api/v2/installation/runtime',
     (route) => route.fulfill({ status: 503, body: '' }),
@@ -573,6 +575,9 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
   await installationScreenshots('complete');
   await page.getByRole('button', { name: '进入 Console', exact: true }).click();
   await page.getByTestId('console-shell').waitFor();
+  await page.getByTestId('console-home').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/console');
+  await wait(async () => (await page.getByTestId('console-runtime-state').innerText()) === '运行中', 'live dashboard Runtime observation');
   await page.locator('button[aria-controls="nav-system"]').click();
   await page.locator('a[href="/console/system/settings"]').click();
   const before = await adminGet('operation');
@@ -591,15 +596,16 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     const group = page.locator(
       'button[aria-controls="nav-' + (path.startsWith('/system/') ? 'system' : 'clients') + '"]'
     );
-    if ((await group.getAttribute('aria-expanded')) !== 'true') await group.click();
-    await page.locator('a[href="/console' + path + '"]').click();
+    if (path && (await group.getAttribute('aria-expanded')) !== 'true') await group.click();
+    const link = path ? page.locator('a[href="/console' + path + '"]') : page.getByTestId('console-home-navigation');
+    await link.click();
     await wait(
       async () => new URL(page.url()).pathname === '/console' + path,
       'navigation ' + path
     );
     assert.equal(await page.locator('a[aria-current="page"]').count(), 1);
     assert.equal(
-      await page.locator('a[href="/console' + path + '"]').getAttribute('aria-current'),
+      await link.getAttribute('aria-current'),
       'page'
     );
     assert((await page.getByTestId('console-breadcrumb').innerText()).length > 0);
@@ -614,6 +620,9 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     if ((await page.locator('html').evaluate((html) => html.classList.contains('light'))) !== light)
       await page.getByRole('button', { name: '切换明暗主题', exact: true }).click();
     await screenshot('settings-' + name);
+    await navigate('');
+    await page.getByTestId('console-home').waitFor();
+    await screenshot('home-' + name);
     await navigate('/api-keys');
     await page.locator('#client-key-title').waitFor();
     await screenshot('api-keys-' + name);

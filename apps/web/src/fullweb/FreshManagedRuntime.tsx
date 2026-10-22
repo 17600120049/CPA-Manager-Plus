@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
 import { shellText as s } from '../i18n/consoleShell';
+import { bootstrapJourneyText as journey } from '../i18n/bootstrapJourney';
+import { FullWebIcon, type FullWebIconName } from './FullWebIcon';
 import { sameIdentity, type FreshOperation } from './bootstrapTransport';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { parseRuntimeJSON, validRuntimeGeneration } from './runtimeGeneration';
@@ -320,142 +322,250 @@ export function FreshManagedRuntime({
           : checkpoint?.stage === 'staged'
             ? 1
             : 0;
+    const activeStep = complete ? 3 : step;
+    const summaryRows: { icon: FullWebIconName; label: string; value: string }[] = complete
+      ? [
+          { icon: 'server', label: 'CPA', value: journey('cpaReady') },
+          { icon: 'shield', label: journey('key'), value: journey('keepKey') },
+          { icon: 'link', label: s('consoleAddress'), value: operation.routing.target || '' },
+        ]
+      : [
+          { icon: 'server', label: s('choiceTitle'), value: s('newManaged') },
+          { icon: 'shield', label: journey('key'), value: journey('keyHidden') },
+          { icon: 'link', label: s('consoleAddress'), value: operation.routing.target || '' },
+          { icon: 'installation', label: journey('creates'), value: s('version') },
+        ];
     return (
       <section
-        className="installation-flow"
+        className="installation-flow cpamp-installation"
         data-testid="fresh-managed-runtime"
         aria-busy={running || checking}
       >
-        <ol className="installation-steps" aria-label={s('installation')}>
-          {(['choose', 'configure', 'confirm', 'execute', 'finish'] as const).map(
-            (label, index) => (
-              <li key={label} aria-current={(complete ? 4 : step) === index ? 'step' : undefined}>
-                <span>{index + 1}</span>
-                {s(label)}
-              </li>
-            )
-          )}
-        </ol>
         <div className="wizard-card">
-          <div className="wizard-card-header">
-            <h1>
-              {complete
-                ? s('ready')
-                : step === 2
-                  ? s('reviewTitle')
-                  : step === 3
-                    ? s('execute')
-                    : s('newTitle')}
-            </h1>
-            <p className="wizard-desc">
-              {complete ? s('readyHelp') : step === 2 ? s('reviewHelp') : s('newHelp')}
-            </p>
-          </div>
-          <div className="wizard-card-body">
+          <ol className="journey-steps" aria-label={s('installation')}>
+            {(['choose', 'configure', 'confirm', 'execute'] as const).map((label, index) => (
+              <li
+                key={label}
+                className={
+                  complete || index < activeStep ? 'done' : index === activeStep ? 'active' : ''
+                }
+                aria-current={activeStep === index ? 'step' : undefined}
+              >
+                <span className="journey-step-dot">
+                  {complete || index < activeStep ? (
+                    <FullWebIcon name="check" size={22} />
+                  ) : (
+                    index + 1
+                  )}
+                </span>
+                <span>{s(label)}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="journey-body">
+            <div className={`journey-heading ${complete ? 'journey-success-heading' : ''}`}>
+              {complete && (
+                <span className="journey-success-symbol">
+                  <FullWebIcon name="check" size={34} />
+                </span>
+              )}
+              <div>
+                <h1 className="wizard-title">
+                  {complete
+                    ? s('ready')
+                    : step === 2
+                      ? s('reviewTitle')
+                      : step === 3
+                        ? s(unknown ? 'unknown' : running ? 'installing' : 'failure')
+                        : step === 1
+                          ? journey('configureHeading')
+                          : journey('welcome')}
+                </h1>
+                <p className="wizard-desc">
+                  {complete
+                    ? journey('successHelp')
+                    : step === 2
+                      ? s('reviewHelp')
+                      : step === 3
+                        ? journey('progressHelp')
+                        : step === 1
+                          ? journey('configurationSaved')
+                          : journey('chooseHelp')}
+                </p>
+              </div>
+            </div>
             {error && (
-              <p className="alert alert-warn" role="alert">
-                {error}
-              </p>
+              <div className="alert alert-warn" role="alert">
+                <FullWebIcon name="alert" size={22} />
+                <p>{error}</p>
+              </div>
             )}
             {unknown && (
               <div role="status" className="alert alert-warn">
-                <strong>{s('unknown')}</strong>
-                <p>{s('unknownHelp')}</p>
+                <FullWebIcon name="alert" size={22} />
+                <div>
+                  <strong>{s('unknown')}</strong>
+                  <p>{s('unknownHelp')}</p>
+                </div>
               </div>
             )}
             {invalidCheckpoint && <p role="alert">{s('failureHelp')}</p>}
             {!complete && step === 0 && (
-              <div className="installation-choices">
-                <div className="installation-choice selected">
-                  <h2>{s('newManaged')}</h2>
-                  <p>{s('newDetail')}</p>
+              <div className="journey-choices">
+                <div className="journey-choice selected">
+                  <span className="journey-radio" aria-hidden="true" />
+                  <span className="journey-tile-icon">
+                    <FullWebIcon name="server" size={34} />
+                  </span>
+                  <div>
+                    <h2>
+                      {s('newManaged')}
+                      <span className="badge badge-indigo">{journey('recommended')}</span>
+                    </h2>
+                    <p>{s('newDetail')}</p>
+                  </div>
                 </div>
-                <div className="installation-choice">
-                  <h2>{s('adopt')}</h2>
-                  <p>{s('adoptHelp')}</p>
+                <div className="journey-choice is-unavailable" aria-disabled="true">
+                  <span className="journey-radio" aria-hidden="true" />
+                  <span className="journey-tile-icon">
+                    <FullWebIcon name="copy" size={34} />
+                  </span>
+                  <div>
+                    <h2>
+                      {s('adopt')}
+                      <span className="badge badge-neutral">{journey('unavailable')}</span>
+                    </h2>
+                    <p>{s('adoptHelp')}</p>
+                  </div>
                 </div>
-                <div className="installation-choice">
-                  <h2>{s('external')}</h2>
-                  <p>{s('externalHelp')}</p>
-                </div>
-                <p>{s('upgradeHelp')}</p>
-                <button className="btn btn-primary" onClick={() => setStep(1)}>
-                  {s('next')}
-                </button>
+                <details className="journey-disclosure">
+                  <summary>{journey('advanced')}</summary>
+                  <div className="journey-choice is-unavailable" aria-disabled="true">
+                    <span className="journey-tile-icon">
+                      <FullWebIcon name="link" size={30} />
+                    </span>
+                    <div>
+                      <h2>{s('external')}</h2>
+                      <p>{s('externalHelp')}</p>
+                    </div>
+                  </div>
+                  <p className="journey-help">{s('upgradeHelp')}</p>
+                </details>
               </div>
             )}
             {!complete && step === 1 && (
               <>
-                <p>{s('configHelp')}</p>
-                <dl className="console-state">
-                  <dt>{s('consoleAddress')}</dt>
-                  <dd>{operation.routing.target}</dd>
-                  <dt>{s('destination')}</dt>
-                  <dd>
-                    {s('host')} · {s('version')}
-                  </dd>
-                </dl>
-                <div className="wizard-card-footer">
-                  <button
-                    className="btn btn-secondary"
-                    disabled={checking}
-                    onClick={() => setStep(0)}
-                  >
-                    {s('back')}
-                  </button>
-                  <button
-                    className="btn btn-primary"
-                    data-testid="inspect-installation"
-                    disabled={checking}
-                    onClick={() => void inspect()}
-                  >
-                    {s(checking ? 'inspecting' : 'inspect')}
-                  </button>
+                <div className="journey-key-strip">
+                  <FullWebIcon name="shield" size={24} />
+                  <strong>{journey('key')}</strong>
+                  <span>{journey('keyHidden')}</span>
+                </div>
+                <div className="journey-field">
+                  <span className="form-label">{s('consoleAddress')}</span>
+                  <div className="journey-readonly">
+                    <FullWebIcon name="link" size={22} />
+                    <span>{operation.routing.target}</span>
+                    <FullWebIcon name="check" size={20} />
+                  </div>
+                  <p className="journey-help">{s('configHelp')}</p>
+                </div>
+                <div className="journey-preview">
+                  <FullWebIcon name="server" size={22} />
+                  <div>
+                    <strong>
+                      {s('host')} · {s('version')}
+                    </strong>
+                    <p>{journey('createsHelp')}</p>
+                  </div>
                 </div>
               </>
             )}
-            {!complete && step === 2 && (
+            {((!complete && step === 2) || complete) && (
               <>
-                <dl className="console-state">
-                  <dt>{s('destination')}</dt>
-                  <dd>{s('host')}</dd>
-                  <dt>CPA</dt>
-                  <dd>{s('version')}</dd>
-                  <dt>{s('consoleAddress')}</dt>
-                  <dd>{operation.routing.target}</dd>
-                  <dt>{s('observation')}</dt>
-                  <dd>✓</dd>
+                <dl className="journey-summary">
+                  {summaryRows.map((row) => (
+                    <div className="journey-summary-row" key={row.label}>
+                      <FullWebIcon name={row.icon} size={22} />
+                      <dt>{row.label}</dt>
+                      <dd>{row.value}</dd>
+                    </div>
+                  ))}
                 </dl>
-                <label className="checkbox-card">
-                  <input
-                    type="checkbox"
-                    checked={acknowledged}
-                    onChange={(event) => setAcknowledged(event.target.checked)}
-                  />
-                  {s('acknowledgement')}
-                </label>
-                <div className="wizard-card-footer">
-                  <button className="btn btn-secondary" onClick={() => setStep(1)}>
-                    {s('back')}
-                  </button>
-                  <button
-                    className="btn btn-primary"
-                    data-testid="install-runtime"
-                    disabled={!acknowledged || running}
-                    onClick={() => void run()}
-                  >
-                    {s('submit')}
-                  </button>
-                </div>
+                {complete ? (
+                  <>
+                    <p className="journey-quiet">
+                      <FullWebIcon name="info" size={20} />
+                      {journey('bookmark')}
+                    </p>
+                    <div className="alert alert-info">
+                      <FullWebIcon name="shield" size={22} />
+                      <div>
+                        <strong>{journey('gatewayBlocked')}</strong>
+                        <p>{s('readyHelp')}</p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="alert alert-info">
+                      <FullWebIcon name="info" size={22} />
+                      <p>{journey('noMigration')}</p>
+                    </div>
+                    <label className="journey-checkline">
+                      <input
+                        type="checkbox"
+                        checked={acknowledged}
+                        onChange={(event) => setAcknowledged(event.target.checked)}
+                      />
+                      {s('acknowledgement')}
+                    </label>
+                  </>
+                )}
               </>
             )}
-            {(step === 3 || complete) && (
+            {step === 3 && !complete && (
               <>
-                <ol className="installation-progress" aria-live="polite">
+                <ol className="journey-stages" aria-live="polite">
                   {(['stage', 'start', 'verify', 'complete'] as const).map((label, index) => (
-                    <li key={label}>
-                      <span aria-hidden="true">{index < progress ? '✓' : index + 1}</span>
-                      <strong>{s(label)}</strong>
+                    <li
+                      key={label}
+                      className={
+                        index < progress
+                          ? 'done'
+                          : index === progress
+                            ? unknown || error || conflict
+                              ? 'warn'
+                              : running
+                                ? 'active'
+                                : ''
+                            : ''
+                      }
+                    >
+                      <span
+                        className={`journey-stage-mark ${running && index === progress && !unknown && !error ? 'is-spinning' : ''}`}
+                        aria-hidden="true"
+                      >
+                        {index < progress ? (
+                          <FullWebIcon name="check" size={20} />
+                        ) : index === progress && (unknown || error || conflict) ? (
+                          <FullWebIcon name="alert" size={22} />
+                        ) : null}
+                      </span>
+                      <div>
+                        <strong>{s(label)}</strong>
+                        <p>
+                          {journey(
+                            (
+                              [
+                                'stagePrepare',
+                                'stageStart',
+                                'stageVerify',
+                                'stageComplete',
+                              ] as const
+                            )[index]
+                          )}
+                        </p>
+                      </div>
                       <small>
                         {s(
                           index < progress
@@ -468,44 +578,18 @@ export function FreshManagedRuntime({
                     </li>
                   ))}
                 </ol>
-                <p data-testid="install-stage">
-                  {complete
-                    ? t('installComplete')
-                    : unknown
-                      ? s('unknown')
-                      : running
-                        ? s('installing')
-                        : s('failure')}
+                <p className="journey-quiet" data-testid="install-stage">
+                  <FullWebIcon name="info" size={20} />
+                  {unknown ? s('unknown') : running ? s('installing') : s('failure')}
                 </p>
-                <div className="wizard-card-footer">
-                  {complete ? (
-                    <button className="btn btn-primary" onClick={onContinue}>
-                      {s('console')}
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        className="btn btn-secondary"
-                        data-testid="refresh-installation"
-                        disabled={running || busy}
-                        onClick={() => void act(false)}
-                      >
-                        {s('refresh')}
-                      </button>
-                      <button
-                        className="btn btn-primary"
-                        data-testid="install-runtime"
-                        disabled={running || busy || unknown || conflict || invalidCheckpoint}
-                        onClick={() => void run()}
-                      >
-                        {s(running ? 'installing' : 'recover')}
-                      </button>
-                    </>
-                  )}
-                </div>
               </>
             )}
-            <details className="installation-diagnostics">
+            {complete && (
+              <p className="journey-quiet" data-testid="install-stage">
+                {t('installComplete')}
+              </p>
+            )}
+            <details className="journey-disclosure installation-diagnostics">
               <summary>{s('technical')}</summary>
               <dl className="console-state">
                 <dt>{t('operation')}</dt>
@@ -521,6 +605,96 @@ export function FreshManagedRuntime({
               </dl>
             </details>
           </div>
+          <footer className="journey-footer">
+            {!complete && step === 0 && (
+              <>
+                <span className="journey-quiet">
+                  <FullWebIcon name="info" size={20} />
+                  {journey('installNotStarted')}
+                </span>
+                <button
+                  className="btn btn-primary"
+                  data-testid="choose-installation"
+                  onClick={() => setStep(1)}
+                >
+                  {s('next')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+            {!complete && step === 1 && (
+              <>
+                <button
+                  className="btn btn-secondary"
+                  disabled={checking}
+                  onClick={() => setStep(0)}
+                >
+                  <FullWebIcon name="arrowLeft" size={20} />
+                  {s('back')}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  data-testid="inspect-installation"
+                  disabled={checking}
+                  onClick={() => void inspect()}
+                >
+                  {s(checking ? 'inspecting' : 'inspect')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+            {!complete && step === 2 && (
+              <>
+                <button className="btn btn-secondary" onClick={() => setStep(1)}>
+                  <FullWebIcon name="arrowLeft" size={20} />
+                  {s('back')}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  data-testid="install-runtime"
+                  disabled={!acknowledged || running}
+                  onClick={() => void run()}
+                >
+                  {s('submit')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+            {step === 3 && !complete && (
+              <>
+                <button
+                  className="btn btn-secondary"
+                  data-testid="refresh-installation"
+                  disabled={running || busy}
+                  onClick={() => void act(false)}
+                >
+                  <FullWebIcon name="refresh" size={20} />
+                  {s('refresh')}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  data-testid="install-runtime"
+                  disabled={running || busy || unknown || conflict || invalidCheckpoint}
+                  onClick={() => void run()}
+                >
+                  {s(running ? 'installing' : 'recover')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+            {complete && (
+              <>
+                <span className="journey-quiet">
+                  <FullWebIcon name="shield" size={20} />
+                  {journey('keepKey')}
+                </span>
+                <button className="btn btn-primary" onClick={onContinue}>
+                  {s('console')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+          </footer>
         </div>
       </section>
     );

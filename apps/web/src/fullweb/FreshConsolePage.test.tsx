@@ -78,7 +78,9 @@ describe('Fresh installation and Console authority boundary', () => {
   const has = (id: string) => renderer.root.findAllByProps({ 'data-testid': id }).length > 0;
   const input = () => renderer.root.findByProps({ id: 'console-admin-key' });
   const logout = () =>
-    renderer.root.findAllByType('button').find((button) => button.props.children === t('logout'))!;
+    renderer.root
+      .findAllByType('button')
+      .find((button) => button.props['aria-label'] === t('logout'))!;
   async function mount() {
     await act(async () => {
       renderer = create(
@@ -96,6 +98,13 @@ describe('Fresh installation and Console authority boundary', () => {
                 });
               if (target.endsWith('/settings/update-channel'))
                 return Response.json({ channel_preference: 'auto' });
+              if (target.endsWith('/installation/runtime'))
+                return Response.json({
+                  runtimeIdentity: 'runtime',
+                  runtimeGeneration: '17486582467214426535',
+                  activeGatewayArtifact: { artifactId: 'sha256:' + 'a'.repeat(64) },
+                  state: 'ready',
+                });
               if (target.includes('/gateway/retry/')) return new Response('', { status: 503 });
               return read(url, init);
             }
@@ -127,6 +136,7 @@ describe('Fresh installation and Console authority boundary', () => {
     await mount();
     await login();
     expect(has('console-shell')).toBe(true);
+    expect(has('console-home')).toBe(true);
     expect(read.mock.calls[0][0]).toBe('https://manager.example/console/api/v2/operation');
     expect(new Headers(read.mock.calls[0][1]?.headers).get('Authorization')).toBe('Bearer ' + key);
     await act(async () => logout().props.onClick());
@@ -171,6 +181,7 @@ describe('Fresh installation and Console authority boundary', () => {
   it('keeps delivered editors mounted across real routes and browser Back', async () => {
     await mount();
     await login();
+    await navigate('/api-keys');
     const keys = renderer.root.findByType(FreshApiKeys);
     await navigate('/system/gateway');
     expect(location.pathname).toBe('/console/system/gateway');
@@ -191,6 +202,7 @@ describe('Fresh installation and Console authority boundary', () => {
     async (kind) => {
       await mount();
       await login();
+      if (kind === 'keys') await navigate('/api-keys');
       if (kind === 'gateway') await navigate('/system/gateway');
       const report =
         kind === 'keys'
@@ -213,6 +225,7 @@ describe('Fresh installation and Console authority boundary', () => {
   it('retires rejected authority from an already mounted editor', async () => {
     await mount();
     await login();
+    await navigate('/api-keys');
     await act(async () => renderer.root.findByType(FreshApiKeys).props.onUnauthorized());
     expect(has('console-shell')).toBe(false);
     expect(input().props.value).toBe('');

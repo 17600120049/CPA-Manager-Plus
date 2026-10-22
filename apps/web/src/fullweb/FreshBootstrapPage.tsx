@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
 import { bootstrapJourneyText as journey } from '../i18n/bootstrapJourney';
+import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
+import logoOnDark from '../assets/brand/cpamp-logo-horizontal-on-dark.svg?inline';
+import { FullWebIcon } from './FullWebIcon';
 import { validControlBasePath } from './routingContext';
 import {
   BootstrapTransportClient,
@@ -169,7 +172,7 @@ function describeBootstrapError(
 }
 
 export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPageProps) {
-  const [lightTheme, setLightTheme] = useState(false);
+  const [lightTheme, setLightTheme] = useState(true);
   const [phase, setPhase] = useState<BootPhase>(handoff ? 'connecting' : 'no_handoff');
   const [operation, setOperation] = useState<FreshOperation | null>(null);
   const [initError, setInitError] = useState<ActionFeedback | null>(null);
@@ -501,22 +504,13 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
         );
 
   const isAdminDone = Boolean(operation?.adminInitialized);
+  const preparationStep = verifiedRoute ? 3 : isAdminDone ? 2 : phase === 'ready' ? 1 : 0;
 
   return (
     <div className="bootstrap-shell" data-testid="fresh-bootstrap-shell">
       <header className="bootstrap-header">
         <div className="brand-group">
-          <div className="brand-logo" aria-hidden="true">
-            C+
-          </div>
-          <div className="brand-text">
-            <span className="brand-title">CPA Manager Plus</span>
-            <span className="brand-sub">
-              {phase === 'no_handoff' && discoveryNote?.flow !== 'fresh'
-                ? journey('preflight')
-                : journey('subtitle')}
-            </span>
-          </div>
+          <img className="journey-logo" src={lightTheme ? logo : logoOnDark} alt="CPAMP" />
           <span className="badge badge-indigo">
             {phase === 'no_handoff' && discoveryNote?.flow !== 'fresh'
               ? journey('preflight')
@@ -539,45 +533,31 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
             aria-label={journey('theme')}
             title={journey('theme')}
           >
-            {lightTheme ? '☾' : '☀'}
+            <FullWebIcon name={lightTheme ? 'moon' : 'sun'} size={24} />
           </button>
+          <span className="journey-version">v2</span>
         </div>
       </header>
 
       <main className="bootstrap-main">
         <div className="wizard-container">
           {!(phase === 'no_handoff' && discoveryNote?.flow !== 'fresh') && (
-            <div className="stepper" aria-label={journey('progress')}>
-              <div
-                className={`step-item ${
-                  phase === 'ready' ? 'completed' : phase === 'connecting' ? 'active' : ''
-                }`}
-              >
-                <span className="step-dot">{phase === 'ready' ? '✓' : '1'}</span>
-                <span>{journey('claim')}</span>
-              </div>
-              <div className={`step-line ${phase === 'ready' ? 'completed' : ''}`} />
-              <div
-                className={`step-item ${
-                  phase === 'ready' && !isAdminDone ? 'active' : isAdminDone ? 'completed' : ''
-                }`}
-              >
-                <span className="step-dot">{isAdminDone ? '✓' : '2'}</span>
-                <span>{journey('administrator')}</span>
-              </div>
-              <div className={`step-line ${isAdminDone ? 'completed' : ''}`} />
-              <div
-                className={`step-item ${verifiedRoute ? 'completed' : isAdminDone ? 'active' : ''}`}
-              >
-                <span className="step-dot">{verifiedRoute ? '✓' : '3'}</span>
-                <span>{journey('address')}</span>
-              </div>
-              <div className={`step-line ${verifiedRoute ? 'completed' : ''}`} />
-              <div className={`step-item ${verifiedRoute ? 'active' : ''}`}>
-                <span className="step-dot">4</span>
-                <span>{journey('continue')}</span>
-              </div>
-            </div>
+            <ol className="journey-steps" aria-label={journey('progress')}>
+              {(['claim', 'administrator', 'address', 'continue'] as const).map((label, index) => (
+                <li
+                  key={label}
+                  className={
+                    index < preparationStep ? 'done' : index === preparationStep ? 'active' : ''
+                  }
+                  aria-current={index === preparationStep ? 'step' : undefined}
+                >
+                  <span className="journey-step-dot">
+                    {index < preparationStep ? <FullWebIcon name="check" size={22} /> : index + 1}
+                  </span>
+                  <span>{journey(label)}</span>
+                </li>
+              ))}
+            </ol>
           )}
 
           {phase === 'no_handoff' && (
@@ -636,9 +616,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                 ) : discoveryNote?.flow === 'fresh' ? (
                   <>
                     <div className="alert alert-warn">
-                      <span className="alert-icon" aria-hidden="true">
-                        !
-                      </span>
+                      <FullWebIcon name="alert" size={22} />
                       <div className="alert-content">
                         <div className="alert-title">如何获取或恢复 Bootstrap 授权链接？</div>
                         <div className="alert-desc">
@@ -748,9 +726,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                   className={`alert ${initError.tone === 'warn' ? 'alert-warn' : 'alert-danger'}`}
                   role="alert"
                 >
-                  <span className="alert-icon" aria-hidden="true">
-                    ✕
-                  </span>
+                  <FullWebIcon name="alert" size={22} />
                   <div className="alert-content">
                     <div className="alert-title" data-testid="init-error-title">
                       {initError.title}
@@ -820,9 +796,16 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                     role="status"
                     data-testid="bootstrap-action-feedback"
                   >
-                    <span className="alert-icon" aria-hidden="true">
-                      {feedback.tone === 'success' ? '✓' : feedback.tone === 'danger' ? '✕' : '!'}
-                    </span>
+                    <FullWebIcon
+                      name={
+                        feedback.tone === 'success'
+                          ? 'check'
+                          : feedback.tone === 'danger'
+                            ? 'alert'
+                            : 'info'
+                      }
+                      size={22}
+                    />
                     <div className="alert-content">
                       <div className="alert-title" data-testid="feedback-title">
                         {feedback.title}
@@ -969,6 +952,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                               candidateSubmitted
                             }
                           >
+                            <FullWebIcon name="eye" size={20} />
                             {journey(showKey ? 'hide' : 'show')}
                           </button>
                           <button
@@ -984,6 +968,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                               candidateSubmitted
                             }
                           >
+                            <FullWebIcon name="key" size={18} />
                             {journey(generating ? 'generating' : 'generate')}
                           </button>
                           <button
@@ -993,6 +978,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                             onClick={() => void handleCopyKey()}
                             disabled={!adminKey || submitting || generating}
                           >
+                            <FullWebIcon name="copy" size={18} />
                             {journey('copy')}
                           </button>
                         </div>
@@ -1075,15 +1061,14 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         disabled={submitting || generating || refreshing || commitUnresolved}
                       >
                         {journey(submitting ? 'saving' : 'save')}
+                        <FullWebIcon name="arrowRight" size={20} />
                       </button>
                     </div>
                   </form>
                 ) : (
                   <div data-testid="admin-init-complete-panel">
                     <div className="alert alert-success">
-                      <span className="alert-icon" aria-hidden="true">
-                        ✓
-                      </span>
+                      <FullWebIcon name="shield" size={24} />
                       <div className="alert-content">
                         <div className="alert-title">
                           {commitCompletedInSession ? journey('saved') : journey('restored')}
@@ -1092,15 +1077,10 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                       </div>
                     </div>
 
-                    <div className="alert alert-info" style={{ marginTop: 12 }}>
-                      <span className="alert-icon" aria-hidden="true">
-                        i
-                      </span>
-                      <div className="alert-content">
-                        <div className="alert-title">{journey('pending')}</div>
-                        <div className="alert-desc">{journey('gatewayHelp')}</div>
-                      </div>
-                    </div>
+                    <p className="journey-quiet">
+                      <FullWebIcon name="info" size={20} />
+                      {journey('installNotStarted')}
+                    </p>
 
                     <form
                       onSubmit={(event) => void handleEnableConsole(event)}
@@ -1124,6 +1104,15 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         />
                       </div>
                       <p className="form-hint">{journey('pathHelp')}</p>
+                      <div className="journey-preview">
+                        <FullWebIcon name="link" size={22} />
+                        <div>
+                          {journey('pathPreview')}
+                          <span>
+                            {window.location.origin + (preparedTarget || routeTarget || '/')}
+                          </span>
+                        </div>
+                      </div>
                       {routingError && (
                         <p role="alert" className="alert alert-warn">
                           {routingError}
@@ -1138,6 +1127,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                             data-testid="continue-console"
                           >
                             {journey('continue')}
+                            <FullWebIcon name="arrowRight" size={20} />
                           </a>
                         </div>
                       ) : (
@@ -1148,6 +1138,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                           disabled={routingBusy || refreshing}
                         >
                           {journey(routingBusy ? 'enabling' : 'enable')}
+                          <FullWebIcon name="arrowRight" size={20} />
                         </button>
                       )}
                     </form>
@@ -1176,6 +1167,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
           )}
         </div>
       </main>
+      <footer className="journey-copyright">{journey('footer')}</footer>
     </div>
   );
 }

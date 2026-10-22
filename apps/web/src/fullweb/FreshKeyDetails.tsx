@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
+import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
+import { FullWebIcon } from './FullWebIcon';
+import './freshKeys.css';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { validKey, type Key } from './freshKeyMetadata';
 import { FreshKeyInstallation } from './FreshKeyInstallation';
@@ -89,7 +92,14 @@ export function FreshKeyDetails({
   }
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (inFlight.current || installationPendingRef.current || !record || unknown || name.trim() === record.name) return;
+    if (
+      inFlight.current ||
+      installationPendingRef.current ||
+      !record ||
+      unknown ||
+      name.trim() === record.name
+    )
+      return;
     inFlight.current = true;
     setBusy(true);
     setMessage('');
@@ -137,69 +147,143 @@ export function FreshKeyDetails({
     onClose();
   }
   return (
-    <section className="console-key-result" aria-labelledby="key-detail-title" aria-busy={busy}>
-      <h3 id="key-detail-title">{t('keysDetails')}</h3>
-      {busy && <p role="status">{t('keysLoading')}</p>}
-      <p>
-        {t('keysIdentity')}: <code>{id}</code>
-      </p>
+    <section className="key-detail-workspace" aria-labelledby="key-detail-title" aria-busy={busy}>
+      <header className="key-detail-heading">
+        <div>
+          <span className="key-detail-eyebrow">{t('keysDetails')}</span>
+          <h3 id="key-detail-title">{record?.name || t('keysUnnamed')}</h3>
+        </div>
+        <button
+          className="btn btn-secondary"
+          aria-label={t('keysCloseDetails')}
+          disabled={busy || unknown || installationPending}
+          onClick={close}
+        >
+          <FullWebIcon name="arrowLeft" />
+          {t('keysCloseDetails')}
+        </button>
+      </header>
+      {busy && (
+        <p role="status" className="key-notice">
+          {t('keysLoading')}
+        </p>
+      )}
       {message && (
-        <p role="status" className="alert alert-warn">
-          {message}
+        <p role="status" className="key-notice key-notice-warning">
+          <FullWebIcon name="info" />
+          <span>{message}</span>
         </p>
       )}
       {record && (
         <>
-          <strong>{record.maskedPreview}</strong>
-          <p>{t(record.lifecycle === 'superseded' ? 'keysRevokedHistory' : 'keysPersisted')}</p>
-          <form onSubmit={(event) => void save(event)}>
-            <label htmlFor="key-name" className="form-label">
-              {t('keysName')}
-            </label>
-            <input
-              ref={input}
-              id="key-name"
-              className="form-input"
-              value={name}
-              maxLength={240}
-              autoComplete="off"
-              disabled={busy || unknown || installationPending}
-              onChange={(event) => setName(event.target.value)}
-            />
-            <p>{t('keysNameHelp')}</p>
-            <button
-              className="btn btn-primary"
-              type="submit"
-              disabled={
-                busy || unknown || installationPending || name.trim() === record.name || [...name.trim()].length > 120
+          <div className="key-detail-hero">
+            <span className="key-resource-icon">
+              <FullWebIcon name="key" size={24} />
+            </span>
+            <div>
+              <strong>{record.maskedPreview}</strong>
+              <p>{k('privateKey')}</p>
+            </div>
+            <span
+              className={
+                'key-state-pill ' + (record.lifecycle === 'superseded' ? 'is-muted' : 'is-saved')
               }
             >
-              {t('keysSaveName')}
-            </button>
-          </form>
-          {record.lifecycle !== 'superseded' && (
-            <FreshKeyInstallation
-              id={id}
-              client={client}
-              credential={credential}
-              onUnauthorized={onUnauthorized}
-              canInstall={() => !inFlight.current}
-              onPending={(pending) => {
-                installationPendingRef.current = pending;
-                setInstallationPending(pending);
-                onPending(pending);
-              }}
-              disabled={busy || unknown || dirty}
-            />
-          )}
+              {t(record.lifecycle === 'superseded' ? 'keysRevokedHistory' : 'keysPersisted')}
+            </span>
+          </div>
+          <div className="key-detail-columns">
+            <section className="key-detail-section">
+              <header>
+                <FullWebIcon name="key" />
+                <h4>{k('basic')}</h4>
+              </header>
+              <div className="key-detail-section-body">
+                <p className="key-detail-description">{k('detailHelp')}</p>
+                <form onSubmit={(event) => void save(event)}>
+                  <label htmlFor="key-name" className="form-label">
+                    {t('keysName')}
+                  </label>
+                  <input
+                    ref={input}
+                    id="key-name"
+                    className="form-input"
+                    value={name}
+                    maxLength={240}
+                    autoComplete="off"
+                    disabled={busy || unknown || installationPending}
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                  <p className="key-field-help">{t('keysNameHelp')}</p>
+                  <button
+                    className="btn btn-primary"
+                    type="submit"
+                    disabled={
+                      busy ||
+                      unknown ||
+                      installationPending ||
+                      name.trim() === record.name ||
+                      [...name.trim()].length > 120
+                    }
+                  >
+                    {t('keysSaveName')}
+                  </button>
+                </form>
+                <div className="key-private-note">
+                  <FullWebIcon name="shield" />
+                  <p>{k('privateKeyHelp')}</p>
+                </div>
+              </div>
+            </section>
+            <section className="key-detail-section">
+              <header>
+                <FullWebIcon name="gateway" />
+                <h4>{k('access')}</h4>
+              </header>
+              <div className="key-detail-section-body">
+                <p className="key-detail-description">{k('accessHelp')}</p>
+                {record.lifecycle !== 'superseded' ? (
+                  <FreshKeyInstallation
+                    id={id}
+                    client={client}
+                    credential={credential}
+                    onUnauthorized={onUnauthorized}
+                    canInstall={() => !inFlight.current}
+                    onPending={(pending) => {
+                      installationPendingRef.current = pending;
+                      setInstallationPending(pending);
+                      onPending(pending);
+                    }}
+                    disabled={busy || unknown || dirty}
+                  />
+                ) : (
+                  <p>{t('keysRevokedHistory')}</p>
+                )}
+              </div>
+            </section>
+          </div>
         </>
       )}
-      <button className="btn btn-secondary" disabled={busy || installationPending} onClick={() => void read()}>
-        {t('keysReadDetails')}
-      </button>
-      <button className="btn btn-secondary" disabled={busy || unknown || installationPending} onClick={close}>
-        {t('keysCloseDetails')}
-      </button>
+      <footer className="key-detail-footer">
+        <details className="key-record-identifiers">
+          <summary>{k('diagnostics')}</summary>
+          <dl>
+            <dt>{t('keysIdentity')}</dt>
+            <dd>
+              <code>{id}</code>
+            </dd>
+          </dl>
+        </details>
+        <button
+          className="btn btn-secondary"
+          aria-label={t('keysReadDetails')}
+          disabled={busy || installationPending}
+          onClick={() => void read()}
+        >
+          <FullWebIcon name="refresh" />
+          {t('keysReadDetails')}
+        </button>
+      </footer>
     </section>
   );
 }

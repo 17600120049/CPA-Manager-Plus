@@ -10,6 +10,11 @@ import { FreshExternalConnection } from './FreshExternalConnection';
 import { FreshRetryConfiguration } from './FreshRetryConfiguration';
 import { ConsoleShell, consolePage, type ConsolePage } from './ConsoleShell';
 import { shellText as s } from '../i18n/consoleShell';
+import { workspaceText as w } from '../i18n/consoleWorkspace';
+import { ConsoleHome } from './ConsoleHome';
+import { FullWebIcon } from './FullWebIcon';
+import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
+import './consoleWorkspace.css';
 
 const defaultClient = createPublicApiClient();
 
@@ -31,7 +36,8 @@ export function FreshConsolePage({
   const [, updateLanguage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [light, setLight] = useState(false);
+  const [light, setLight] = useState(true);
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
   const [creationPending, setCreationPending] = useState(false);
   const creationPendingRef = useRef(false);
   const [installationPending, setInstallationPending] = useState(false);
@@ -133,6 +139,7 @@ export function FreshConsolePage({
       setEnteredConsole(next.productComplete === true);
       setCredential(candidate);
       acceptOperation(next);
+      setRefreshEpoch((revision) => revision + 1);
     } catch (err) {
       if (currentRequest !== requestId.current) return;
       if (err instanceof PublicApiError && err.kind === 'authentication') {
@@ -179,9 +186,11 @@ export function FreshConsolePage({
     return (
       <div className="bootstrap-shell">
         <header className="bootstrap-header">
-          <h1>CPAMP</h1>
+          <a className="console-login-brand" href={context.basePath}>
+            <img src={logo} alt="CPAMP" />
+          </a>
           <button className="btn-icon" aria-label={t('theme')} onClick={() => setLight(!light)}>
-            ☀
+            <FullWebIcon name={light ? 'moon' : 'sun'} />
           </button>
         </header>
         <main className="bootstrap-main">
@@ -192,10 +201,13 @@ export function FreshConsolePage({
               </p>
             )}
             {!operation ? (
-              <section className="wizard-card installation-login">
+              <section className="wizard-card installation-login console-login-panel">
                 <div className="wizard-card-header">
+                  <span>
+                    <FullWebIcon name="key" />
+                  </span>
                   <h1>{s('loginTitle')}</h1>
-                  <p>{s('loginInstall')}</p>
+                  <p>{w('securityHelp')}</p>
                 </div>
                 <div className="wizard-card-body">
                   <form onSubmit={(event) => void readOperation(event)} data-testid="console-login">
@@ -246,7 +258,7 @@ export function FreshConsolePage({
                 }}
                 onContinue={() => {
                   setEnteredConsole(true);
-                  navigate(context.basePath + '/api-keys');
+                  navigate(context.basePath);
                 }}
               />
             )}
@@ -281,8 +293,20 @@ export function FreshConsolePage({
           {t('retryNeedsReconciliation')}
         </p>
       )}
+      {page === 'home' && (
+        <ConsoleHome
+          client={client}
+          credential={credential}
+          operation={operation}
+          onUnauthorized={unauthorized}
+          onNavigate={navigate}
+          basePath={context.basePath}
+          blocked={blocked}
+          refreshEpoch={refreshEpoch}
+        />
+      )}
       {visited.includes('keys') && (
-        <div className="console-page-panel" hidden={page !== 'keys'}>
+        <div className="console-page-view" hidden={page !== 'keys'}>
           <FreshApiKeys
             key={credential}
             client={client}
@@ -293,40 +317,89 @@ export function FreshConsolePage({
         </div>
       )}
       {visited.includes('gateway') && (
-        <div className="console-page-panel" hidden={page !== 'gateway'}>
-          <p>{s('retryHelp')}</p>
-          <FreshRetryConfiguration
-            navigationRequest={retryNavigation}
-            client={client}
-            credential={credential}
-            onPending={(pending) => {
-              retryPendingRef.current = pending;
-              setRetryPending(pending);
-            }}
-            onUnauthorized={unauthorized}
-          />
+        <div className="console-page-view" hidden={page !== 'gateway'}>
+          <div className="workspace-settings">
+            <aside className="workspace-section-nav" aria-label={w('configuration')}>
+              <span>
+                <FullWebIcon name="gateway" />
+                {w('connection')}
+              </span>
+            </aside>
+            <div className="workspace-settings-content">
+              <header className="workspace-settings-heading">
+                <FullWebIcon name="gateway" />
+                <div>
+                  <h2>{w('connection')}</h2>
+                  <p>{w('connectionHelp')}</p>
+                </div>
+              </header>
+              <FreshRetryConfiguration
+                navigationRequest={retryNavigation}
+                client={client}
+                credential={credential}
+                onPending={(pending) => {
+                  retryPendingRef.current = pending;
+                  setRetryPending(pending);
+                }}
+                onUnauthorized={unauthorized}
+              />
+            </div>
+          </div>
         </div>
       )}
       {visited.includes('settings') && (
-        <div className="console-page-panel" hidden={page !== 'settings'}>
-          <p>{s('settingsHelp')}</p>
-          <FreshUpdateChannel
-            client={client}
-            credential={credential}
-            onUnauthorized={unauthorized}
-          />
+        <div className="console-page-view" hidden={page !== 'settings'}>
+          <div className="workspace-settings">
+            <aside className="workspace-section-nav" aria-label={w('settings')}>
+              <span>
+                <FullWebIcon name="settings" />
+                {w('preferences')}
+              </span>
+            </aside>
+            <div className="workspace-settings-content">
+              <header className="workspace-settings-heading">
+                <FullWebIcon name="settings" />
+                <div>
+                  <h2>{w('preferences')}</h2>
+                  <p>{w('settingsHelp')}</p>
+                </div>
+              </header>
+              <FreshUpdateChannel
+                client={client}
+                credential={credential}
+                onUnauthorized={unauthorized}
+              />
+            </div>
+          </div>
         </div>
       )}
       {page === 'installation' && (
-        <section className="console-page-panel">
-          <h2>{s('ready')}</h2>
-          <p>{s('readyHelp')}</p>
+        <section className="workspace-installation-summary">
+          <div className="workspace-installation-heading">
+            <span>
+              <FullWebIcon name="check" />
+            </span>
+            <div>
+              <h2>{s('ready')}</h2>
+              <p>{w('completedHelp')}</p>
+            </div>
+          </div>
           <dl className="console-state">
             <dt>{s('consoleAddress')}</dt>
             <dd>{operation.routing.target}</dd>
-            <dt>{t('productComplete')}</dt>
-            <dd>{String(operation.productComplete)}</dd>
+            <dt>{w('installation')}</dt>
+            <dd>{w(operation.productComplete ? 'installed' : 'pending')}</dd>
+            <dt>{w('deployment')}</dt>
+            <dd>{w('embedded')}</dd>
+            <dt>{w('runtime')}</dt>
+            <dd>{w('version')}</dd>
+            <dt>{w('gateway')}</dt>
+            <dd>{w('gatewayPending')}</dd>
           </dl>
+          <div className="workspace-notice">
+            <FullWebIcon name="alert" />
+            <p>{w('gatewayHelp')}</p>
+          </div>
           <details>
             <summary>{s('technical')}</summary>
             <dl className="console-state">

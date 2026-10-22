@@ -531,7 +531,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
 
     const completePanel = findByTestId(renderer.root, 'admin-init-complete-panel');
     expect(textOf(completePanel)).toContain(bootstrapJourneyText('saved'));
-    expect(textOf(completePanel)).toContain(bootstrapJourneyText('pending'));
+    expect(textOf(completePanel)).toContain(bootstrapJourneyText('installNotStarted'));
     expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('已初始化');
 
     const refreshBtn = findByTestId(renderer.root, 'refresh-operation-btn');

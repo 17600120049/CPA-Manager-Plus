@@ -6,8 +6,8 @@ import { shellText as s } from '../i18n/consoleShell';
 
 describe('Console routes', () => {
   it('resolves direct links only within the committed Console base', () => {
-    expect(consolePage('/console', '/console')).toBe('keys');
-    expect(consolePage('/console/', '/console')).toBe('keys');
+    expect(consolePage('/console', '/console')).toBe('home');
+    expect(consolePage('/console/', '/console')).toBe('home');
     expect(consolePage('/console/api-keys', '/console')).toBe('keys');
     expect(consolePage('/console/system/gateway/', '/console')).toBe('gateway');
     expect(consolePage('/console/system/settings', '/console')).toBe('settings');
@@ -24,11 +24,21 @@ describe('Console navigation', () => {
   const navigate = vi.fn();
   const listeners = new Map<string, Set<(event: unknown) => void>>();
   let resize: () => void;
-  let viewport: { matches: boolean; addEventListener: ReturnType<typeof vi.fn>; removeEventListener: ReturnType<typeof vi.fn> };
+  let viewport: {
+    matches: boolean;
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+  };
   let active: unknown;
   let body: { style: { overflow: string } };
   const focusable = () => {
-    const node = { focus: vi.fn(() => { active = node; }), getClientRects: () => [{}], hasAttribute: () => false };
+    const node = {
+      focus: vi.fn(() => {
+        active = node;
+      }),
+      getClientRects: () => [{}],
+      hasAttribute: () => false,
+    };
     return node;
   };
   let selected: ReturnType<typeof focusable>;
@@ -41,22 +51,30 @@ describe('Console navigation', () => {
     navigate.mockClear();
     listeners.clear();
     active = null;
-    selected = focusable(); last = focusable(); toggle = focusable(); main = focusable();
+    selected = focusable();
+    last = focusable();
+    toggle = focusable();
+    main = focusable();
     body = { style: { overflow: 'auto' } };
     viewport = {
       matches: false,
-      addEventListener: vi.fn((_name: string, callback: () => void) => { resize = callback; }),
+      addEventListener: vi.fn((_name: string, callback: () => void) => {
+        resize = callback;
+      }),
       removeEventListener: vi.fn(),
     };
     vi.stubGlobal('window', { matchMedia: () => viewport });
     vi.stubGlobal('document', {
       body,
-      get activeElement() { return active; },
+      get activeElement() {
+        return active;
+      },
       addEventListener: (name: string, callback: (event: unknown) => void) => {
         if (!listeners.has(name)) listeners.set(name, new Set());
         listeners.get(name)!.add(callback);
       },
-      removeEventListener: (name: string, callback: (event: unknown) => void) => listeners.get(name)?.delete(callback),
+      removeEventListener: (name: string, callback: (event: unknown) => void) =>
+        listeners.get(name)?.delete(callback),
     });
   });
   afterEach(async () => {
@@ -66,30 +84,47 @@ describe('Console navigation', () => {
     setFullWebLanguage('zh-CN');
   });
   const props = (page: ConsolePage = 'keys', blocked = false) => ({
-    basePath: '/console', page, blocked, light: false, onNavigate: navigate,
-    onLogout: vi.fn(), onRefresh: vi.fn(), onTheme: vi.fn(), onLanguage: vi.fn(),
+    basePath: '/console',
+    page,
+    blocked,
+    light: false,
+    onNavigate: navigate,
+    onLogout: vi.fn(),
+    onRefresh: vi.fn(),
+    onTheme: vi.fn(),
+    onLanguage: vi.fn(),
     children: <p>Delivered page</p>,
   });
   const testid = (id: string) => renderer!.root.findByProps({ 'data-testid': id });
-  const groups = () => renderer!.root.findAllByType('button').filter((node) => node.props.className?.includes('console-group-toggle'));
+  const groups = () =>
+    renderer!.root
+      .findAllByType('button')
+      .filter((node) => node.props.className?.includes('console-group-toggle'));
   const clickGroup = async (index: number) => {
     await act(async () => groups()[index].props.onClick({ currentTarget: toggle }));
   };
   const link = (route: string) => renderer!.root.findByProps({ href: '/console' + route });
   const emit = async (type: string, event: unknown) => {
-    await act(async () => { for (const handler of [...(listeners.get(type) || [])]) handler(event); });
+    await act(async () => {
+      for (const handler of [...(listeners.get(type) || [])]) handler(event);
+    });
   };
   async function mount(page: ConsolePage = 'keys', blocked = false) {
     await act(async () => {
       renderer = create(<ConsoleShell {...props(page, blocked)} />, {
         createNodeMock: (element) => {
-          if (element.type === 'aside') return {
-            querySelector: () => selected,
-            querySelectorAll: () => [selected, last],
-            contains: (node: unknown) => node === selected || node === last,
-          };
+          if (element.type === 'aside')
+            return {
+              querySelector: () => selected,
+              querySelectorAll: () => [selected, last],
+              contains: (node: unknown) => node === selected || node === last,
+            };
           if (element.type === 'main') return main;
-          if ((element.props as Record<string, unknown>)['data-testid'] === 'console-toggle-navigation') return toggle;
+          if (
+            (element.props as Record<string, unknown>)['data-testid'] ===
+            'console-toggle-navigation'
+          )
+            return toggle;
           return null;
         },
       });
@@ -105,6 +140,18 @@ describe('Console navigation', () => {
     expect(link('/api-keys').props['aria-current']).toBe('page');
     expect(link('/system/gateway').props['aria-current']).toBeUndefined();
     expect(testid('console-breadcrumb').findByType('strong').props.children).toBe(s('keys'));
+  });
+
+  it('provides the real Dashboard as the Console landing page without opening unrelated groups', async () => {
+    await mount('home');
+    expect(testid('console-home-navigation').props['aria-current']).toBe('page');
+    expect(testid('console-breadcrumb').findByType('strong').props.children).toBe(s('home'));
+    expect(groups().every((node) => !node.props['aria-expanded'])).toBe(true);
+    await act(async () =>
+      testid('console-home-navigation').props.onClick({ preventDefault: vi.fn() })
+    );
+    expect(navigate).toHaveBeenCalledWith('/console');
+    expect(renderer!.root.findAllByType('svg').length).toBeGreaterThan(0);
   });
 
   it('keeps collapsed groups closed, opens one flyout and dismisses it with outside click or Escape', async () => {
@@ -128,7 +175,9 @@ describe('Console navigation', () => {
     await act(async () => testid('console-collapse-sidebar').props.onClick());
     await clickGroup(1);
     const preventDefault = vi.fn();
-    await act(async () => link('/system/settings').props.onClick({ ctrlKey: true, preventDefault }));
+    await act(async () =>
+      link('/system/settings').props.onClick({ ctrlKey: true, preventDefault })
+    );
     expect(preventDefault).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
     await act(async () => link('/system/settings').props.onClick({ preventDefault }));
@@ -141,7 +190,9 @@ describe('Console navigation', () => {
     await mount('gateway', true);
     const preventDefault = vi.fn();
     await act(async () => link('/system/settings').props.onClick({ preventDefault }));
-    await act(async () => link('/system/settings').props.onClick({ ctrlKey: true, preventDefault }));
+    await act(async () =>
+      link('/system/settings').props.onClick({ ctrlKey: true, preventDefault })
+    );
     expect(navigate).not.toHaveBeenCalled();
     expect(preventDefault).toHaveBeenCalledTimes(2);
     expect(link('/system/settings').props['aria-disabled']).toBe(true);
@@ -170,7 +221,9 @@ describe('Console navigation', () => {
     await act(async () => resize());
     expect(aside.props['aria-modal']).toBeUndefined();
     expect(body.style.overflow).toBe('auto');
-    expect(renderer!.root.findByProps({ className: 'console-workspace' }).props.inert).toBeUndefined();
+    expect(
+      renderer!.root.findByProps({ className: 'console-workspace' }).props.inert
+    ).toBeUndefined();
   });
 
   it('closes the mobile drawer on navigation and backdrop activation', async () => {
@@ -181,15 +234,24 @@ describe('Console navigation', () => {
     expect(testid('console-toggle-navigation').props['aria-expanded']).toBe(false);
     expect(navigate).toHaveBeenCalledWith('/console/api-keys');
     await act(async () => testid('console-toggle-navigation').props.onClick());
-    await act(async () => renderer!.root.findByProps({ className: 'console-backdrop' }).props.onClick());
+    await act(async () =>
+      renderer!.root.findByProps({ className: 'console-backdrop' }).props.onClick()
+    );
     expect(testid('console-toggle-navigation').props['aria-expanded']).toBe(false);
     expect(body.style.overflow).toBe('auto');
   });
 
   it('renders translated navigation in all supported languages', async () => {
     await mount();
-    for (const [language, expected] of [['zh-CN', '主导航'], ['zh-TW', '主導覽'], ['en', 'Main navigation'], ['ru', 'Главная навигация']]) {
-      await act(async () => renderer!.root.findByType('select').props.onChange({ target: { value: language } }));
+    for (const [language, expected] of [
+      ['zh-CN', '主导航'],
+      ['zh-TW', '主導覽'],
+      ['en', 'Main navigation'],
+      ['ru', 'Главная навигация'],
+    ]) {
+      await act(async () =>
+        renderer!.root.findByType('select').props.onChange({ target: { value: language } })
+      );
       expect(renderer!.root.findByType('aside').props['aria-label']).toBe(expected);
       expect(s('reviewTitle')).toBeTruthy();
     }
