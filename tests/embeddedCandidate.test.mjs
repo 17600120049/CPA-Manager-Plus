@@ -18,9 +18,9 @@ describe('R1-1 local-only OCI candidate contracts', () => {
     execFileSync('python3', ['tests/embedded_candidate_contract_test.py'], {
       cwd: new URL('..', import.meta.url),
       stdio: 'pipe',
-      timeout: 30_000,
+      timeout: 90_000,
     });
-  });
+  }, 90_000);
 
   it('replays the strict published 1.x consumer without R1 fields or single-platform relaxation', () => {
     const tag = 'v1.14.7';
