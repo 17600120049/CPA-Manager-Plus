@@ -25,6 +25,8 @@ export function FreshKeyDetails({
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [unknown, setUnknown] = useState(false);
+  const [installationPending, setInstallationPending] = useState(false);
+  const installationPendingRef = useRef(false);
   const [rejectedDraft, setRejectedDraft] = useState(false);
   const [message, setMessage] = useState('');
   const inFlight = useRef(false);
@@ -63,7 +65,7 @@ export function FreshKeyDetails({
     else setMessage(t('keysUnavailable'));
   }
   async function read() {
-    if (inFlight.current) return;
+    if (inFlight.current || installationPendingRef.current) return;
     if (dirty && !unknown && !window.confirm(t('keysDiscardName'))) return;
     inFlight.current = true;
     setBusy(true);
@@ -87,7 +89,7 @@ export function FreshKeyDetails({
   }
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (inFlight.current || !record || unknown || name.trim() === record.name) return;
+    if (inFlight.current || installationPendingRef.current || !record || unknown || name.trim() === record.name) return;
     inFlight.current = true;
     setBusy(true);
     setMessage('');
@@ -130,7 +132,7 @@ export function FreshKeyDetails({
     }
   }
   function close() {
-    if (inFlight.current || unknown) return;
+    if (inFlight.current || installationPendingRef.current || unknown) return;
     if (dirty && !window.confirm(t('keysDiscardName'))) return;
     onClose();
   }
@@ -161,7 +163,7 @@ export function FreshKeyDetails({
               value={name}
               maxLength={240}
               autoComplete="off"
-              disabled={busy || unknown}
+              disabled={busy || unknown || installationPending}
               onChange={(event) => setName(event.target.value)}
             />
             <p>{t('keysNameHelp')}</p>
@@ -169,7 +171,7 @@ export function FreshKeyDetails({
               className="btn btn-primary"
               type="submit"
               disabled={
-                busy || unknown || name.trim() === record.name || [...name.trim()].length > 120
+                busy || unknown || installationPending || name.trim() === record.name || [...name.trim()].length > 120
               }
             >
               {t('keysSaveName')}
@@ -181,15 +183,21 @@ export function FreshKeyDetails({
               client={client}
               credential={credential}
               onUnauthorized={onUnauthorized}
+              canInstall={() => !inFlight.current}
+              onPending={(pending) => {
+                installationPendingRef.current = pending;
+                setInstallationPending(pending);
+                onPending(pending);
+              }}
               disabled={busy || unknown || dirty}
             />
           )}
         </>
       )}
-      <button className="btn btn-secondary" disabled={busy} onClick={() => void read()}>
+      <button className="btn btn-secondary" disabled={busy || installationPending} onClick={() => void read()}>
         {t('keysReadDetails')}
       </button>
-      <button className="btn btn-secondary" disabled={busy || unknown} onClick={close}>
+      <button className="btn btn-secondary" disabled={busy || unknown || installationPending} onClick={close}>
         {t('keysCloseDetails')}
       </button>
     </section>

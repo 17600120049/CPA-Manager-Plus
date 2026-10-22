@@ -4,7 +4,7 @@ import unittest
 from pah_s0_host_admission import (
     check_config, check_objects, check_volume_info, require_fresh_volumes,
     PROJECT, PORT, SERVICES, IMAGES, VOLUMES, VOLUME_NAMES, MOUNTS,
-    RUNTIME_LISTENERS,
+    RUNTIME_LISTENERS, ROOT,
 )
 
 
@@ -13,7 +13,7 @@ def configuration():
     return {"volumes": {v: {"name": VOLUME_NAMES[v]} for v in VOLUMES},
             "services": {
         r: {"platform": "linux/amd64", "image": IMAGES[r], "restart": "no",
-            "build": {"dockerfile": "Dockerfile.runtime", "target": "v8-amd64-loopback-proof"},
+            "build": {"context": str(ROOT), "dockerfile": "Dockerfile.runtime", "target": "v8-amd64-loopback-proof"},
             "ports": [{"host_ip": "127.0.0.1", "published": PORT,
                        "target": PORT, "protocol": "tcp"}],
             "environment": dict(RUNTIME_LISTENERS),
@@ -22,7 +22,7 @@ def configuration():
                         for dest, (key, writable) in MOUNTS[r].items()]},
         m: {"platform": "linux/amd64", "image": IMAGES[m], "restart": "no",
             "network_mode": "service:cpamp-runtime",
-            "build": {"dockerfile": "Dockerfile.manager-server",
+            "build": {"context": str(ROOT), "dockerfile": "Dockerfile.manager-server",
                       "args": {"VITE_CPAMP_PAH_S0": "1"}},
             "environment": {"CPAMP_PRIVATE_PAH_S0": "1",
                             "HTTP_ADDR": "127.0.0.1:18319"},
@@ -31,7 +31,7 @@ def configuration():
                         for dest, (key, writable) in MOUNTS[m].items()]},
         i: {"platform": "linux/amd64", "image": IMAGES[i], "restart": "no",
             "network_mode": "service:cpamp-runtime",
-            "build": {"dockerfile": "Dockerfile.ingress",
+            "build": {"context": str(ROOT), "dockerfile": "Dockerfile.ingress",
                       "args": {"CPAMP_PAH_S0_BUILD": "1"}},
             "environment": {"CPAMP_PRIVATE_PAH_S0": "1",
                             "CPAMP_INGRESS_CONTROL_ADDR": "127.0.0.1:9082",
@@ -72,7 +72,9 @@ class PrivateGraphTests(unittest.TestCase):
         check_config(configuration())
         for mutation in ("build", "manager_off", "side_port", "ipv6", "namespace",
                          "arm", "cpa_wildcard", "runtime_wildcard", "secret_writable",
-                         "extra_volume", "volume_alias", "external_volume", "runtime_recipe"):
+                         "extra_volume", "volume_alias", "external_volume", "runtime_recipe",
+                         "bind_driver_options", "foreign_context", "remote_context",
+                         "extra_context"):
             with self.subTest(mutation=mutation):
                 cfg = configuration()
                 srv = cfg["services"]
@@ -104,6 +106,15 @@ class PrivateGraphTests(unittest.TestCase):
                     cfg["volumes"]["cpamp-pah-s0-manager-data"]["external"] = True
                 elif mutation == "runtime_recipe":
                     srv["cpamp-runtime"]["build"]["target"] = "latest-unverified-runtime"
+                elif mutation == "bind_driver_options":
+                    cfg["volumes"]["cpamp-pah-s0-runtime-secret"]["driver_opts"] = {
+                        "type": "none", "o": "bind", "device": "/old-host-secrets"}
+                elif mutation == "foreign_context":
+                    srv["cpamp-manager"]["build"]["context"] = "/tmp/foreign-build"
+                elif mutation == "remote_context":
+                    srv["cpamp-ingress"]["build"]["context"] = "https://example.invalid/repo.git"
+                elif mutation == "extra_context":
+                    srv["cpamp-runtime"]["build"]["additional_contexts"] = {"cpa": "/old-host-cpa"}
                 with self.assertRaises(RuntimeError):
                     check_config(cfg)
 
@@ -162,6 +173,11 @@ class PrivateGraphTests(unittest.TestCase):
         bad[VOLUME_NAMES["cpamp-pah-s0-manager-data"]]["Labels"]["com.docker.compose.project"] = "other"
         with self.assertRaises(RuntimeError):
             check_volume_info(bad)
+        bind = copy.deepcopy(samples)
+        bind[VOLUME_NAMES["cpamp-pah-s0-runtime-secret"]]["Options"] = {
+            "type": "none", "o": "bind", "device": "/retained-secrets"}
+        with self.assertRaises(RuntimeError):
+            check_volume_info(bind)
 
     def test_stale_ingress_after_restart(self):
         graph, ids, images = objects()

@@ -73,7 +73,8 @@ def check_config(config, port=PORT):
         volume = config["volumes"][logical]
         require(volume.get("name") == VOLUME_NAMES[logical] and
                 not volume.get("external") and
-                volume.get("driver", "local") == "local",
+                volume.get("driver", "local") == "local" and
+                not volume.get("driver_opts"),
                 "private volume redirected or externally managed: " + logical)
     runtime, manager, ingress = (services[n] for n in SERVICES)
     for service, dockerfile, target in (
@@ -82,6 +83,11 @@ def check_config(config, port=PORT):
         (ingress, "Dockerfile.ingress", None),
     ):
         build = service.get("build", {})
+        context = build.get("context")
+        require(isinstance(context, str) and context and
+                Path(context).resolve() == ROOT.resolve() and
+                not build.get("additional_contexts"),
+                "untrusted P-S0 build context")
         require(build.get("dockerfile") == dockerfile and
                 (target is None or build.get("target") == target),
                 "unexpected P-S0 image build recipe: " + dockerfile)
@@ -136,7 +142,8 @@ def check_volume_info(volumes):
         labels = item.get("Labels") or {}
         require(labels.get("com.docker.compose.project") == PROJECT,
                 "private volume owned by another project")
-        require(item.get("Driver") == "local", "unexpected volume driver")
+        require(item.get("Driver") == "local" and not item.get("Options"),
+                "unexpected volume driver/options")
         path = item.get("Mountpoint")
         require(path and Path(path).is_absolute(), "volume mountpoint is not absolute")
         paths[item["Name"]] = str(Path(path))
