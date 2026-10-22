@@ -34,6 +34,8 @@ fi
 source_sha="$(git rev-parse --verify HEAD)"
 event="local-r1-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 docker buildx version >/dev/null
+# Final Go binary/module identity is read without execution by go version -m.
+go version >/dev/null
 
 # Materialize one commit-addressed, disposable context. All three builds and
 # the final verifier consume this same tree; the caller's working tree cannot
