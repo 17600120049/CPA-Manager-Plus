@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type MouseEvent, type SetStateAction } from 'react';
 import { fullWebText as t, fullWebLanguage, setFullWebLanguage } from '../i18n/fullweb';
 import { shellText as s } from '../i18n/consoleShell';
 import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
@@ -13,6 +13,12 @@ const groups = [
     { id: 'installation', label: 'overview', route: '/system/installation' },
   ] },
 ] as const;
+function routeGroups(state: { page: ConsolePage; open: string[] }, page: ConsolePage, collapsed: boolean) {
+  if (state.page === page) return state.open;
+  if (collapsed) return [];
+  const owner = groups.find((group) => group.pages.some((item) => item.id === page));
+  return owner && !state.open.includes(owner.id) ? [...state.open, owner.id] : state.open;
+}
 export function consolePage(path: string, base: string): ConsolePage {
   const prefix = base.replace(/\/$/, '');
   if (path !== prefix && !path.startsWith(prefix + '/')) return 'missing';
@@ -28,7 +34,11 @@ export function ConsoleShell({ basePath, children, onLogout, onRefresh, blocked,
   const [collapsed, setCollapsed] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [narrow, setNarrow] = useState(() => window.matchMedia?.('(max-width: 768px)').matches ?? false);
-  const [open, setOpen] = useState<string[]>(() => groups.filter((group) => group.pages.some((item) => item.id === page)).map((group) => group.id));
+  const [navigation, setNavigation] = useState(() => ({ page, open: groups.filter((group) => group.pages.some((item) => item.id === page)).map((group) => group.id) as string[] }));
+  const open = routeGroups(navigation, page, collapsed);
+  const setOpen = useCallback((next: SetStateAction<string[]>) => {
+    setNavigation((current) => ({ page, open: typeof next === 'function' ? next(routeGroups(current, page, collapsed)) : next }));
+  }, [page, collapsed]);
   const [language, setLanguage] = useState(fullWebLanguage());
   const sidebar = useRef<HTMLElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
@@ -44,10 +54,6 @@ export function ConsoleShell({ basePath, children, onLogout, onRefresh, blocked,
     wasMobile.current = mobile;
   }, [mobile]);
   function collapse() { setOpen(collapsed && owner ? [owner.id] : []); setCollapsed(!collapsed); }
-  useEffect(() => {
-    if (collapsed) setOpen([]);
-    else if (owner) setOpen((current) => current.includes(owner.id) ? current : [...current, owner.id]);
-  }, [owner, collapsed]);
   useEffect(() => {
     const viewport = window.matchMedia?.('(max-width: 768px)');
     if (!viewport) return;
@@ -73,7 +79,7 @@ export function ConsoleShell({ basePath, children, onLogout, onRefresh, blocked,
       document.removeEventListener('pointerdown', dismiss);
       document.removeEventListener('keydown', escape);
     };
-  }, [collapsed, open]);
+  }, [collapsed, open, setOpen]);
   useEffect(() => {
     if (!mobile) return;
     const previous = document.body.style.overflow;

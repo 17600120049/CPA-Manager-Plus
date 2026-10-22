@@ -62,52 +62,34 @@ one-time credential: do not paste it into issues, service logs or evidence.
 5. Follow the link and log into Console with the saved Admin Key. Credentials
    remain in memory; browser refresh/restart requires another login.
 
-The **Finish Fresh New installation** section consumes a Host Runtime
-observation. Read it from the trusted host, without publishing the Supervisor
-port or putting its token in command arguments. The following helper joins only
-this project's ordinary Compose network and mounts only its transport secret:
+After signing in, the installation wizard continues the same durable operation:
 
-```sh
-runtime_container=$(docker compose ps -q cpamp-runtime)
-runtime_network=$(docker inspect "$runtime_container" --format '{{range $name, $config := .NetworkSettings.Networks}}{{$name}}{{end}}')
-runtime_secret=$(docker inspect "$runtime_container" --format '{{range .Mounts}}{{if eq .Destination "/run/cpamp/runtime-secret"}}{{.Name}}{{end}}{{end}}')
-docker run --rm --network "$runtime_network" \
-  -v "$runtime_secret:/run/cpamp/runtime-secret:ro" \
-  python:3.13-alpine python3 -c '
-from pathlib import Path
-import urllib.request
-token = Path("/run/cpamp/runtime-secret/token").read_text().strip()
-request = urllib.request.Request("http://cpamp-runtime:9081/v1/runtime/status", headers={
-    "Authorization": "Bearer " + token,
-    "X-CPAMP-Runtime-Features": "active-gateway-artifact-v1",
-})
-with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=10) as response:
-    print(response.read().decode())
-'
-```
+1. Choose **New embedded installation**. Adopt cannot execute; External remains
+   a Host-authorized connection checkpoint and cannot finish installation. The
+   Fresh flow does not upgrade existing product data.
+2. Review the Console address and packaged official CPA version, then select
+   **Check deployment**. Manager reads the Runtime through its existing
+   Host-configured authenticated transport. There is no Runtime JSON input,
+   browser-selected target URL or browser-granted Host permission.
+3. Review the destination, acknowledge the installation and select **Confirm
+   and install** once. The wizard prepares the target, starts CPA through the
+   existing idempotent operation, checks readiness and saves the result. Every
+   transition reads the persisted operation before advancing.
+4. An interrupted or ambiguous reply shows **Result needs confirmation** and
+   locks writes. Use **Check original operation**, or refresh, sign in with the
+   same Admin Key and **Continue original installation**. A conflicting Runtime
+   identity/generation requires Host reconciliation; it is never silently rebound.
+5. **Enter Console** opens the two-level navigation. API keys, gateway retry
+   settings, system settings (update-channel preference) and installation overview
+   have real routes under the configured Console address. Unsupported entries
+   are hidden. Existing Key/Config writer permissions remain unchanged: a normal
+   deployment cannot enable private writers through navigation.
 
-Paste the nonsensitive status JSON into the Console section. This binds the
-request to `runtimeIdentity`, `runtimeGeneration` and `activeGatewayArtifact.artifactId`.
-It does not grant qualification or replace server authentication.
-The generation is a uint64 fence; paste the original JSON without reserializing
-it through JavaScript or manually rounding it. Full Web preserves the exact
-integer in reads, persistence checkpoints and strategy request bodies.
-Then:
-
-1. **Save Runtime target** persists the existing `new_managed` staged checkpoint.
-2. **Start saved Runtime** uses that exact saved target and the existing
-   Fresh-owned idempotent Start operation. It cannot silently choose a new
-   generation. The page reads the durable Operation after the action, including
-   after a lost response. Unknown results lock further writes and logout until
-   a valid state read succeeds.
-3. **Finish installation** uses the existing completion endpoint only after the
-   strategy is committed. `productComplete=true` is installation completion;
-   it does not open model Gateway or claim public Beta readiness.
-   Before finishing, use the same Host status command to confirm `state=ready`:
-   the Runtime Start checkpoint records process spawn, while readiness is a
-   separate live observation.
-4. Save an update-channel preference and refresh it to verify a real persistent
-   setting. No Client Key/Provider write is required for this installation test.
+Installation completion requires a committed Fresh New checkpoint and a real
+Runtime observation of **ready**, matching the original identity, generation
+and official artifact. It does not open the model Gateway: `gatewayPending`
+remains true, including with zero Client Keys. Diagnostics are available in
+expandable details instead of the normal user workflow.
 
 ## Restart and recovery
 

@@ -81,6 +81,15 @@ const images = Object.fromEntries(
   })
 );
 report.images = images;
+report.imageSourceRevisions = Object.fromEntries(
+  Object.entries(images).map(([service, image]) => [
+    service,
+    JSON.parse(docker('image', 'inspect', image))[0].Config.Labels?.[
+      'org.opencontainers.image.revision'
+    ] || 'unknown',
+  ])
+);
+report.testedSourceCommit = report.imageSourceRevisions['cpamp-manager'];
 report.source = docker('version', '--format', '{{.Server.Os}}/{{.Server.Arch}}');
 report.gitHead = run(['git', 'rev-parse', 'HEAD']).stdout.trim();
 report.diffSha256 = createHash('sha256')
@@ -236,7 +245,20 @@ try {
   )[0];
   taskNetwork = network;
   await wait(async () => (await fetch(origin + bootstrap)).ok, 'public Discovery');
-  assert.equal((await fetch(origin + bootstrap + '/ui')).status, 404);
+  assert.equal((await fetch(origin + bootstrap + '/ui')).status, 200);
+  for (const path of ['claim/exchange', 'admin/generate', 'admin/commit']) {
+    assert.equal(
+      (
+        await fetch(origin + api + path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        })
+      ).status,
+      404,
+      'read-only discovery must not expose ' + path
+    );
+  }
   assert.equal(
     dc(
       'exec',
@@ -321,7 +343,8 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   await page.goto(origin + handoff);
   await page.getByTestId('bootstrap-operation-ready').waitFor();
   assert.equal(new URL(page.url()).hash, '');
-  const operationId = await page.getByTestId('op-id').innerText();
+  const operationId = (await page.getByTestId('op-id').textContent()).trim();
+  assert(operationId, 'claimed operation identity must be present');
   report.operationId = operationId;
   const replayPage = await context.newPage();
   await replayPage.goto(origin + handoff);
