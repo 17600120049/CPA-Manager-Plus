@@ -734,5 +734,51 @@
       }
     },
     "digest": "sha256:217eca585239c3eb74e3154b5784dc6025be3944d4a768b9ba808de806b5ac47"
+  },
+  "v1.14.9": {
+    "info": {
+      "schema_version": 1,
+      "release": {
+        "version": "v1.14.9",
+        "stage": "stable",
+        "source_commit": "6d962db680085827cd19a778d2ff05a3d1315672"
+      },
+      "content": {
+        "summary": {
+          "zh": "升级 Go、Node.js 与前端依赖的安全修复版本，并将 npm 与多平台 Go 漏洞扫描纳入必需的 CI 检查。",
+          "en": "Updates Go, Node.js and frontend dependencies to patched versions, and adds required npm and cross-platform Go vulnerability checks to CI."
+        },
+        "notes": {
+          "zh": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.9/docs/release-notes/v1.14.9-zh.md",
+          "en": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.9/docs/release-notes/v1.14.9-en.md"
+        }
+      },
+      "update": {
+        "breaking": false,
+        "migration_required": false,
+        "minimum_direct_upgrade_version": null,
+        "upgrade_guide_url": "https://github.com/seakee/CPA-Manager-Plus/releases/tag/v1.14.9"
+      },
+      "distribution": {
+        "docker": {
+          "image": "seakee/cpa-manager-plus",
+          "version_tag": "v1.14.9"
+        },
+        "native": {
+          "assets": [
+            "cpa-manager-plus_v1.14.9_darwin_amd64.tar.gz",
+            "cpa-manager-plus_v1.14.9_darwin_arm64.tar.gz",
+            "cpa-manager-plus_v1.14.9_linux_amd64.tar.gz",
+            "cpa-manager-plus_v1.14.9_linux_arm64.tar.gz",
+            "cpa-manager-plus_v1.14.9_windows_amd64.zip",
+            "cpa-manager-plus_v1.14.9_windows_arm64.zip"
+          ]
+        }
+      },
+      "compatibility": {
+        "minimum_cpa_version": "v7.3.4"
+      }
+    },
+    "digest": "sha256:ee28b34060e987587704d184e71a0e03d806ab1aab8cdc4ac21300846d7649d9"
   }
 }
