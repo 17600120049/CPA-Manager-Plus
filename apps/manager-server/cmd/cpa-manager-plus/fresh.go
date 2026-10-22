@@ -17,12 +17,14 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/freshbootstrap"
+	healthcontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/health"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	keyrepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
@@ -136,6 +138,17 @@ func writeFreshStrategyError(w http.ResponseWriter, err error) {
 
 func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if r != nil && r.URL != nil && r.URL.Path == bootstrap.FixedLivenessPath {
+		// Fresh store takeover makes the Manager ready, not the installation or
+		// Gateway. Re-read the validated store so a later failure is not healthy.
+		if _, err := a.current(r.Context()); err != nil {
+			bootstrapdiscovery.NotReadyHandler{}.ServeHTTP(w, r)
+		} else {
+			handler := healthcontroller.Handler{ServiceID: "cpa-manager-plus"}
+			handler.Health(w, r)
+		}
+		return
+	}
 	if r != nil && r.URL != nil && r.URL.Path == privateChatAdmissionPath {
 		a.privateChatAdmission(w, r)
 		return
