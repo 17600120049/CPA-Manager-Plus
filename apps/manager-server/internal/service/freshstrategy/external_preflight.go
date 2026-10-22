@@ -20,7 +20,7 @@ func (s *Service) PreflightExternal(request Request) (string, error) {
 		return "", &Blocker{Code: "required_v8_profile_qualification_required"}
 	}
 	baseURL, err := cpa.NormalizeV8BaseURL(request.BaseURL)
-	if err != nil || !cpa.ValidV8ManagementKey(request.ManagementKey) {
+	if err != nil || !cpa.ValidV8SourcePort(baseURL) || !cpa.ValidV8ManagementKey(request.ManagementKey) {
 		return "", &Blocker{Code: cpa.V8InvalidConnection.Error()}
 	}
 	return baseURL, nil

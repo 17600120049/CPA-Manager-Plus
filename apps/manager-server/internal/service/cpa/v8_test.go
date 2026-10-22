@@ -102,14 +102,21 @@ func TestFreshV8RejectsInvalidAndOversizedBodies(t *testing.T) {
 }
 
 func TestFreshV8CancellationAndURLBoundary(t *testing.T) {
-	for _, raw := range []string{"https://key@host", "http://host/%2e/config", "http://host/../config", "http://host?key=secret", "http://host#secret", "file:///tmp/config", "http://host/\\v8", " http://host", "http://host:bad", "http://host:0", "http://host:65536", "http://[::1]:65536", "http://host:999999999999999999999", "http://host:"} {
+	for _, raw := range []string{"https://key@host", "http://host/%2e/config", "http://host/../config", "http://host?key=secret", "http://host#secret", "file:///tmp/config", "http://host/\\v8", " http://host", "http://host:bad"} {
 		if _, err := NormalizeV8BaseURL(raw); err == nil {
 			t.Errorf("accepted invalid URL %q", raw)
 		}
 	}
+	// External-only admission validates impossible ports before Fresh CAS,
+	// while the accepted CPA v8 safe-read implementation remains byte-identical.
+	for _, raw := range []string{"http://host:0", "http://host:65536", "http://[::1]:65536", "http://host:999999999999999999999", "http://host:"} {
+		if ValidV8SourcePort(raw) {
+			t.Errorf("External preflight accepted impossible TCP port %q", raw)
+		}
+	}
 	for _, raw := range []string{"http://host", "https://host:1", "http://host:65535", "http://[::1]:65535"} {
-		if _, err := NormalizeV8BaseURL(raw); err != nil {
-			t.Errorf("rejected valid TCP port %q: %v", raw, err)
+		if !ValidV8SourcePort(raw) {
+			t.Errorf("External preflight refused valid TCP port %q", raw)
 		}
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
