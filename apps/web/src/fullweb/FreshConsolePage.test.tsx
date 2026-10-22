@@ -98,7 +98,9 @@ describe('Fresh Console Admin Key login and read-only operation', () => {
                 ? keyFetch(url, init)
                 : String(url).includes('/settings/update-channel')
                   ? settingFetch(url, init)
-                  : fetchMock(url, init)
+                  : String(url).includes('/gateway/retry/max-retry-interval')
+                    ? Promise.resolve(Response.json({...retryView, field:'routing.retry.max-retry-interval', value:0}))
+                    : fetchMock(url, init)
           )}
         />,
         {

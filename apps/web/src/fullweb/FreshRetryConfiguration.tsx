@@ -280,6 +280,7 @@ function RetryScalarEditor({
   const flight = useRef(false);
   const pendingIdRef = useRef('');
   const issuedIds = useRef(new Set<string>());
+  const dirtyRef = useRef(false);
   const sectionRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const auth = { kind: 'admin' as const, value: credential };
@@ -307,11 +308,7 @@ function RetryScalarEditor({
   function acceptView(next: RetryView) {
     if (!alive.current) return;
     setView(next);
-    setDraft((current) => {
-      const previous = view?.presence === "present" && view.value !== null ? String(view.value) : "";
-      // A background read must not erase an unsaved administrator edit.
-      return view && current !== previous ? current : next.presence === "present" && next.value !== null ? String(next.value) : "";
-    });
+    if (!dirtyRef.current) setDraft(next.presence === 'present' && next.value !== null ? String(next.value) : '');
     setReadUnavailable(false);
     setLockCode('');
     const existingId = pendingIdRef.current || pendingId;
@@ -400,7 +397,7 @@ function RetryScalarEditor({
     if (recovered) {
       acceptOperation(recovered);
       if (recovered.state !== 'unknown') {
-        if (await readView()) { onCommitted(); setMessage(recovered.state === 'recovered' ? 'retryRecovered' : 'retryReconciled'); }
+        if (await (async () => { dirtyRef.current = false; return readView(); })()) { onCommitted(); setMessage(recovered.state === 'recovered' ? 'retryRecovered' : 'retryReconciled'); }
         else setMessage('retrySavedReadUnknown');
         return;
       }
@@ -456,7 +453,7 @@ function RetryScalarEditor({
       acceptOperation(result.operation);
       if (result.operation.state === 'unknown') {
         setMessage('retryOperationUnknown');
-      } else if (await readView()) {
+      } else if (await (async () => { dirtyRef.current = false; return readView(); })()) {
         onCommitted();
         setMessage(result.operation.state === 'recovered' ? 'retryRecovered' : 'retrySaved');
       } else {
@@ -487,7 +484,7 @@ function RetryScalarEditor({
       acceptOperation(result.operation);
       if (result.operation.state === 'unknown') {
         setMessage('retryOperationUnknown');
-      } else if (await readView()) {
+      } else if (await (async () => { dirtyRef.current = false; return readView(); })()) {
         onCommitted();
         setMessage(result.operation.state === 'recovered' ? 'retryRecovered' : 'retryReconciled');
       } else {
@@ -532,7 +529,7 @@ function RetryScalarEditor({
   }, [refreshEpoch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!navigationRequest) return;
+    if (!navigationRequest || variant !== "count") return;
     titleRef.current?.focus({ preventScroll: true });
     sectionRef.current?.scrollIntoView({ block: 'start' });
   }, [navigationRequest]);
@@ -668,6 +665,7 @@ function RetryScalarEditor({
                 disabled={busy || !canEdit}
                 aria-invalid={canEdit && !!inputError}
                 onChange={(event) => {
+                  dirtyRef.current = true;
                   setDraft(event.target.value);
                   setMessage('');
                 }}
@@ -761,7 +759,8 @@ export function FreshRetryConfiguration(props: {
 }) {
   const pending = useRef({count: false, interval: false});
   const [busyOwners, setBusyOwners] = useState({count: false, interval: false});
-  const [refreshEpoch, setRefreshEpoch] = useState(0);
+  const [countRefreshEpoch, setCountRefreshEpoch] = useState(0);
+  const [intervalRefreshEpoch, setIntervalRefreshEpoch] = useState(0);
   const setPending = (which: "count" | "interval", value: boolean) => {
     if (pending.current[which] === value) return;
     pending.current[which] = value;
@@ -770,11 +769,11 @@ export function FreshRetryConfiguration(props: {
   };
   return (
     <>
-      <RetryScalarEditor {...props} variant="count" refreshEpoch={refreshEpoch} siblingPending={busyOwners.interval}
-        onCommitted={() => setRefreshEpoch((n) => n + 1)}
+      <RetryScalarEditor {...props} variant="count" refreshEpoch={countRefreshEpoch} siblingPending={busyOwners.interval}
+        onCommitted={() => setIntervalRefreshEpoch((n) => n + 1)}
         onPending={(value) => setPending("count", value)} />
-      <RetryScalarEditor {...props} variant="interval" refreshEpoch={refreshEpoch} siblingPending={busyOwners.count}
-        onCommitted={() => setRefreshEpoch((n) => n + 1)}
+      <RetryScalarEditor {...props} variant="interval" refreshEpoch={intervalRefreshEpoch} siblingPending={busyOwners.count}
+        onCommitted={() => setCountRefreshEpoch((n) => n + 1)}
         onPending={(value) => setPending("interval", value)} />
     </>
   );
