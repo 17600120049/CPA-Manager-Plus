@@ -73,7 +73,8 @@ describe('Full Web request retry editor', () => {
       renderer = create(
         <FreshRetryConfiguration
           client={createPublicApiClient(() => context, ((url, init) =>
-            String(url).includes('/gateway/retry/max-retry-interval')
+            (String(url).includes('/gateway/retry/max-retry-interval') ||
+              String(url).includes('/gateway/retry/interval-operations/'))
               ? (intervalTransport
                   ? intervalTransport(url, init)
                   : Promise.resolve(Response.json(retryView({
@@ -170,6 +171,43 @@ describe('Full Web request retry editor', () => {
     await click('retry-interval-check-operation');
     expect(b3.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
   });
+  it('B3 reconciles only its original interval operation after a lost PUT reply', async () => {
+    const id = 'ab'.repeat(16);
+    const b2 = vi.fn<typeof fetch>().mockResolvedValue(Response.json(retryView()));
+    const intervalOperation = (state: 'unknown' | 'persisted') => ({
+      operation: { ...operation(state, 5, id), field: 'max-retry-interval' },
+      effective: 'unknown',
+    });
+    const b3 = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(retryView({
+        field: 'routing.retry.max-retry-interval', value: 2,
+      })))
+      .mockRejectedValueOnce(new Error('lost PUT reply'))
+      .mockResolvedValueOnce(Response.json(intervalOperation('unknown')))
+      .mockResolvedValueOnce(Response.json(intervalOperation('persisted')))
+      .mockResolvedValueOnce(Response.json(retryView({
+        field: 'routing.retry.max-retry-interval', value: 5,
+      })));
+    await mount(b2, b3);
+    await act(async () => renderer.root.findByProps({ 'data-testid': 'retry-interval-value' }).props.onChange({ target: { value: '5' } }));
+    await click('retry-interval-save');
+    expect(button('retry-save').props.disabled).toBe(true);
+    await click('retry-interval-check-operation');
+    expect(button('retry-save').props.disabled).toBe(true);
+    await click('retry-interval-reconcile');
+    expect(renderer.root.findByProps({ 'data-testid': 'retry-interval-value' }).props.value).toBe('5');
+    expect(pendingEvents[pendingEvents.length - 1]).toBe(false);
+    expect(b3.mock.calls.map(([url, init]) => [String(url).split('/gateway/retry/')[1], init?.method])).toEqual([
+      ['max-retry-interval', 'GET'],
+      ['max-retry-interval', 'PUT'],
+      [`interval-operations/${id}`, 'GET'],
+      [`interval-operations/${id}/reconcile`, 'POST'],
+      ['max-retry-interval', 'GET'],
+    ]);
+    expect(b2.mock.calls.every(([url]) => String(url).includes('/request-retry'))).toBe(true);
+    expect(b3.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+  });
+
   it.each([
     ['missing', null, '', 'retryPresenceMissing'],
     ['null', null, '', 'retryPresenceNull'],

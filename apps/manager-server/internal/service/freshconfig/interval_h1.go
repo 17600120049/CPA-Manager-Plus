@@ -2,10 +2,20 @@ package freshconfig
 
 import (
  "context"
+ "strconv"
  "time"
  "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
  "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 )
+// Check the exact Fresh target generation before reserving the one-shot H1 operation.
+// Matching only the browser-supplied expected source would permit a stale target.
+func intervalSourceMatchesTarget(r freshstore.Record, source cpa.RetrySource, q Request) bool {
+	return expected(source) == q.Expected &&
+		source.Generation == strconv.FormatUint(r.Operation.Strategy.TargetGeneration, 10) &&
+		source.H1 && source.HandoffValid && source.ParentID == "" &&
+		source.State == "persisted" && source.Installed
+}
+
 func (s *Service) saveIntervalH1(ctx context.Context, q Request) (freshstore.RetryOperation, error) {
 	r, m, e := s.owner(ctx)
 	if e != nil {
@@ -25,7 +35,7 @@ func (s *Service) saveIntervalH1(ctx context.Context, q Request) (freshstore.Ret
 	if e != nil {
 		return freshstore.RetryOperation{}, e
 	}
-	if expected(source) != q.Expected || !source.H1 || !source.HandoffValid || source.ParentID != "" || source.State != "persisted" || !source.Installed {
+	if !intervalSourceMatchesTarget(r, source, q) {
 		return freshstore.RetryOperation{}, cpa.ErrSourceConflict
 	}
 	i := cpa.H1Intent{RequestID: q.RequestID, Domain: "config", Mode: "interval", MaxRetryInterval: *q.Value, MaxRetryIntervalSet: true}

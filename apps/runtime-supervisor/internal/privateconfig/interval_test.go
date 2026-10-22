@@ -50,3 +50,21 @@ func TestIntervalRejectsOpaqueDrift(t *testing.T) {
  if validChange(good,changed,op) {t.Fatal("unrelated B2 drift permitted")}
  if validChange(good,[]byte("routing:\n  retry:\n    request-retry: 2\n    max-retry-interval: 1.5\n"),op) {t.Fatal("non-integer accepted")}
 }
+
+func TestH1KeyIntentDoesNotCarryB3Scope(t *testing.T) {
+	for _, mode := range []string{"replace", "revoke"} {
+		key := keyIntent(mode)
+		if !key.valid() {
+			t.Fatal("existing Key intent rejected", mode)
+		}
+		key.MaxRetryInterval = 30
+		if key.valid() {
+			t.Fatal("Key intent admitted an interval value", mode)
+		}
+		key.MaxRetryInterval = 0
+		key.MaxRetryIntervalSet = true
+		if key.valid() {
+			t.Fatal("Key intent admitted an explicit interval scope", mode)
+		}
+	}
+}

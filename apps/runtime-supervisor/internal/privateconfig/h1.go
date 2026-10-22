@@ -48,7 +48,7 @@ func (i H1Intent) valid() bool {
 	if i.Domain == "config" {
 		return i.TargetID == "" && i.KeeperID == "" && i.TargetSHA256 == "" && i.KeeperSHA256 == "" && ((i.Mode == "retry" && !i.MaxRetryIntervalSet && i.MaxRetryInterval == 0 && i.Retry >= 0 && i.Retry <= 10) || (i.Mode == "interval" && i.Retry == 0 && i.MaxRetryIntervalSet && i.MaxRetryInterval >= 0 && i.MaxRetryInterval <= 300))
 	}
-	return i.Domain == "key" && (i.Mode == "replace" || i.Mode == "revoke") && h1ID(i.TargetID) && h1ID(i.KeeperID) && i.TargetID != i.KeeperID && hashValid(i.TargetSHA256) && hashValid(i.KeeperSHA256) && i.TargetSHA256 != i.KeeperSHA256 && i.Retry == 0
+	return i.Domain == "key" && (i.Mode == "replace" || i.Mode == "revoke") && h1ID(i.TargetID) && h1ID(i.KeeperID) && i.TargetID != i.KeeperID && hashValid(i.TargetSHA256) && hashValid(i.KeeperSHA256) && i.TargetSHA256 != i.KeeperSHA256 && i.Retry == 0 && i.MaxRetryInterval == 0 && !i.MaxRetryIntervalSet
 }
 func h1StepID(i H1Intent, n int) string {
 	name := i.scopes()[n]
