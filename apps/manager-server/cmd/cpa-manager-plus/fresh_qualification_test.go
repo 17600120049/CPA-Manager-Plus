@@ -104,6 +104,11 @@ func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.
 					if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
 						t.Fatalf("External without A3 Host permit was admitted: %d %s", response.Code, response.Body.String())
 					}
+				} else if item.strategy == bootstrap.AdoptExisting {
+					// Production qualification never grants an unapproved Host takeover.
+					if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
+						t.Fatalf("Adopt without Host authority was admitted: %d %s", response.Code, response.Body.String())
+					}
 				} else {
 					var blocker freshstrategy.Blocker
 					if response.Code != http.StatusConflict || json.Unmarshal(response.Body.Bytes(), &blocker) != nil || blocker.Code != item.blocker {
@@ -126,6 +131,48 @@ func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.
 				t.Fatal(err)
 			}
 			app = newFreshApplication(opened, config.Config{}, nil)
+		}
+	}
+}
+
+func TestFreshAdoptCanonicalDeniedBeforeSourceAndStateMutation(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	var sourceCalls atomic.Int32
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sourceCalls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer source.Close()
+
+	before, err := app.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sourceClass := range []bootstrap.AdoptSourceClass{
+		bootstrap.AdoptNetworkExisting, bootstrap.AdoptLegacyManaged,
+	} {
+		body, err := json.Marshal(struct {
+			Identity bootstrap.FreshIdentity `json:"identity"`
+			ExpectedRevision uint64 `json:"expectedRevision"`
+			freshstrategy.Request
+		}{before.Operation.Identity, before.Operation.Revision, freshstrategy.Request{
+			Strategy: bootstrap.AdoptExisting, AdoptSourceClass: sourceClass,
+			BaseURL: source.URL, ManagementKey: "private-source-secret",
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, "/control/api/v2/strategy", bytes.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+		response := httptest.NewRecorder()
+		app.canonicalAPI(response, request)
+		if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
+			t.Fatalf("unapproved canonical Adopt %s: %d %s", sourceClass, response.Code, response.Body.String())
+		}
+		after, err := app.store.Load(t.Context())
+		if err != nil || !reflect.DeepEqual(before, after) || sourceCalls.Load() != 0 {
+			t.Fatalf("Adopt touched source or Manager state: %v", err)
 		}
 	}
 }
