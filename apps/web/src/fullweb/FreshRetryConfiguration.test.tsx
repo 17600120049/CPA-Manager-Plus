@@ -187,6 +187,7 @@ describe('Full Web request retry editor', () => {
       .mockResolvedValueOnce(Response.json(intervalOperation('persisted')))
       .mockResolvedValueOnce(Response.json(retryView({
         field: 'routing.retry.max-retry-interval', value: 5,
+        operation: intervalOperation('persisted').operation,
       })));
     await mount(b2, b3);
     await act(async () => renderer.root.findByProps({ 'data-testid': 'retry-interval-value' }).props.onChange({ target: { value: '5' } }));
