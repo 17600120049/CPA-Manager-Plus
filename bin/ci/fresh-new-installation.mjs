@@ -418,6 +418,25 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   pass('routing failure retains intent; lost activation reply reconciles exact public identity');
   await page.getByTestId('continue-console').click();
   await page.getByTestId('console-login').waitFor();
+  assert.equal(await page.locator('.console-login-panel').count(), 0);
+  await page.getByRole('checkbox', { name: '记住凭证', exact: true }).waitFor();
+  for (const [name, width, light] of [
+    ['desktop-light', 1440, true],
+    ['desktop-dark', 1440, false],
+    ['mobile-dark', 390, false],
+    ['mobile-light', 390, true],
+  ]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const dark = await page.locator('html').getAttribute('data-theme') === 'dark';
+      if (dark === !light) break;
+      await page.getByRole('button', { name: '主题', exact: true }).click();
+    }
+    assert.equal(await page.locator('html').getAttribute('data-theme') === 'dark', !light);
+    await screenshot('original-login-' + name);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  pass('original CPAMP login page, language/theme tools and remember-credential control render on desktop/mobile light/dark');
   const login = async (key) => {
     await page.locator('#console-admin-key').fill(key);
     await page.getByTestId('console-login').locator('button[type=submit]').click();
@@ -819,6 +838,28 @@ except OSError:pass`,
   pass(
     'stale Runtime generation returns 409 managed_target_identity_mismatch without rebinding or retry'
   );
+  await page.getByRole('button', { name: '登出', exact: true }).click();
+  await page.getByTestId('console-login').waitFor();
+  await page.getByRole('checkbox', { name: '记住凭证', exact: true }).check();
+  await login(admin);
+  await page.getByTestId('legacy-console').waitFor();
+  await navigate('/config');
+  await page.reload();
+  await page.getByTestId('legacy-console').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/console/config');
+  assert.equal(await page.getByTestId('console-login').count(), 0);
+  assert.deepEqual(await adminGet('operation'), before);
+  await screenshot('remembered-console-after-refresh');
+  pass('remembered login revalidates the real Admin Key after refresh and restores the original deep route');
+  await page.getByRole('button', { name: '登出', exact: true }).click();
+  await page.getByTestId('console-login').waitFor();
+  await page.reload();
+  await page.getByTestId('console-login').waitFor();
+  assert.equal(await page.getByTestId('legacy-console').count(), 0);
+  await page.getByRole('checkbox', { name: '记住凭证', exact: true }).uncheck();
+  await login(admin);
+  await page.getByTestId('legacy-console').waitFor();
+  pass('explicit logout clears remembered authority; refresh stays on the original login page');
   const recoverProgram = `import urllib.request,json,sys,time
 token=sys.stdin.read().strip(); headers={'Authorization':'Bearer '+token,'X-CPAMP-Runtime-Features':'active-gateway-artifact-v1'}
 opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))

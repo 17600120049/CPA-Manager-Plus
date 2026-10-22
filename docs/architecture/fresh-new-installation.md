@@ -59,8 +59,12 @@ one-time credential: do not paste it into issues, service logs or evidence.
    route, hashed assets and installation identity. A failed prepare/read cannot
    authorize a different target. The continue link appears only after committed
    route verification.
-5. Follow the link and log into Console with the saved Admin Key. Credentials
-   remain in memory; browser refresh/restart requires another login.
+5. Follow the link and use the existing CPAMP login page with the saved Admin
+   Key. Select **Remember credentials** to reuse the existing browser-local
+   credential storage. Refresh revalidates that credential against the canonical
+   Fresh operation before restoring the current Console route. Without this
+   option, refresh requires another login. Logout or rejected authentication
+   clears the saved credential; another deployment prefix cannot reuse it.
 
 After signing in, the installation wizard continues the same durable operation:
 

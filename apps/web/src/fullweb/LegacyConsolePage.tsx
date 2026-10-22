@@ -4,11 +4,11 @@ import '../i18n';
 import { AppLifecycle } from '../app/AppLifecycle';
 import { MainLayout } from '../components/layout/MainLayout';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
-import { apiClient } from '../services/api/client';
 import { useAuthStore } from '../stores';
 import { FreshManagedConfigPage } from './FreshManagedConfigPage';
 import type { createPublicApiClient } from './publicApi';
 import { resolveRoutingContext, type RoutingContext } from './routingContext';
+import { activateFreshSession } from './freshSession';
 
 // The legacy Console is deliberately a post-installation seam.  This module
 // is loaded only after Fresh has authenticated the administrator and observed
@@ -48,43 +48,9 @@ export function LegacyConsolePage({
       return;
     }
 
-    // Keep the legacy client below the canonical Public API namespace. Its
-    // normal request builder appends /v0/management, so the backend's bounded
-    // Fresh adapter receives <base>/api/v2/cpamp/v0/management/*.
-    const apiBase = new URL(`${verified.apiBase}/cpamp`, window.location.origin).toString();
-    // Feature probes use the same bounded bridge. The public control prefix
-    // itself intentionally does not expose the legacy usage-service paths.
-    const panelBase = apiBase;
-
-    // Clear any older panel session before installing the Fresh credential.
-    // The key itself is only held by the in-memory Zustand state and the
-    // axios client; rememberPassword stays false so persistence never stores it.
-    try {
-      useAuthStore.getState().logout();
-    } catch {
-      // Storage may be unavailable in a private or test browser. The state is
-      // still replaced below, and the current Fresh credential remains scoped.
-    }
-    apiClient.setConfig({ apiBase, managementKey: credential });
-    try {
-      useAuthStore.setState({
-        isAuthenticated: true,
-        apiBase,
-        managementKey: credential,
-        rememberPassword: false,
-        sessionMode: 'manager_embedded',
-        sessionPanelBase: panelBase,
-        connectionStatus: 'connected',
-        connectionError: null,
-        supportsPlugin: false,
-        serverVersion: null,
-        serverCommit: null,
-        serverBuildDate: null,
-      });
-    } catch {
-      // Persist is best-effort. Zustand applies the in-memory state before a
-      // storage adapter reports an error, which is all this bridge requires.
-    }
+    // The canonical Fresh endpoint already verified this credential. Reuse the
+    // original session without clearing the user's remember-login choice.
+    activateFreshSession(verified, credential, useAuthStore.getState().rememberPassword);
     // The store update and this local gate must both settle before mounting the
     // legacy tree. This is an intentional effect-to-view transition: the
     // credential has just been verified by the canonical Fresh boundary.
@@ -92,15 +58,6 @@ export function LegacyConsolePage({
 
     return () => {
       setActivated(false);
-      const current = useAuthStore.getState();
-      if (current.managementKey === credential) {
-        try {
-          current.logout();
-        } catch {
-          // Keep unmount cleanup best-effort without retaining the credential.
-          apiClient.setConfig({ apiBase: '', managementKey: '' });
-        }
-      }
     };
   }, [context.basePath, context.revision, credential]);
 

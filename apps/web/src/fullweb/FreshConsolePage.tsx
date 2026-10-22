@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
 import { sameIdentity, type FreshOperation } from './bootstrapTransport';
 import { createPublicApiClient, PublicApiError } from './publicApi';
@@ -16,10 +16,14 @@ import { FullWebIcon } from './FullWebIcon';
 import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
 import logoOnDark from '../assets/brand/cpamp-logo-horizontal-on-dark.svg?inline';
 import './consoleWorkspace.css';
+import { activateFreshSession, clearFreshSession, rememberedFreshCredential } from './freshSession';
 
 const defaultClient = createPublicApiClient();
 const LegacyConsolePage = lazy(() =>
   import('./LegacyConsolePage').then((module) => ({ default: module.LegacyConsolePage }))
+);
+const FullWebLoginPage = lazy(() =>
+  import('./FullWebLoginPage').then((module) => ({ default: module.FullWebLoginPage }))
 );
 
 export function FreshConsolePage({
@@ -29,8 +33,8 @@ export function FreshConsolePage({
   context: RoutingContext;
   client?: ReturnType<typeof createPublicApiClient>;
 }) {
-  const [key, setKey] = useState('');
   const [credential, setCredential] = useState('');
+  const [rememberPassword, setRememberPassword] = useState(false);
   const [operation, setOperation] = useState<FreshOperation | null>(null);
   const [enteredConsole, setEnteredConsole] = useState(false);
   const [page, setPage] = useState<ConsolePage>(() =>
@@ -90,7 +94,7 @@ export function FreshConsolePage({
     retryPendingRef.current = false;
     setRetryPending(false);
     setRetryNavigation(0);
-    setKey('');
+    clearFreshSession();
     setCredential('');
     setOperation(null);
     setEnteredConsole(false);
@@ -104,12 +108,9 @@ export function FreshConsolePage({
     clearAuthentication();
   }
 
-  async function readOperation(event?: FormEvent) {
-    event?.preventDefault();
-    const candidate = credential || key;
-    if (busy || installationPendingRef.current || !candidate) return;
+  async function readOperation(candidate = credential, remember = rememberPassword) {
+    if (busy || installationPendingRef.current || !candidate) return false;
     const currentRequest = ++requestId.current;
-    setKey('');
     setBusy(true);
     setError('');
     try {
@@ -117,7 +118,7 @@ export function FreshConsolePage({
         kind: 'admin',
         value: candidate,
       });
-      if (currentRequest !== requestId.current) return;
+      if (currentRequest !== requestId.current) return false;
       if (
         !next?.identity ||
         !(
@@ -139,20 +140,24 @@ export function FreshConsolePage({
       ) {
         clearAuthentication();
         setError(t('invalidOperation'));
-        return;
+        return false;
       }
+      activateFreshSession(context, candidate, remember);
+      setRememberPassword(remember);
       setEnteredConsole(next.productComplete === true);
       setCredential(candidate);
       acceptOperation(next);
       setRefreshEpoch((revision) => revision + 1);
+      return true;
     } catch (err) {
-      if (currentRequest !== requestId.current) return;
+      if (currentRequest !== requestId.current) return false;
       if (err instanceof PublicApiError && err.kind === 'authentication') {
         clearAuthentication();
         setError(t('authError'));
       } else {
         setError(t('unavailable'));
       }
+      return false;
     } finally {
       if (currentRequest === requestId.current) setBusy(false);
     }
@@ -200,6 +205,23 @@ export function FreshConsolePage({
     setError(t('authError'));
   };
   const blocked = creationPending || installationPending || retryPending;
+  if (!operation) {
+    return (
+      <Suspense fallback={<div role="status">{t('loggingIn')}</div>}>
+        <FullWebLoginPage
+          adapter={{
+            address: new URL(context.basePath, window.location.origin).toString(),
+            error,
+            authenticate: readOperation,
+            restore: async () => {
+              const candidate = rememberedFreshCredential(context);
+              if (candidate) await readOperation(candidate, true);
+            },
+          }}
+        />
+      </Suspense>
+    );
+  }
   if (!operation || !enteredConsole)
     return (
       <div className="bootstrap-shell">
@@ -218,39 +240,7 @@ export function FreshConsolePage({
                 {error}
               </p>
             )}
-            {!operation ? (
-              <section className="wizard-card installation-login console-login-panel">
-                <div className="wizard-card-header">
-                  <span>
-                    <FullWebIcon name="key" />
-                  </span>
-                  <h1>{s('loginTitle')}</h1>
-                  <p>{w('securityHelp')}</p>
-                </div>
-                <div className="wizard-card-body">
-                  <form onSubmit={(event) => void readOperation(event)} data-testid="console-login">
-                    <label className="form-label" htmlFor="console-admin-key">
-                      {t('keyLabel')}
-                    </label>
-                    <input
-                      id="console-admin-key"
-                      className="form-input"
-                      type="password"
-                      value={key}
-                      onChange={(event) => setKey(event.target.value)}
-                      autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      spellCheck={false}
-                      disabled={busy}
-                    />
-                    <button className="btn btn-primary" type="submit" disabled={busy || !key}>
-                      {busy ? t('loggingIn') : t('login')}
-                    </button>
-                  </form>
-                </div>
-              </section>
-            ) : operation.strategy?.strategy === 'connect_external' ? (
+            {operation.strategy?.strategy === 'connect_external' ? (
               <FreshExternalConnection
                 client={client}
                 credential={credential}

@@ -6,6 +6,10 @@ import { createPublicApiClient } from './publicApi';
 import type { FreshOperation } from './bootstrapTransport';
 import { fullWebText as t } from '../i18n/fullweb';
 import { LegacyConsolePage } from './LegacyConsolePage';
+import { LoginPage } from '../features/login/LoginPage';
+import { useAuthStore } from '../stores/useAuthStore';
+import { obfuscatedStorage } from '../services/storage/secureStorage';
+import { STORAGE_KEY_AUTH } from '../utils/constants';
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
 const operation: FreshOperation = {
   identity: {
@@ -33,6 +37,7 @@ describe('Fresh installation and Console authority boundary', () => {
   let location: URL;
   let read: ReturnType<typeof vi.fn<typeof fetch>>;
   const persist = vi.fn((_key: string, _value: string) => undefined);
+  const storage = new Map<string, string>();
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     location = new URL('https://manager.example/console');
@@ -66,16 +71,22 @@ describe('Fresh installation and Console authority boundary', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     });
+    storage.clear();
     vi.stubGlobal('localStorage', {
-      getItem: vi.fn(() => null),
-      setItem: persist,
-      removeItem: vi.fn(),
+      getItem: vi.fn((name: string) => storage.get(name) ?? null),
+      setItem: (name: string, value: string) => {
+        persist(name, value);
+        storage.set(name, value);
+      },
+      removeItem: (name: string) => storage.delete(name),
     });
     vi.stubGlobal('sessionStorage', {
       getItem: vi.fn(() => null),
       setItem: persist,
       removeItem: vi.fn(),
     });
+    useAuthStore.getState().logout();
+    useAuthStore.setState({ rememberPassword: false });
     persist.mockClear();
     read = vi
       .fn<typeof fetch>()
@@ -83,11 +94,13 @@ describe('Fresh installation and Console authority boundary', () => {
   });
   afterEach(async () => {
     if (renderer) await act(async () => renderer.unmount());
+    useAuthStore.getState().logout();
     vi.unstubAllGlobals();
   });
   const find = (id: string) => renderer.root.findByProps({ 'data-testid': id });
   const has = (id: string) => renderer.root.findAllByProps({ 'data-testid': id }).length > 0;
-  const input = () => renderer.root.findByProps({ id: 'console-admin-key' });
+  const hasLogin = () => renderer.root.findAllByType(LoginPage).length > 0;
+  const input = () => renderer.root.findAllByType('input').find((node) => node.props.id === 'console-admin-key')!;
   const logout = () =>
     renderer.root
       .findAllByType('button')
@@ -126,11 +139,14 @@ describe('Fresh installation and Console authority boundary', () => {
       );
     });
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await vi.dynamicImportSettled();
     });
   }
-  async function login() {
+  async function login(remember = false) {
     await act(async () => input().props.onChange({ target: { value: key } }));
+    await act(async () =>
+      renderer.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: remember } })
+    );
     await act(async () => find('console-login').props.onSubmit({ preventDefault: vi.fn() }));
   }
   async function navigate(route: string) {
@@ -157,8 +173,9 @@ describe('Fresh installation and Console authority boundary', () => {
         })
     );
   }
-  it('uses only canonical authenticated reads and requires login after remount', async () => {
+  it('uses the original login page and persists no credential without remember-login', async () => {
     await mount();
+    expect(hasLogin()).toBe(true);
     await login();
     expect(has('legacy-console')).toBe(true);
     expect(renderer.root.findByType(LegacyConsolePage)).toBeTruthy();
@@ -168,11 +185,70 @@ describe('Fresh installation and Console authority boundary', () => {
     expect(input().props.value).toBe('');
     await act(async () => renderer.unmount());
     await mount();
-    expect(has('console-login')).toBe(true);
+    expect(hasLogin()).toBe(true);
     // The legacy layout clears unrelated cached stores on logout. Verify the
     // Fresh administrator credential itself never appears in a persistence
     // payload while allowing those normal cache writes.
     expect(persist.mock.calls.flat().some((value) => String(value).includes(key))).toBe(false);
+    expect(obfuscatedStorage.getItem<{ state: { managementKey?: string } }>(STORAGE_KEY_AUTH)?.state.managementKey).toBeUndefined();
+  });
+  it('restores a remembered session through canonical authentication after refresh and clears it on logout', async () => {
+    await mount();
+    await login(true);
+    expect(useAuthStore.getState().rememberPassword).toBe(true);
+    expect(obfuscatedStorage.getItem<{ state: { managementKey?: string } }>(STORAGE_KEY_AUTH)?.state.managementKey).toBe(key);
+    await act(async () => renderer.unmount());
+    // Rehydrate persisted state as a new document would; no authenticated flag
+    // is persisted and no management page may bypass the operation check.
+    useAuthStore.setState({ isAuthenticated: false });
+    await useAuthStore.persist.rehydrate();
+    read.mockClear();
+    await mount();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(has('legacy-console')).toBe(true);
+    await act(async () => logout().props.onClick());
+    await act(async () => renderer.unmount());
+    read.mockClear();
+    await mount();
+    expect(hasLogin()).toBe(true);
+    expect(read).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().managementKey).toBe('');
+  });
+  it('rejects and removes a remembered credential when the server revokes it', async () => {
+    await mount();
+    await login(true);
+    await act(async () => renderer.unmount());
+    read.mockImplementation(() => Promise.resolve(new Response('', { status: 401 })));
+    await mount();
+    expect(hasLogin()).toBe(true);
+    expect(has('legacy-console')).toBe(false);
+    expect(useAuthStore.getState().managementKey).toBe('');
+  });
+  it('retains a remembered credential across a temporary server failure without mounting management pages', async () => {
+    await mount();
+    await login(true);
+    await act(async () => renderer.unmount());
+    read.mockImplementation(() => Promise.resolve(new Response('', { status: 503 })));
+    await mount();
+    expect(hasLogin()).toBe(true);
+    expect(has('legacy-console')).toBe(false);
+    expect(useAuthStore.getState().managementKey).toBe(key);
+    await act(async () => renderer.unmount());
+    read.mockImplementation(() => Promise.resolve(Response.json(operation)));
+    await mount();
+    expect(has('legacy-console')).toBe(true);
+  });
+  it('does not send credentials remembered for a different deployment prefix', async () => {
+    useAuthStore.setState({
+      rememberPassword: true,
+      managementKey: key,
+      apiBase: 'https://manager.example/foreign/api/v2/cpamp',
+      sessionPanelBase: 'https://manager.example/foreign/api/v2/cpamp',
+      sessionMode: 'manager_embedded',
+    });
+    await mount();
+    expect(hasLogin()).toBe(true);
+    expect(read).not.toHaveBeenCalled();
   });
   it('continues incomplete Fresh in its guided journey without mounting management pages', async () => {
     read.mockImplementation(() =>
@@ -189,7 +265,6 @@ describe('Fresh installation and Console authority boundary', () => {
     await mount();
     await login();
     expect(has('legacy-console')).toBe(false);
-    expect(input().props.value).toBe('');
   });
   it.each([
     { adminInitialized: false },

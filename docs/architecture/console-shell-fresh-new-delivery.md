@@ -3,10 +3,24 @@
 An administrator can now claim a new installation, configure the administrator
 key and Console address, sign in, review the embedded destination, submit
 installation once, follow real execution/recovery and enter Console. The
-Console has two-level navigation, matching breadcrumbs, desktop folding and a
-mobile drawer. The existing API key, gateway retry, update-channel and
-installation pages have real routes and retain their existing business and
-authorization behavior.
+Console reuses the original CPAMP layout and business pages, with grouped
+navigation, breadcrumbs, desktop folding and a mobile drawer. This remains an
+in-progress integration: menu ownership still needs to match the accepted
+prototype, Fresh Key/retry/update-channel controls remain combined, and a
+second Shell implementation remains in the source. The installation evidence
+below does not establish completion of those integration requirements.
+
+## Login and refresh correction
+
+The Console now renders the original `features/login/LoginPage` with its existing
+brand, theme, language and remember-credential controls. A narrow adapter verifies
+the Admin Key through the canonical Fresh operation endpoint; it does not probe
+or fall back to the old CPA credential path. Remembered credentials use the
+existing auth store and must match the current origin, API base and deployment
+mode. Refresh revalidates before mounting the original business pages and keeps
+the deep route. Explicit logout and rejected authentication clear the credential.
+Without **Remember credentials**, reload requires signing in again, consistent
+with the existing login choice. The historical candidate below predates this fix.
 
 ## Candidate and reproduction
 

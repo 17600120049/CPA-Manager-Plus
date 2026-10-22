@@ -120,7 +120,14 @@ function getLocalizedErrorMessage(
   return withHttpStatus(t('login.error_invalid'));
 }
 
-export function LoginPage() {
+export interface ConsoleLoginAdapter {
+  address: string;
+  error: string;
+  restore: () => Promise<void>;
+  authenticate: (credential: string, remember: boolean) => Promise<boolean>;
+}
+
+export function LoginPage({ consoleAuth }: { consoleAuth?: ConsoleLoginAdapter } = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -159,7 +166,7 @@ export function LoginPage() {
   const [usageSetupStep, setUsageSetupStep] = useState<UsageSetupStep>('admin');
 
   const detectedBase = useMemo(() => detectApiBaseFromLocation(), []);
-  const isManagerServerMode = hostedByUsageService;
+  const isManagerServerMode = Boolean(consoleAuth) || hostedByUsageService;
   const loginCredential = isManagerServerMode ? adminKey : cpaManagementKey;
   const redirectAfterLogin = useMemo(() => resolveRedirectPath(location.state), [location.state]);
   const loginCredentialLabel = isManagerServerMode
@@ -242,6 +249,12 @@ export function LoginPage() {
   useEffect(() => {
     const init = async () => {
       try {
+        if (consoleAuth) {
+          setApiBase(consoleAuth.address);
+          setRememberCredential(storedRememberPassword);
+          await consoleAuth.restore();
+          return;
+        }
         let detectedUsageService = false;
         let detectedUsageServiceConfigured = false;
         try {
@@ -376,6 +389,22 @@ export function LoginPage() {
   }, [usageSetupStep, usageSetupSteps]);
 
   const handleSubmit = useCallback(async () => {
+    if (consoleAuth) {
+      if (!adminKey.trim()) {
+        setError(t('login.admin_key_required'));
+        return;
+      }
+      setLoading(true);
+      setError('');
+      try {
+        await consoleAuth.authenticate(adminKey.trim(), rememberCredential);
+      } catch (err) {
+        setError(getLocalizedErrorMessage(err, t));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (usageServiceNeedsSetup && !usageSetupIsLastStep) {
       handleUsageSetupNext();
       return;
@@ -469,6 +498,7 @@ export function LoginPage() {
       setLoading(false);
     }
   }, [
+    consoleAuth,
     adminKey,
     apiBase,
     cpaManagementKey,
@@ -498,7 +528,7 @@ export function LoginPage() {
     [handleSubmit, loading]
   );
 
-  if (isAuthenticated && !autoLoading && !autoLoginSuccess) {
+  if (!consoleAuth && isAuthenticated && !autoLoading && !autoLoginSuccess) {
     return <Navigate to={redirectAfterLogin} replace />;
   }
 
@@ -839,7 +869,14 @@ export function LoginPage() {
               )}
 
               {!usageServiceNeedsSetup && (
-                <div className={styles.loginForm}>
+                <form
+                  className={styles.loginForm}
+                  data-testid={consoleAuth ? 'console-login' : undefined}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!loading) void handleSubmit();
+                  }}
+                >
                   <div className={styles.connectionBox}>
                     <div className={styles.label}>{t('login.connection_current')}</div>
                     <div className={styles.value}>{apiBase || detectedBase}</div>
@@ -876,6 +913,7 @@ export function LoginPage() {
 
                   <Input
                     autoFocus
+                    id={consoleAuth ? 'console-admin-key' : undefined}
                     label={loginCredentialLabel}
                     placeholder={loginCredentialPlaceholder}
                     type={
@@ -908,12 +946,14 @@ export function LoginPage() {
                     />
                   </div>
 
-                  <Button fullWidth onClick={handleSubmit} loading={loading}>
+                  <Button fullWidth type="submit" loading={loading} disabled={Boolean(consoleAuth) && !adminKey.trim()}>
                     {loading ? t('login.submitting') : t('login.submit_button')}
                   </Button>
 
-                  {error && <div className={styles.errorBox}>{error}</div>}
-                </div>
+                  {(error || consoleAuth?.error) && (
+                    <div className={styles.errorBox} role="alert">{error || consoleAuth?.error}</div>
+                  )}
+                </form>
               )}
             </div>
           </div>
