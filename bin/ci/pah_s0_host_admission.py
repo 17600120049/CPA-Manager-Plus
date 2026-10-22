@@ -8,6 +8,7 @@ The only public socket is the runtime-owned host-loopback Ingress publication.
 import argparse
 import json
 import os
+import time
 from pathlib import Path
 import subprocess
 import sys
@@ -19,6 +20,24 @@ SERVICES = ("cpamp-runtime", "cpamp-manager", "cpamp-ingress")
 IMAGES = {s: f"{s}:pah-s0-proof" for s in SERVICES}
 OPT_IN = "I_ACCEPT_DISPOSABLE_PAH_S0"
 PORT = 28491
+VOLUMES = ("cpamp-pah-s0-manager-data", "cpamp-pah-s0-runtime-data",
+           "cpamp-pah-s0-runtime-secret")
+VOLUME_NAMES = {key: PROJECT + "_" + key for key in VOLUMES}
+MOUNTS = {
+    "cpamp-runtime": {
+        "/runtime": ("cpamp-pah-s0-runtime-data", True),
+        "/run/cpamp/runtime-secret": ("cpamp-pah-s0-runtime-secret", True),
+    },
+    "cpamp-manager": {
+        "/data": ("cpamp-pah-s0-manager-data", True),
+        "/run/cpamp/runtime-secret": ("cpamp-pah-s0-runtime-secret", False),
+    },
+    "cpamp-ingress": {},
+}
+RUNTIME_LISTENERS = {
+    "CPAMP_RUNTIME_ADDR": "127.0.0.1:9081",
+    "CPAMP_RUNTIME_CPA_ADDR": "127.0.0.1:8317",
+}
 
 
 def require(ok, message):
@@ -47,6 +66,8 @@ def env(service):
 
 def check_config(config, port=PORT):
     services = config.get("services", {})
+    require(set(config.get("volumes", {})) == set(VOLUMES),
+            "unknown/missing private Compose volume")
     require(set(services) == set(SERVICES), "unknown/missing Compose service")
     runtime, manager, ingress = (services[n] for n in SERVICES)
     require(runtime.get("platform") == manager.get("platform") ==
@@ -60,6 +81,8 @@ def check_config(config, port=PORT):
             "unpaired Ingress binary build")
     require(env(manager).get("CPAMP_PRIVATE_PAH_S0") ==
             env(ingress).get("CPAMP_PRIVATE_PAH_S0") == "1", "runtime modes mismatch")
+    for key, value in RUNTIME_LISTENERS.items():
+        require(env(runtime).get(key) == value, "Runtime/CPA listener not loopback: " + key)
     require(env(manager).get("HTTP_ADDR") == "127.0.0.1:18319", "Manager not loopback")
     require(env(ingress).get("CPAMP_INGRESS_CONTROL_ADDR") == "127.0.0.1:9082",
             "control listener not loopback")
@@ -69,6 +92,16 @@ def check_config(config, port=PORT):
     require(manager.get("network_mode") == ingress.get("network_mode") ==
             "service:cpamp-runtime", "private namespace mismatch")
     require(not manager.get("ports") and not ingress.get("ports"), "side port published")
+    for name, service in zip(SERVICES, (runtime, manager, ingress)):
+        expected = MOUNTS[name]
+        actual = service.get("volumes", [])
+        require(len(actual) == len(expected), "unexpected Compose mount for " + name)
+        for mount in actual:
+            target = mount.get("target")
+            require(target in expected and mount.get("type") == "volume" and
+                    mount.get("source") == expected[target][0] and
+                    bool(mount.get("read_only", False)) == (not expected[target][1]),
+                    "unsafe Compose source/permission: " + name)
     ports = runtime.get("ports", [])
     require(len(ports) == 1 and ports[0].get("host_ip") == "127.0.0.1" and
             int(ports[0].get("published", 0)) == port and
@@ -76,11 +109,50 @@ def check_config(config, port=PORT):
             ports[0].get("protocol", "tcp") == "tcp", "unexpected public port matrix")
 
 
-def check_objects(objects, image_ids, ids, port=PORT, stopped=True, running=None):
+def require_fresh_volumes(existing):
+    require(not set(VOLUME_NAMES.values()).intersection(existing),
+            "retained private volume from prior run; refusing reuse")
+
+
+def check_volume_info(volumes):
+    require(set(volumes) == set(VOLUME_NAMES.values()), "missing/unexpected private volume")
+    paths = {}
+    for item in volumes.values():
+        labels = item.get("Labels") or {}
+        require(labels.get("com.docker.compose.project") == PROJECT,
+                "private volume owned by another project")
+        require(item.get("Driver") == "local", "unexpected volume driver")
+        path = item.get("Mountpoint")
+        require(path and Path(path).is_absolute(), "volume mountpoint is not absolute")
+        paths[item["Name"]] = str(Path(path))
+    require(len(set(paths.values())) == len(paths), "private volume mountpoint alias")
+    return paths
+
+
+def aliases_private_path(mount, volume_paths):
+    name = mount.get("Name", "")
+    if name in volume_paths:
+        return True
+    source = mount.get("Source", "")
+    if not source or not Path(source).is_absolute():
+        return False
+    source_path = Path(os.path.realpath(source))
+    return any(source_path == Path(os.path.realpath(path)) or
+               source_path in Path(os.path.realpath(path)).parents or
+               Path(os.path.realpath(path)) in source_path.parents
+               for path in volume_paths.values())
+
+
+def check_objects(objects, image_ids, ids, port=PORT, stopped=True, running=None,
+                  volume_paths=None):
     require(set(ids) == set(SERVICES) and len(set(ids.values())) == 3,
             "missing/non-unique profile containers")
     by_id = {x["Id"]: x for x in objects}
     require(all(cid in by_id for cid in ids.values()), "unresolved container")
+    if volume_paths is None:
+        volume_paths = {name: "/docker/volumes/" + name + "/_data"
+                        for name in VOLUME_NAMES.values()}
+    require(set(volume_paths) == set(VOLUME_NAMES.values()), "unverified private volumes")
     runtime_id = ids["cpamp-runtime"]
     for service, cid in ids.items():
         obj = by_id[cid]
@@ -90,6 +162,19 @@ def check_objects(objects, image_ids, ids, port=PORT, stopped=True, running=None
                 labels.get("com.docker.compose.service") == service,
                 "foreign/stale Compose owner: " + service)
         require(obj.get("Image") == image_ids[service], "swapped image: " + service)
+        expected_mounts = MOUNTS[service]
+        actual_mounts = obj.get("Mounts", [])
+        require(len(actual_mounts) == len(expected_mounts),
+                "unexpected mount count for " + service)
+        for mount in actual_mounts:
+            target = mount.get("Destination")
+            require(target in expected_mounts, "unrecognized private mount: " + service)
+            key, writable = expected_mounts[target]
+            name = VOLUME_NAMES[key]
+            require(mount.get("Type") == "volume" and mount.get("Name") == name and
+                    mount.get("Source") == volume_paths[name] and
+                    mount.get("RW") is writable,
+                    "wrong data/secret role/permissions: " + service)
         require(not host.get("Privileged") and
                 host.get("RestartPolicy", {}).get("Name", "no") in ("", "no"),
                 "privileged/auto-restarting component: " + service)
@@ -101,7 +186,11 @@ def check_objects(objects, image_ids, ids, port=PORT, stopped=True, running=None
         if running is not None:
             require(bool(obj["State"].get("Running")) == running[service],
                     "unexpected process start/stop order: " + service)
+        entries = obj.get("Config", {}).get("Env", [])
         if service == "cpamp-runtime":
+            for key, value in RUNTIME_LISTENERS.items():
+                require(key + "=" + value in entries,
+                        "runtime listener env differs from loopback: " + key)
             require(host.get("NetworkMode") not in ("host", "none"),
                     "runtime host/none network")
             bindings = host.get("PortBindings") or {}
@@ -132,8 +221,10 @@ def check_objects(objects, image_ids, ids, port=PORT, stopped=True, running=None
         bindings = h.get("PortBindings") or {}
         published = any(x.get("HostPort") == str(port)
                         for entries in bindings.values() for x in (entries or []))
-        require(not (related or published),
-                "foreign container/Ingress/port owner shares P-S0 exposure")
+        aliased = any(aliases_private_path(m, volume_paths)
+                      for m in obj.get("Mounts", []))
+        require(not (related or published or aliased),
+                "foreign container/Ingress/credential mount shares P-S0 exposure")
 
 
 def inspect_profile(stopped, running=None):
@@ -148,8 +239,32 @@ def inspect_profile(stopped, running=None):
     objects = json.loads(command("docker", "inspect", *all_ids))
     image_ids = {name: json.loads(command("docker", "image", "inspect", IMAGES[name]))[0]["Id"]
                  for name in SERVICES}
-    check_objects(objects, image_ids, ids, stopped=stopped, running=running)
+    volumes = json.loads(command("docker", "volume", "inspect", *VOLUME_NAMES.values()))
+    by_name = {v["Name"]: v for v in volumes}
+    check_objects(objects, image_ids, ids, stopped=stopped, running=running,
+                  volume_paths=check_volume_info(by_name))
     return ids
+
+
+def probe_manager_resource_deny(container_id):
+    """Fresh New is not selected yet, so guard 204 is NOT expected at launch.
+
+    Prove the Manager listener is alive and denies executable resources
+    with no-store, before any public Ingress process can start. Ingress
+    requires a fresh guard 204 only after Fresh qualification.
+    """
+    url = "http://127.0.0.1:18319/v0/resource/plugins/pah-s0-proof.js"
+    last = ""
+    for _ in range(20):
+        reply = subprocess.run(
+            ["docker", "exec", container_id, "wget", "-S", "-O", "/dev/null", url],
+            text=True, capture_output=True, timeout=8, check=False)
+        last = (reply.stdout + reply.stderr).lower()
+        if "404 not found" in last and "cache-control: no-store" in last:
+            return
+        time.sleep(0.25)
+    raise RuntimeError("P-S0 STOP: Manager did not prove pre-Ingress resource denial: " +
+                       last[-350:])
 
 
 def main():
@@ -162,16 +277,21 @@ def main():
     require(not compose("ps", "-a", "-q").strip() if args.launch else True,
             "previously created profile; no unattended reuse/restart")
     if args.launch:
+        require_fresh_volumes(command("docker", "volume", "ls", "-q").splitlines())
         compose("build")
+        # Recheck immediately before create; no pre-existing private state
+        # may be silently inherited even if no containers remain.
+        require_fresh_volumes(command("docker", "volume", "ls", "-q").splitlines())
         compose("create")
         # Docker's port-binding container is still STOPPED; no Ingress listener
         # has begun serving while image/provenance/namespace is checked.
         inspect_profile(stopped=True)
         try:
             compose("start", "cpamp-runtime", "cpamp-manager")
-            inspect_profile(stopped=False, running={
+            checked = inspect_profile(stopped=False, running={
                 "cpamp-runtime": True, "cpamp-manager": True,
                 "cpamp-ingress": False})
+            probe_manager_resource_deny(checked["cpamp-manager"])
             compose("start", "cpamp-ingress")
             inspect_profile(stopped=False, running={s: True for s in SERVICES})
         except Exception:

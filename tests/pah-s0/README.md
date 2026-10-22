@@ -92,3 +92,28 @@ only; it is not continuously enforcing Docker ownership, cannot constrain
 a trusted Docker-root operator, and has not been executed on a live Host.
 An independent external observer must still verify IPv4/IPv6/ports and all
 resource/legacy bypass paths before claiming even private P-S0 safety.
+
+### Pre-public launch requirements
+
+The disposable launcher refuses any pre-existing P-S0 named volume even if
+its old containers were deleted. It checks **actual** local Docker volume
+ownership, each Manager/Runtime mount and read-only secret role, and unrelated
+containers' volume or bind-path aliases. It also requires exact loopback
+`CPAMP_RUNTIME_ADDR=127.0.0.1:9081` and
+`CPAMP_RUNTIME_CPA_ADDR=127.0.0.1:8317` in both resolved Compose and
+created Runtime container. A foreign peer/credential mount, retained volume,
+wrong-side image or listener is a hard STOP, never an ignored warning.
+
+Before it starts Ingress, the launcher probes the **Manager's real HTTP
+resource rejection** on the private shared namespace: an unauthenticated
+request for `/v0/resource/plugins/pah-s0-proof.js` must return 404 and
+`Cache-Control: no-store`. On an initial Fresh New install there is no
+chosen strategy or attached Fresh handler yet, so
+`/internal/pah-s0/resource-guard` cannot return 204 before setup.
+The P-S0 Ingress continues to deny plugin resources until that guard
+returns 204 after Fresh admission. Do not misinterpret a pre-setup 404 guard
+as a reason to enable normal Legacy Gateway fallback.
+
+These are **point-in-time admission checks**, not a daemon or continuously
+enforced Docker-root exclusion. They do not replace independent Host witness,
+external network/IPv4/IPv6, cache/proxy, one-sided restart or browser tests.
