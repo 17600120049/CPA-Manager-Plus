@@ -20,6 +20,7 @@ spec.loader.exec_module(subject)
 SHA = "a" * 40
 EVENT = "local-test-event"
 MOCK_NOTICE = b"NOT_VERIFIED: license inventory only"
+MOCK_RUNTIME_ENTRYPOINT = b"#!/bin/sh\n"
 MOCK_API_CONTRACT = json.dumps({
     "schemaVersion": 1, "qualification": subject.API_CONTRACT_QUALIFICATION,
     "apiSuffix": "/api/v2", "expectedPath": "/phase4-test/api/v2/technical",
@@ -61,7 +62,9 @@ def make_oci(destination, role, license_bytes, *,
              source=SHA, event=EVENT, arch="amd64", corrupt=False, missing=None,
              bad_descriptor_size=False, bad_descriptor_type=False, bad_diff_id=False,
              notice_bytes=MOCK_NOTICE, api_contract=MOCK_API_CONTRACT,
-             bad_mode=None, invalid_elf=False, wrong_module=False, wrong_source_stamp=False):
+             bad_mode=None, invalid_elf=False, wrong_module=False, wrong_source_stamp=False,
+             wrong_sha_suffix=False, wrong_version_suffix=False, wrong_entrypoint=False,
+             wrong_cmd=False, runtime_script=MOCK_RUNTIME_ENTRYPOINT):
     files = {
         "/usr/local/share/licenses/cpamp/LICENSE": license_bytes,
         subject.NOTICE: notice_bytes,
@@ -71,6 +74,8 @@ def make_oci(destination, role, license_bytes, *,
             sample_elf() if invalid_elf else
             ROLE_BINARIES["ingress"] if wrong_module else
             ROLE_BINARIES["manager_wrong_stamp"] if wrong_source_stamp else
+            ROLE_BINARIES["manager_sha_suffix"] if wrong_sha_suffix else
+            ROLE_BINARIES["manager_version_suffix"] if wrong_version_suffix else
             ROLE_BINARIES["manager"]
         )
         files[subject.API_CONTRACT] = api_contract
@@ -94,7 +99,7 @@ def make_oci(destination, role, license_bytes, *,
             "artifactId": "sha256:" + subject.CPA_SHA,
         }).encode()
         files["/usr/local/share/cpamp/runtime/config.seed.yaml"] = b"seed"
-        files["/usr/local/bin/cpamp-runtime-v8-entrypoint"] = b"#!/bin/sh"
+        files["/usr/local/bin/cpamp-runtime-v8-entrypoint"] = runtime_script
         files["/usr/local/share/licenses/cli-proxy-api/LICENSE"] = b"official"
     if missing:
         files.pop(missing)
@@ -102,12 +107,16 @@ def make_oci(destination, role, license_bytes, *,
     layer = gzip.compress(uncompressed)
     layer_id = blob(layer)
     diff_id = blob(uncompressed)
+    entrypoint, command = subject.STARTUP[role]
     config = json.dumps({
         "os": "linux", "architecture": arch,
         "rootfs": {"type": "layers", "diff_ids": [
             "sha256:" + "d" * 64 if bad_diff_id else diff_id,
         ]},
-        "config": {"Labels": {
+        "config": {
+            "Entrypoint": ["/bin/false"] if wrong_entrypoint else entrypoint,
+            "Cmd": ["/bin/false"] if wrong_cmd else command,
+            "Labels": {
             "org.opencontainers.image.revision": source,
             "org.opencontainers.image.source": subject.SOURCE,
             "org.opencontainers.image.version": subject.CANDIDATE_VERSION,
@@ -148,7 +157,8 @@ class EmbeddedCandidateContracts(unittest.TestCase):
         cls.go_fixture_tmp = tempfile.TemporaryDirectory(prefix="cpamp-go-binary-fixture-")
         cls.addClassCleanup(cls.go_fixture_tmp.cleanup)
         base = Path(cls.go_fixture_tmp.name)
-        for key in ("manager", "manager_wrong_stamp", "ingress", "runtime"):
+        for key in ("manager", "manager_wrong_stamp", "manager_sha_suffix",
+                    "manager_version_suffix", "ingress", "runtime"):
             role = "manager" if key.startswith("manager") else key
             module, command = subject.GO_MODULES[role]
             work = base / key
@@ -174,9 +184,14 @@ class EmbeddedCandidateContracts(unittest.TestCase):
             # Manager Docker build keeps the non-trimpath linker stamp.
             if role == "manager":
                 stamp = "b" * 40 if key == "manager_wrong_stamp" else SHA
+                if key == "manager_sha_suffix":
+                    stamp += "extra"
+                version = subject.CANDIDATE_VERSION
+                if key == "manager_version_suffix":
+                    version += "-modified"
                 args += ["-ldflags",
                          "-X " + module + "/internal/buildinfo.Version=" +
-                         subject.CANDIDATE_VERSION +
+                         version +
                          " -X " + module + "/internal/buildinfo.SourceCommit=" + stamp]
             args += ["./" + command]
             completed = subprocess.run(args, cwd=work, env=env, capture_output=True,
@@ -194,7 +209,8 @@ class EmbeddedCandidateContracts(unittest.TestCase):
 
     def inspect(self, role="manager", **kwargs):
         make_oci(self.file, role, self.license, **kwargs)
-        return subject.inspect(self.file, role, SHA, EVENT, self.license, b"seed")
+        return subject.inspect(self.file, role, SHA, EVENT, self.license, b"seed",
+                               MOCK_RUNTIME_ENTRYPOINT)
 
     def test_three_role_structural_receipt_with_mocked_official_fixture(self):
         # Only this fixture mocks CPA official hashes; production verifier uses immutable pins.
@@ -202,6 +218,8 @@ class EmbeddedCandidateContracts(unittest.TestCase):
         seed = self.root / "docker/runtime/config.v8.default.seed.yaml"
         seed.parent.mkdir(parents=True)
         seed.write_bytes(b"seed")
+        entrypoint = self.root / "docker/runtime/v8-entrypoint.sh"
+        entrypoint.write_bytes(MOCK_RUNTIME_ENTRYPOINT)
         inventory = self.root / "bin/release/embedded-third-party-inventory.txt"
         inventory.parent.mkdir(parents=True)
         inventory.write_bytes(MOCK_NOTICE)
@@ -284,6 +302,31 @@ class EmbeddedCandidateContracts(unittest.TestCase):
     def test_reject_wrong_manager_compiled_source_stamp(self):
         with self.assertRaisesRegex(ValueError, "Manager compiled source/version stamp mismatch"):
             self.inspect(wrong_source_stamp=True)
+
+    def test_reject_wrong_startup_entrypoint_on_each_role(self):
+        for role in subject.ROLES:
+            with self.subTest(role=role):
+                with self.assertRaisesRegex(ValueError, "Entrypoint/Cmd mismatch"):
+                    self.inspect(role, wrong_entrypoint=True)
+
+    def test_reject_wrong_startup_command_on_each_role(self):
+        for role in subject.ROLES:
+            with self.subTest(role=role):
+                with self.assertRaisesRegex(ValueError, "Entrypoint/Cmd mismatch"):
+                    self.inspect(role, wrong_cmd=True)
+
+    def test_reject_runtime_bootstrap_script_source_mismatch(self):
+        with self.assertRaisesRegex(ValueError, "Runtime entrypoint differs from locked source"):
+            self.inspect("runtime",
+                         runtime_script=MOCK_RUNTIME_ENTRYPOINT + b"echo tampered\\n")
+
+    def test_reject_manager_source_commit_with_correct_prefix(self):
+        with self.assertRaisesRegex(ValueError, "Manager compiled source/version stamp mismatch"):
+            self.inspect(wrong_sha_suffix=True)
+
+    def test_reject_manager_version_with_correct_prefix(self):
+        with self.assertRaisesRegex(ValueError, "Manager compiled source/version stamp mismatch"):
+            self.inspect(wrong_version_suffix=True)
 
     def test_reject_modified_oci_blob(self):
         with self.assertRaisesRegex(ValueError, "digest mismatch"):
