@@ -532,7 +532,13 @@
     "logs": "日志查看",
     "logs_short": "日志",
     "system_info": "系统信息",
-    "system_info_short": "系统"
+    "system_info_short": "系统",
+    "group_overview": "概览",
+    "group_configuration": "配置",
+    "group_accounts": "账户",
+    "group_operations": "运行操作",
+    "group_plugins": "插件",
+    "group_system": "系统"
   },
   "account_actions": {
     "eyebrow": "账号异常",

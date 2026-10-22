@@ -36,3 +36,43 @@ func TestFreshCanonicalResourcesRemainAdminProtected(t *testing.T) {
 		}
 	}
 }
+
+func TestFreshCanonicalLegacyBridgeReusesCompleteRouter(t *testing.T) {
+	app := newInstallationTestApplication(t)
+	for _, resource := range []string{
+		"cpamp/v0/management/config",
+		"cpamp/usage-service/info",
+		"cpamp/status",
+	} {
+		t.Run(resource, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/control/api/v2/"+resource, nil)
+			req.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+			response := httptest.NewRecorder()
+			app.canonicalAPI(response, req)
+			if response.Code != http.StatusOK && response.Code != http.StatusPreconditionRequired {
+				t.Fatalf("resource %s returned %d: %s", resource, response.Code, response.Body.String())
+			}
+			if response.Code == http.StatusOK && !strings.Contains(response.Header().Get("Content-Type"), "application/json") {
+				t.Fatalf("resource %s was not JSON: %s", resource, response.Header().Get("Content-Type"))
+			}
+		})
+	}
+}
+
+func TestFreshCanonicalLegacyBridgeRejectsUnknownOrEscapingPaths(t *testing.T) {
+	app := newInstallationTestApplication(t)
+	for _, resource := range []string{
+		"cpamp/unknown",
+		"cpamp/v0/management/../status",
+		"cpamp/v0/management/%2e%2e/status",
+		"cpamp/internal/routing/fresh-authority",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/control/api/v2/"+resource, nil)
+		req.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+		response := httptest.NewRecorder()
+		app.canonicalAPI(response, req)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("resource %s returned %d, want 404", resource, response.Code)
+		}
+	}
+}

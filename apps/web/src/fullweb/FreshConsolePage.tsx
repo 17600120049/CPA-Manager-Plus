@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
 import { sameIdentity, type FreshOperation } from './bootstrapTransport';
 import { createPublicApiClient, PublicApiError } from './publicApi';
@@ -12,13 +12,15 @@ import { ConsoleShell, consolePage, type ConsolePage } from './ConsoleShell';
 import { shellText as s } from '../i18n/consoleShell';
 import { workspaceText as w } from '../i18n/consoleWorkspace';
 import { ConsoleHome } from './ConsoleHome';
-import { FullWebResourcePage, type FullWebResource } from './FullWebResourcePage';
 import { FullWebIcon } from './FullWebIcon';
 import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
 import logoOnDark from '../assets/brand/cpamp-logo-horizontal-on-dark.svg?inline';
 import './consoleWorkspace.css';
 
 const defaultClient = createPublicApiClient();
+const LegacyConsolePage = lazy(() =>
+  import('./LegacyConsolePage').then((module) => ({ default: module.LegacyConsolePage }))
+);
 
 export function FreshConsolePage({
   context,
@@ -269,6 +271,23 @@ export function FreshConsolePage({
         </main>
       </div>
     );
+  if (operation.productComplete) {
+    return (
+      <Suspense
+        fallback={
+          <div className="main-content" role="status">
+            <span className="loading-spinner" aria-label={t('unavailable')} />
+          </div>
+        }
+      >
+        <LegacyConsolePage
+          context={context}
+          credential={credential}
+          onUnauthorized={unauthorized}
+        />
+      </Suspense>
+    );
+  }
   return (
     <ConsoleShell
       basePath={context.basePath}
@@ -319,35 +338,6 @@ export function FreshConsolePage({
           />
         </div>
       )}
-      {visited
-        .filter((item): item is ConsolePage =>
-          [
-            'accounts',
-            'providers',
-            'models',
-            'health',
-            'policies',
-            'monitoring',
-            'usage',
-            'prices',
-            'runtime',
-            'config',
-            'maintenance',
-            'logs',
-            'updates',
-            'plugins',
-          ].includes(item)
-        )
-        .map((item) => (
-          <div className="console-page-view" hidden={page !== item} key={item}>
-            <FullWebResourcePage
-              resource={item === 'runtime' ? 'system' : item === 'prices' ? 'model-prices' : (item as FullWebResource)}
-              client={client}
-              credential={credential}
-              onUnauthorized={unauthorized}
-            />
-          </div>
-        ))}
       {visited.includes('gateway') && (
         <div className="console-page-view" hidden={page !== 'gateway'}>
           <div className="workspace-settings">

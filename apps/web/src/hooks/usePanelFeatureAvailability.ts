@@ -317,7 +317,11 @@ export function usePanelFeatureAvailability(): PanelFeatureAvailability {
   const apiBase = useAuthStore((state) => state.apiBase);
   const managementKey = useAuthStore((state) => state.managementKey);
   const usageServiceRevision = useUsageServiceStore((state) => state.revision);
-  const panelBase = useMemo(() => detectApiBaseFromLocation(), []);
+  const panelBase = useMemo(
+    () =>
+      /\/api\/v2\/cpamp$/i.test(apiBase.trim()) ? normalizeBase(apiBase) : detectApiBaseFromLocation(),
+    [apiBase]
+  );
   const requestInput = useMemo(
     () => ({
       apiBase,

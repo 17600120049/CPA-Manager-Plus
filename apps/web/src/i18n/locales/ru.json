@@ -532,7 +532,13 @@
     "logs": "Просмотр логов",
     "logs_short": "Логи",
     "system_info": "Информация системы",
-    "system_info_short": "Система"
+    "system_info_short": "Система",
+    "group_overview": "Обзор",
+    "group_configuration": "Конфигурация",
+    "group_accounts": "Аккаунты",
+    "group_operations": "Операции",
+    "group_plugins": "Плагины",
+    "group_system": "Система"
   },
   "account_actions": {
     "eyebrow": "Проблемы аккаунтов",

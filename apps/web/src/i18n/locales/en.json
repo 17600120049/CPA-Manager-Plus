@@ -534,7 +534,13 @@
     "logs": "Logs Viewer",
     "logs_short": "Logs",
     "system_info": "System Info",
-    "system_info_short": "System"
+    "system_info_short": "System",
+    "group_overview": "Overview",
+    "group_configuration": "Configuration",
+    "group_accounts": "Accounts",
+    "group_operations": "Operations",
+    "group_plugins": "Plugins",
+    "group_system": "System"
   },
   "account_actions": {
     "eyebrow": "Account issues",

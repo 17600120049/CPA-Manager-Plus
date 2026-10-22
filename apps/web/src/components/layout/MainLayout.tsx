@@ -224,6 +224,13 @@ type NavItem = {
   exact?: boolean;
 };
 
+type NavSection = {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  items: NavItem[];
+};
+
 interface MainLayoutProps {
   routeBase?: string;
   demoMode?: boolean;
@@ -264,6 +271,14 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [visualEffectsMenuOpen, setVisualEffectsMenuOpen] = useState(false);
+  const [openNavSections, setOpenNavSections] = useState<Record<string, boolean>>({
+    overview: true,
+    configuration: true,
+    accounts: true,
+    operations: true,
+    plugins: true,
+    system: true,
+  });
   const [pluginResources, setPluginResources] = useState<PluginResourceEntry[]>([]);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const languageMenuRef = useRef<HTMLDivElement | null>(null);
@@ -558,56 +573,85 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
         icon: <PluginSidebarIcon src={resolvePluginAssetURL(resource.pluginLogo, apiBase)} />,
       }))
     : [];
-  const navSections: NavItem[][] = [
-    [
-      dashboardNavItem,
-      ...(usageAnalyticsNavItem ? [usageAnalyticsNavItem] : []),
-      ...(monitoringNavItem ? [monitoringNavItem] : []),
-    ],
-    [
-      {
-        path: '/config',
-        label: t('nav.config_management'),
-        shortLabel: navShortLabel('nav.config_management', t('nav.config_management')),
-        icon: sidebarIcons.config,
-      },
-      {
-        path: '/ai-providers',
-        label: t('nav.ai_providers'),
-        shortLabel: navShortLabel('nav.ai_providers', t('nav.ai_providers')),
-        icon: sidebarIcons.aiProviders,
-      },
-      ...pluginControlNavItems,
-    ],
-    [
-      {
-        path: '/accounts',
-        label: t('nav.accounts', { defaultValue: t('accounts.title') }),
-        shortLabel: navShortLabel(
-          'nav.accounts',
-          t('nav.accounts', { defaultValue: t('accounts.title') })
-        ),
-        icon: sidebarIcons.authFiles,
-      },
-      {
-        path: '/oauth',
-        label: t('nav.oauth', { defaultValue: 'OAuth' }),
-        shortLabel: navShortLabel('nav.oauth', t('nav.oauth', { defaultValue: 'OAuth' })),
-        icon: sidebarIcons.oauth,
-      },
-    ],
-    operationNavItems,
-    pluginResourceNavItems,
-    [
-      {
-        path: '/system',
-        label: t('nav.system_info'),
-        shortLabel: navShortLabel('nav.system_info', t('nav.system_info')),
-        icon: sidebarIcons.system,
-      },
-    ],
-  ].filter((section) => section.length > 0);
-  const navItems = navSections.flat();
+  const navSections: NavSection[] = [
+    {
+      id: 'overview',
+      label: t('nav.group_overview', { defaultValue: 'Overview' }),
+      icon: sidebarIcons.dashboard,
+      items: [
+        dashboardNavItem,
+        ...(usageAnalyticsNavItem ? [usageAnalyticsNavItem] : []),
+        ...(monitoringNavItem ? [monitoringNavItem] : []),
+      ],
+    },
+    {
+      id: 'configuration',
+      label: t('nav.group_configuration', { defaultValue: 'Configuration' }),
+      icon: sidebarIcons.config,
+      items: [
+        {
+          path: '/config',
+          label: t('nav.config_management'),
+          shortLabel: navShortLabel('nav.config_management', t('nav.config_management')),
+          icon: sidebarIcons.config,
+        },
+        {
+          path: '/ai-providers',
+          label: t('nav.ai_providers'),
+          shortLabel: navShortLabel('nav.ai_providers', t('nav.ai_providers')),
+          icon: sidebarIcons.aiProviders,
+        },
+      ],
+    },
+    {
+      id: 'accounts',
+      label: t('nav.group_accounts', { defaultValue: 'Accounts' }),
+      icon: sidebarIcons.authFiles,
+      items: [
+        {
+          path: '/accounts',
+          label: t('nav.accounts', { defaultValue: t('accounts.title') }),
+          shortLabel: navShortLabel(
+            'nav.accounts',
+            t('nav.accounts', { defaultValue: t('accounts.title') })
+          ),
+          icon: sidebarIcons.authFiles,
+        },
+        {
+          path: '/oauth',
+          label: t('nav.oauth', { defaultValue: 'OAuth' }),
+          shortLabel: navShortLabel('nav.oauth', t('nav.oauth', { defaultValue: 'OAuth' })),
+          icon: sidebarIcons.oauth,
+        },
+      ],
+    },
+    {
+      id: 'operations',
+      label: t('nav.group_operations', { defaultValue: 'Operations' }),
+      icon: sidebarIcons.logs,
+      items: operationNavItems,
+    },
+    {
+      id: 'plugins',
+      label: t('nav.group_plugins', { defaultValue: 'Plugins' }),
+      icon: sidebarIcons.plugins,
+      items: [...pluginControlNavItems, ...pluginResourceNavItems],
+    },
+    {
+      id: 'system',
+      label: t('nav.group_system', { defaultValue: 'System' }),
+      icon: sidebarIcons.system,
+      items: [
+        {
+          path: '/system',
+          label: t('nav.system_info'),
+          shortLabel: navShortLabel('nav.system_info', t('nav.system_info')),
+          icon: sidebarIcons.system,
+        },
+      ],
+    },
+  ].filter((section) => section.items.length > 0);
+  const navItems = navSections.flatMap((section) => section.items);
   const navOrder = navItems.map((item) => item.path);
   const getRouteOrder = (pathname: string) => {
     const trimmedPath =
@@ -698,6 +742,9 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
   const standaloneRouteLabel =
     currentPath === '/accounts' ? t('nav.accounts', { defaultValue: t('accounts.title') }) : null;
   const currentRouteLabel = activeNavItem?.label ?? standaloneRouteLabel ?? fullBrandName;
+  const currentSection = navSections.find((section) =>
+    section.items.some((item) => item === activeNavItem)
+  );
 
   return (
     <div
@@ -744,6 +791,12 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
               className="app-breadcrumb"
               aria-label={t('common.navigation', { defaultValue: 'Navigation' })}
             >
+              {currentSection && (
+                <>
+                  <span className="breadcrumb-item">{currentSection.label}</span>
+                  <span className="breadcrumb-separator" aria-hidden="true">/</span>
+                </>
+              )}
               <span className="breadcrumb-item">{currentRouteLabel}</span>
             </nav>
           </div>
@@ -945,9 +998,32 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
 
           <div className="nav-section">
             {navSections.map((section, sectionIndex) => (
-              <div className="nav-menu-section" key={`nav-section-${sectionIndex}`}>
+              <div className="nav-menu-section" key={section.id}>
                 {sectionIndex > 0 && <div className="nav-menu-divider" aria-hidden="true" />}
-                {section.map((item) => (
+                <button
+                  type="button"
+                  className="nav-section-toggle nav-item"
+                  aria-expanded={openNavSections[section.id] ?? true}
+                  aria-controls={`nav-${section.id}`}
+                  onClick={() =>
+                    setOpenNavSections((current) => ({
+                      ...current,
+                      [section.id]: !(current[section.id] ?? true),
+                    }))
+                  }
+                  title={section.label}
+                >
+                  <span className="nav-icon">{section.icon}</span>
+                  {showSidebarLabels && <span className="nav-label">{section.label}</span>}
+                  {showSidebarLabels && (
+                    <span className="nav-section-chevron" aria-hidden="true">
+                      {openNavSections[section.id] ?? true ? '⌄' : '›'}
+                    </span>
+                  )}
+                </button>
+                {(openNavSections[section.id] ?? true) && (
+                  <div id={`nav-${section.id}`}>
+                    {section.items.map((item) => (
                   <NavLink
                     key={item.path}
                     to={prefixRouteBase(item.path, routeBase)}
@@ -961,7 +1037,9 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
                     <span className="nav-icon">{item.icon}</span>
                     {showSidebarLabels && <span className="nav-label">{item.label}</span>}
                   </NavLink>
-                ))}
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

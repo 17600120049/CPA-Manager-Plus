@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,23 @@ import (
 func (a *freshApplication) legacyResource(w http.ResponseWriter, r *http.Request, resource string) {
 	if a.legacy == nil {
 		http.Error(w, "resource unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	// Full Web uses this bridge only after canonicalAPI has verified the
+	// Manager Admin key. Keep the browser-facing namespace explicit while
+	// reusing the complete legacy router and its own controller checks.
+	if strings.HasPrefix(resource, "cpamp/") && legacyBridgePathAllowed(strings.TrimPrefix(resource, "cpamp/")) {
+		targetResource := strings.TrimPrefix(resource, "cpamp/")
+		parsed, err := url.Parse("/" + targetResource)
+		if err != nil || parsed.Path == "" || parsed.Path == "/" {
+			http.NotFound(w, r)
+			return
+		}
+		parsed.RawQuery = r.URL.RawQuery
+		clone := r.Clone(r.Context())
+		clone.URL = parsed
+		clone.RequestURI = parsed.RequestURI()
+		a.legacy.ServeHTTP(w, clone)
 		return
 	}
 	var target string
@@ -48,4 +66,29 @@ func (a *freshApplication) legacyResource(w http.ResponseWriter, r *http.Request
 	clone.URL = parsed
 	clone.RequestURI = parsed.RequestURI()
 	a.legacy.ServeHTTP(w, clone)
+}
+
+// legacyBridgePathAllowed is deliberately a route-family allowlist. The
+// canonical API has already authenticated the request, but a generic path
+// tunnel would turn the Full Web namespace into an unbounded Manager router.
+// These families are the existing CPAMP contracts consumed by MainLayout and
+// its real pages; unknown paths remain a fail-closed 404.
+func legacyBridgePathAllowed(resource string) bool {
+	if resource == "" || strings.ContainsAny(resource, "\\#") || strings.Contains(resource, "..") {
+		return false
+	}
+	for _, prefix := range []string{
+		"v0/management/",
+		"usage-service/",
+	} {
+		if strings.HasPrefix(resource, prefix) {
+			return true
+		}
+	}
+	switch resource {
+	case "status", "health", "setup", "v1/models", "models":
+		return true
+	default:
+		return false
+	}
 }

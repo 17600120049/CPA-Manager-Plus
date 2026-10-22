@@ -39,8 +39,24 @@ export default defineConfig({
   root: path.resolve(__dirname, 'fullweb'),
   publicDir: false,
   base: './',
+  define: {
+    __PANEL_LITE__: 'false',
+    __DEMO_SITE__: 'false',
+    __APP_VERSION__: JSON.stringify(process.env.VERSION || 'dev'),
+  },
   plugins: [react(), loadingBoundaryEvidence()],
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
+  css: {
+    modules: {
+      localsConvention: 'camelCase',
+      generateScopedName: '[name]__[local]___[hash:base64:5]',
+    },
+    preprocessorOptions: {
+      scss: {
+        additionalData: `@use "@/styles/variables" as *;\n@use "@/styles/mixins" as *;\n`,
+      },
+    },
+  },
   build: {
     target: 'es2020',
     outDir: path.resolve(__dirname, 'dist/fullweb'),

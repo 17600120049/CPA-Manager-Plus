@@ -526,7 +526,13 @@
     "logs": "記錄檢視",
     "logs_short": "記錄",
     "system_info": "系統資訊",
-    "system_info_short": "系統"
+    "system_info_short": "系統",
+    "group_overview": "總覽",
+    "group_configuration": "設定",
+    "group_accounts": "帳戶",
+    "group_operations": "執行作業",
+    "group_plugins": "插件",
+    "group_system": "系統"
   },
   "account_actions": {
     "eyebrow": "帳號異常",
