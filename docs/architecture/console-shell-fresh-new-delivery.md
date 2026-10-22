@@ -1,0 +1,128 @@
+# Console Shell and guided Fresh New delivery — 2026-10-22
+
+An administrator can now claim a new installation, configure the administrator
+key and Console address, sign in, review the embedded destination, submit
+installation once, follow real execution/recovery and enter Console. The
+Console has two-level navigation, matching breadcrumbs, desktop folding and a
+mobile drawer. The existing API key, gateway retry, update-channel and
+installation pages have real routes and retain their existing business and
+authorization behavior.
+
+## Candidate and reproduction
+
+- Base: merged `v2@b535fd48bd3cdfc4d38c622bc037ae4b1876ec97`.
+- **Tested application source:** `e37f3fb8d966ffa95e0b45570176c2779691674d`.
+  All three images were built from one `git archive` snapshot of this commit.
+  Later evidence/runner-only commits do not change the tested application.
+- Local image tags: `cpamp-console-e37f3fb8-manager:local`,
+  `cpamp-console-e37f3fb8-ingress:local`,
+  `cpamp-console-e37f3fb8-runtime:local`.
+- Scope: disposable, loopback-published **Linux/amd64 Embedded** installation,
+  official checksum-pinned CPA **8.0.13**, ordinary isolated Compose services.
+  No Registry push, production data, shared queue, merge, tag or publication.
+- Exact image IDs, same-source revision labels and observed generations:
+  [machine report](evidence/console-shell-fresh-new/report.json).
+
+Use the [operator guide](fresh-new-installation.md) for manual Host admission
+and UI steps. To rebuild from the source worktree:
+
+```sh
+git rev-parse HEAD
+# For the exact tested bytes, use the e37f3fb8 commit snapshot as the context.
+docker build --platform linux/amd64 -f Dockerfile.runtime \
+  -t cpamp-console-e37f3fb8-runtime:local .
+docker build --platform linux/amd64 -f Dockerfile.ingress \
+  -t cpamp-console-e37f3fb8-ingress:local .
+docker build --platform linux/amd64 -f Dockerfile.manager-server \
+  --build-arg SOURCE_COMMIT=e37f3fb8d966ffa95e0b45570176c2779691674d \
+  --build-arg VERSION=2.0.0-console-candidate \
+  -t cpamp-console-e37f3fb8-manager:local .
+PLAYWRIGHT_MODULE=/absolute/path/to/node_modules/playwright \
+PLAYWRIGHT_CHANNEL=chrome \
+node bin/ci/fresh-new-installation.mjs \
+  cpamp-console-e37f3fb8-runtime:local \
+  cpamp-console-e37f3fb8-manager:local \
+  cpamp-console-e37f3fb8-ingress:local \
+  /absolute/path/to/a/new/disposable-result
+```
+
+The runner launches its own random Compose project and loopback port, initializes
+only new volumes, exercises the browser and removes only that project's
+containers/volumes. The tested environment used an installed Playwright module
+and Chrome on macOS against real Linux/amd64 Docker containers. All task
+containers and volumes were removed successfully; the local candidate images
+remain available. This is a runnable review candidate, not a published release.
+
+## Actual administrator journey
+
+**PASS:** Host-issued claim → saved administrator key → verified Console address
+→ login → choose new installation → check the deployment → review and confirm
+→ prepare/start/verify/save → enter Console.
+
+Runtime identity comes from Manager's existing Host-configured authenticated
+transport. The browser no longer pastes operation/Runtime JSON or invokes
+stage/start individually. Completion requires the original committed target
+to be observed ready with the same identity, exact uint64 generation and
+artifact. Every successful transition reads the durable operation.
+
+**PASS:** the actual Start request completed, but delivery of its response and
+subsequent reads was interrupted. The UI showed an unconfirmed result and
+blocked another write. Browser refresh, administrator relogin and continuation
+recovered the same operation and completed it without a second Start. A failed
+deployment read made no installation write.
+
+**PASS:** four real routes, current leaf, breadcrumbs, browser Back/Forward,
+desktop folding, mobile drawer, theme variants and language switching. The
+update-channel change persisted. Manager/Runtime/Ingress restart preserved the
+operation, routing, installation result, data key and setting.
+
+**PASS:** missing/wrong administrator credentials, stale target generation,
+consumed/wrong/expired handoffs, repeated initialization and non-Fresh sources
+were rejected. The expiry case uses an offline disposable expiry fixture;
+natural ten-minute expiry was not rerun. No browser storage, uncaught browser
+errors or secret-bearing service logs were observed.
+
+## Screenshots
+
+All screenshots below come from the final real candidate, not prototype data.
+The complete desktop/mobile × light/dark evidence is indexed by the machine
+report in the same directory.
+
+| View | Desktop | Mobile |
+| --- | --- | --- |
+| API keys, light | [Desktop](evidence/console-shell-fresh-new/api-keys-desktop-light.png) | [Mobile](evidence/console-shell-fresh-new/api-keys-mobile-light.png) |
+| API keys, dark | [Desktop](evidence/console-shell-fresh-new/api-keys-desktop-dark.png) | [Mobile](evidence/console-shell-fresh-new/api-keys-mobile-dark.png) |
+| Navigation | [Folded](evidence/console-shell-fresh-new/navigation-collapsed-desktop-dark.png) | [Drawer](evidence/console-shell-fresh-new/navigation-mobile-light.png) |
+| Installation review | [Desktop](evidence/console-shell-fresh-new/installation-review-desktop-light.png) | [Mobile](evidence/console-shell-fresh-new/installation-review-mobile-light.png) |
+| Unconfirmed result | [Desktop](evidence/console-shell-fresh-new/installation-result-unconfirmed-desktop-dark.png) | [Mobile](evidence/console-shell-fresh-new/installation-result-unconfirmed-mobile-dark.png) |
+| Installation complete | [Desktop](evidence/console-shell-fresh-new/installation-complete-desktop-light.png) | [Mobile](evidence/console-shell-fresh-new/installation-complete-mobile-light.png) |
+
+## Verification and remaining scope
+
+Passed: Manager complete Go tests and vet; race checks for affected Fresh
+admission/store/routing/strategy paths; full Web tests and repository contracts;
+TypeScript; ESLint (no errors, six warnings); Full Web and single-file Panel
+builds and demo-isolation guard. The final Shell delta passed its focused
+regressions and type/lint checks. Independent review of the tested application
+source found no confirmed High/Medium defects. Applicable remote Required CI
+is reported on the Draft PR; local checks do not stand in for it.
+
+The accepted prototype is implemented for this delivery slice, not for every
+prototype page. Full Key/Config workspace modernization, models, Runtime status
+modernization, policy, quota and pinned menus remain outside this slice.
+Ordinary Fresh keeps private H1 retry writers and CPA key installation/revocation
+unavailable unless their existing Host authority is present; navigation grants
+no new writer. The actual candidate verified the truthful read-only state.
+
+Gateway model traffic remains Pending and zero-key requests stay blocked.
+Adopt stays closed; External is a checkpoint, not ProductComplete; both Upgrade
+journeys remain unavailable. The five-path Beta obligation remains open.
+An independent Supervisor restart changes generation and currently leaves CPA
+offline: original installation provenance is retained and old-target writes
+are refused. The existing explicit Host lifecycle recovery was exercised;
+automatic browser recovery across that identity change is not claimed.
+
+Non-Chinese layout matrices, other browser engines, arm64, real Provider/model
+traffic, power-loss and production rollback were not run. One minor visual
+difference remains: the mobile dark unconfirmed-result alert heading wraps
+into short lines; its explanation and recovery controls remain readable.

@@ -1,0 +1,498 @@
+{
+  "result": "PASS",
+  "project": "cpamp-fresh-new-1c3d50969cc0",
+  "checks": [
+    {
+      "name": "first boot waits for Host initialize without creating database or data key",
+      "result": "PASS"
+    },
+    {
+      "name": "expired Handoff is rejected with Host recovery guidance (offline expiry fixture)",
+      "result": "PASS"
+    },
+    {
+      "name": "wrong Handoff installation identity is rejected without consuming the valid claim",
+      "result": "PASS"
+    },
+    {
+      "name": "real browser claims once, removes fragment and rejects consumed Handoff",
+      "result": "PASS"
+    },
+    {
+      "name": "missing/weak Admin Key rejected; server-generated Key commits once despite lost response",
+      "result": "PASS"
+    },
+    {
+      "name": "routing failure retains intent; lost activation reply reconciles exact public identity",
+      "result": "PASS"
+    },
+    {
+      "name": "Console rejects missing/wrong Admin Key and accepts the installed Admin Key",
+      "result": "PASS"
+    },
+    {
+      "name": "deployment Runtime observation rejects missing/wrong administrator credentials",
+      "result": "PASS"
+    },
+    {
+      "name": "failed deployment check preserves the original operation and performs no installation write",
+      "result": "PASS"
+    },
+    {
+      "name": "POST /console/api/v2/strategy",
+      "status": 200
+    },
+    {
+      "name": "POST /console/api/v2/complete",
+      "status": 200
+    },
+    {
+      "name": "one user install submission staged and started official CPA; reload recovered the same operation after lost reply without repeating Start",
+      "result": "PASS"
+    },
+    {
+      "name": "two-level routes, current leaf, breadcrumbs, history, desktop collapse and mobile drawer work in light/dark themes",
+      "result": "PASS"
+    },
+    {
+      "name": "language selection updates Shell and restores Chinese without persisting credentials or preferences",
+      "result": "PASS"
+    },
+    {
+      "name": "zero Client Keys: all tested Gateway paths remain Pending; peer cannot reach CPA port",
+      "result": "PASS"
+    },
+    {
+      "name": "Manager/Runtime/Ingress restart preserves identity, completion, routing, data key and saved setting; Admin relogin works",
+      "result": "PASS"
+    },
+    {
+      "name": "stale Runtime generation returns 409 managed_target_identity_mismatch without rebinding or retry",
+      "result": "PASS"
+    },
+    {
+      "name": "explicit Host lifecycle Start restores the new Runtime generation without rewriting installation provenance",
+      "result": "PASS"
+    },
+    {
+      "name": "completed installation rejects repeated initialize; admin/authority/settings and identity/key files unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "empty-existing-db cannot be admitted as Fresh; source bytes and modes unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "unknown-db cannot be admitted as Fresh; source bytes and modes unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "legacy-settings cannot be admitted as Fresh; source bytes and modes unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "incomplete-marker cannot be admitted as Fresh; source bytes and modes unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "no browser storage, uncaught browser errors or secrets in service logs",
+      "result": "PASS"
+    }
+  ],
+  "screenshots": [
+    {
+      "name": "installation-choice-desktop-dark",
+      "path": "installation-choice-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "installation-choice-desktop-light",
+      "path": "installation-choice-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-choice-mobile-light",
+      "path": "installation-choice-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-choice-mobile-dark",
+      "path": "installation-choice-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "installation-review-desktop-dark",
+      "path": "installation-review-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "installation-review-desktop-light",
+      "path": "installation-review-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-review-mobile-light",
+      "path": "installation-review-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-review-mobile-dark",
+      "path": "installation-review-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "installation-result-unconfirmed-desktop-dark",
+      "path": "installation-result-unconfirmed-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "installation-result-unconfirmed-desktop-light",
+      "path": "installation-result-unconfirmed-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-result-unconfirmed-mobile-light",
+      "path": "installation-result-unconfirmed-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-result-unconfirmed-mobile-dark",
+      "path": "installation-result-unconfirmed-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "installation-complete-desktop-dark",
+      "path": "installation-complete-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "installation-complete-desktop-light",
+      "path": "installation-complete-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-complete-mobile-light",
+      "path": "installation-complete-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console"
+    },
+    {
+      "name": "installation-complete-mobile-dark",
+      "path": "installation-complete-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console"
+    },
+    {
+      "name": "settings-desktop-dark",
+      "path": "settings-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/system/settings"
+    },
+    {
+      "name": "api-keys-desktop-dark",
+      "path": "api-keys-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/api-keys"
+    },
+    {
+      "name": "navigation-collapsed-desktop-dark",
+      "path": "navigation-collapsed-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/api-keys"
+    },
+    {
+      "name": "gateway-desktop-dark",
+      "path": "gateway-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/system/gateway"
+    },
+    {
+      "name": "installation-desktop-dark",
+      "path": "installation-desktop-dark.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/system/installation"
+    },
+    {
+      "name": "settings-desktop-light",
+      "path": "settings-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/system/settings"
+    },
+    {
+      "name": "api-keys-desktop-light",
+      "path": "api-keys-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/api-keys"
+    },
+    {
+      "name": "navigation-collapsed-desktop-light",
+      "path": "navigation-collapsed-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/api-keys"
+    },
+    {
+      "name": "gateway-desktop-light",
+      "path": "gateway-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/system/gateway"
+    },
+    {
+      "name": "installation-desktop-light",
+      "path": "installation-desktop-light.png",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/system/installation"
+    },
+    {
+      "name": "settings-mobile-light",
+      "path": "settings-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/system/settings"
+    },
+    {
+      "name": "api-keys-mobile-light",
+      "path": "api-keys-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/api-keys"
+    },
+    {
+      "name": "navigation-mobile-light",
+      "path": "navigation-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/api-keys"
+    },
+    {
+      "name": "gateway-mobile-light",
+      "path": "gateway-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/system/gateway"
+    },
+    {
+      "name": "installation-mobile-light",
+      "path": "installation-mobile-light.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "light",
+      "route": "/console/system/installation"
+    },
+    {
+      "name": "settings-mobile-dark",
+      "path": "settings-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/system/settings"
+    },
+    {
+      "name": "api-keys-mobile-dark",
+      "path": "api-keys-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/api-keys"
+    },
+    {
+      "name": "navigation-mobile-dark",
+      "path": "navigation-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/api-keys"
+    },
+    {
+      "name": "gateway-mobile-dark",
+      "path": "gateway-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/system/gateway"
+    },
+    {
+      "name": "installation-mobile-dark",
+      "path": "installation-mobile-dark.png",
+      "viewport": {
+        "width": 390,
+        "height": 1000
+      },
+      "theme": "dark",
+      "route": "/console/system/installation"
+    }
+  ],
+  "pageErrors": [],
+  "notRun": [
+    "Real Provider/model traffic, public Gateway, other four journeys, arm64, power-loss and production rollback",
+    "Natural ten-minute claim expiry (expired server timestamp is injected offline only in this disposable fixture)",
+    "Non-Chinese locale layouts, other browser engines"
+  ],
+  "images": {
+    "cpamp-runtime": "sha256:b04e40d06f48a5cd887b5fe7860234d6228921662f48394e807eda0e0c529285",
+    "cpamp-manager": "sha256:83879cdae5b97bb72479b40e54e2361f9b9dfe381a41cb754a52909d34d15fc0",
+    "cpamp-ingress": "sha256:42afa41f4f769ba41490941ce6ae54f5fb7df503a60ff65b5ab30ca4b60963f2"
+  },
+  "imageSourceRevisions": {
+    "cpamp-runtime": "e37f3fb8d966ffa95e0b45570176c2779691674d",
+    "cpamp-manager": "e37f3fb8d966ffa95e0b45570176c2779691674d",
+    "cpamp-ingress": "e37f3fb8d966ffa95e0b45570176c2779691674d"
+  },
+  "testedSourceCommit": "e37f3fb8d966ffa95e0b45570176c2779691674d",
+  "source": "linux/amd64",
+  "gitHead": "e37f3fb8d966ffa95e0b45570176c2779691674d",
+  "diffSha256": "ea1de46fed528e400c361087961bf7f9e900ebdb2a06d92c88bf3a61a6b4844d",
+  "sourceFiles": {
+    "bin/ci/fresh-new-installation.mjs": "893e7a94d8e01ba8812cecefb434de53a52f3e57f67eeb2b70932f71d5d7179c"
+  },
+  "origin": "http://127.0.0.1:61546",
+  "strategyGenerations": [
+    "17486582467214426535",
+    "17486582467214426535"
+  ],
+  "operationId": "fresh-3ab6e05435bde4840e0721be54c60447",
+  "runtimeAfterRestart": {
+    "state": "offline",
+    "generationChanged": true
+  },
+  "cleanup": "PASS"
+}

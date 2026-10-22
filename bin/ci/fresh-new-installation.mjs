@@ -573,6 +573,7 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
   await installationScreenshots('complete');
   await page.getByRole('button', { name: '进入 Console', exact: true }).click();
   await page.getByTestId('console-shell').waitFor();
+  await page.locator('button[aria-controls="nav-system"]').click();
   await page.locator('a[href="/console/system/settings"]').click();
   const before = await adminGet('operation');
   assert.equal(before.productComplete, true);
@@ -587,6 +588,10 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
   const navigate = async (path) => {
     if (page.viewportSize().width < 768)
       await page.getByTestId('console-toggle-navigation').click();
+    const group = page.locator(
+      'button[aria-controls="nav-' + (path.startsWith('/system/') ? 'system' : 'clients') + '"]'
+    );
+    if ((await group.getAttribute('aria-expanded')) !== 'true') await group.click();
     await page.locator('a[href="/console' + path + '"]').click();
     await wait(
       async () => new URL(page.url()).pathname === '/console' + path,
