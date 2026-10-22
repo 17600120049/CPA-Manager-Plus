@@ -147,7 +147,11 @@ export function FreshKeyDetails({
     onClose();
   }
   return (
-    <section className="key-detail-workspace" aria-labelledby="key-detail-title" aria-busy={busy}>
+    <section
+      className="card key-detail-workspace"
+      aria-labelledby="key-detail-title"
+      aria-busy={busy}
+    >
       <header className="key-detail-heading">
         <div>
           <span className="key-detail-eyebrow">{t('keysDetails')}</span>
@@ -207,7 +211,7 @@ export function FreshKeyDetails({
                   <input
                     ref={input}
                     id="key-name"
-                    className="form-input"
+                    className="input"
                     value={name}
                     maxLength={240}
                     autoComplete="off"

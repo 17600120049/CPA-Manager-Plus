@@ -235,7 +235,9 @@ describe('Console navigation', () => {
     expect(navigate).toHaveBeenCalledWith('/console/api-keys');
     await act(async () => testid('console-toggle-navigation').props.onClick());
     await act(async () =>
-      renderer!.root.findByProps({ className: 'console-backdrop' }).props.onClick()
+      renderer!.root
+        .findByProps({ className: 'console-backdrop sidebar-backdrop visible' })
+        .props.onClick()
     );
     expect(testid('console-toggle-navigation').props['aria-expanded']).toBe(false);
     expect(body.style.overflow).toBe('auto');

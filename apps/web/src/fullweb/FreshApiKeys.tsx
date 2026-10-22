@@ -335,10 +335,15 @@ export function FreshApiKeys({
         </div>
       )}
       <div className="key-list-workspace" hidden={!!selected}>
-        <div className="key-filter-panel">
+        <div className="card key-filter-panel">
           <div className="key-filter-tabs" role="group" aria-label={k('list')}>
             {(['all', 'saved', 'replaced'] as const).map((value) => (
-              <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
+              <button
+                key={value}
+                className={`btn btn-sm ${filter === value ? 'btn-primary' : 'btn-ghost'}`}
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
+              >
                 {k(value)}{' '}
                 <span>
                   {keys === null
@@ -355,6 +360,7 @@ export function FreshApiKeys({
           <label className="key-search">
             <FullWebIcon name="search" />
             <input
+              className="input"
               type="search"
               aria-label={k('search')}
               placeholder={k('search')}
@@ -363,7 +369,7 @@ export function FreshApiKeys({
             />
           </label>
         </div>
-        <div className="key-table-panel">
+        <div className="card key-table-panel">
           <div className="key-table-heading">
             <div>
               <strong>{k('list')}</strong>
@@ -461,7 +467,7 @@ export function FreshApiKeys({
                       </td>
                       <td data-label={k('actions')}>
                         <button
-                          className="key-detail-link"
+                          className="btn btn-ghost btn-xs key-detail-link"
                           data-testid={'open-key-' + key.id}
                           disabled={locked}
                           onClick={() => setSelected(key.id)}
@@ -514,7 +520,7 @@ export function FreshApiKeys({
           onClose={() => setSelected('')}
         />
       )}
-      <details className="key-management-section" open={operationPending || undefined}>
+      <details className="card key-management-section" open={operationPending || undefined}>
         <summary>
           <FullWebIcon name="shield" />
           {k('manage')}

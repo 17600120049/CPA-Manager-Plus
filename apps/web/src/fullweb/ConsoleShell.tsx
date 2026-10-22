@@ -9,8 +9,10 @@ import {
 } from 'react';
 import { fullWebText as t, fullWebLanguage, setFullWebLanguage } from '../i18n/fullweb';
 import { shellText as s } from '../i18n/consoleShell';
-import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
-import darkLogo from '../assets/brand/cpamp-logo-horizontal-on-dark.svg?inline';
+import symbol from '../assets/brand/cpamp-symbol-color.png?inline';
+import wordmark from '../assets/brand/cpamp-wordmark-color.png?inline';
+import darkWordmark from '../assets/brand/cpamp-wordmark-on-dark.png?inline';
+import { IconKey, IconSidebarDashboard, IconSidebarSystem } from '../components/ui/icons';
 import { FullWebIcon } from './FullWebIcon';
 import './consoleShell.css';
 
@@ -171,7 +173,7 @@ export function ConsoleShell({
     >
       {mobile && (
         <button
-          className="console-backdrop"
+          className="console-backdrop sidebar-backdrop visible"
           tabIndex={-1}
           aria-label={s('close')}
           onClick={close}
@@ -180,7 +182,7 @@ export function ConsoleShell({
       <aside
         ref={sidebar}
         id="console-sidebar"
-        className="console-sidebar"
+        className={`console-sidebar sidebar ${collapsed ? 'collapsed' : ''} ${mobile ? 'open' : ''}`}
         aria-label={s('navigation')}
         aria-modal={mobile || undefined}
         role={mobile ? 'dialog' : undefined}
@@ -207,24 +209,33 @@ export function ConsoleShell({
         }}
       >
         <a
-          className="console-brand"
+          className="console-brand sidebar-brand"
           href={basePath}
           aria-label="CPAMP"
           aria-disabled={blocked || undefined}
           onClick={(event) => navigate(event, '')}
         >
-          <img src={light ? logo : darkLogo} alt="CPAMP" />
+          <span className="sidebar-brand-main">
+            <img className="sidebar-brand-symbol" src={symbol} alt="" />
+            {(!collapsed || narrow) && (
+              <img
+                className="sidebar-brand-wordmark"
+                src={light ? wordmark : darkWordmark}
+                alt="CPAMP"
+              />
+            )}
+          </span>
         </a>
         <button
-          className="console-mobile-close console-icon-button"
+          className="console-mobile-close console-icon-button btn btn-ghost"
           aria-label={s('close')}
           onClick={close}
         >
           <FullWebIcon name="close" />
         </button>
-        <nav data-testid="console-navigation">
+        <nav className="console-sidebar-navigation nav-section" data-testid="console-navigation">
           <a
-            className="console-nav-home"
+            className={`console-nav-home nav-item ${page === 'home' ? 'active' : ''}`}
             data-testid="console-home-navigation"
             href={basePath}
             aria-current={page === 'home' ? 'page' : undefined}
@@ -232,8 +243,10 @@ export function ConsoleShell({
             title={s('home')}
             onClick={(event) => navigate(event, '')}
           >
-            <FullWebIcon name="dashboard" />
-            <span className="console-label">{s('home')}</span>
+            <span className="nav-icon">
+              <IconSidebarDashboard size={20} />
+            </span>
+            <span className="console-label nav-label">{s('home')}</span>
           </a>
           {groups.map((group) => (
             <div
@@ -245,7 +258,7 @@ export function ConsoleShell({
               }}
             >
               <button
-                className={`console-group-toggle ${owner?.id === group.id ? 'is-current-group' : ''}`}
+                className={`console-group-toggle nav-item ${owner?.id === group.id ? 'is-current-group' : ''} ${collapsed && owner?.id === group.id ? 'active' : ''}`}
                 aria-expanded={open.includes(group.id)}
                 aria-controls={`nav-${group.id}`}
                 aria-label={s(group.id)}
@@ -261,8 +274,10 @@ export function ConsoleShell({
                   );
                 }}
               >
-                <FullWebIcon name={group.icon} />
-                <span className="console-label">{s(group.id)}</span>
+                <span className="nav-icon">
+                  {group.id === 'clients' ? <IconKey size={20} /> : <IconSidebarSystem size={20} />}
+                </span>
+                <span className="console-label nav-label">{s(group.id)}</span>
                 <FullWebIcon
                   name="chevron"
                   size={14}
@@ -274,6 +289,7 @@ export function ConsoleShell({
                   {group.pages.map((item) => (
                     <a
                       key={item.id}
+                      className={`nav-item ${page === item.id ? 'active' : ''}`}
                       data-testid={item.id === 'gateway' ? 'gateway-retry-navigation' : undefined}
                       href={basePath + item.route}
                       aria-current={page === item.id ? 'page' : undefined}
@@ -281,7 +297,7 @@ export function ConsoleShell({
                       onClick={(event) => navigate(event, item.route)}
                       title={s(item.label)}
                     >
-                      <span>{s(item.label)}</span>
+                      <span className="nav-label">{s(item.label)}</span>
                     </a>
                   ))}
                 </div>
@@ -300,7 +316,7 @@ export function ConsoleShell({
             <span className="console-label">{s('help')}</span>
           </a>
           <button
-            className="console-icon-button"
+            className="console-icon-button btn btn-ghost"
             data-testid="console-collapse-sidebar"
             aria-label={s(narrow ? 'close' : collapsed ? 'expand' : 'collapse')}
             onClick={() => (narrow ? close() : collapse())}
@@ -310,10 +326,10 @@ export function ConsoleShell({
         </footer>
       </aside>
       <div className="console-workspace" inert={mobile ? true : undefined}>
-        <header className="console-topbar">
-          <div className="console-top-left">
+        <header className="console-topbar main-header navbar">
+          <div className="console-top-left navbar-left">
             <button
-              className="console-icon-button"
+              className="hamburger-container"
               data-testid="console-toggle-navigation"
               ref={toggle}
               aria-label={s('toggle')}
@@ -332,7 +348,7 @@ export function ConsoleShell({
             <nav
               data-testid="console-breadcrumb"
               aria-label={s('breadcrumb')}
-              className="console-breadcrumb"
+              className="console-breadcrumb app-breadcrumb"
             >
               {owner && (
                 <span>
@@ -345,7 +361,7 @@ export function ConsoleShell({
               <strong aria-current="page">{title}</strong>
             </nav>
           </div>
-          <div className="console-tools">
+          <div className="console-tools navbar-right">
             <label className="console-language">
               <FullWebIcon name="globe" size={16} />
               <select
@@ -364,7 +380,7 @@ export function ConsoleShell({
               </select>
             </label>
             <button
-              className="console-icon-button console-refresh"
+              className="console-icon-button console-refresh btn btn-ghost"
               aria-label={t('refresh')}
               title={t('refresh')}
               onClick={onRefresh}
@@ -372,7 +388,7 @@ export function ConsoleShell({
               <FullWebIcon name="refresh" />
             </button>
             <button
-              className="console-icon-button"
+              className="console-icon-button btn btn-ghost"
               aria-label={t('theme')}
               title={t('theme')}
               onClick={onTheme}
@@ -380,7 +396,7 @@ export function ConsoleShell({
               <FullWebIcon name={light ? 'sun' : 'moon'} />
             </button>
             <button
-              className="console-icon-button"
+              className="console-icon-button btn btn-ghost"
               aria-label={t('logout')}
               title={t('logout')}
               disabled={blocked}
@@ -392,7 +408,7 @@ export function ConsoleShell({
         </header>
         <main ref={main} tabIndex={-1} className="console-content" data-testid="console-operation">
           {page !== 'keys' && (
-            <div className="console-page-head">
+            <div className="console-page-head card">
               <h1>{title}</h1>
             </div>
           )}

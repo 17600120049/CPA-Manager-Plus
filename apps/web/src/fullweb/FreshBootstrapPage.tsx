@@ -254,6 +254,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
 
   useEffect(() => {
     document.documentElement.classList.toggle('light', lightTheme);
+    document.documentElement.setAttribute('data-theme', lightTheme ? 'white' : 'dark');
   }, [lightTheme]);
 
   const executeStart = useCallback(
@@ -528,7 +529,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
         <div className="header-actions">
           <button
             type="button"
-            className="btn-icon"
+            className="btn btn-ghost btn-icon-only"
             onClick={() => setLightTheme((prev) => !prev)}
             aria-label={journey('theme')}
             title={journey('theme')}
@@ -941,7 +942,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                         <div className="input-actions">
                           <button
                             type="button"
-                            className="btn-xs"
+                            className="btn btn-secondary btn-xs"
                             data-testid="toggle-key-visibility-btn"
                             onClick={() => setShowKey((prev) => !prev)}
                             disabled={
@@ -957,7 +958,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                           </button>
                           <button
                             type="button"
-                            className="btn-xs"
+                            className="btn btn-secondary btn-xs"
                             data-testid="generate-key-btn"
                             onClick={() => void handleGenerateKey()}
                             disabled={
@@ -973,7 +974,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
                           </button>
                           <button
                             type="button"
-                            className="btn-xs"
+                            className="btn btn-secondary btn-xs"
                             data-testid="copy-key-btn"
                             onClick={() => void handleCopyKey()}
                             disabled={!adminKey || submitting || generating}

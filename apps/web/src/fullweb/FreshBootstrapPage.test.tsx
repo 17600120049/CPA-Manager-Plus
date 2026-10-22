@@ -52,6 +52,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
     });
     vi.stubGlobal('document', {
       documentElement: {
+        setAttribute: vi.fn(),
         classList: {
           toggle: vi.fn(),
         },
@@ -822,7 +823,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
     );
   });
 
-  it('defines every CSS class used by FreshBootstrapPage in carrier.css without mismatched selectors', async () => {
+  it('defines every CSS class in Full Web layout or maintained CPAMP shared components', async () => {
     const fs = (
       globalThis as unknown as {
         process: {
@@ -832,7 +833,8 @@ describe('FreshBootstrapPage product preview workflow', () => {
         };
       }
     ).process.getBuiltinModule('node:fs');
-    const carrierCss = fs.readFileSync(new URL('./carrier.css', import.meta.url), 'utf8');
+    const carrierCss = fs.readFileSync(new URL('./carrier.css', import.meta.url), 'utf8') +
+      fs.readFileSync(new URL('../styles/components.scss', import.meta.url), 'utf8');
     const definedClasses = new Set(
       Array.from(carrierCss.matchAll(/\.([a-zA-Z0-9_-]+)/g), (m) => m[1])
     );
@@ -898,7 +900,7 @@ describe('FreshBootstrapPage product preview workflow', () => {
     collectClasses(renderer.root);
 
     for (const cls of renderedClasses) {
-      expect(definedClasses.has(cls), `Missing CSS class .${cls} in carrier.css`).toBe(true);
+      expect(definedClasses.has(cls), `Missing CSS class .${cls} in Full Web or shared components`).toBe(true);
     }
   });
 
@@ -1059,6 +1061,11 @@ describe('FreshBootstrapPage product preview workflow', () => {
       expect(visible).toContain(bootstrapJourneyText('address'));
       expect(visible).toContain(bootstrapJourneyText('continue'));
       expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(document.documentElement.setAttribute).toHaveBeenLastCalledWith('data-theme', 'white');
+      await act(async () => {
+        renderer.root.findByProps({ 'aria-label': bootstrapJourneyText('theme') }).props.onClick();
+      });
+      expect(document.documentElement.setAttribute).toHaveBeenLastCalledWith('data-theme', 'dark');
     }
   );
 });

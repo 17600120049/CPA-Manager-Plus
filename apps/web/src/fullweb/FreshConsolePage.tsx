@@ -14,6 +14,7 @@ import { workspaceText as w } from '../i18n/consoleWorkspace';
 import { ConsoleHome } from './ConsoleHome';
 import { FullWebIcon } from './FullWebIcon';
 import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
+import logoOnDark from '../assets/brand/cpamp-logo-horizontal-on-dark.svg?inline';
 import './consoleWorkspace.css';
 
 const defaultClient = createPublicApiClient();
@@ -58,6 +59,7 @@ export function FreshConsolePage({
   );
   useEffect(() => {
     document.documentElement.classList.toggle('light', light);
+    document.documentElement.setAttribute('data-theme', light ? 'white' : 'dark');
   }, [light]);
 
   function reportCreationPending(pending: boolean) {
@@ -187,7 +189,7 @@ export function FreshConsolePage({
       <div className="bootstrap-shell">
         <header className="bootstrap-header">
           <a className="console-login-brand" href={context.basePath}>
-            <img src={logo} alt="CPAMP" />
+            <img src={light ? logo : logoOnDark} alt="CPAMP" />
           </a>
           <button className="btn-icon" aria-label={t('theme')} onClick={() => setLight(!light)}>
             <FullWebIcon name={light ? 'moon' : 'sun'} />
@@ -319,13 +321,13 @@ export function FreshConsolePage({
       {visited.includes('gateway') && (
         <div className="console-page-view" hidden={page !== 'gateway'}>
           <div className="workspace-settings">
-            <aside className="workspace-section-nav" aria-label={w('configuration')}>
+            <aside className="card workspace-section-nav" aria-label={w('configuration')}>
               <span>
                 <FullWebIcon name="gateway" />
                 {w('connection')}
               </span>
             </aside>
-            <div className="workspace-settings-content">
+            <div className="card workspace-settings-content">
               <header className="workspace-settings-heading">
                 <FullWebIcon name="gateway" />
                 <div>
@@ -350,13 +352,13 @@ export function FreshConsolePage({
       {visited.includes('settings') && (
         <div className="console-page-view" hidden={page !== 'settings'}>
           <div className="workspace-settings">
-            <aside className="workspace-section-nav" aria-label={w('settings')}>
+            <aside className="card workspace-section-nav" aria-label={w('settings')}>
               <span>
                 <FullWebIcon name="settings" />
                 {w('preferences')}
               </span>
             </aside>
-            <div className="workspace-settings-content">
+            <div className="card workspace-settings-content">
               <header className="workspace-settings-heading">
                 <FullWebIcon name="settings" />
                 <div>
@@ -374,7 +376,7 @@ export function FreshConsolePage({
         </div>
       )}
       {page === 'installation' && (
-        <section className="workspace-installation-summary">
+        <section className="card workspace-installation-summary">
           <div className="workspace-installation-heading">
             <span>
               <FullWebIcon name="check" />

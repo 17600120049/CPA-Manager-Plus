@@ -85,7 +85,7 @@ export function ConsoleHome({
   ] as const;
   return (
     <div className="console-home" data-testid="console-home">
-      <section className="workspace-welcome">
+      <section className="card workspace-welcome">
         <div>
           <span className="workspace-eyebrow">CPAMP CONSOLE</span>
           <h2>{t('welcome')}</h2>
@@ -97,7 +97,7 @@ export function ConsoleHome({
         </span>
       </section>
       <div className="workspace-metrics">
-        <section className="workspace-metric">
+        <section className="card workspace-metric">
           <span className="workspace-metric-icon">
             <FullWebIcon name="check" />
           </span>
@@ -107,7 +107,7 @@ export function ConsoleHome({
             <small>{t('version')}</small>
           </div>
         </section>
-        <section className="workspace-metric">
+        <section className="card workspace-metric">
           <span className="workspace-metric-icon">
             <FullWebIcon name="gateway" />
           </span>
@@ -119,7 +119,7 @@ export function ConsoleHome({
             <small>{t('live')}</small>
           </div>
         </section>
-        <section className="workspace-metric">
+        <section className="card workspace-metric">
           <span className="workspace-metric-icon is-amber">
             <FullWebIcon name="alert" />
           </span>
@@ -140,7 +140,7 @@ export function ConsoleHome({
           {t('identityChanged')}
         </p>
       )}
-      <section className="workspace-shortcuts">
+      <section className="card workspace-shortcuts">
         <h2>{t('shortcuts')}</h2>
         <div className="workspace-link-grid">
           {links.map((link) => (

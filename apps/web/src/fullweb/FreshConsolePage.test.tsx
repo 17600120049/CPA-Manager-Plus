@@ -58,7 +58,7 @@ describe('Fresh installation and Console authority boundary', () => {
       }),
     });
     vi.stubGlobal('document', {
-      documentElement: { classList: { toggle: vi.fn() } },
+      documentElement: { classList: { toggle: vi.fn() }, setAttribute: vi.fn() },
       body: { style: { overflow: '' } },
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
