@@ -185,8 +185,13 @@ vi.mock('@/components/ui/SegmentedTabs', () => ({
 
 vi.mock('@/stores', () => ({
   useAuthStore: (
-    selector: (state: { connectionStatus: string; managementKey: string }) => unknown
-  ) => selector({ connectionStatus: 'connected', managementKey: 'management-key' }),
+    selector: (state: { connectionStatus: string; managementKey: string; apiBase: string }) => unknown
+  ) =>
+    selector({
+      connectionStatus: 'connected',
+      managementKey: 'management-key',
+      apiBase: 'http://panel.local/console/api/v2/cpamp',
+    }),
   useNotificationStore: (
     selector: (state: {
       showNotification: typeof mocks.showNotification;
@@ -450,6 +455,16 @@ afterEach(() => {
 });
 
 describe('ConfigPage API-key source snapshot safety', () => {
+  it('uses the authenticated Full Web bridge for Manager probes', async () => {
+    configureManagerMode();
+    await mountPage();
+
+    expect(mocks.getInfo).toHaveBeenCalledWith(
+      'http://panel.local/console/api/v2/cpamp',
+      'management-key'
+    );
+  });
+
   it('marks Source stale and reports an unknown outcome when create PUT rejects', async () => {
     mocks.apiKeysList.mockResolvedValueOnce([]);
     mocks.apiKeysReplace.mockRejectedValueOnce(new Error('create response lost'));

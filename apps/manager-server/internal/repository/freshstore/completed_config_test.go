@@ -1,0 +1,155 @@
+package freshstore
+
+import (
+	"errors"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/setting"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
+)
+
+func TestConfigCompatibilityRequiresCompletedFreshOperation(t *testing.T) {
+	for _, complete := range []bool{false, true} {
+		for _, enabled := range []*bool{nil, configTestBool(false), configTestBool(true)} {
+			name := "pending"
+			if complete {
+				name = "complete"
+			}
+			collector := "default"
+			if enabled != nil {
+				collector = "disabled"
+				if *enabled {
+					collector = "enabled"
+				}
+			}
+			t.Run(name+"/"+collector, func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), "manager.sqlite")
+				db, err := sqlite.Open(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer db.Close()
+				st := New(db)
+				id := bootstrap.FreshIdentity{AdmissionID: "admission", InstallationID: "installation", Generation: "generation", OperationID: "operation", DatabasePath: path}
+				admin, err := security.NewAdminCredential("Cpamp_Config_Admin_Secret_839216", "host")
+				if err != nil {
+					t.Fatal(err)
+				}
+				record, err := st.Create(t.Context(), id, &admin)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if complete {
+					record, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error {
+						r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: id.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}
+						r.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: "committed", TargetIdentity: "runtime", TargetGeneration: 1, TargetArtifactID: "sha256:" + strings.Repeat("a", 64)}
+						r.Operation.ProductComplete = true
+						return nil
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				protector, err := security.NewProtector([]byte("config compatibility test data key"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				settings := setting.New(db, protector)
+				cfg := model.ManagerConfig{CPAConnection: model.ManagerCPAConnectionConfig{CPABaseURL: "http://cpa:8317", ManagementKey: "original-management-secret"}, Collector: model.ManagerCollectorConfig{Enabled: enabled}}
+				// Exercise the same persistence contract as the existing Config
+				// service, including its encrypted setup compatibility row.
+				if err = settings.SaveManagerConfigAndSetup(t.Context(), cfg, model.Setup{CPAUpstreamURL: cfg.CPAConnection.CPABaseURL, ManagementKey: cfg.CPAConnection.ManagementKey}); err != nil {
+					t.Fatal(err)
+				}
+				loaded, err := st.Load(t.Context())
+				if !complete {
+					if !errors.Is(err, ErrNotFresh) {
+						t.Fatalf("pending Config state admitted: %v", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal("completed Config state became unreadable", err)
+				}
+				if loaded.Operation.Identity != id || loaded.Operation.Revision != record.Operation.Revision || !loaded.Operation.ProductComplete || loaded.Connection == nil {
+					t.Fatal("Config save changed Fresh ownership")
+				}
+				secret, err := protector.UnprotectString(loaded.Connection.ManagementKey)
+				if err != nil || secret != cfg.CPAConnection.ManagementKey {
+					t.Fatal("Config secret was not preserved encrypted", err)
+				}
+				if err = db.Close(); err != nil {
+					t.Fatal(err)
+				}
+				reopened, err := sqlite.Open(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer reopened.Close()
+				if _, err = New(reopened).Load(t.Context()); err != nil {
+					t.Fatal("completed checkpoint did not reopen", err)
+				}
+			})
+		}
+	}
+}
+
+func TestPendingFreshRejectsCollectorConfigWithoutSetup(t *testing.T) {
+	for _, enabled := range []*bool{nil, configTestBool(true)} {
+		path := filepath.Join(t.TempDir(), "manager.sqlite")
+		db, err := sqlite.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		st := New(db)
+		id := bootstrap.FreshIdentity{AdmissionID: "admission", InstallationID: "installation", Generation: "generation", OperationID: "operation", DatabasePath: path}
+		if _, err = st.Create(t.Context(), id, nil); err != nil {
+			t.Fatal(err)
+		}
+		protector, err := security.NewProtector([]byte("pending config test data key"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := model.ManagerConfig{CPAConnection: model.ManagerCPAConnectionConfig{CPABaseURL: "http://cpa:8317", ManagementKey: "management-secret"}, Collector: model.ManagerCollectorConfig{Enabled: enabled}}
+		if err = setting.New(db, protector).SaveManagerConfig(t.Context(), cfg); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = st.Load(t.Context()); !errors.Is(err, ErrNotFresh) {
+			t.Fatalf("pending collector state admitted: %v", err)
+		}
+		if err = db.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestPendingFreshRejectsLegacySettings(t *testing.T) {
+	for _, key := range []string{"setup", "bootstrap_state_v1", "runtime_desired_v1"} {
+		t.Run(key, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "manager.sqlite")
+			db, err := sqlite.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			st := New(db)
+			id := bootstrap.FreshIdentity{AdmissionID: "admission", InstallationID: "installation", Generation: "generation", OperationID: "operation", DatabasePath: path}
+			if _, err = st.Create(t.Context(), id, nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = db.Exec("insert into settings(key,value,updated_at_ms) values(?, '{}', 1)", key); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = st.Load(t.Context()); !errors.Is(err, ErrNotFresh) {
+				t.Fatalf("pending legacy setting %s admitted: %v", key, err)
+			}
+		})
+	}
+}
+
+func configTestBool(value bool) *bool { return &value }

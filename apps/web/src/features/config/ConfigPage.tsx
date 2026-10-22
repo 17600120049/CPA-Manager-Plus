@@ -340,6 +340,7 @@ export function ConfigPage() {
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const managementKey = useAuthStore((state) => state.managementKey);
+  const authenticatedApiBase = useAuthStore((state) => state.apiBase);
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const setUsageServiceConfig = useUsageServiceStore((state) => state.setUsageServiceConfig);
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -431,7 +432,16 @@ export function ConfigPage() {
     managerCPAUsage?.redisUsageQueueRetentionSeconds ||
     Number(visualValues.redisUsageQueueRetentionSeconds) ||
     60;
-  const detectedPanelBase = useMemo(() => detectApiBaseFromLocation(), []);
+  const detectedPanelBase = useMemo(() => {
+    // Full Web embeds the existing Manager page below Fresh's authenticated
+    // Public API namespace. Prefer that verified bridge for Manager/usage
+    // probes; falling back to the browser origin preserves standalone Panel
+    // and ordinary Manager deployments.
+    if (/\/api\/v2\/cpamp$/i.test(authenticatedApiBase.trim())) {
+      return normalizeUsageServiceBase(authenticatedApiBase);
+    }
+    return detectApiBaseFromLocation();
+  }, [authenticatedApiBase]);
   const managerCollectorModeOptions = useMemo(
     () => [
       { value: 'auto', label: t('config_management.manager.collector_mode_auto') },

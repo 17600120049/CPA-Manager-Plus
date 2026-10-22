@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { PageTransition } from '@/components/common/PageTransition';
@@ -233,10 +233,28 @@ type NavSection = {
 
 interface MainLayoutProps {
   routeBase?: string;
+  navigationBase?: string;
   demoMode?: boolean;
+  onLogout?: () => void;
+  logoutDisabled?: boolean;
+  /**
+   * Optional host-owned route seam. Full Web uses this only for resources
+   * whose authority is not the historical CPA panel (for example the
+   * Manager-owned Fresh New Key/Config pages). Returning undefined keeps the
+   * existing CPAMP route tree unchanged; returning null deliberately renders
+   * an unavailable-state page without invoking a legacy request.
+   */
+  renderRoute?: (pathname: string) => ReactNode | undefined;
 }
 
-function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps = {}) {
+function MainLayoutContent({
+  routeBase = '',
+  navigationBase = '',
+  demoMode = false,
+  renderRoute,
+  onLogout,
+  logoutDisabled = false,
+}: MainLayoutProps = {}) {
   const { t } = useTranslation();
   const { showNotification } = useNotificationStore();
   const location = useLocation();
@@ -589,6 +607,16 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
       label: t('nav.group_configuration', { defaultValue: 'Configuration' }),
       icon: sidebarIcons.config,
       items: [
+        ...(renderRoute
+          ? [
+              {
+                path: '/api-keys',
+                label: t('nav.api_keys', { defaultValue: t('keysTitle') }),
+                shortLabel: navShortLabel('nav.api_keys', t('keysTitle')),
+                icon: sidebarIcons.config,
+              },
+            ]
+          : []),
         {
           path: '/config',
           label: t('nav.config_management'),
@@ -717,11 +745,16 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
     showNotification(t('notification.data_refreshed'), 'success');
   };
   const handleLogout = () => {
+    if (logoutDisabled) return;
     if (demoMode) {
       navigate(getDemoLogoutPath(routeBase), { replace: true });
       return;
     }
-    logout();
+    if (onLogout) {
+      onLogout();
+    } else {
+      logout();
+    }
   };
   const mobileSidebarToggleLabel = sidebarOpen
     ? t('sidebar.toggle_collapse', { defaultValue: 'Close navigation' })
@@ -950,6 +983,7 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
               variant="ghost"
               size="sm"
               onClick={handleLogout}
+              disabled={logoutDisabled}
               title={t('header.logout')}
               aria-label={t('header.logout')}
             >
@@ -1024,19 +1058,40 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
                 {(openNavSections[section.id] ?? true) && (
                   <div id={`nav-${section.id}`}>
                     {section.items.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={prefixRouteBase(item.path, routeBase)}
-                    end={item.path === '/' || item.exact}
-                    className={({ isActive }) =>
-                      `nav-item ${isActive || matchesNavPath(item, currentPath) ? 'active' : ''}`
-                    }
-                    onClick={() => setSidebarOpen(false)}
-                    title={item.label}
-                  >
-                    <span className="nav-icon">{item.icon}</span>
-                    {showSidebarLabels && <span className="nav-label">{item.label}</span>}
-                  </NavLink>
+                      (() => {
+                        const target = prefixRouteBase(item.path, navigationBase || routeBase);
+                        const active = matchesNavPath(item, currentPath);
+                        return (
+                          <a
+                            key={item.path}
+                            href={target}
+                            aria-current={active ? 'page' : undefined}
+                            className={`nav-item ${active ? 'active' : ''}`}
+                            onClick={(event) => {
+                              setSidebarOpen(false);
+                              if (
+                                event.defaultPrevented ||
+                                event.button !== 0 ||
+                                event.metaKey ||
+                                event.ctrlKey ||
+                                event.shiftKey ||
+                                event.altKey
+                              )
+                                return;
+                              event.preventDefault();
+                              // BrowserRouter's basename already owns the
+                              // verified Full Web prefix. DemoRouteAdapter
+                              // still receives the fully prefixed target when
+                              // no navigationBase is supplied.
+                              navigate(navigationBase ? item.path : routeBase ? target : item.path);
+                            }}
+                            title={item.label}
+                          >
+                            <span className="nav-icon">{item.icon}</span>
+                            {showSidebarLabels && <span className="nav-label">{item.label}</span>}
+                          </a>
+                        );
+                      })()
                     ))}
                   </div>
                 )}
@@ -1067,7 +1122,20 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
             <DatabaseMaintenanceBanner />
             <PageTransition
               key={routeBase || 'main'}
-              render={(location) => <MainRoutes location={location} routeBase={routeBase} />}
+              render={(location) => {
+                const routePath = stripRouteBase(location.pathname, routeBase);
+                const override = renderRoute?.(routePath);
+                if (override !== undefined) return override;
+                return (
+                  <MainRoutes
+                    location={
+                      routeBase && navigationBase
+                        ? { ...location, pathname: stripRouteBase(location.pathname, routeBase) }
+                        : location
+                    }
+                  />
+                );
+              }}
               getRouteOrder={(pathname) => getRouteOrder(stripRouteBase(pathname, routeBase))}
               getTransitionVariant={(fromPathname, toPathname) =>
                 getTransitionVariant(

@@ -183,7 +183,7 @@ async function screenshot(name) {
     viewport: page.viewportSize(),
     theme: await page
       .locator('html')
-      .evaluate((html) => (html.classList.contains('light') ? 'light' : 'dark')),
+      .evaluate((html) => (html.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')),
     route: new URL(page.url()).pathname,
   });
 }
@@ -586,46 +586,82 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
   );
   await installationScreenshots('complete');
   await page.getByRole('button', { name: '进入 Console', exact: true }).click();
-  await page.getByTestId('console-shell').waitFor();
-  await page.getByTestId('console-home').waitFor();
+  const legacyConsole = page.getByTestId('legacy-console');
+  await legacyConsole.waitFor();
+  await legacyConsole.locator('.app-shell').waitFor();
   assert.equal(new URL(page.url()).pathname, '/console');
-  await wait(
-    async () => (await page.getByTestId('console-runtime-state').innerText()) === '运行中',
-    'live dashboard Runtime observation'
+  const bridgeInfo = await fetch(origin + '/console/api/v2/cpamp/usage-service/info', {
+    headers: { Authorization: 'Bearer ' + admin },
+  });
+  assert.equal(bridgeInfo.status, 200);
+  const configBefore = await fetch(origin + '/console/api/v2/cpamp/config', {
+    headers: { Authorization: 'Bearer ' + admin },
+  });
+  assert.equal(configBefore.status, 200);
+  const configPayload = await configBefore.json();
+  assert(configPayload.config && typeof configPayload.config === 'object');
+  const configToSave = {
+    ...configPayload.config,
+    // A fresh Managed install intentionally has no CPA Management Key yet.
+    // Keep the existing manager-config invariant truthful in this disposable
+    // probe: an empty connection may be saved only with collection disabled.
+    collector: {
+      ...configPayload.config.collector,
+      ...(configPayload.config.cpaConnection?.cpaBaseUrl
+        ? {}
+        : { enabled: false }),
+    },
+  };
+  const configSave = await fetch(origin + '/console/api/v2/cpamp/config', {
+    method: 'PUT',
+    headers: {
+      Authorization: 'Bearer ' + admin,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ config: configToSave }),
+  });
+  assert.equal(configSave.status, 200);
+  const configAfter = await fetch(origin + '/console/api/v2/cpamp/config', {
+    headers: { Authorization: 'Bearer ' + admin },
+  });
+  assert.equal(configAfter.status, 200);
+  assert.equal((await adminGet('operation')).productComplete, true);
+  pass(
+    'Fresh New completion enters the existing CPAMP MainLayout; authenticated Config GET/PUT remains readable'
   );
-  await page.locator('button[aria-controls="nav-system"]').click();
-  await page
-    .getByTestId('console-navigation')
-    .locator('a[href="/console/system/settings"]')
-    .click();
   const before = await adminGet('operation');
   assert.equal(before.productComplete, true);
   assert.equal(before.gatewayPending, true);
-  await wait(async () => !(await page.locator('#update-channel').isDisabled()), 'channel read');
-  await page.locator('#update-channel').selectOption('beta');
-  await page.getByRole('button', { name: '保存频道', exact: true }).click();
-  await wait(
-    async () => (await adminGet('settings/update-channel')).channel_preference === 'beta',
-    'persisted channel'
-  );
+  const normalizeConsolePath = (path) => {
+    const pathname = new URL(page.url()).pathname.replace(/\/$/, '');
+    return pathname || '/';
+  };
   const navigate = async (path) => {
-    if (page.viewportSize().width < 768)
-      await page.getByTestId('console-toggle-navigation').click();
-    const group = page.locator(
-      'button[aria-controls="nav-' + (path.startsWith('/system/') ? 'system' : 'clients') + '"]'
-    );
-    if (path && (await group.getAttribute('aria-expanded')) !== 'true') await group.click();
-    const link = path
-      ? page.getByTestId('console-navigation').locator('a[href="/console' + path + '"]')
-      : page.getByTestId('console-home-navigation');
+    if (page.viewportSize().width < 768 && (await page.locator('aside.sidebar.open').count()) === 0)
+      await page.locator('button.hamburger-container').click();
+    const href = '/console' + (path || '/');
+    const link =
+      path === ''
+        ? page.locator('aside.sidebar a[href="/console"], aside.sidebar a[href="/console/"]')
+        : page.locator(`aside.sidebar a[href="${href}"]`);
+    await link.waitFor();
     await link.click();
     await wait(
-      async () => new URL(page.url()).pathname === '/console' + path,
+      async () => normalizeConsolePath() === href.replace(/\/$/, ''),
       'navigation ' + path
     );
-    assert.equal(await page.locator('a[aria-current="page"]').count(), 1);
-    assert.equal(await link.getAttribute('aria-current'), 'page');
-    assert((await page.getByTestId('console-breadcrumb').innerText()).length > 0);
+    const currentLink = page.locator('a[aria-current="page"]');
+    await wait(
+      async () =>
+        (await currentLink.count()) === 1 &&
+        (await currentLink.getAttribute('href'))?.replace(/\/$/, '') === href.replace(/\/$/, ''),
+      'active navigation ' + path
+    );
+    assert.equal(
+      (await currentLink.getAttribute('href'))?.replace(/\/$/, ''),
+      href.replace(/\/$/, '')
+    );
+    assert((await page.locator('.app-breadcrumb').innerText()).length > 0);
   };
   for (const [name, width, light] of [
     ['desktop-dark', 1440, false],
@@ -634,51 +670,57 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     ['mobile-dark', 390, false],
   ]) {
     await page.setViewportSize({ width, height: 1000 });
-    if ((await page.locator('html').evaluate((html) => html.classList.contains('light'))) !== light)
-      await page.getByRole('button', { name: '切换明暗主题', exact: true }).click();
-    await screenshot('settings-' + name);
-    await navigate('');
-    await page.getByTestId('console-home').waitFor();
-    await screenshot('home-' + name);
-    await navigate('/api-keys');
-    await page.locator('#client-key-title').waitFor();
-    await screenshot('api-keys-' + name);
-    if (width < 768) {
-      await page.getByTestId('console-toggle-navigation').click();
-      await screenshot('navigation-' + name);
-      await page.keyboard.press('Escape');
-    } else {
-      await page.getByTestId('console-collapse-sidebar').click();
-      await screenshot('navigation-collapsed-' + name);
-      await page.getByTestId('console-collapse-sidebar').click();
+    const isLight = await page
+      .locator('html')
+      .evaluate((html) => html.getAttribute('data-theme') !== 'dark');
+    if (isLight !== light) {
+      await page.getByRole('button', { name: '主题', exact: true }).click();
+      await page
+        .getByRole('menuitemradio', { name: light ? '明亮' : '黑夜', exact: true })
+        .click();
     }
-    await navigate('/system/gateway');
-    await page.getByTestId('retry-editor').waitFor();
-    await screenshot('gateway-' + name);
-    await navigate('/system/installation');
-    await screenshot('installation-' + name);
-    await navigate('/system/settings');
-    await page.locator('#update-channel').waitFor();
+    await navigate('');
+    await screenshot('legacy-home-' + name);
+    await navigate('/config');
+    await page.locator('[role="tablist"]').first().waitFor();
+    await screenshot('legacy-config-' + name);
+    if (width < 768) {
+      await page.locator('button.hamburger-container').click();
+      await page.locator('aside.sidebar.open').waitFor();
+      await screenshot('legacy-navigation-' + name);
+      await page
+        .locator('.sidebar-backdrop.visible')
+        .click({ position: { x: page.viewportSize().width - 20, y: 200 } });
+    } else {
+      await page.locator('button.hamburger-container').click();
+      await page.locator('aside.sidebar.collapsed').waitFor();
+      await screenshot('legacy-navigation-collapsed-' + name);
+      await page.locator('button.hamburger-container').click();
+    }
+    await navigate('/system');
+    await page.locator('.main-content').waitFor();
+    await screenshot('legacy-system-' + name);
   }
   await page.goBack();
-  assert.equal(new URL(page.url()).pathname, '/console/system/installation');
+  assert.equal(normalizeConsolePath(), '/console/config');
   await page.goForward();
-  assert.equal(new URL(page.url()).pathname, '/console/system/settings');
+  assert.equal(normalizeConsolePath(), '/console/system');
   pass(
-    'two-level routes, current leaf, breadcrumbs, history, desktop collapse and mobile drawer work in light/dark themes'
+    'existing CPAMP two-level navigation, breadcrumbs, history, desktop collapse and mobile drawer work in light/dark themes'
   );
-  await page.getByRole('combobox', { name: '语言', exact: true }).selectOption('en');
-  await page.getByRole('heading', { name: 'System settings', exact: true }).waitFor();
-  await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('zh-CN');
-  await page.getByRole('heading', { name: '系统配置', exact: true }).waitFor();
+  await page.getByRole('button', { name: '语言', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'English', exact: true }).click();
+  await page.getByRole('button', { name: 'Language', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: '简体中文', exact: true }).click();
+  await page.getByRole('button', { name: '语言', exact: true }).waitFor();
   pass(
-    'language selection updates Shell and restores Chinese without persisting credentials or preferences'
+    'language selection updates the existing Console and restores Chinese'
   );
-  for (const storage of await page.evaluate(() => [
-    Object.keys(localStorage),
-    Object.keys(sessionStorage),
-  ]))
-    assert.equal(storage.length, 0);
+  const storedSecrets = await page.evaluate((adminKey) =>
+    [...Object.values(localStorage), ...Object.values(sessionStorage)].some((value) =>
+      value.includes(adminKey)
+    ), admin);
+  assert.equal(storedSecrets, false);
   const closed = async () => {
     for (const path of [
       '/v1/models',
@@ -723,11 +765,10 @@ except OSError:pass`,
   await page.reload();
   await page.getByTestId('console-login').waitFor();
   await login(admin);
-  await page.getByTestId('console-operation').waitFor();
-  await page.getByTestId('console-shell').waitFor();
+  await page.getByTestId('legacy-console').waitFor();
+  await page.locator('.app-shell').waitFor();
   const after = await adminGet('operation');
   assert.deepEqual(after, before);
-  assert.equal((await adminGet('settings/update-channel')).channel_preference, 'beta');
   assert.equal(dc('exec', '-T', 'cpamp-manager', 'sha256sum', '/data/data.key'), keyDigest);
   assert.equal((await fetch(origin + bootstrap + '/ui')).status, 404);
   await closed();

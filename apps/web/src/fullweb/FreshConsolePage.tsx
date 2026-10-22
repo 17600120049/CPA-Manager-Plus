@@ -179,6 +179,19 @@ export function FreshConsolePage({
     if (creationPendingRef.current || installationPendingRef.current || retryPendingRef.current)
       return;
     window.history.pushState(null, '', path);
+    // FreshConsolePage owns the guided shell navigation, while the existing
+    // CPAMP pages are rendered inside the Full Web data router. `pushState`
+    // alone does not notify React Router, so emit the same browser event a
+    // user history action would produce before reconciling our local page.
+    // Test and embedded hosts may expose only a minimal history stub; those
+    // environments keep the local state path without requiring a DOM event.
+    if (typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(
+        typeof window.PopStateEvent === 'function'
+          ? new window.PopStateEvent('popstate')
+          : new Event('popstate')
+      );
+    }
     currentRoute.current = path;
     visit(consolePage(path, context.basePath));
   }
@@ -283,6 +296,7 @@ export function FreshConsolePage({
         <LegacyConsolePage
           context={context}
           credential={credential}
+          client={client}
           onUnauthorized={unauthorized}
         />
       </Suspense>

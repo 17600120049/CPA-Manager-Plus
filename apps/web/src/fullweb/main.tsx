@@ -1,6 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import type { ReactNode } from 'react';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { AppBackground } from '../components/common/AppBackground';
 import { readRoutingContext } from './routingContext';
 import { BOOTSTRAP_UI, consumeHandoff, createBootstrapTransport } from './bootstrapTransport';
@@ -10,6 +9,12 @@ import './carrier.css';
 
 const context = readRoutingContext(document);
 const root = createRoot(document.getElementById('root')!);
+const FreshConsolePage = lazy(() =>
+  import('./FreshConsolePage').then((module) => ({ default: module.FreshConsolePage }))
+);
+const ConsoleCarrier = lazy(() =>
+  import('./ConsoleCarrier').then((module) => ({ default: module.ConsoleCarrier }))
+);
 const render = (page: ReactNode) =>
   root.render(
     <>
@@ -33,26 +38,16 @@ if (window.location.pathname === BOOTSTRAP_UI) {
 } else if (!context) {
   render(<p>Routing authority unavailable</p>);
 } else {
-  const router = createBrowserRouter(
-    [
-      {
-        path: '*',
-        hydrateFallbackElement: <></>,
-        lazy: async () => {
-          const { FreshConsolePage } = await import('./FreshConsolePage');
-          return { Component: () => <FreshConsolePage context={context} /> };
-        },
-      },
-      {
-        path: '/technical-route',
-        hydrateFallbackElement: <></>,
-        lazy: async () => {
-          const { ConsoleCarrier } = await import('./ConsoleCarrier');
-          return { Component: ConsoleCarrier };
-        },
-      },
-    ],
-    { basename: context.basePath }
+  // The Fresh shell owns the host route prefix and the existing CPAMP pages
+  // mount their own BrowserRouter at the authenticated seam. Keeping this
+  // entry point unwrapped avoids a second data-router basename competing with
+  // MainLayout's established `/console/...` navigation while preserving the
+  // technical carrier as a lazy, directly addressable boundary.
+  const basePath = context.basePath.replace(/\/+$/, '');
+  const isTechnicalRoute = window.location.pathname === `${basePath}/technical-route`;
+  render(
+    <Suspense fallback={<></>}>
+      {isTechnicalRoute ? <ConsoleCarrier /> : <FreshConsolePage context={context} />}
+    </Suspense>
   );
-  render(<RouterProvider router={router} />);
 }

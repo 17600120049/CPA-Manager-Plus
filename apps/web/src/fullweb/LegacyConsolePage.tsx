@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { MemoryRouter, useInRouterContext } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, useInRouterContext } from 'react-router-dom';
 import '../i18n';
 import { AppLifecycle } from '../app/AppLifecycle';
 import { MainLayout } from '../components/layout/MainLayout';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { apiClient } from '../services/api/client';
 import { useAuthStore } from '../stores';
+import { FreshManagedConfigPage } from './FreshManagedConfigPage';
+import type { createPublicApiClient } from './publicApi';
 import { resolveRoutingContext, type RoutingContext } from './routingContext';
 
 // The legacy Console is deliberately a post-installation seam.  This module
@@ -16,16 +18,19 @@ export function LegacyConsolePage({
   context,
   credential,
   onUnauthorized,
+  client,
 }: {
   context: RoutingContext;
   credential: string;
   onUnauthorized: () => void;
+  client?: ReturnType<typeof createPublicApiClient>;
 }) {
   // Keep this hook unconditional: the legacy page can render once while the
   // in-memory credential is being installed, so router context must be read
   // before any early loading/unauthorized return.
   const inRouter = useInRouterContext();
   const [activated, setActivated] = useState(false);
+  const [freshPending, setFreshPending] = useState(false);
   const onUnauthorizedRef = useRef(onUnauthorized);
 
   useEffect(() => {
@@ -115,12 +120,53 @@ export function LegacyConsolePage({
   const content = (
     <div data-testid="legacy-console">
       <AppLifecycle />
-      <MainLayout />
+      {/*
+       * The Full Web router is mounted below the embedded `/console` base.
+       * MainLayout already supports an explicit route base (used by the demo
+       * shell); passing it here keeps its active item, breadcrumbs and
+       * MainRoutes in the same coordinate system as the mounted router.
+       */}
+      <MainLayout
+        routeBase={context.basePath}
+        navigationBase={context.basePath}
+        logoutDisabled={freshPending}
+        renderRoute={(pathname) => {
+          if (!client) return undefined;
+          // Keep the original ConfigPage at /config: it owns the visual/source
+          // editor, Manager→CPA binding form, and the existing CPA API-key
+          // controls. Fresh's Manager-owned credentials get their own explicit
+          // route so adding Fresh New does not remove or replace the shipped
+          // CPAMP configuration surface.
+          if (pathname === '/api-keys') {
+            return (
+              <FreshManagedConfigPage
+                client={client}
+                credential={credential}
+                onUnauthorized={onUnauthorizedRef.current}
+                onPending={setFreshPending}
+              />
+            );
+          }
+          return undefined;
+        }}
+      />
     </div>
   );
-  return inRouter ? content : (
-    <MemoryRouter basename={context.basePath} initialEntries={[context.basePath]}>
-      {content}
-    </MemoryRouter>
-  );
+  // The production Full Web entry normally supplies the BrowserRouter from
+  // main.tsx. Keep a browser-backed fallback for direct mounts and embedded
+  // hosts that render this seam without that provider: a MemoryRouter would
+  // make MainLayout links change only an in-memory location, leaving the
+  // address bar stuck at /console and making refresh/deep links impossible.
+  if (inRouter) return content;
+  // Non-DOM unit mounts provide only a minimal window stub; retain an
+  // in-memory harness there while real browser mounts always get URL-backed
+  // navigation.
+  if (typeof window === 'undefined' || typeof window.history?.replaceState !== 'function') {
+    return (
+      <MemoryRouter basename={context.basePath} initialEntries={[context.basePath]}>
+        {content}
+      </MemoryRouter>
+    );
+  }
+  return <BrowserRouter basename={context.basePath}>{content}</BrowserRouter>;
 }
