@@ -1,0 +1,2764 @@
+[
+  {
+    "component": "@babel/runtime",
+    "version": "7.29.2",
+    "source": "https://registry.npmjs.org/@babel/runtime/-/runtime-7.29.2.tgz sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g==",
+    "file": "LICENSE",
+    "sha256": "117da2af0d4ce0fe1c8e19b5cff9dcd806adf973d328d27b11d4448c4ff24f76",
+    "bytes": 1106,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/autocomplete",
+    "version": "6.20.0",
+    "source": "https://registry.npmjs.org/@codemirror/autocomplete/-/autocomplete-6.20.0.tgz sha512-bOwvTOIJcG5FVo5gUUupiwYh8MioPLQ4UcqbcRf7UQ98X90tCa9E1kZ3Z7tqwpZxYyOvh1YTYbmZE9RTfTp5hg==",
+    "file": "LICENSE",
+    "sha256": "05c6130cda97e7600ca91427a41e8a065efcf82365fc0293e7de80faec494c07",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/commands",
+    "version": "6.10.0",
+    "source": "https://registry.npmjs.org/@codemirror/commands/-/commands-6.10.0.tgz sha512-2xUIc5mHXQzT16JnyOFkh8PvfeXuIut3pslWGfsGOhxP/lpgRm9HOl/mpzLErgt5mXDovqA0d11P21gofRLb9w==",
+    "file": "LICENSE",
+    "sha256": "05c6130cda97e7600ca91427a41e8a065efcf82365fc0293e7de80faec494c07",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/lang-yaml",
+    "version": "6.1.2",
+    "source": "https://registry.npmjs.org/@codemirror/lang-yaml/-/lang-yaml-6.1.2.tgz sha512-dxrfG8w5Ce/QbT7YID7mWZFKhdhsaTNOYjOkSIMt1qmC4VQnXSDSYVHHHn8k6kJUfIhtLo8t1JJgltlxWdsITw==",
+    "file": "LICENSE",
+    "sha256": "8ac9cfc9c82c397298c2139028d2474d8e0470f2092a97edddccf353bc5d4d36",
+    "bytes": 1113,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/language",
+    "version": "6.11.3",
+    "source": "https://registry.npmjs.org/@codemirror/language/-/language-6.11.3.tgz sha512-9HBM2XnwDj7fnu0551HkGdrUrrqmYq/WC5iv6nbY2WdicXdGbhR/gfbZOH73Aqj4351alY1+aoG9rCNfiwS1RA==",
+    "file": "LICENSE",
+    "sha256": "05c6130cda97e7600ca91427a41e8a065efcf82365fc0293e7de80faec494c07",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/lint",
+    "version": "6.9.2",
+    "source": "https://registry.npmjs.org/@codemirror/lint/-/lint-6.9.2.tgz sha512-sv3DylBiIyi+xKwRCJAAsBZZZWo82shJ/RTMymLabAdtbkV5cSKwWDeCgtUq3v8flTaXS2y1kKkICuRYtUswyQ==",
+    "file": "LICENSE",
+    "sha256": "05c6130cda97e7600ca91427a41e8a065efcf82365fc0293e7de80faec494c07",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/merge",
+    "version": "6.12.0",
+    "source": "https://registry.npmjs.org/@codemirror/merge/-/merge-6.12.0.tgz sha512-o+36bbapcEHf4Ux75pZ4CKjMBUd14parA0uozvWVlacaT+uxaA3DDefEvWYjngsKU+qsrDe/HOOfsw0Q72pLjA==",
+    "file": "LICENSE",
+    "sha256": "7c6e3a020c1db4725560be9120b96eb2305ae7d37d155ee20e6023bb27ad144e",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/search",
+    "version": "6.5.11",
+    "source": "https://registry.npmjs.org/@codemirror/search/-/search-6.5.11.tgz sha512-KmWepDE6jUdL6n8cAAqIpRmLPBZ5ZKnicE8oGU/s3QrAVID+0VhLFrzUucVKHG5035/BSykhExDL/Xm7dHthiA==",
+    "file": "LICENSE",
+    "sha256": "05c6130cda97e7600ca91427a41e8a065efcf82365fc0293e7de80faec494c07",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/state",
+    "version": "6.5.2",
+    "source": "https://registry.npmjs.org/@codemirror/state/-/state-6.5.2.tgz sha512-FVqsPqtPWKVVL3dPSxy8wEF/ymIEuVzF1PK3VbUgrxXpJUSHQWWZz4JMToquRxnkw+36LTamCZG2iua2Ptq0fA==",
+    "file": "LICENSE",
+    "sha256": "05c6130cda97e7600ca91427a41e8a065efcf82365fc0293e7de80faec494c07",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/theme-one-dark",
+    "version": "6.1.3",
+    "source": "https://registry.npmjs.org/@codemirror/theme-one-dark/-/theme-one-dark-6.1.3.tgz sha512-NzBdIvEJmx6fjeremiGp3t/okrLPYT0d9orIc7AFun8oZcRk58aejkqhv6spnz4MLAevrKNPMQYXEWMg4s+sKA==",
+    "file": "LICENSE",
+    "sha256": "05c6130cda97e7600ca91427a41e8a065efcf82365fc0293e7de80faec494c07",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@codemirror/view",
+    "version": "6.38.8",
+    "source": "https://registry.npmjs.org/@codemirror/view/-/view-6.38.8.tgz sha512-XcE9fcnkHCbWkjeKyi0lllwXmBLtyYb5dt89dJyx23I9+LSh5vZDIuk7OLG4VM1lgrXZQcY6cxyZyk5WVPRv/A==",
+    "file": "LICENSE",
+    "sha256": "05c6130cda97e7600ca91427a41e8a065efcf82365fc0293e7de80faec494c07",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@lezer/common",
+    "version": "1.4.0",
+    "source": "https://registry.npmjs.org/@lezer/common/-/common-1.4.0.tgz sha512-DVeMRoGrgn/k45oQNu189BoW4SZwgZFzJ1+1TV5j2NJ/KFC83oa/enRqZSGshyeMk5cPWMhsKs9nx+8o0unwGg==",
+    "file": "LICENSE",
+    "sha256": "568902fb66eaf1f11750e966b33fd7b5d7c618e65af09f35ef843635bcf5f1ba",
+    "bytes": 1113,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@lezer/highlight",
+    "version": "1.2.3",
+    "source": "https://registry.npmjs.org/@lezer/highlight/-/highlight-1.2.3.tgz sha512-qXdH7UqTvGfdVBINrgKhDsVTJTxactNNxLk7+UMwZhU13lMHaOBlJe9Vqp907ya56Y3+ed2tlqzys7jDkTmW0g==",
+    "file": "LICENSE",
+    "sha256": "568902fb66eaf1f11750e966b33fd7b5d7c618e65af09f35ef843635bcf5f1ba",
+    "bytes": 1113,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@lezer/lr",
+    "version": "1.4.4",
+    "source": "https://registry.npmjs.org/@lezer/lr/-/lr-1.4.4.tgz sha512-LHL17Mq0OcFXm1pGQssuGTQFPPdxARjKM8f7GA5+sGtHi0K3R84YaSbmche0+RKWHnCsx9asEe5OWOI4FHfe4A==",
+    "file": "LICENSE",
+    "sha256": "568902fb66eaf1f11750e966b33fd7b5d7c618e65af09f35ef843635bcf5f1ba",
+    "bytes": 1113,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@lezer/yaml",
+    "version": "1.0.3",
+    "source": "https://registry.npmjs.org/@lezer/yaml/-/yaml-1.0.3.tgz sha512-GuBLekbw9jDBDhGur82nuwkxKQ+a3W5H0GfaAthDXcAu+XdpS43VlnxA9E9hllkpSP5ellRDKjLLj7Lu9Wr6xA==",
+    "file": "LICENSE",
+    "sha256": "8cb910abd2a5463466b7c31958b39d6787ebf9e9f299598266b814bc90dd076b",
+    "bytes": 1106,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@marijn/find-cluster-break",
+    "version": "1.0.2",
+    "source": "https://registry.npmjs.org/@marijn/find-cluster-break/-/find-cluster-break-1.0.2.tgz sha512-l0h88YhZFyKdXIFNfSWpyjStDjGHwZ/U7iobcK1cQQD8sejsONdQtTVU+1wVN1PBw40PiiHB1vA5S7VTfQiP9g==",
+    "file": "LICENSE",
+    "sha256": "9360b00fdd091f05c783b568bdd46c679c41b72415599252de98949462ea1acb",
+    "bytes": 1102,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@types/react",
+    "version": "19.2.7",
+    "source": "https://registry.npmjs.org/@types/react/-/react-19.2.7.tgz sha512-MWtvHrGZLFttgeEj28VXHxpmwYbor/ATPYbBfSFZEIRK0ecCFLl2Qo55z52Hss+UV9CRN7trSeq1zbgx7YDWWg==",
+    "file": "LICENSE",
+    "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+    "bytes": 1141,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@uiw/codemirror-extensions-basic-setup",
+    "version": "4.25.3",
+    "source": "https://raw.githubusercontent.com/uiwjs/react-codemirror/497bc041aeb9559cbebbe21a897955ca18b8f032/LICENSE",
+    "file": "LICENSE",
+    "sha256": "fd1f049b3bb5cbaf5143516b72dbc6805cd30cca0cda94edb37160e37662fd17",
+    "bytes": 1060,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "@uiw/react-codemirror",
+    "version": "4.25.3",
+    "source": "https://raw.githubusercontent.com/uiwjs/react-codemirror/497bc041aeb9559cbebbe21a897955ca18b8f032/LICENSE",
+    "file": "LICENSE",
+    "sha256": "fd1f049b3bb5cbaf5143516b72dbc6805cd30cca0cda94edb37160e37662fd17",
+    "bytes": 1060,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.24.13",
+    "source": "https://go.dev/dl/go1.24.13",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "manager",
+      "ingress",
+      "runtime"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.24.13",
+    "source": "https://go.dev/dl/go1.24.13",
+    "file": "src/vendor/golang.org/x/crypto/LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "manager",
+      "ingress",
+      "runtime"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.24.13",
+    "source": "https://go.dev/dl/go1.24.13",
+    "file": "src/vendor/golang.org/x/crypto/PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "manager",
+      "ingress",
+      "runtime"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.24.13",
+    "source": "https://go.dev/dl/go1.24.13",
+    "file": "src/vendor/golang.org/x/net/LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "manager",
+      "ingress",
+      "runtime"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.24.13",
+    "source": "https://go.dev/dl/go1.24.13",
+    "file": "src/vendor/golang.org/x/net/PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "manager",
+      "ingress",
+      "runtime"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.24.13",
+    "source": "https://go.dev/dl/go1.24.13",
+    "file": "src/vendor/golang.org/x/sys/LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "manager",
+      "ingress",
+      "runtime"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.24.13",
+    "source": "https://go.dev/dl/go1.24.13",
+    "file": "src/vendor/golang.org/x/sys/PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "manager",
+      "ingress",
+      "runtime"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.24.13",
+    "source": "https://go.dev/dl/go1.24.13",
+    "file": "src/vendor/golang.org/x/text/LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "manager",
+      "ingress",
+      "runtime"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.24.13",
+    "source": "https://go.dev/dl/go1.24.13",
+    "file": "src/vendor/golang.org/x/text/PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "manager",
+      "ingress",
+      "runtime"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "src/vendor/golang.org/x/crypto/LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "src/vendor/golang.org/x/crypto/PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "src/vendor/golang.org/x/net/LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "src/vendor/golang.org/x/net/PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "src/vendor/golang.org/x/sys/LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "src/vendor/golang.org/x/sys/PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "src/vendor/golang.org/x/text/LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "Go standard library and bundled vendor",
+    "version": "go1.26.4",
+    "source": "https://go.dev/dl/go1.26.4",
+    "file": "src/vendor/golang.org/x/text/PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "asynckit",
+    "version": "0.4.0",
+    "source": "https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==",
+    "file": "LICENSE",
+    "sha256": "1953150d5d4b10c7542cee6f6e0c613b2682545233f069d75cfff1936386ce10",
+    "bytes": 1078,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "axios",
+    "version": "1.15.2",
+    "source": "https://registry.npmjs.org/axios/-/axios-1.15.2.tgz sha512-wLrXxPtcrPTsNlJmKjkPnNPK2Ihe0hn0wGSaTEiHRPxwjvJwT3hKmXF4dpqxmPO9SoNb2FsYXj/xEo0gHN+D5A==",
+    "file": "LICENSE",
+    "sha256": "82761059eaedacb3356803aea8a170d8298609f91b14fc32ee1bfb40d690183c",
+    "bytes": 1084,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "call-bind-apply-helpers",
+    "version": "1.0.2",
+    "source": "https://registry.npmjs.org/call-bind-apply-helpers/-/call-bind-apply-helpers-1.0.2.tgz sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==",
+    "file": "LICENSE",
+    "sha256": "5e325595b4ea8cfec3802f545b1def5d7b73e4a5b8e9ba63e32a320f67732292",
+    "bytes": 1071,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "cloud.google.com/go/compute/metadata",
+    "version": "v0.3.0",
+    "source": "Go module h1:Tz+eQXMEqDIKRsmY3cHTL6FVaynIjX2QxYC4trgAKZc=",
+    "file": "LICENSE",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "bytes": 11358,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "codemirror",
+    "version": "6.0.2",
+    "source": "https://registry.npmjs.org/codemirror/-/codemirror-6.0.2.tgz sha512-VhydHotNW5w1UGK0Qj96BwSk/Zqbp9WbnyK2W/eVMv4QyF41INRGpjUhFJY7/uDNuudSc33a/PKr4iDqRduvHw==",
+    "file": "LICENSE",
+    "sha256": "05c6130cda97e7600ca91427a41e8a065efcf82365fc0293e7de80faec494c07",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "combined-stream",
+    "version": "1.0.8",
+    "source": "https://registry.npmjs.org/combined-stream/-/combined-stream-1.0.8.tgz sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==",
+    "file": "License",
+    "sha256": "47eb8ca82c798246774946d1be0f9aa08f025fa8325ced0947aeeb4c05fe5547",
+    "bytes": 1085,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "cookie",
+    "version": "1.1.1",
+    "source": "https://registry.npmjs.org/cookie/-/cookie-1.1.1.tgz sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==",
+    "file": "LICENSE",
+    "sha256": "c02110eedc16c7114f1a9bdc026c65626ce1d9c7e27fd51a8e0feee8a48a6858",
+    "bytes": 1175,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "crelt",
+    "version": "1.0.6",
+    "source": "https://registry.npmjs.org/crelt/-/crelt-1.0.6.tgz sha512-VQ2MBenTq1fWZUH9DJNGti7kKv6EeAuYr3cLwxUWhIu1baTaXh4Ib5W2CqHVqib4/MqbYGJqiL3Zb8GJZr3l4g==",
+    "file": "LICENSE",
+    "sha256": "23852ebf6aef7fadffc92514b3c5df163a8651f2c3ed0dbb494cb49d93bd5de5",
+    "bytes": 1089,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "csstype",
+    "version": "3.2.3",
+    "source": "https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==",
+    "file": "LICENSE",
+    "sha256": "11d55bd4541c75ee7879547ac49089c489163dae49551389713c3d026cab383e",
+    "bytes": 1062,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "delayed-stream",
+    "version": "1.0.0",
+    "source": "https://registry.npmjs.org/delayed-stream/-/delayed-stream-1.0.0.tgz sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==",
+    "file": "License",
+    "sha256": "47eb8ca82c798246774946d1be0f9aa08f025fa8325ced0947aeeb4c05fe5547",
+    "bytes": 1085,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "dunder-proto",
+    "version": "1.0.1",
+    "source": "https://registry.npmjs.org/dunder-proto/-/dunder-proto-1.0.1.tgz sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==",
+    "file": "LICENSE",
+    "sha256": "2b770a704c15de238c3f622b01b0044ddd60b49ee30608ea6991ebf19db7a7a1",
+    "bytes": 1073,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "echarts",
+    "version": "6.1.0",
+    "source": "https://registry.npmjs.org/echarts/-/echarts-6.1.0.tgz sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA==",
+    "file": "LICENSE",
+    "sha256": "634293835b43a6dd2094fa39182a3d9a6b9ca43b7fdb9ac354e8037af2a3093a",
+    "bytes": 11990,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "echarts",
+    "version": "6.1.0",
+    "source": "https://registry.npmjs.org/echarts/-/echarts-6.1.0.tgz sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA==",
+    "file": "NOTICE",
+    "sha256": "d491d358344f842685c1b1585970999db65fe30ecf7ef3867af8814f4016c016",
+    "bytes": 168,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "echarts",
+    "version": "6.1.0",
+    "source": "https://registry.npmjs.org/echarts/-/echarts-6.1.0.tgz sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA==",
+    "file": "licenses/LICENSE-d3",
+    "sha256": "e1211892da0b0e0585b7aebe8f98c1274fba15bafe47fa1f4ee8a7a502c06304",
+    "bytes": 1475,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "es-define-property",
+    "version": "1.0.1",
+    "source": "https://registry.npmjs.org/es-define-property/-/es-define-property-1.0.1.tgz sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==",
+    "file": "LICENSE",
+    "sha256": "5e325595b4ea8cfec3802f545b1def5d7b73e4a5b8e9ba63e32a320f67732292",
+    "bytes": 1071,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "es-errors",
+    "version": "1.3.0",
+    "source": "https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==",
+    "file": "LICENSE",
+    "sha256": "5e325595b4ea8cfec3802f545b1def5d7b73e4a5b8e9ba63e32a320f67732292",
+    "bytes": 1071,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "es-object-atoms",
+    "version": "1.1.1",
+    "source": "https://registry.npmjs.org/es-object-atoms/-/es-object-atoms-1.1.1.tgz sha512-FGgH2h8zKNim9ljj7dankFPcICIK9Cp5bm+c2gQSYePhpaG5+esrLODihIorn+Pe6FGJzWhXQotPv73jTaldXA==",
+    "file": "LICENSE",
+    "sha256": "5e325595b4ea8cfec3802f545b1def5d7b73e4a5b8e9ba63e32a320f67732292",
+    "bytes": 1071,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "es-set-tostringtag",
+    "version": "2.1.0",
+    "source": "https://registry.npmjs.org/es-set-tostringtag/-/es-set-tostringtag-2.1.0.tgz sha512-j6vWzfrGVfyXxge+O0x5sh6cvxAog0a/4Rdd2K36zCMV5eJ+/+tOAngRO8cODMNWbVRdVlmGZQL2YS3yR8bIUA==",
+    "file": "LICENSE",
+    "sha256": "1a3aeb1f1398bd697d57c3c585faadf59d825aca6e3162cd7eeb72ff76eb2466",
+    "bytes": 1073,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "follow-redirects",
+    "version": "1.16.0",
+    "source": "https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.16.0.tgz sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==",
+    "file": "LICENSE",
+    "sha256": "bfa8a54bb952ccda79f0f1889721d108f5b605babbb2b8a3705ffb52f4132eb7",
+    "bytes": 1136,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "form-data",
+    "version": "4.0.5",
+    "source": "https://registry.npmjs.org/form-data/-/form-data-4.0.5.tgz sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==",
+    "file": "License",
+    "sha256": "e5b780d4f38d1d3328e3e53186c4e62d3fa149ea6f2bacd5de5ad0c30ac85343",
+    "bytes": 1118,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "framer-motion",
+    "version": "12.34.3",
+    "source": "https://registry.npmjs.org/framer-motion/-/framer-motion-12.34.3.tgz sha512-v81ecyZKYO/DfpTwHivqkxSUBzvceOpoI+wLfgCgoUIKxlFKEXdg0oR9imxwXumT4SFy8vRk9xzJ5l3/Du/55Q==",
+    "file": "LICENSE.md",
+    "sha256": "5ff46083b88563822b0560dd6221ab89d2f74bc97a52d4c97a75020fd62c6f32",
+    "bytes": 1078,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "function-bind",
+    "version": "1.1.2",
+    "source": "https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==",
+    "file": "LICENSE",
+    "sha256": "773e131a7684726005a7e4688a80b4620033bc08499bc1404dd1a1eb3bca725e",
+    "bytes": 1052,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "get-intrinsic",
+    "version": "1.3.0",
+    "source": "https://registry.npmjs.org/get-intrinsic/-/get-intrinsic-1.3.0.tgz sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==",
+    "file": "LICENSE",
+    "sha256": "39c5ec504cf6bd5cd782a7c695828e09189df79f5d94840e4f08feb97b9fd416",
+    "bytes": 1071,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "get-proto",
+    "version": "1.0.1",
+    "source": "https://registry.npmjs.org/get-proto/-/get-proto-1.0.1.tgz sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==",
+    "file": "LICENSE",
+    "sha256": "be46ce1e3b0479af9ce82d22b465a6d7d2ff084fca0aaf3d54172da2b5eb5781",
+    "bytes": 1071,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "github.com/ProtonMail/go-crypto",
+    "version": "v1.4.1",
+    "source": "Go module h1:9RfcZHqEQUvP8RzecWEUafnZVtEvrBVL9BiF67IQOfM=",
+    "file": "AUTHORS",
+    "sha256": "5aa3167c44245f0b12b27195d85c6a8c8e067cfdd511059daa4d7b3c5b232129",
+    "bytes": 174,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/ProtonMail/go-crypto",
+    "version": "v1.4.1",
+    "source": "Go module h1:9RfcZHqEQUvP8RzecWEUafnZVtEvrBVL9BiF67IQOfM=",
+    "file": "LICENSE",
+    "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067",
+    "bytes": 1479,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/ProtonMail/go-crypto",
+    "version": "v1.4.1",
+    "source": "Go module h1:9RfcZHqEQUvP8RzecWEUafnZVtEvrBVL9BiF67IQOfM=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/andybalholm/brotli",
+    "version": "v1.0.6",
+    "source": "Go module h1:Yf9fFpf49Zrxb9NlQaluyE92/+X7UVHlhMNJN2sxfOI=",
+    "file": "LICENSE",
+    "sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94",
+    "bytes": 1084,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/atotto/clipboard",
+    "version": "v0.1.4",
+    "source": "Go module h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=",
+    "file": "LICENSE",
+    "sha256": "2c4bac8e2a97180d6e7758c37de85d1cda1859aaf85b56da15d935d2d9a5564f",
+    "bytes": 1471,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/aymanbagabas/go-osc52/v2",
+    "version": "v2.0.1",
+    "source": "Go module h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=",
+    "file": "LICENSE",
+    "sha256": "11319e34d9dac2f45392f14f4f62e28b24173cfa13d39b32e7b7b66c2f3bdccd",
+    "bytes": 1070,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/cespare/xxhash/v2",
+    "version": "v2.3.0",
+    "source": "Go module h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=",
+    "file": "LICENSE.txt",
+    "sha256": "f566a9f97bacdaf00d9f21dd991e81dc11201c4e016c86b470799429a1c9a79c",
+    "bytes": 1068,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/charmbracelet/bubbles",
+    "version": "v1.0.0",
+    "source": "Go module h1:12J8/ak/uCZEMQ6KU7pcfwceyjLlWsDLAxB5fXonfvc=",
+    "file": "LICENSE",
+    "sha256": "69793670485e4ae8bf28fcbe5639141f604256d5bb6c1862571f3a32823fa221",
+    "bytes": 1080,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/charmbracelet/bubbletea",
+    "version": "v1.3.10",
+    "source": "Go module h1:otUDHWMMzQSB0Pkc87rm691KZ3SWa4KUlvF9nRvCICw=",
+    "file": "LICENSE",
+    "sha256": "69793670485e4ae8bf28fcbe5639141f604256d5bb6c1862571f3a32823fa221",
+    "bytes": 1080,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/charmbracelet/colorprofile",
+    "version": "v0.4.1",
+    "source": "Go module h1:a1lO03qTrSIRaK8c3JRxJDZOvhvIeSco3ej+ngLk1kk=",
+    "file": "LICENSE",
+    "sha256": "57d6eeeb336030b89c0e0d12cf869f84b97a481cd00b350ef21fca995da5a39a",
+    "bytes": 1080,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/charmbracelet/lipgloss",
+    "version": "v1.1.0",
+    "source": "Go module h1:vYXsiLHVkK7fp74RkV7b2kq9+zDLoEU4MZoFqR/noCY=",
+    "file": "LICENSE",
+    "sha256": "699cffa88b62691ea09706d356e5ee0982e87ca2b1c58ca682f27d6ae87f9efc",
+    "bytes": 1080,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/charmbracelet/x/ansi",
+    "version": "v0.11.6",
+    "source": "Go module h1:GhV21SiDz/45W9AnV2R61xZMRri5NlLnl6CVF7ihZW8=",
+    "file": "LICENSE",
+    "sha256": "0baa4a5942a801d93f4050d2bc0039d8c037105fcd335230d118eec99a11782b",
+    "bytes": 1076,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/charmbracelet/x/cellbuf",
+    "version": "v0.0.15",
+    "source": "Go module h1:ur3pZy0o6z/R7EylET877CBxaiE1Sp1GMxoFPAIztPI=",
+    "file": "LICENSE",
+    "sha256": "0baa4a5942a801d93f4050d2bc0039d8c037105fcd335230d118eec99a11782b",
+    "bytes": 1076,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/charmbracelet/x/term",
+    "version": "v0.2.2",
+    "source": "Go module h1:xVRT/S2ZcKdhhOuSP4t5cLi5o+JxklsoEObBSgfgZRk=",
+    "file": "LICENSE",
+    "sha256": "0baa4a5942a801d93f4050d2bc0039d8c037105fcd335230d118eec99a11782b",
+    "bytes": 1076,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/clipperhouse/displaywidth",
+    "version": "v0.9.0",
+    "source": "Go module h1:Qb4KOhYwRiN3viMv1v/3cTBlz3AcAZX3+y9OLhMtAtA=",
+    "file": "LICENSE",
+    "sha256": "fcdcc889a11c39c73d36019b838af41b418eb7811af12b746ace40c3074bb96c",
+    "bytes": 1069,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/clipperhouse/stringish",
+    "version": "v0.1.1",
+    "source": "Go module h1:+NSqMOr3GR6k1FdRhhnXrLfztGzuG+VuFDfatpWHKCs=",
+    "file": "LICENSE",
+    "sha256": "fcdcc889a11c39c73d36019b838af41b418eb7811af12b746ace40c3074bb96c",
+    "bytes": 1069,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/clipperhouse/stringish",
+    "version": "v0.1.1",
+    "source": "Go module h1:+NSqMOr3GR6k1FdRhhnXrLfztGzuG+VuFDfatpWHKCs=",
+    "file": "utf8/LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/clipperhouse/uax29/v2",
+    "version": "v2.5.0",
+    "source": "Go module h1:x7T0T4eTHDONxFJsL94uKNKPHrclyFI0lm7+w94cO8U=",
+    "file": "LICENSE",
+    "sha256": "07e9e3daaccc707c9b7d535ed1405a65d37919fdd42197fe55e68820e974688c",
+    "bytes": 1069,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/cloudflare/circl",
+    "version": "v1.6.3",
+    "source": "Go module h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=",
+    "file": "LICENSE",
+    "sha256": "b0da1764fe4d13d610b695536fc3f2ebc362482d053a1cd258e36975bc6b97a7",
+    "bytes": 3028,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/cloudflare/circl",
+    "version": "v1.6.3",
+    "source": "Go module h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=",
+    "file": "ecc/p384/LICENSE",
+    "sha256": "18951c084f68bce792efa2037685466628ebc1c67f4bff8b7147f3d5050e50a4",
+    "bytes": 1489,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/dlclark/regexp2/v2",
+    "version": "v2.5.1",
+    "source": "Go module h1:E5Ug7Dh264W1ymdySmiHNcDG7fmsR307APCE5R07a20=",
+    "file": "LICENSE",
+    "sha256": "9be5d04bb4d706914d5bf943710da4afeb42048f7c529902fb57c82762a991a9",
+    "bytes": 1072,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/dustin/go-humanize",
+    "version": "v1.0.1",
+    "source": "Go module h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=",
+    "file": "LICENSE",
+    "sha256": "a973b4498c13eb74baa2a8e5c351426a6826f2fcdd909916dbe53ee2e755fd71",
+    "bytes": 1136,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "github.com/emirpasic/gods",
+    "version": "v1.18.1",
+    "source": "Go module h1:FXtiHYKDGKCW2KzwZKx0iC0PQmdlorYgdFG9jPXJ1Bc=",
+    "file": "LICENSE",
+    "sha256": "871b440e9b348d6b2485c72e15f1d18f4cf8ee7bb424cbcd854b6a4a772b61d8",
+    "bytes": 2148,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/fsnotify/fsnotify",
+    "version": "v1.9.0",
+    "source": "Go module h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=",
+    "file": "LICENSE",
+    "sha256": "2dfbe6d2b5eb18b55148f3805d88648a09e0d17e38428123259afb08c8996e37",
+    "bytes": 1531,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/gabriel-vasile/mimetype",
+    "version": "v1.4.3",
+    "source": "Go module h1:in2uUcidCuFcDKtdcBxlR0rJ1+fsokWf+uqxgUFjbI0=",
+    "file": "LICENSE",
+    "sha256": "4335e2ceb33d8d7e75125192466ae8604617b0a67492b919604fe52dc56018d9",
+    "bytes": 1076,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/gin-contrib/sse",
+    "version": "v0.1.0",
+    "source": "Go module h1:Y/yl/+YNO8GZSjAhjMsSuLt29uWRFHdHYUb5lYOV9qE=",
+    "file": "LICENSE",
+    "sha256": "03458b6d5828e1be1127ca2adf122572eb574fc47b56190c3b38203b8b2a98d0",
+    "bytes": 1091,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/gin-gonic/gin",
+    "version": "v1.10.1",
+    "source": "Go module h1:T0ujvqyCSqRopADpgPgiTT63DUQVSfojyME59Ei63pQ=",
+    "file": "AUTHORS.md",
+    "sha256": "41711f484fa311b9b556397c0c3353197681b2c6599918483cc8f19bc68f26fe",
+    "bytes": 16285,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/gin-gonic/gin",
+    "version": "v1.10.1",
+    "source": "Go module h1:T0ujvqyCSqRopADpgPgiTT63DUQVSfojyME59Ei63pQ=",
+    "file": "LICENSE",
+    "sha256": "03458b6d5828e1be1127ca2adf122572eb574fc47b56190c3b38203b8b2a98d0",
+    "bytes": 1091,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/go-git/gcfg/v2",
+    "version": "v2.0.2",
+    "source": "Go module h1:MY5SIIfTGGEMhdA7d7JePuVVxtKL7Hp+ApGDJAJ7dpo=",
+    "file": "LICENSE",
+    "sha256": "050855d9ceedf916a9e9f30d20c6f61a484448d2c2ed5810934bc8aef43861b4",
+    "bytes": 1524,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/go-git/go-billy/v6",
+    "version": "v6.0.0-alpha.1.0.20260519112248-0095b064a6c6",
+    "source": "Go module h1:AaQOU2NVLxnBGWkv5YSoxomcDCqlaqfCW0t00pNKtnk=",
+    "file": "LICENSE",
+    "sha256": "4d324e3ccdba05b20e3ed1b9547f70f10da14e095ea2af32a895e8858b28a396",
+    "bytes": 11355,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/go-git/go-git/v6",
+    "version": "v6.0.0-alpha.4.0.20260520124234-0860a7d8a164",
+    "source": "Go module h1:chk74EHqDOHvIx/WH43JfdLImedxN98qGvEFd7WYgus=",
+    "file": "LICENSE",
+    "sha256": "fecc274e9b67f7e128c7d2ba1ad68fcf23b18fe0448d3c3671e943763502d504",
+    "bytes": 11356,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/go-playground/locales",
+    "version": "v0.14.1",
+    "source": "Go module h1:EWaQ/wswjilfKLTECiXz7Rh+3BjFhfDFKv/oXslEjJA=",
+    "file": "LICENSE",
+    "sha256": "a1a5ca382f9e8c646fa05240a74a6554bbc3084b5675f84c9eaafd3d95686612",
+    "bytes": 1079,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/go-playground/universal-translator",
+    "version": "v0.18.1",
+    "source": "Go module h1:Bcnm0ZwsGyWbCzImXv+pAJnYK9S473LQFuzCbDbfSFY=",
+    "file": "LICENSE",
+    "sha256": "a55d0c6e1a35ee6cf13afb4bbc3c8801cc570d7ac8edcd5e4503892f1c7ff4f7",
+    "bytes": 1080,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/go-playground/validator/v10",
+    "version": "v10.20.0",
+    "source": "Go module h1:K9ISHbSaI0lyB2eWMPJo+kOS/FBExVwjEviJTixqxL8=",
+    "file": "LICENSE",
+    "sha256": "9e321f6a1db81616a6c344d3aefddf9834fef23bdd913eae0db283dfa6753dff",
+    "bytes": 1077,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/google/uuid",
+    "version": "v1.6.0",
+    "source": "Go module h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=",
+    "file": "LICENSE",
+    "sha256": "0a8d61ed3cbfd5312326e8126c31ce9c627a283adc99131b56896d29ada04b2d",
+    "bytes": 1480,
+    "roles": [
+      "manager",
+      "runtime",
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/gorilla/websocket",
+    "version": "v1.5.3",
+    "source": "Go module h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=",
+    "file": "AUTHORS",
+    "sha256": "fdebefabdd93d9701887ac1fa4df716322f71651000442cfd947325648a06675",
+    "bytes": 234,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/gorilla/websocket",
+    "version": "v1.5.3",
+    "source": "Go module h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=",
+    "file": "LICENSE",
+    "sha256": "2be1b548b0387ca8948e1bb9434e709126904d15f622cc2d0d8e7f186e4d122d",
+    "bytes": 1312,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/jackc/pgpassfile",
+    "version": "v1.0.0",
+    "source": "Go module h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=",
+    "file": "LICENSE",
+    "sha256": "adb1663fda031df8f4344aa68f299fd87d80353e31339406742ded21dae65702",
+    "bytes": 1073,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/jackc/pgservicefile",
+    "version": "v0.0.0-20240606120523-5a60cdf6a761",
+    "source": "Go module h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=",
+    "file": "LICENSE",
+    "sha256": "fc505773403fe869ed64cc2235cdd13988a427bb7e3a7e7004a3f4b27420f8fc",
+    "bytes": 1073,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/jackc/pgx/v5",
+    "version": "v5.9.2",
+    "source": "Go module h1:3ZhOzMWnR4yJ+RW1XImIPsD1aNSz4T4fyP7zlQb56hw=",
+    "file": "LICENSE",
+    "sha256": "467f95e074fe23079a5623ed652619682692041b8551da27e3c2ddb9659a1507",
+    "bytes": 1078,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/jackc/pgx/v5",
+    "version": "v5.9.2",
+    "source": "Go module h1:3ZhOzMWnR4yJ+RW1XImIPsD1aNSz4T4fyP7zlQb56hw=",
+    "file": "pgproto3/notice_response.go",
+    "sha256": "4b9071daf5f9975eb936c370200709bb7433862c5d4a32d21db65620133f4a8e",
+    "bytes": 722,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/jackc/puddle/v2",
+    "version": "v2.2.2",
+    "source": "Go module h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo=",
+    "file": "LICENSE",
+    "sha256": "2d50e98a4900b4d6457a38d39c1432fdc156fc2f7b365f2e33ec9344acbb0057",
+    "bytes": 1073,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/joho/godotenv",
+    "version": "v1.5.1",
+    "source": "Go module h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=",
+    "file": "LICENCE",
+    "sha256": "4334bf49b7e1a6736ce1b21814d5cce392000204d059ee6a845eeb966e7a1e31",
+    "bytes": 1069,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/json-iterator/go",
+    "version": "v1.1.12",
+    "source": "Go module h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=",
+    "file": "LICENSE",
+    "sha256": "3247931083f058b00760a3c32a9ca0962c05e4d562ad2ffcc1753451fa8d4486",
+    "bytes": 1070,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/kevinburke/ssh_config",
+    "version": "v1.6.0",
+    "source": "Go module h1:J1FBfmuVosPHf5GRdltRLhPJtJpTlMdKTBjRgTaQBFY=",
+    "file": "AUTHORS.txt",
+    "sha256": "eb0f0ca32a1c78877024383dda21ac8632bb327b59109fce68875ab8e90eadfb",
+    "bytes": 514,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/kevinburke/ssh_config",
+    "version": "v1.6.0",
+    "source": "Go module h1:J1FBfmuVosPHf5GRdltRLhPJtJpTlMdKTBjRgTaQBFY=",
+    "file": "LICENSE",
+    "sha256": "a15a6f732df3a033a71853ce1d255bd671f00fbc537fa629b78d71baecda0ace",
+    "bytes": 2301,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "LICENSE",
+    "sha256": "0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf",
+    "bytes": 16733,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "gzhttp/LICENSE",
+    "sha256": "2252a5b1e2b1d3663b53ea77051b8ed065cb9270a3d1174d5d6ead8a2de051b6",
+    "bytes": 11361,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "internal/lz4ref/LICENSE",
+    "sha256": "6a358d2540ca14048f02d366f23787c0a480157e58f058113f0e27168dd4e447",
+    "bytes": 1477,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "internal/snapref/LICENSE",
+    "sha256": "f69f157b0be75da373605dbc8bbf142e8924ee82d8f44f11bcaf351335bf98cf",
+    "bytes": 1486,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "s2/LICENSE",
+    "sha256": "08683b14bda8ae3538abf19e1879e853a39e3b8276a8d673363b529d15a61c1a",
+    "bytes": 1538,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "s2/cmd/internal/filepathx/LICENSE",
+    "sha256": "8582c87d9a6baa28f7827c5205b7d16c3179bc794ebd4c7cc287c49a89b7eaa1",
+    "bytes": 1061,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "s2/cmd/internal/readahead/LICENSE",
+    "sha256": "10fa24a602fde465db603cd5d546e37e33642a73cd24ddf5910be81724fec8b2",
+    "bytes": 1100,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "snappy/AUTHORS",
+    "sha256": "f6f3821e64460346c1ed1a15fb32b94ad241617276b60726c1350ca315309463",
+    "bytes": 560,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "snappy/LICENSE",
+    "sha256": "f69f157b0be75da373605dbc8bbf142e8924ee82d8f44f11bcaf351335bf98cf",
+    "bytes": 1486,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "snappy/xerial/LICENSE",
+    "sha256": "d4ff111fa30ac75e28dca3868de957a3b73ff50b76bc4b8fe5c3a1f008d26703",
+    "bytes": 1106,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/compress",
+    "version": "v1.17.4",
+    "source": "Go module h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=",
+    "file": "zstd/internal/xxhash/LICENSE.txt",
+    "sha256": "f566a9f97bacdaf00d9f21dd991e81dc11201c4e016c86b470799429a1c9a79c",
+    "bytes": 1068,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/klauspost/cpuid/v2",
+    "version": "v2.3.0",
+    "source": "Go module h1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=",
+    "file": "LICENSE",
+    "sha256": "5d966570d7a442d4e969892860a914e542c97f262c873baee8f0aa48e1f40212",
+    "bytes": 1078,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/leodido/go-urn",
+    "version": "v1.4.0",
+    "source": "Go module h1:WT9HwE9SGECu3lg4d/dIA+jxlljEa1/ffXKmRjqdmIQ=",
+    "file": "LICENSE",
+    "sha256": "fe81a9072afbfe0fe32b0bc99a852d697d14fbbca99b0b1878ac8f5dcbdd6ee6",
+    "bytes": 1075,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/libp2p/zeroconf/v2",
+    "version": "v2.2.0",
+    "source": "Go module h1:Cup06Jv6u81HLhIj1KasuNM/RHHrJ8T7wOTS4+Tv53Q=",
+    "file": "LICENSE",
+    "sha256": "200e14ba92ed9bee1273b522c0931351bfb89c41177056e5d0cafc7e91e45c0a",
+    "bytes": 1332,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/lucasb-eyer/go-colorful",
+    "version": "v1.3.0",
+    "source": "Go module h1:2/yBRLdWBZKrf7gB40FoiKfAWYQ0lqNcbuQwVHXptag=",
+    "file": "LICENSE",
+    "sha256": "1e4cf2a117516ec1b54041d68ed4f5d331878b04de3386f4790e7b5b9c04e1ec",
+    "bytes": 1055,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/mattn/go-isatty",
+    "version": "v0.0.20",
+    "source": "Go module h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=",
+    "file": "LICENSE",
+    "sha256": "08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1",
+    "bytes": 1099,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/mattn/go-runewidth",
+    "version": "v0.0.19",
+    "source": "Go module h1:v++JhqYnZuu5jSKrk9RbgF5v4CGUjqRfBm05byFGLdw=",
+    "file": "LICENSE",
+    "sha256": "88a2379b3ca34bf5c57127aff9dcb802bbb60ece0805cdbda65b3bd115f971d9",
+    "bytes": 1085,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/miekg/dns",
+    "version": "v1.1.43",
+    "source": "Go module h1:JKfpVSCB84vrAmHzyrsxB5NAr5kLoMXZArPSw7Qlgyg=",
+    "file": "AUTHORS",
+    "sha256": "74a7b790488334d8a15bb0349ef1ceed3d4bb107f1c175460d5049217f0b5b89",
+    "bytes": 27,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/miekg/dns",
+    "version": "v1.1.43",
+    "source": "Go module h1:JKfpVSCB84vrAmHzyrsxB5NAr5kLoMXZArPSw7Qlgyg=",
+    "file": "COPYRIGHT",
+    "sha256": "66550c0ad5ca7ec1e08683e5f872cc45c741f311eee3b8ee484206ecbf9c740d",
+    "bytes": 512,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/miekg/dns",
+    "version": "v1.1.43",
+    "source": "Go module h1:JKfpVSCB84vrAmHzyrsxB5NAr5kLoMXZArPSw7Qlgyg=",
+    "file": "LICENSE",
+    "sha256": "629ccac021fbccd2efd2d1697f30f08d9d125804510118591743102b163bc9e7",
+    "bytes": 1613,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/minio/md5-simd",
+    "version": "v1.1.2",
+    "source": "Go module h1:Gdi1DZK69+ZVMoNHRXJyNcxrMA4dSxoYHZSQbirFg34=",
+    "file": "LICENSE",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "bytes": 11358,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/minio/md5-simd",
+    "version": "v1.1.2",
+    "source": "Go module h1:Gdi1DZK69+ZVMoNHRXJyNcxrMA4dSxoYHZSQbirFg34=",
+    "file": "LICENSE.Golang",
+    "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067",
+    "bytes": 1479,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/minio/minio-go/v7",
+    "version": "v7.0.66",
+    "source": "Go module h1:bnTOXOHjOqv/gcMuiVbN9o2ngRItvqE774dG9nq0Dzw=",
+    "file": "LICENSE",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "bytes": 11358,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/minio/minio-go/v7",
+    "version": "v7.0.66",
+    "source": "Go module h1:bnTOXOHjOqv/gcMuiVbN9o2ngRItvqE774dG9nq0Dzw=",
+    "file": "NOTICE",
+    "sha256": "570af5b6ac7fc91a78459073098200036e63d60a98ec92db5ed97d22d714d09e",
+    "bytes": 361,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/minio/sha256-simd",
+    "version": "v1.0.1",
+    "source": "Go module h1:6kaan5IFmwTNynnKKpDHe6FWHohJOHhCPchzK49dzMM=",
+    "file": "LICENSE",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "bytes": 11358,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/modern-go/concurrent",
+    "version": "v0.0.0-20180306012644-bacd9c7ef1dd",
+    "source": "Go module h1:TRLaZ9cD/w8PVh93nsPXa1VrQ6jlwL5oN8l14QlcNfg=",
+    "file": "LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "bytes": 11357,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/modern-go/reflect2",
+    "version": "v1.0.2",
+    "source": "Go module h1:xBagoLtFs94CBntxluKeaWgTMpvLxC4ur3nMaC9Gz0M=",
+    "file": "LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "bytes": 11357,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/muesli/ansi",
+    "version": "v0.0.0-20230316100256-276c6243b2f6",
+    "source": "Go module h1:ZK8zHtRHOkbHy6Mmr5D264iyp3TiX5OmNcI5cIARiQI=",
+    "file": "LICENSE",
+    "sha256": "43f65e00e8919fa43c5f45bb2ae578b6d3ee823eb99aa14c85c9ecd06e0350b5",
+    "bytes": 1079,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/muesli/cancelreader",
+    "version": "v0.2.2",
+    "source": "Go module h1:3I4Kt4BQjOR54NavqnDogx/MIoWBFa0StPA8ELUXHmA=",
+    "file": "LICENSE",
+    "sha256": "8c139dbbc83b4fb055b4100b6b9402f7de3dd6bbca05015bdfcc4b392c8cfd5f",
+    "bytes": 1095,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/muesli/termenv",
+    "version": "v0.16.0",
+    "source": "Go module h1:S5AlUN9dENB57rsbnkPyfdGuWIlkmzJjbFf0Tf5FWUc=",
+    "file": "LICENSE",
+    "sha256": "233e8cf9a812999ccee4d3edb270b0f11ab3539658e680bcb873604915ca5038",
+    "bytes": 1079,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pelletier/go-toml/v2",
+    "version": "v2.2.2",
+    "source": "Go module h1:aYUidT7k73Pcl9nb2gScu7NSrKCSHIDE89b3+6Wq+LM=",
+    "file": "LICENSE",
+    "sha256": "26844e4b53c5adec04e557fd7dfef281cc0205a7d355626b1c68b778b99e9e7b",
+    "bytes": 1101,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pierrec/xxHash",
+    "version": "v0.1.5",
+    "source": "Go module h1:n/jBpwTHiER4xYvK3/CdPVnLDPchj8eTJFFLUb4QHBo=",
+    "file": "LICENSE",
+    "sha256": "2adb93d27b6b0c2e0e458c1fb8d0a8543e7c8f959749bdef04ec14c7bec6c094",
+    "bytes": 1477,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/datachannel",
+    "version": "v1.6.2",
+    "source": "Go module h1:7EXQ8TH3vTouBUdRWYbcX2edSx9Yj6k5zl5P+qyxEPc=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/dtls/v3",
+    "version": "v3.1.5",
+    "source": "Go module h1:9xJtVsHwMYeSjPp5Hh1FTis4DchnQWtnOa5o+6ygqfc=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/ice/v4",
+    "version": "v4.3.0",
+    "source": "Go module h1:X8l4s9zV2HeTKX33nulWAFXAEo5KhIVzOsY62/3t/LM=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/interceptor",
+    "version": "v0.1.45",
+    "source": "Go module h1:6PUo/5829bIfRFIPPJQzuDn8EjxRTSB/CSD7QVCOaqo=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/logging",
+    "version": "v0.2.4",
+    "source": "Go module h1:tTew+7cmQ+Mc1pTBLKH2puKsOvhm32dROumOZ655zB8=",
+    "file": "LICENSE",
+    "sha256": "87272dba8c4fcf57101a3195f4f53f7b010b6e153b9b0977bb1a3f91acddf691",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/mdns/v2",
+    "version": "v2.1.0",
+    "source": "Go module h1:3IJ9+Xio6tWYjhN6WwuY142P/1jA0D5ERaIqawg/fOY=",
+    "file": "LICENSE",
+    "sha256": "83e4dd21429a91fb7cea67a476032a9641425e5355df2e0f589a738b6ec9fd2c",
+    "bytes": 1057,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/randutil",
+    "version": "v0.1.0",
+    "source": "Go module h1:CFG1UdESneORglEsnimhUjf33Rwjubwj6xfiOXBa3mA=",
+    "file": "LICENSE",
+    "sha256": "badaf9bc72e71d5a70e7604c636b5b7adf79b9cafc188688438105d2b1e54722",
+    "bytes": 1061,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/rtcp",
+    "version": "v1.2.17",
+    "source": "Go module h1:PxiT6L79yPZKtXIsXdG1eakBl6dtBj4x+4oVEL0DlSw=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/rtp",
+    "version": "v1.10.4",
+    "source": "Go module h1:4sCUwUd35Nllcpyp8V7lRgb4DV/ulHJaRTjbrkAcpQ4=",
+    "file": "LICENSE",
+    "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0",
+    "bytes": 1078,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/sctp",
+    "version": "v1.11.0",
+    "source": "Go module h1:sAxv9Qp3uIcaF5wu1XntwshtnW93CEuxhpkYzSbnfMs=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/sdp/v3",
+    "version": "v3.0.19",
+    "source": "Go module h1:1VMKs3gIkTQV5M3hNKfTAPrDXSNrYtOlmOD8+mSZUGQ=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/srtp/v3",
+    "version": "v3.0.12",
+    "source": "Go module h1:U7V17bckl7sI4mb3sepiojByDuBY0wNCqQE+6IlQBbc=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/stun/v3",
+    "version": "v3.1.6",
+    "source": "Go module h1:WnhsD0eHCiwCfKNkVx0VJJwr2Y3eV4Ueih3KJ+dfZy8=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/transport/v4",
+    "version": "v4.0.2",
+    "source": "Go module h1:ifYlPqNwsy6aKQ9y8yzxXlHae5431ZrH2avkD/Rn6Tk=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/turn/v5",
+    "version": "v5.0.12",
+    "source": "Go module h1:6+b69ivQQXSlyfkp2AKripqD2k3W32qXK8QzCzpJWPI=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/webrtc/v4",
+    "version": "v4.2.17",
+    "source": "Go module h1:no7rmszKV1jkGz7GvErGp/VlnzGu/koVHO9CRjItiVU=",
+    "file": "LICENSE",
+    "sha256": "6483daf6c8aa2c8192528e60be098aa82dd18f6d7b96dc8246f4f7c3333fbf3f",
+    "bytes": 1093,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pion/webrtc/v4",
+    "version": "v4.2.17",
+    "source": "Go module h1:no7rmszKV1jkGz7GvErGp/VlnzGu/koVHO9CRjItiVU=",
+    "file": "test-wasm/LICENSE",
+    "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067",
+    "bytes": 1479,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/pjbgf/sha1cd",
+    "version": "v0.6.0",
+    "source": "Go module h1:3WJ8Wz8gvDz29quX1OcEmkAlUg9diU4GxJHqs0/XiwU=",
+    "file": "LICENSE",
+    "sha256": "c75aacd1e1f49bc504e3f00e7cfa58cb55d3bc7ff3d3c23f38e485da1906e0ad",
+    "bytes": 11335,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/redis/go-redis/v9",
+    "version": "v9.19.0",
+    "source": "Go module h1:XPVaaPSnG6RhYf7p+rmSa9zZfeVAnWsH5h3lxthOm/k=",
+    "file": "LICENSE",
+    "sha256": "a3a7dff87da3927db65cb4c87b1cfbc96ca2755704461a485d457be7ae300a86",
+    "bytes": 1318,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/refraction-networking/utls",
+    "version": "v1.8.2",
+    "source": "Go module h1:j4Q1gJj0xngdeH+Ox/qND11aEfhpgoEvV+S9iJ2IdQo=",
+    "file": "LICENSE",
+    "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067",
+    "bytes": 1479,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/refraction-networking/utls",
+    "version": "v1.8.2",
+    "source": "Go module h1:j4Q1gJj0xngdeH+Ox/qND11aEfhpgoEvV+S9iJ2IdQo=",
+    "file": "dicttls/LICENSE",
+    "sha256": "ac089a3cb515b32ba1c8c2b401646527f55815a9022013693d515f2e2e4fb6ec",
+    "bytes": 1498,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/remyoudompheng/bigfft",
+    "version": "v0.0.0-20230129092748-24d4a6f8daec",
+    "source": "Go module h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=",
+    "file": "LICENSE",
+    "sha256": "dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d",
+    "bytes": 1479,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "github.com/rivo/uniseg",
+    "version": "v0.4.7",
+    "source": "Go module h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=",
+    "file": "LICENSE.txt",
+    "sha256": "a59885f5f0f3b3c07cf9444db5fe399b6f0791eac82055f7b85cc65500551039",
+    "bytes": 1072,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/rs/xid",
+    "version": "v1.5.0",
+    "source": "Go module h1:mKX4bl4iPYJtEIxp6CYiUuLQ/8DYMoz0PUdtGgMFRVc=",
+    "file": "LICENSE",
+    "sha256": "c480873f0ff2b7e2c539bdd84fb4da4178d8d02479c94924f7bffeafb7add358",
+    "bytes": 1080,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/sergi/go-diff",
+    "version": "v1.4.0",
+    "source": "Go module h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=",
+    "file": "APACHE-LICENSE-2.0",
+    "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    "bytes": 10174,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/sergi/go-diff",
+    "version": "v1.4.0",
+    "source": "Go module h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=",
+    "file": "AUTHORS",
+    "sha256": "23fd498d6fff0efbb09530b234fae2b6e87dc654a4226c1aebf889471bc808f0",
+    "bytes": 940,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/sergi/go-diff",
+    "version": "v1.4.0",
+    "source": "Go module h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=",
+    "file": "LICENSE",
+    "sha256": "27d7f7a027a2ba48083cc7912e5146629de65718ddac8ce006c08eb411508b52",
+    "bytes": 1091,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/sirupsen/logrus",
+    "version": "v1.9.3",
+    "source": "Go module h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=",
+    "file": "LICENSE",
+    "sha256": "51a0c9ec7f8b7634181b8d4c03e5b5d204ac21d6e72f46c313973424664b2e6b",
+    "bytes": 1082,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/skratchdot/open-golang",
+    "version": "v0.0.0-20200116055534-eef842397966",
+    "source": "Go module h1:JIAuq3EEf9cgbU6AtGPK4CTG3Zf6CKMNqf0MHTggAUA=",
+    "file": "LICENSE",
+    "sha256": "04b3a5b262b48be9feddc28611dd9c28f05d6b23df569ed5b8fb1f33ef6c8102",
+    "bytes": 1054,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/tidwall/gjson",
+    "version": "v1.18.0",
+    "source": "Go module h1:FIDeeyB800efLX89e5a8Y0BNH+LOngJyGrIWxG2FKQY=",
+    "file": "LICENSE",
+    "sha256": "be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07",
+    "bytes": 1077,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/tidwall/match",
+    "version": "v1.1.1",
+    "source": "Go module h1:+Ho715JplO36QYgwN9PGYNhgZvoUSc9X2c80KVTi+GA=",
+    "file": "LICENSE",
+    "sha256": "be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07",
+    "bytes": 1077,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/tidwall/pretty",
+    "version": "v1.2.0",
+    "source": "Go module h1:RWIZEg2iJ8/g6fDDYzMpobmaoGh5OLl4AXtGUGPcqCs=",
+    "file": "LICENSE",
+    "sha256": "0ca70311227fe097c662dece3f359e3317fa7f9d41f8d29eb45fc5135e216139",
+    "bytes": 1077,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/tidwall/sjson",
+    "version": "v1.2.5",
+    "source": "Go module h1:kLy8mja+1c9jlljvWTlSazM7cKDRfJuR/bOJhcY5NcY=",
+    "file": "LICENSE",
+    "sha256": "dbf5e2aa91aee5f19a1ce2cc7891e2ac37204b6461c0adc539426636e27b208e",
+    "bytes": 1078,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/tiktoken-go/tokenizer",
+    "version": "v0.8.1",
+    "source": "Go module h1:4obDoB6/dhdBt9xMweX4nww5cjdOq/nYF4ecwPq2+mg=",
+    "file": "LICENSE",
+    "sha256": "84b1679fd28b98c8e02f2f1a1cab41ac230b0e9841695462ad6369663d32473a",
+    "bytes": 1068,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/ugorji/go/codec",
+    "version": "v1.2.12",
+    "source": "Go module h1:9LC83zGrHhuUA9l16C9AHXAqEV/2wBQ4nkvumAE65EE=",
+    "file": "LICENSE",
+    "sha256": "c8a84b926246b4ac76e3810722858b0f83bdea8378de49911dccbefd70b0692e",
+    "bytes": 1106,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/wlynxg/anet",
+    "version": "v0.0.5",
+    "source": "Go module h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=",
+    "file": "LICENSE",
+    "sha256": "6b8970dbe36fe214fd02b438c06daee19897708e435d761ecd18adc9ef7e7a05",
+    "bytes": 1493,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "github.com/xo/terminfo",
+    "version": "v0.0.0-20220910002029-abceb7e1c41e",
+    "source": "Go module h1:JVG44RsyaB9T2KIHavMF/ppJZNG9ZpyihvCd0w101no=",
+    "file": "LICENSE",
+    "sha256": "1f5f51151ba96f0492ce288bd007242f924fdad9f04002e175e951644340a891",
+    "bytes": 1078,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "go.uber.org/atomic",
+    "version": "v1.11.0",
+    "source": "Go module h1:ZvwS0R+56ePWxUNi+Atn9dWONBPp/AUETXlHW0DxSjE=",
+    "file": "LICENSE.txt",
+    "sha256": "edbb5a4d165ac69376c765b551c0662ff42bea87e1f1eda85f42ac90c34b09d0",
+    "bytes": 1067,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/crypto",
+    "version": "v0.54.0",
+    "source": "Go module h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/crypto",
+    "version": "v0.54.0",
+    "source": "Go module h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/exp",
+    "version": "v0.0.0-20251023183803-a4bb9ffd2546",
+    "source": "Go module h1:mgKeJMpvi0yx/sU5GsxQ7p6s2wtOnGAHZWCHUM4KGzY=",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "golang.org/x/exp",
+    "version": "v0.0.0-20251023183803-a4bb9ffd2546",
+    "source": "Go module h1:mgKeJMpvi0yx/sU5GsxQ7p6s2wtOnGAHZWCHUM4KGzY=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "golang.org/x/net",
+    "version": "v0.57.0",
+    "source": "Go module h1:K5+3DljvIuDG9/Jv9rvyMywYNFCQ9RSUY6OOTTkT+tE=",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/net",
+    "version": "v0.57.0",
+    "source": "Go module h1:K5+3DljvIuDG9/Jv9rvyMywYNFCQ9RSUY6OOTTkT+tE=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/oauth2",
+    "version": "v0.30.0",
+    "source": "Go module h1:dnDm7JmhM45NNpd8FDDeLhK6FwqbOf4MLCM9zb1BOHI=",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/sync",
+    "version": "v0.22.0",
+    "source": "Go module h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/sync",
+    "version": "v0.22.0",
+    "source": "Go module h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/sys",
+    "version": "v0.37.0",
+    "source": "Go module h1:fdNQudmxPjkdUTPnLn5mdQv7Zwvbvpaxqs831goi9kQ=",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "golang.org/x/sys",
+    "version": "v0.37.0",
+    "source": "Go module h1:fdNQudmxPjkdUTPnLn5mdQv7Zwvbvpaxqs831goi9kQ=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "golang.org/x/sys",
+    "version": "v0.47.0",
+    "source": "Go module h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/sys",
+    "version": "v0.47.0",
+    "source": "Go module h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/text",
+    "version": "v0.40.0",
+    "source": "Go module h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/text",
+    "version": "v0.40.0",
+    "source": "Go module h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/time",
+    "version": "v0.14.0",
+    "source": "Go module h1:MRx4UaLrDotUKUdCIqzPC48t1Y9hANFKIRpNx+Te8PI=",
+    "file": "LICENSE",
+    "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad",
+    "bytes": 1453,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "golang.org/x/time",
+    "version": "v0.14.0",
+    "source": "Go module h1:MRx4UaLrDotUKUdCIqzPC48t1Y9hANFKIRpNx+Te8PI=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "google.golang.org/protobuf",
+    "version": "v1.34.1",
+    "source": "Go module h1:9ddQBjfCyZPOHPUiPxpYESBLc+T8P3E+Vo4IbKZgFWg=",
+    "file": "LICENSE",
+    "sha256": "4835612df0098ca95f8e7d9e3bffcb02358d435dbb38057c844c99d7f725eb20",
+    "bytes": 1479,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "google.golang.org/protobuf",
+    "version": "v1.34.1",
+    "source": "Go module h1:9ddQBjfCyZPOHPUiPxpYESBLc+T8P3E+Vo4IbKZgFWg=",
+    "file": "PATENTS",
+    "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc",
+    "bytes": 1303,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "gopd",
+    "version": "1.2.0",
+    "source": "https://registry.npmjs.org/gopd/-/gopd-1.2.0.tgz sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==",
+    "file": "LICENSE",
+    "sha256": "d90bf0a089da4cf43d644ed240a0b3825dcdb705e64e38371d56995a4cc9e4c5",
+    "bytes": 1071,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "gopkg.in/ini.v1",
+    "version": "v1.67.0",
+    "source": "Go module h1:Dgnx+6+nfE+IfzjUEISNeydPJh9AXNNsWbGP9KzCsOA=",
+    "file": "LICENSE",
+    "sha256": "f6918bd93ffe07f4b2c61b8287c32cb3122e08aed0be50f1c7d0eddc87877a8f",
+    "bytes": 10253,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "gopkg.in/natefinch/lumberjack.v2",
+    "version": "v2.2.1",
+    "source": "Go module h1:bBRl1b0OH9s/DuPhuXpNl+VtCaJXFZ5/uEFST95x9zc=",
+    "file": "LICENSE",
+    "sha256": "9622cbfd055d92991dcf523a256840424cc6356eab93beb4a93a973dec046492",
+    "bytes": 1077,
+    "roles": [
+      "cpa"
+    ]
+  },
+  {
+    "component": "gopkg.in/yaml.v3",
+    "version": "v3.0.1",
+    "source": "Go module h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=",
+    "file": "LICENSE",
+    "sha256": "d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b",
+    "bytes": 2151,
+    "roles": [
+      "runtime",
+      "cpa"
+    ]
+  },
+  {
+    "component": "gopkg.in/yaml.v3",
+    "version": "v3.0.1",
+    "source": "Go module h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=",
+    "file": "NOTICE",
+    "sha256": "f6c2dd3a67b576eafb89b80200b8b1627230bf3821a0c14cb99a22ac19107d00",
+    "bytes": 560,
+    "roles": [
+      "runtime",
+      "cpa"
+    ]
+  },
+  {
+    "component": "has-symbols",
+    "version": "1.1.0",
+    "source": "https://registry.npmjs.org/has-symbols/-/has-symbols-1.1.0.tgz sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==",
+    "file": "LICENSE",
+    "sha256": "206c1adcf206dc0031b11232f5b054ec5f1662407ab1ca415247921cab2068ab",
+    "bytes": 1071,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "has-tostringtag",
+    "version": "1.0.2",
+    "source": "https://registry.npmjs.org/has-tostringtag/-/has-tostringtag-1.0.2.tgz sha512-NqADB8VjPFLM2V0VvHUewwwsw0ZWBaIdgo+ieHtK3hasLz4qeCRjYcqfB6AQrBggRKppKF8L52/VqdVsO47Dlw==",
+    "file": "LICENSE",
+    "sha256": "e2560e002e13281578c75c850061d9255c33d16d732939e8c2db64c2506642fa",
+    "bytes": 1067,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "hasown",
+    "version": "2.0.2",
+    "source": "https://registry.npmjs.org/hasown/-/hasown-2.0.2.tgz sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==",
+    "file": "LICENSE",
+    "sha256": "bf9b0d665be2a689851eea667ca9f42066ea1d903b38349c51e6a44b2577680a",
+    "bytes": 1083,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "html-parse-stringify",
+    "version": "3.0.1",
+    "source": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz sha512-KknJ50kTInJ7qIScF3jeaFRpMpE8/lfiTdzf/twXyPBLAGrLRTmkz3AdTnKeh40X8k9L2fdYwEp/42WGXIRGcg==",
+    "file": "README.md",
+    "sha256": "0d993e8258d7e8b40fbe58121912f95b68f0d035f6788000b27bd09d9ae51d0f",
+    "bytes": 7628,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ],
+    "qualification": "UPSTREAM_LICENSE_DECLARATION_ONLY_FULL_TEXT_UNRESOLVED"
+  },
+  {
+    "component": "html-parse-stringify",
+    "version": "3.0.1",
+    "source": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz sha512-KknJ50kTInJ7qIScF3jeaFRpMpE8/lfiTdzf/twXyPBLAGrLRTmkz3AdTnKeh40X8k9L2fdYwEp/42WGXIRGcg==",
+    "file": "package.json",
+    "sha256": "40e04992e6d49282566cd9b2eb82747f15831f71c20a69ec791a502162d6818b",
+    "bytes": 1260,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ],
+    "qualification": "UPSTREAM_LICENSE_DECLARATION_ONLY_FULL_TEXT_UNRESOLVED"
+  },
+  {
+    "component": "i18next",
+    "version": "26.2.0",
+    "source": "https://registry.npmjs.org/i18next/-/i18next-26.2.0.tgz sha512-zwBHldHdTmwN7r6UNc7lC6GWNN+YYg3DrRSeHR5PRRBf5QnJZcYHrQc0uaU26qZeYxR7iFZD+Y315dPnKP47wA==",
+    "file": "LICENSE",
+    "sha256": "1cd0a2b02a6cc40ef8ee16310d13eeffdd7b5de4a562fd3ee7c921d8eb54f60a",
+    "bytes": 1082,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "math-intrinsics",
+    "version": "1.1.0",
+    "source": "https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==",
+    "file": "LICENSE",
+    "sha256": "2b770a704c15de238c3f622b01b0044ddd60b49ee30608ea6991ebf19db7a7a1",
+    "bytes": 1073,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "mime-db",
+    "version": "1.52.0",
+    "source": "https://registry.npmjs.org/mime-db/-/mime-db-1.52.0.tgz sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==",
+    "file": "LICENSE",
+    "sha256": "cc1dfd4dafa27271e8212cd3b274eeb3f262e40a6fdab36ddc3f9696f706f58b",
+    "bytes": 1172,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "mime-types",
+    "version": "2.1.35",
+    "source": "https://registry.npmjs.org/mime-types/-/mime-types-2.1.35.tgz sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw==",
+    "file": "LICENSE",
+    "sha256": "71f83c4c0621102a56d9853812777b85751bce7e9726f686f5b056c1f8a4b0e6",
+    "bytes": 1167,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "modernc.org/libc",
+    "version": "v1.67.6",
+    "source": "Go module h1:eVOQvpModVLKOdT+LvBPjdQqfrZq+pC39BygcT+E7OI=",
+    "file": "AUTHORS",
+    "sha256": "e65c48b9a6130b70d57ea9dfe62ef20aa77de0458e547fbd8ad5e62120595d46",
+    "bytes": 759,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/libc",
+    "version": "v1.67.6",
+    "source": "Go module h1:eVOQvpModVLKOdT+LvBPjdQqfrZq+pC39BygcT+E7OI=",
+    "file": "LICENSE",
+    "sha256": "95ff867eb55a56935fa7492406cfa953fb7c13ca73f4c0a86ae05756b4605600",
+    "bytes": 1482,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/libc",
+    "version": "v1.67.6",
+    "source": "Go module h1:eVOQvpModVLKOdT+LvBPjdQqfrZq+pC39BygcT+E7OI=",
+    "file": "LICENSE-3RD-PARTY.md",
+    "sha256": "f597097efe3d97021f89170746bd3a0fb9a8b6fb26b82043ed68a4e0283bee6c",
+    "bytes": 10505,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/mathutil",
+    "version": "v1.7.1",
+    "source": "Go module h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU=",
+    "file": "AUTHORS",
+    "sha256": "51fcdd68bb605f080283bb6eabb72452591289650599d3d67603381834e536af",
+    "bytes": 412,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/mathutil",
+    "version": "v1.7.1",
+    "source": "Go module h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU=",
+    "file": "LICENSE",
+    "sha256": "bfa9bf72a72ca009fd62a8f84fca3dca67e51d93af96352723646599898b6cf5",
+    "bytes": 1486,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/mathutil",
+    "version": "v1.7.1",
+    "source": "Go module h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU=",
+    "file": "mersenne/AUTHORS",
+    "sha256": "f79ff8b413938c3ce7c60db12242a663d8e840249bd838fcf58f4aaccfec5454",
+    "bytes": 346,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/mathutil",
+    "version": "v1.7.1",
+    "source": "Go module h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU=",
+    "file": "mersenne/LICENSE",
+    "sha256": "c05630f9ca899ea094620d37daea6ba66f99adbf9268ea5fea9db607e1102bd9",
+    "bytes": 1486,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/memory",
+    "version": "v1.11.0",
+    "source": "Go module h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI=",
+    "file": "AUTHORS",
+    "sha256": "df1f424436f279309de85b82e494d548297a2570e9b5794630d7e72c9eb50b6a",
+    "bytes": 529,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/memory",
+    "version": "v1.11.0",
+    "source": "Go module h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI=",
+    "file": "LICENSE",
+    "sha256": "59895e669f48f168b6b858358f6005779cdf40a265f7828813061b56af67b496",
+    "bytes": 1484,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/memory",
+    "version": "v1.11.0",
+    "source": "Go module h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI=",
+    "file": "LICENSE-GO",
+    "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067",
+    "bytes": 1479,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/memory",
+    "version": "v1.11.0",
+    "source": "Go module h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI=",
+    "file": "LICENSE-LOGO",
+    "sha256": "5ae5bee3072a841376451b48d8cfcec7188e10543926d5870828d36c8a750dc5",
+    "bytes": 62,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/memory",
+    "version": "v1.11.0",
+    "source": "Go module h1:o4QC8aMQzmcwCK3t3Ux/ZHmwFPzE6hf2Y5LbkRs+hbI=",
+    "file": "LICENSE-MMAP-GO",
+    "sha256": "c2eba69f20d05414538c3a5df7694dde392e065ff70882e1625e90f5d6659fff",
+    "bytes": 1518,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/sqlite",
+    "version": "v1.46.1",
+    "source": "Go module h1:eFJ2ShBLIEnUWlLy12raN0Z1plqmFX9Qe3rjQTKt6sU=",
+    "file": "AUTHORS",
+    "sha256": "cf08c8f59c30c5f2f768f5b667851c20cf202a49e0e4f8b7ca23f859ff529844",
+    "bytes": 1080,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/sqlite",
+    "version": "v1.46.1",
+    "source": "Go module h1:eFJ2ShBLIEnUWlLy12raN0Z1plqmFX9Qe3rjQTKt6sU=",
+    "file": "LICENSE",
+    "sha256": "c6fe05491a60ae13bcd223088d2705e36dede24e5587226231d2459ada5c4822",
+    "bytes": 1489,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "modernc.org/sqlite",
+    "version": "v1.46.1",
+    "source": "Go module h1:eFJ2ShBLIEnUWlLy12raN0Z1plqmFX9Qe3rjQTKt6sU=",
+    "file": "SQLITE-LICENSE",
+    "sha256": "8438c9c89b849131ead81d5435cb97fcf052df5b0b286dda8a2d4c29e6cb3fd0",
+    "bytes": 1506,
+    "roles": [
+      "manager",
+      "runtime"
+    ]
+  },
+  {
+    "component": "motion",
+    "version": "12.34.3",
+    "source": "https://registry.npmjs.org/motion/-/motion-12.34.3.tgz sha512-xZIkBGO7v/Uvm+EyaqYd+9IpXu0sZqLywVlGdCFrrMiaO9JI4Kx51mO9KlHSWwll+gZUVY5OJsWgYI5FywJ/tw==",
+    "file": "LICENSE.md",
+    "sha256": "1bf0dc3f7727723e5a032ed12164a47cf92c05204cb1a3485f123c24e2833ed1",
+    "bytes": 1100,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "motion-dom",
+    "version": "12.34.3",
+    "source": "https://registry.npmjs.org/motion-dom/-/motion-dom-12.34.3.tgz sha512-sYgFe+pR9aIM7o4fhs2aXtOI+oqlUd33N9Yoxcgo1Fv7M20sRkHtCmzE/VRNIcq7uNJ+qio+Xubt1FXH3pQ+eQ==",
+    "file": "LICENSE.md",
+    "sha256": "1bf0dc3f7727723e5a032ed12164a47cf92c05204cb1a3485f123c24e2833ed1",
+    "bytes": 1100,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "motion-utils",
+    "version": "12.29.2",
+    "source": "https://registry.npmjs.org/motion-utils/-/motion-utils-12.29.2.tgz sha512-G3kc34H2cX2gI63RqU+cZq+zWRRPSsNIOjpdl9TN4AQwC4sgwYPl/Q/Obf/d53nOm569T0fYK+tcoSV50BWx8A==",
+    "file": "LICENSE.md",
+    "sha256": "1bf0dc3f7727723e5a032ed12164a47cf92c05204cb1a3485f123c24e2833ed1",
+    "bytes": 1100,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "proxy-from-env",
+    "version": "2.1.0",
+    "source": "https://registry.npmjs.org/proxy-from-env/-/proxy-from-env-2.1.0.tgz sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA==",
+    "file": "LICENSE",
+    "sha256": "f55828df4b8752c48e765a806465b76a103e3cb363379c569b15a1df2ba2d79e",
+    "bytes": 1087,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "react",
+    "version": "19.2.1",
+    "source": "https://registry.npmjs.org/react/-/react-19.2.1.tgz sha512-DGrYcCWK7tvYMnWh79yrPHt+vdx9tY+1gPZa7nJQtO/p8bLTDaHp4dzwEhQB7pZ4Xe3ok4XKuEPrVuc+wlpkmw==",
+    "file": "LICENSE",
+    "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93",
+    "bytes": 1088,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "react-dom",
+    "version": "19.2.1",
+    "source": "https://registry.npmjs.org/react-dom/-/react-dom-19.2.1.tgz sha512-ibrK8llX2a4eOskq1mXKu/TGZj9qzomO+sNfO98M6d9zIPOEhlBkMkBUBLd1vgS0gQsLDBzA+8jJBVXDnfHmJg==",
+    "file": "LICENSE",
+    "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93",
+    "bytes": 1088,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "react-i18next",
+    "version": "17.0.8",
+    "source": "https://registry.npmjs.org/react-i18next/-/react-i18next-17.0.8.tgz sha512-0ooKbGLU8JXhe1zwpQUWIeXSgLPOfwJmgheWRIUpcoA0CpyabpGhayjdG+/eA5esC1AQ8h2jWpXjJfzQzeDOCw==",
+    "file": "LICENSE",
+    "sha256": "29b8ae456ef442e53a98df183ad088cf98c2ece73aa84c462330c43e665b8ab2",
+    "bytes": 1083,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "react-router",
+    "version": "7.12.0",
+    "source": "https://registry.npmjs.org/react-router/-/react-router-7.12.0.tgz sha512-kTPDYPFzDVGIIGNLS5VJykK0HfHLY5MF3b+xj0/tTyNYL1gF1qs7u67Z9jEhQk2sQ98SUaHxlG31g1JtF7IfVw==",
+    "file": "LICENSE.md",
+    "sha256": "77c9ee6a9c5d5782fb0c50b50d101189116314c14f7df0a1b0d385fc96a7ba49",
+    "bytes": 1161,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "react-router-dom",
+    "version": "7.12.0",
+    "source": "https://registry.npmjs.org/react-router-dom/-/react-router-dom-7.12.0.tgz sha512-pfO9fiBcpEfX4Tx+iTYKDtPbrSLLCbwJ5EqP+SPYQu1VYCXdy79GSj0wttR0U4cikVdlImZuEZ/9ZNCgoaxwBA==",
+    "file": "LICENSE.md",
+    "sha256": "77c9ee6a9c5d5782fb0c50b50d101189116314c14f7df0a1b0d385fc96a7ba49",
+    "bytes": 1161,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "scheduler",
+    "version": "0.27.0",
+    "source": "https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==",
+    "file": "LICENSE",
+    "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93",
+    "bytes": 1088,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "set-cookie-parser",
+    "version": "2.7.2",
+    "source": "https://registry.npmjs.org/set-cookie-parser/-/set-cookie-parser-2.7.2.tgz sha512-oeM1lpU/UvhTxw+g3cIfxXHyJRc/uidd3yK1P242gzHds0udQBYzs3y8j4gCCW+ZJ7ad0yctld8RYO+bdurlvw==",
+    "file": "LICENSE",
+    "sha256": "c5c6c5183a789d122f267c405f685037efb87e27fcde28ab1dd7378a2d2f5962",
+    "bytes": 1126,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "style-mod",
+    "version": "4.1.3",
+    "source": "https://registry.npmjs.org/style-mod/-/style-mod-4.1.3.tgz sha512-i/n8VsZydrugj3Iuzll8+x/00GH2vnYsk1eomD8QiRrSAeW6ItbCQDtfXCeJHd0iwiNagqjQkvpvREEPtW3IoQ==",
+    "file": "LICENSE",
+    "sha256": "cb4474e26547397169061d3586c00022cda5330a1b64fa13e872319f3b63aff1",
+    "bytes": 1100,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "tslib",
+    "version": "2.3.0",
+    "source": "https://registry.npmjs.org/tslib/-/tslib-2.3.0.tgz sha512-N82ooyxVNm6h1riLCoyS9e3fuJ3AMG2zIZs2Gd1ATcSFjSA23Q0fzjjZeh0jbJvWVDZ0cJT8yaNNaaXHzueNjg==",
+    "file": "LICENSE.txt",
+    "sha256": "210b19e543130388c68654b7497e967119ce17145f66ab7d85688fbd70f08751",
+    "bytes": 655,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "tslib",
+    "version": "2.8.1",
+    "source": "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==",
+    "file": "LICENSE.txt",
+    "sha256": "210b19e543130388c68654b7497e967119ce17145f66ab7d85688fbd70f08751",
+    "bytes": 655,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "typescript",
+    "version": "6.0.3",
+    "source": "https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==",
+    "file": "LICENSE.txt",
+    "sha256": "a7d00bfd54525bc694b6e32f64c7ebcf5e6b7ae3657be5cc12767bce74654a47",
+    "bytes": 9197,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "use-sync-external-store",
+    "version": "1.6.0",
+    "source": "https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-store-1.6.0.tgz sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==",
+    "file": "LICENSE",
+    "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93",
+    "bytes": 1088,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "void-elements",
+    "version": "3.1.0",
+    "source": "https://registry.npmjs.org/void-elements/-/void-elements-3.1.0.tgz sha512-Dhxzh5HZuiHQhbvTW9AMetFfBHDMYpo23Uo9btPXgdYP+3T5S+p+jgNy7spra+veYhBP2dCSgxR/i2Y02h5/6w==",
+    "file": "LICENSE",
+    "sha256": "405a272eaef556691ad7dda96db3237c9544afe18725842a1a5b3ec308960222",
+    "bytes": 1070,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "w3c-keyname",
+    "version": "2.2.8",
+    "source": "https://registry.npmjs.org/w3c-keyname/-/w3c-keyname-2.2.8.tgz sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==",
+    "file": "LICENSE",
+    "sha256": "869c30f368eb08735e779027b9f4bc9fea2f39624351856aebe42741f0bc0884",
+    "bytes": 1100,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "yaml",
+    "version": "2.8.3",
+    "source": "https://registry.npmjs.org/yaml/-/yaml-2.8.3.tgz sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg==",
+    "file": "LICENSE",
+    "sha256": "5bba27375d93e9119f76c1015f7672cf9ad5f70952296e0842fb2243d6376869",
+    "bytes": 738,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "zrender",
+    "version": "6.1.0",
+    "source": "https://registry.npmjs.org/zrender/-/zrender-6.1.0.tgz sha512-oEGMDB6pOP2S6OwRR4PdVv610zrjnA3Bh+JnSG12fYJlBKjtNAoEb5fSUoCOOINlH96I2fU38/A2UpRKs67xYQ==",
+    "file": "LICENSE",
+    "sha256": "a681e9d183c72b4af4856935893805eb48c08f0f5a3f260203db7444c20fb98a",
+    "bytes": 1509,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  },
+  {
+    "component": "zustand",
+    "version": "5.0.9",
+    "source": "https://registry.npmjs.org/zustand/-/zustand-5.0.9.tgz sha512-ALBtUj0AfjJt3uNRQoL1tL2tMvj6Gp/6e39dnfT6uzpelGru8v1tPOGBzayOWbPJvujM8JojDk3E1LxeFisBNg==",
+    "file": "LICENSE",
+    "sha256": "c1e6e266563517467b1bf874817d23e426f3149252bd7d42758cd697514b8417",
+    "bytes": 1070,
+    "roles": [
+      "manager-web-production-lock-superset"
+    ]
+  }
+]

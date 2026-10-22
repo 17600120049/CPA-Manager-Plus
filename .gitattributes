@@ -2,6 +2,9 @@
 # but exclude it from GitHub repository language statistics.
 apps/web/** -linguist-detectable
 
+# Keep third-party original notice bytes, including CRLF and trailing spaces.
+bin/release/embedded-third-party-notices.txt -text -whitespace
+
 # Qualification profiles/code and byte-pinned evidence must survive Windows checkout.
 apps/manager-server/internal/service/freshstrategy/qualification/** -text
 apps/manager-server/internal/domain/bootstrap/qualification.go text eol=lf

@@ -17,6 +17,8 @@ RUN apk add --no-cache ca-certificates tzdata \
 COPY --from=ingress-build /out/cpamp-ingress /usr/local/bin/cpamp-ingress
 COPY LICENSE /usr/local/share/licenses/cpamp/LICENSE
 COPY bin/release/embedded-third-party-inventory.txt /usr/local/share/cpamp/release/third-party-inventory.txt
+COPY bin/release/embedded-third-party-notices.txt /usr/local/share/cpamp/release/third-party-notices.txt
+COPY bin/release/embedded-third-party-notices.sources.json /usr/local/share/cpamp/release/third-party-notices.sources.json
 USER cpamp:cpamp
 EXPOSE 18317
 ENTRYPOINT ["/usr/local/bin/cpamp-ingress"]

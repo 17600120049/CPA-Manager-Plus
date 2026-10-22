@@ -10,6 +10,7 @@ import tempfile
 import unittest
 import os
 import subprocess
+import re
 from unittest.mock import patch
 from pathlib import Path
 
@@ -20,6 +21,8 @@ spec.loader.exec_module(subject)
 SHA = "a" * 40
 EVENT = "local-test-event"
 MOCK_NOTICE = b"NOT_VERIFIED: license inventory only"
+MOCK_NOTICE_TEXTS = b"Original third-party license texts"
+MOCK_NOTICE_SOURCES = b"[]"
 MOCK_RUNTIME_ENTRYPOINT = b"#!/bin/sh\n"
 MOCK_API_CONTRACT = json.dumps({
     "schemaVersion": 1, "qualification": subject.API_CONTRACT_QUALIFICATION,
@@ -65,10 +68,13 @@ def make_oci(destination, role, license_bytes, *,
              bad_mode=None, invalid_elf=False, wrong_module=False, wrong_source_stamp=False,
              wrong_sha_suffix=False, wrong_version_suffix=False, wrong_entrypoint=False,
              wrong_cmd=False, runtime_script=MOCK_RUNTIME_ENTRYPOINT,
-             wrong_pah_enabled=False):
+             wrong_pah_enabled=False, notice_texts=MOCK_NOTICE_TEXTS,
+             notice_sources=MOCK_NOTICE_SOURCES):
     files = {
         "/usr/local/share/licenses/cpamp/LICENSE": license_bytes,
         subject.NOTICE: notice_bytes,
+        subject.NOTICE_TEXTS: notice_texts,
+        subject.NOTICE_SOURCES: notice_sources,
     }
     if role == "manager":
         files["/usr/local/bin/cpa-manager-plus"] = (
@@ -228,6 +234,8 @@ class EmbeddedCandidateContracts(unittest.TestCase):
         inventory = self.root / "bin/release/embedded-third-party-inventory.txt"
         inventory.parent.mkdir(parents=True)
         inventory.write_bytes(MOCK_NOTICE)
+        (inventory.parent / "embedded-third-party-notices.txt").write_bytes(MOCK_NOTICE_TEXTS)
+        (inventory.parent / "embedded-third-party-notices.sources.json").write_bytes(MOCK_NOTICE_SOURCES)
         api = self.root / "tests/fixtures/r1-embedded-api-transport.json"
         api.parent.mkdir(parents=True)
         api.write_bytes(MOCK_API_CONTRACT)
@@ -250,6 +258,12 @@ class EmbeddedCandidateContracts(unittest.TestCase):
                 subject.verify(archives, SHA, EVENT, self.root)
             make_oci(archives["ingress"], "ingress", self.license, notice_bytes=MOCK_NOTICE + b" tampered")
             with self.assertRaisesRegex(ValueError, "third-party inventory differs"):
+                subject.verify(archives, SHA, EVENT, self.root)
+            make_oci(archives["ingress"], "ingress", self.license, notice_texts=b"changed original text")
+            with self.assertRaisesRegex(ValueError, "third-party notice bundle differs"):
+                subject.verify(archives, SHA, EVENT, self.root)
+            make_oci(archives["ingress"], "ingress", self.license, notice_sources=b"changed provenance")
+            with self.assertRaisesRegex(ValueError, "third-party notice bundle differs"):
                 subject.verify(archives, SHA, EVENT, self.root)
             make_oci(archives["ingress"], "ingress", self.license)
             make_oci(archives["manager"], "manager", self.license, api_contract=MOCK_API_CONTRACT + b" ")
@@ -283,6 +297,13 @@ class EmbeddedCandidateContracts(unittest.TestCase):
     def test_reject_missing_api_transport_fixture(self):
         with self.assertRaisesRegex(ValueError, "missing packaged files"):
             self.inspect(missing=subject.API_CONTRACT)
+
+    def test_reject_missing_notice_texts_or_provenance_on_each_role(self):
+        for role in subject.ROLES:
+            for name in (subject.NOTICE_TEXTS, subject.NOTICE_SOURCES):
+                with self.subTest(role=role, name=name):
+                    with self.assertRaisesRegex(ValueError, "missing packaged files"):
+                        self.inspect(role, missing=name)
 
     def test_reject_mismatched_api_contract(self):
         with self.assertRaisesRegex(ValueError, "Web/API transport contract"):
@@ -473,6 +494,51 @@ if role == "manager":
             snapshot = Path(events[0]["context"])
             self.assertFalse(snapshot.exists(), "disposable source snapshot was not removed")
             self.assertTrue((output / "candidate-evidence.json").exists())
+
+
+class BundledNoticeTests(unittest.TestCase):
+    def setUp(self):
+        self.root = VERIFIER.parents[2]
+        self.sources = json.loads((self.root / "bin/release/embedded-third-party-notices.sources.json").read_bytes())
+        self.text = (self.root / "bin/release/embedded-third-party-notices.txt").read_bytes()
+
+    def test_original_texts_retain_recorded_bytes(self):
+        self.assertTrue(self.sources)
+        for item in self.sources:
+            with self.subTest(component=item["component"], file=item["file"]):
+                header = (
+                    f"Component: {item['component']} {item['version']}\n"
+                    f"Applies to: {', '.join(item['roles'])}\n"
+                    f"Source: {item['source']}\nOriginal file: {item['file']}\n"
+                    f"SHA-256: {item['sha256']}\n" + "-" * 72 + "\n"
+                ).encode()
+                self.assertEqual(self.text.count(header), 1)
+                offset = self.text.index(header) + len(header)
+                original = self.text[offset:offset + item["bytes"]]
+                self.assertEqual(hashlib.sha256(original).hexdigest(), item["sha256"])
+
+    def test_current_go_and_production_web_dependencies_have_original_texts(self):
+        covered = {(item["component"], item["version"]) for item in self.sources}
+        for module in ("apps/manager-server", "apps/runtime-supervisor"):
+            # The first require block lists direct production dependencies.
+            # Unlinked indirect/test-only modules need no binary notice.
+            direct = (self.root / module / "go.mod").read_text().split("require (", 1)[1].split(")", 1)[0]
+            requires = re.findall(r"^\s+(\S+)\s+(v\S+)", direct, re.M)
+            for dependency in requires:
+                with self.subTest(module=module, dependency=dependency):
+                    self.assertIn(dependency, covered)
+            role = "manager" if module.endswith("manager-server") else "runtime"
+            sums = (self.root / module / "go.sum").read_text().splitlines()
+            for item in self.sources:
+                if role in item["roles"] and item["source"].startswith("Go module "):
+                    expected = f"{item['component']} {item['version']} {item['source'].removeprefix('Go module ')}"
+                    self.assertIn(expected, sums)
+        lock = json.loads((self.root / "package-lock.json").read_bytes())
+        for name, package in lock["packages"].items():
+            if not name.startswith("node_modules/") or any(package.get(key) for key in ("dev", "link", "optional")):
+                continue
+            with self.subTest(package=name):
+                self.assertIn((name.rsplit("node_modules/", 1)[1], package["version"]), covered)
 
 
 if __name__ == "__main__":

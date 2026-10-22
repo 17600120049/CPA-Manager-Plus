@@ -27,12 +27,14 @@ CPA_LICENSE_SHA = "879792e89cf1bdd6a8d446033ec87e30496f97dcafc4656dc53f641509b34
 CPA_ARCHIVE_SHA = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
 LICENSE = "/usr/local/share/licenses/cpamp/LICENSE"
 NOTICE = "/usr/local/share/cpamp/release/third-party-inventory.txt"
+NOTICE_TEXTS = "/usr/local/share/cpamp/release/third-party-notices.txt"
+NOTICE_SOURCES = "/usr/local/share/cpamp/release/third-party-notices.sources.json"
 WEB_MANIFEST = "/usr/local/share/cpamp/release/fullweb-manifest.json"
 API_CONTRACT = "/usr/local/share/cpamp/release/public-api-transport-contract.json"
 API_CONTRACT_QUALIFICATION = "SOURCE_TRANSPORT_CONTRACT_ONLY_NOT_COMPLETE_WEB_API_COMPATIBILITY"
 WANTED = {
-    "manager": ("/usr/local/bin/cpa-manager-plus", LICENSE, NOTICE, WEB_MANIFEST, API_CONTRACT),
-    "ingress": ("/usr/local/bin/cpamp-ingress", LICENSE, NOTICE),
+    "manager": ("/usr/local/bin/cpa-manager-plus", LICENSE, NOTICE, NOTICE_TEXTS, NOTICE_SOURCES, WEB_MANIFEST, API_CONTRACT),
+    "ingress": ("/usr/local/bin/cpamp-ingress", LICENSE, NOTICE, NOTICE_TEXTS, NOTICE_SOURCES),
     "runtime": (
         "/usr/local/bin/cpamp-runtime-supervisor",
         "/usr/local/bin/cli-proxy-api",
@@ -40,7 +42,7 @@ WANTED = {
         "/usr/local/share/cpamp/runtime/config.seed.yaml",
         "/usr/local/bin/cpamp-runtime-v8-entrypoint",
         "/usr/local/share/licenses/cli-proxy-api/LICENSE",
-        LICENSE, NOTICE,
+        LICENSE, NOTICE, NOTICE_TEXTS, NOTICE_SOURCES,
     ),
 }
 MAX_BLOB = 512 * 1024 * 1024
@@ -380,6 +382,8 @@ def verify(paths, source_sha, event, root):
     seed = (root / "docker/runtime/config.v8.default.seed.yaml").read_bytes()
     runtime_entrypoint = (root / "docker/runtime/v8-entrypoint.sh").read_bytes()
     inventory_bytes = (root / "bin/release/embedded-third-party-inventory.txt").read_bytes()
+    notice_bytes = (root / "bin/release/embedded-third-party-notices.txt").read_bytes()
+    notice_sources = (root / "bin/release/embedded-third-party-notices.sources.json").read_bytes()
     api_contract_bytes = (root / "tests/fixtures/r1-embedded-api-transport.json").read_bytes()
     result = {role: inspect(paths[role], role, source_sha, event,
                             license_bytes, seed, runtime_entrypoint)
@@ -387,6 +391,9 @@ def verify(paths, source_sha, event, root):
     for role in ROLES:
         require(result[role]["packagedFiles"][NOTICE] == digest(inventory_bytes),
                 "final image third-party inventory differs from checked source: " + role)
+        require(result[role]["packagedFiles"][NOTICE_TEXTS] == digest(notice_bytes) and
+                result[role]["packagedFiles"][NOTICE_SOURCES] == digest(notice_sources),
+                "final image third-party notice bundle differs from checked source: " + role)
     require(result["manager"]["packagedFiles"][API_CONTRACT] == digest(api_contract_bytes),
             "final Manager public API transport contract differs from checked source")
     require(len({result[role]["platformManifestDigest"] for role in ROLES}) == 3,
@@ -406,7 +413,7 @@ def verify(paths, source_sha, event, root):
         "notVerified": [
             "trusted production producer identity or independent registry readback",
             "Full Web compiled embed and one source-paired Web/API transport fixture tested, but complete functional API compatibility",
-            "third-party LICENSE/NOTICE legal sufficiency (inventory only)",
+            "third-party LICENSE/NOTICE legal sufficiency and complete OS-package/source obligations (bounded original texts packaged)",
             "Host, network, startup, readiness, rollback (historical 1.x contract tested separately)",
             "production release, beta, mutable aliases or channels",
         ],

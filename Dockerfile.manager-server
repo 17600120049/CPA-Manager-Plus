@@ -47,6 +47,8 @@ COPY --from=web-build /out/fullweb-manifest.json /usr/local/share/cpamp/release/
 COPY tests/fixtures/r1-embedded-api-transport.json /usr/local/share/cpamp/release/public-api-transport-contract.json
 COPY LICENSE /usr/local/share/licenses/cpamp/LICENSE
 COPY bin/release/embedded-third-party-inventory.txt /usr/local/share/cpamp/release/third-party-inventory.txt
+COPY bin/release/embedded-third-party-notices.txt /usr/local/share/cpamp/release/third-party-notices.txt
+COPY bin/release/embedded-third-party-notices.sources.json /usr/local/share/cpamp/release/third-party-notices.sources.json
 ENV HTTP_ADDR=0.0.0.0:18317
 ENV USAGE_DATA_DIR=/data
 ENV USAGE_DB_PATH=/data/usage.sqlite
