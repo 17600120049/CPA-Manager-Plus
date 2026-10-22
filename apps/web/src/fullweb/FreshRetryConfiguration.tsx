@@ -176,7 +176,7 @@ function parseRetryView(value: unknown, variant: "count" | "interval" = "count")
   if (value.operation !== undefined && value.operation !== null)
     operation = parseOperation(value.operation, variant);
   return {
-    field: value.field,
+    field: variant === "interval" ? "routing.retry.max-retry-interval" : "routing.retry.request-retry",
     presence,
     value: safeValue,
     source: value.source,
