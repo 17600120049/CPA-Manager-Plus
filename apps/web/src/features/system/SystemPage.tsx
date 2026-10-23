@@ -25,6 +25,7 @@ import {
   usageServiceApi,
   type UsageServiceStatus,
 } from '@/services/api/usageService';
+import { isGatewayPendingError } from '@/services/api/models';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH, STORAGE_KEY_QUOTA_CACHE } from '@/utils/constants';
 import iconGemini from '@/assets/icons/gemini.svg';
@@ -185,15 +186,17 @@ export function SystemPage({ logoutDisabled = false }: { logoutDisabled?: boolea
       });
     } catch (err: unknown) {
       const code = getUsageServiceErrorCode(err);
-      const detail = code
-        ? t(`usage_service_errors.${code}`, {
-            defaultValue: t('usage_service_errors.request_failed'),
-          })
-        : err instanceof Error
-          ? err.message
-          : typeof err === 'string'
-            ? err
-            : '';
+      const detail = isGatewayPendingError(err)
+        ? t('system_info.models_gateway_pending')
+        : code
+          ? t(`usage_service_errors.${code}`, {
+              defaultValue: t('usage_service_errors.request_failed'),
+            })
+          : err instanceof Error
+            ? err.message
+            : typeof err === 'string'
+              ? err
+              : '';
       const suffix = detail ? `: ${detail}` : '';
       const text = `${t('system_info.models_error')}${suffix}`;
       setModelStatus({ type: 'error', message: text });
