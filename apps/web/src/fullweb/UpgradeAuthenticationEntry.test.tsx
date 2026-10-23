@@ -15,6 +15,7 @@ vi.mock('./upgradeSession', async (original) => ({
 }));
 vi.mock('./FullWebLoginPage', () => ({
   FullWebLoginPage: () => <div data-testid="login-adapter" />,
+  FullWebUpgradeHeader: () => <header />,
 }));
 // This host leaf lets tests drive the actual adapter rather than imitating the
 // login UI; that UI's own form and the real SQLite path are checked separately.
@@ -88,6 +89,89 @@ describe('upgrade authentication lifecycle', () => {
       expect.any(AbortSignal),
       'a'.repeat(64)
     );
+  });
+
+  it('keeps the journey and focus during successive renewals while withholding the previous observation', async () => {
+    const focus = vi.fn();
+    await act(async () => {
+      renderer = create(<UpgradeAuthenticationEntry />, {
+        createNodeMock: (element) => (element.type === 'h1' ? { focus } : null),
+      });
+    });
+    await act(async () => {
+      await adapter().authenticate('old-key', false);
+    });
+    const heading = renderer.root.findByType('h1');
+    expect(focus).toHaveBeenCalledTimes(1);
+
+    for (let index = 0; index < 3; index++) {
+      let finish!: (value: string) => void;
+      mocks.verify.mockReturnValueOnce(
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        })
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(renderer.root.findAllByType(FullWebLoginPage)).toHaveLength(0);
+      expect(
+        renderer.root.findByProps({ 'data-testid': 'upgrade-revalidating' }).props['aria-busy']
+      ).toBe(true);
+      expect(renderer.root.findAllByProps({ 'data-testid': 'upgrade-authenticated' })).toHaveLength(
+        0
+      );
+      expect(renderer.root.findByType('h1')).toBe(heading);
+      expect(renderer.root.findByProps({ className: 'btn btn-primary' }).props.disabled).toBe(true);
+      expect(JSON.stringify(renderer.toJSON())).not.toContain('Administrator identity verified');
+      await act(async () => {
+        finish('a'.repeat(64));
+      });
+      expect(renderer.root.findAllByProps({ 'data-testid': 'upgrade-authenticated' })).toHaveLength(
+        1
+      );
+      expect(focus).toHaveBeenCalledTimes(1);
+    }
+
+    mocks.verify.mockRejectedValueOnce(new Error('source changed'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(adapter().error).toContain('could not be confirmed');
+    expect(renderer.root.findAllByProps({ 'data-testid': 'upgrade-shell' })).toHaveLength(0);
+  });
+
+  it('revokes a pending renewal on pagehide and ignores its late success', async () => {
+    await act(async () => {
+      renderer = create(<UpgradeAuthenticationEntry />);
+    });
+    await act(async () => {
+      await adapter().authenticate('old-key', false);
+    });
+    let finish!: (value: string) => void;
+    mocks.verify.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      })
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    const registrations = vi
+      .mocked(window.addEventListener)
+      .mock.calls.filter(([type]) => type === 'pagehide');
+    const registration = registrations[registrations.length - 1];
+    await act(async () => {
+      (registration[1] as EventListener)(new Event('pagehide'));
+    });
+    expect(mocks.verify.mock.calls[mocks.verify.mock.calls.length - 1][1].aborted).toBe(true);
+    await act(async () => {
+      finish('a'.repeat(64));
+    });
+    expect(renderer.root.findAllByProps({ 'data-testid': 'upgrade-authenticated' })).toHaveLength(
+      0
+    );
+    expect(renderer.root.findAllByType(FullWebLoginPage)).toHaveLength(1);
   });
 
   it('falls back on missing/bad cache, accepts weak old keys manually, and revokes on failed revalidation', async () => {

@@ -2,6 +2,7 @@ import { fullWebLanguage } from './fullweb';
 
 const en = {
   title: 'Upgrade to CPAMP v2',
+  mode: 'Upgrade',
   verified: 'Administrator identity verified',
   retained: 'Your existing administrator key is retained. No new key is required.',
   blocked: 'Migration is not available for this source yet.',
@@ -11,6 +12,13 @@ const en = {
   verify: 'Check authentication again',
   logout: 'Return to login',
   checking: 'Verifying the existing administrator…',
+  checkingShort: 'Verifying identity',
+  checkingHelp:
+    'Checking the current installation. Upgrade details and actions are unavailable until verification finishes.',
+  recoveryLabel: 'Unable to use your original key?',
+  recoveryHelp:
+    'Keep the existing data and key files. Stop the Manager and recover the administrator key on its deployment host using tools for that installed version. Then return here to verify it. Do not initialize the installation again; online key reset is not available here.',
+  footer: 'CPA Manager Plus · Installation and upgrade',
   invalid:
     'The existing Manager administrator key could not be verified. Enter it again. CPA management keys cannot be used here.',
   unavailable:
@@ -25,6 +33,7 @@ const en = {
 };
 const zh: typeof en = {
   title: '升级到 CPAMP v2',
+  mode: '升级模式',
   verified: '管理员身份已验证',
   retained: '沿用现有管理员密钥，无需重新设置。',
   blocked: '当前来源尚无可执行的迁移路径。',
@@ -33,6 +42,12 @@ const zh: typeof en = {
   verify: '重新验证当前身份',
   logout: '返回登录',
   checking: '正在验证原管理员身份…',
+  checkingShort: '正在验证身份',
+  checkingHelp: '正在核验当前安装，验证完成前不显示升级详情，也不开放升级操作。',
+  recoveryLabel: '无法使用原密钥？',
+  recoveryHelp:
+    '请保留现有数据和密钥文件，停止 Manager 后在部署主机上使用与已安装版本匹配的工具恢复管理员密钥，再回到这里验证。不要重新初始化原安装；此处不提供在线密钥重置。',
+  footer: 'CPA Manager Plus · 安装与升级',
   invalid: '无法验证原 Manager 管理员密钥，请重新输入。此处不能使用 CPA 管理密钥。',
   unavailable: '当前来源无法安全验证。请在宿主机停机检查原安装，不要重新初始化。',
   changed: '来源或 Manager 进程已变化，请重新登录以验证当前安装。',

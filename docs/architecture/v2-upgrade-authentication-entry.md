@@ -78,6 +78,32 @@ Task-local evidence is under `bin/tmp/upgrade-auth-entry/` (ignored):
 `login-desktop.png`, `upgrade-desktop.png`, `login-mobile-dark.png`,
 `upgrade-mobile-dark.png`, `fresh-complete.png`, `completed-login.png`.
 
+### Prototype alignment follow-up
+
+The authenticated entry now uses the accepted installation/upgrade prototype's
+header, responsive card geometry, title badges and footer. Language and theme
+controls use the original persisted preferences. The original login remains the
+authentication gate, with an expandable host-side key recovery explanation;
+there is no online reset. Successful entry focuses its heading, and rejected
+authentication returns focus to the key field with an associated error.
+
+Renewal keeps the shell mounted and preserves focus. While verification is
+pending, the old authenticated badge and observation are withheld and the check
+action is disabled. A failed or expired verification returns to login. This does
+not add migration choices, unsupported source details or executable upgrade
+steps: the current server still reports migration unavailable.
+
+Follow-up validation: 20 focused Web files / 346 tests, 7 transport-isolation
+tests, type-check, affected ESLint and bundle build passed. Real Chrome against
+a rebuilt Manager and isolated legacy SQLite covered desktop light, 390px dark,
+320px layout, English/Chinese, theme changes, recovery help, error/entry focus
+and three consecutive renewals per viewport. Responses were real; only their
+delivery was held to inspect pending UI. A separately injected network abort
+confirmed fail-closed login fallback. Source SQLite/config/data-key bytes were
+unchanged. Evidence is in `bin/tmp/upgrade-auth-entry/prototype-fix-20261023/`.
+The original production/CPA/migration/joint-integration NOT RUN limits remain;
+this UI follow-up does not requalify those workflows.
+
 ## Coordinator handoff
 
 Completed: A's authentication entry and honest unsupported starting page.

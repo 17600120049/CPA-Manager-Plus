@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FullWebLoginPage } from './FullWebLoginPage';
+import { FullWebLoginPage, FullWebUpgradeHeader } from './FullWebLoginPage';
+import { FullWebIcon } from './FullWebIcon';
 import { upgradeEntryText as text } from '../i18n/upgradeEntry';
+import './upgradeEntry.css';
 import {
   rememberUpgradeCredential,
   rememberedUpgradeCredential,
@@ -13,23 +15,27 @@ export function UpgradeAuthenticationEntry() {
   const { i18n } = useTranslation();
   const language = i18n.resolvedLanguage || i18n.language;
   const [revision, setRevision] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<UpgradeAuthenticationError['reason'] | 'expired' | ''>('');
   const [checking, setChecking] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
   const credential = useRef('');
   const request = useRef<AbortController | null>(null);
   const sequence = useRef(0);
   const restored = useRef(false);
   const expiresAt = useRef(0);
 
-  const revoke = useCallback((message = '') => {
-    ++sequence.current;
-    request.current?.abort();
-    credential.current = '';
-    expiresAt.current = 0;
-    setRevision('');
-    setChecking(false);
-    setError(message);
-  }, []);
+  const revoke = useCallback(
+    (message: UpgradeAuthenticationError['reason'] | 'expired' | '' = '') => {
+      ++sequence.current;
+      request.current?.abort();
+      credential.current = '';
+      expiresAt.current = 0;
+      setRevision('');
+      setChecking(false);
+      setError(message);
+    },
+    []
+  );
 
   const authenticate = useCallback(
     async (key: string, remember: boolean, source?: string) => {
@@ -37,8 +43,9 @@ export function UpgradeAuthenticationEntry() {
       request.current?.abort();
       const controller = new AbortController();
       request.current = controller;
-      // A pending verification never leaves the previous authorization visible.
-      setRevision('');
+      // Renewal keeps the shell mounted, but hides the previous observation
+      // and disables its actions until the server has verified it again.
+      if (!source) setRevision('');
       setChecking(true);
       setError('');
       const timeout = window.setTimeout(() => controller.abort(), 10_000);
@@ -52,7 +59,7 @@ export function UpgradeAuthenticationEntry() {
         return true;
       } catch (err) {
         if (sequence.current === current)
-          revoke(text(err instanceof UpgradeAuthenticationError ? err.reason : 'network'));
+          revoke(err instanceof UpgradeAuthenticationError ? err.reason : 'network');
         return false;
       } finally {
         window.clearTimeout(timeout);
@@ -72,14 +79,26 @@ export function UpgradeAuthenticationEntry() {
   const adapter = useMemo(
     () => ({
       address: window.location.origin,
-      error,
+      error: error ? text(error, language) : '',
+      status: checking ? text('checking', language) : undefined,
       connectionHint: text('loginHint', language),
       credentialPlaceholder: text('placeholder', language),
+      recoveryHelp: {
+        label: text('recoveryLabel', language),
+        description: text('recoveryHelp', language),
+      },
       restore,
       authenticate: (key: string, remember: boolean) => authenticate(key, remember),
     }),
-    [authenticate, error, language, restore]
+    [authenticate, checking, error, language, restore]
   );
+
+  const inJourney = Boolean(revision);
+  useEffect(() => {
+    // Entering the journey moves focus once. Background checks and appearance
+    // changes preserve the user's current focus.
+    if (inJourney) heading.current?.focus();
+  }, [inJourney]);
 
   useEffect(
     () => () => {
@@ -94,12 +113,12 @@ export function UpgradeAuthenticationEntry() {
     if (!revision) return;
     const refresh = () => {
       if (Date.now() >= expiresAt.current) {
-        revoke(text('expired'));
+        revoke('expired');
         return;
       }
       void authenticate(credential.current, false, revision);
     };
-    const timer = window.setTimeout(refresh, 30_000);
+    const timer = checking ? undefined : window.setTimeout(refresh, 30_000);
     // BFCache/background returns must never reuse an expired observation.
     const visible = () => {
       if (document.visibilityState === 'visible') refresh();
@@ -112,45 +131,55 @@ export function UpgradeAuthenticationEntry() {
       document.removeEventListener('visibilitychange', visible);
       window.removeEventListener('pagehide', pagehide);
     };
-  }, [authenticate, revision, revoke]);
+  }, [authenticate, checking, revision, revoke]);
 
-  if (!revision)
-    return (
-      <>
-        {checking && <p role="status">{text('checking')}</p>}
-        <FullWebLoginPage adapter={adapter} />
-      </>
-    );
+  if (!revision) return <FullWebLoginPage adapter={adapter} />;
 
   return (
-    <main className="bootstrap-main" data-testid="upgrade-authenticated">
-      <section className="wizard-card wizard-container">
-        <div className="wizard-card-header">
-          <div className="wizard-step-tag">{text('verified')}</div>
-          <h1 className="wizard-title">{text('title')}</h1>
-          <p className="wizard-desc">{text('retained')}</p>
-        </div>
-        <div className="wizard-card-body">
-          <div className="alert alert-warn" role="status">
-            <div className="alert-content">
-              <div className="alert-title">{text('blocked')}</div>
-              <p>{text('boundary')}</p>
-              <p>{text('next')}</p>
+    <div className="upgrade-entry" data-testid="upgrade-shell">
+      <FullWebUpgradeHeader />
+      <main
+        className="upgrade-main"
+        data-testid={checking ? 'upgrade-revalidating' : 'upgrade-authenticated'}
+        aria-busy={checking}
+      >
+        <section className="upgrade-card" aria-labelledby="upgrade-title">
+          <div className="upgrade-body">
+            <div className="upgrade-heading">
+              <h1 id="upgrade-title" ref={heading} tabIndex={-1}>
+                {text('title', language)}
+              </h1>
+              <span className="badge">{text('mode', language)}</span>
+              <span className={checking ? 'badge' : 'badge badge-emerald'}>
+                <FullWebIcon name={checking ? 'refresh' : 'check'} size={16} />
+                {text(checking ? 'checkingShort' : 'verified', language)}
+              </span>
             </div>
+            <p className="upgrade-subtitle">{text('retained', language)}</p>
+            <div className="upgrade-notice" role="status" aria-live="polite">
+              <FullWebIcon name={checking ? 'refresh' : 'alert'} size={24} />
+              <div>
+                <h2>{text(checking ? 'checking' : 'blocked', language)}</h2>
+                <p>{text(checking ? 'checkingHelp' : 'boundary', language)}</p>
+              </div>
+            </div>
+            <p className="upgrade-next">{text('next', language)}</p>
           </div>
-        </div>
-        <div className="wizard-card-footer">
-          <button className="btn btn-secondary" onClick={() => revoke()}>
-            {text('logout')}
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={() => void authenticate(credential.current, false, revision)}
-          >
-            {text('verify')}
-          </button>
-        </div>
-      </section>
-    </main>
+          <div className="upgrade-footer">
+            <button className="btn btn-secondary" onClick={() => revoke()}>
+              {text('logout', language)}
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={checking}
+              onClick={() => void authenticate(credential.current, false, revision)}
+            >
+              <FullWebIcon name="refresh" /> {text('verify', language)}
+            </button>
+          </div>
+        </section>
+      </main>
+      <footer className="journey-copyright">{text('footer', language)}</footer>
+    </div>
   );
 }
