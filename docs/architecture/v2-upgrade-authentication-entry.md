@@ -40,6 +40,7 @@ Coordination/task input: `seakee/cpamp-plan` at
 | Evidence | Result and limits |
 | --- | --- |
 | Web focused tests | PASS: 20 files, 343 tests under `src/fullweb src/features/login` |
+| Full frontend CI checks | PASS locally: `npm run test` (261 web files / 4210 tests; 25 repository files / 744 tests), root type-check/lint, `VERSION=ci` bundle build, demo isolation and packaged read-only HTTP transport |
 | Web type-check / affected ESLint | PASS |
 | `build:bundle` | PASS: Full Web graph remains bounded; Panel is a single offline HTML file |
 | Go focused packages | PASS: legacy preflight, discovery, admin auth, Fresh bootstrap, Upgrade auth, Full Web static handler, HTTP API and Manager startup |
@@ -49,6 +50,12 @@ Coordination/task input: `seakee/cpamp-plan` at
 | Fresh/Completed browser | PASS: 6 checks using the existing real Manager/store browser harness; CPA safe reads and Ingress are mocks |
 | Production deployment / real CPA / real migration | NOT RUN |
 | Full Beta / release / joint A+B+C integration | NOT RUN |
+
+The repository dependency-isolation test now recognizes Upgrade's exact original
+login and credential-persistence compatibility edges. Both new Upgrade modules
+remain in the scanned core graph. An additional assertion limits compatibility
+imports and permits only `STORAGE_KEY_AUTH` from shared legacy constants; direct
+legacy transport dependencies and CPA endpoint references remain prohibited.
 
 Upgrade browser checks include missing/invalid cache, manual weak old key,
 remember/reload/reverification, blocked browser storage, foreign Manager and CPA
