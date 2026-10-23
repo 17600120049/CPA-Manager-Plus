@@ -665,14 +665,23 @@ function MainLayoutContent({
       items: [
         {
           path: '/system',
-          label: t('nav.system_info'),
-          shortLabel: navShortLabel('nav.system_info', t('nav.system_info')),
+          label: renderRoute
+            ? t('nav.system_config', { defaultValue: '系统配置' })
+            : t('nav.system_info'),
+          shortLabel: renderRoute
+            ? navShortLabel('nav.system_config', '系统配置')
+            : navShortLabel('nav.system_info', t('nav.system_info')),
           icon: sidebarIcons.system,
           exact: true,
         },
         {
           path: '/config',
-          label: t('nav.config_management'),
+          label: renderRoute
+            ? t('nav.gateway_management', { defaultValue: '网关管理' })
+            : t('nav.config_management'),
+          shortLabel: renderRoute
+            ? navShortLabel('nav.gateway_management', '网关管理')
+            : navShortLabel('nav.config_management', t('nav.config_management')),
           icon: sidebarIcons.config,
         },
         {
@@ -779,10 +788,14 @@ function MainLayoutContent({
       ? routePathname.slice(0, -1)
       : routePathname;
   const currentPath = normalizedLocationPath === '/dashboard' ? '/' : normalizedLocationPath;
-  const matchesNavPath = (item: NavItem, pathname: string) =>
-    item.path === '/' || item.exact
+  const matchesNavPath = (item: NavItem, pathname: string) => {
+    if (renderRoute && item.path === '/config' && pathname === '/gateway') {
+      return true;
+    }
+    return item.path === '/' || item.exact
       ? pathname === item.path
       : pathname === item.path || pathname.startsWith(`${item.path}/`);
+  };
   const activeNavItem =
     [...navItems]
       .sort((a, b) => b.path.length - a.path.length)

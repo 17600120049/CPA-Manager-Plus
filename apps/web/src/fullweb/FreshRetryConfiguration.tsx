@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
 import { workspaceText as w } from '../i18n/consoleWorkspace';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
@@ -243,6 +243,14 @@ function responseOperation(error: unknown, variant: "count" | "interval", expect
   }
 }
 
+export interface RetryDraftDiff {
+  path: string;
+  label: string;
+  oldVal: string;
+  newVal: string;
+  dirty: boolean;
+}
+
 function RetryScalarEditor({
   client,
   credential,
@@ -253,6 +261,8 @@ function RetryScalarEditor({
   onCommitted,
   refreshEpoch,
   siblingPending,
+  discardEpoch = 0,
+  onDraftChange,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
@@ -263,6 +273,8 @@ function RetryScalarEditor({
   onCommitted: () => void;
   refreshEpoch: number;
   siblingPending: boolean;
+  discardEpoch?: number;
+  onDraftChange?: (diff: RetryDraftDiff) => void;
 }) {
   const retryResource = variant === "interval" ? "gateway/retry/max-retry-interval" : "gateway/retry/request-retry";
   const retryOperationResource = variant === "interval" ? "gateway/retry/interval-operations/" : "gateway/retry/operations/";
@@ -530,6 +542,29 @@ function RetryScalarEditor({
   }, [refreshEpoch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (discardEpoch > 0 && view) {
+      dirtyRef.current = false;
+      setDraft(view.presence === 'present' && view.value !== null ? String(view.value) : '');
+      setMessage('');
+    }
+  }, [discardEpoch, view]);
+
+  useEffect(() => {
+    if (!onDraftChange) return;
+    const path = variant === 'interval' ? 'routing.retry.max-retry-interval' : 'routing.retry.request-retry';
+    const label = variant === 'interval' ? '最大冷却等待（秒）' : '额外重试轮次';
+    const savedStr = view?.presence === 'present' && view.value !== null ? String(view.value) : '';
+    const isDirty = dirtyRef.current && draft !== savedStr;
+    onDraftChange({
+      path,
+      label,
+      oldVal: savedStr !== '' ? `${savedStr}${variant === 'interval' ? ' s' : ''}` : '(未设置)',
+      newVal: draft !== '' ? `${draft}${variant === 'interval' ? ' s' : ''}` : '(清空)',
+      dirty: isDirty,
+    });
+  }, [draft, view, onDraftChange, variant]);
+
+  useEffect(() => {
     if (!navigationRequest || variant !== "count") return;
     titleRef.current?.focus({ preventScroll: true });
     sectionRef.current?.scrollIntoView({ block: 'start' });
@@ -760,25 +795,53 @@ export function FreshRetryConfiguration(props: {
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
   navigationRequest?: number;
+  discardEpoch?: number;
+  onDraftChange?: (diffs: RetryDraftDiff[]) => void;
 }) {
+  const { onDraftChange, onPending } = props;
   const pending = useRef({count: false, interval: false});
   const [busyOwners, setBusyOwners] = useState({count: false, interval: false});
   const [countRefreshEpoch, setCountRefreshEpoch] = useState(0);
   const [intervalRefreshEpoch, setIntervalRefreshEpoch] = useState(0);
+  const countDiffRef = useRef<RetryDraftDiff | null>(null);
+  const intervalDiffRef = useRef<RetryDraftDiff | null>(null);
+
+  const reportDiffs = useCallback(() => {
+    if (!onDraftChange) return;
+    const diffs: RetryDraftDiff[] = [];
+    if (countDiffRef.current) diffs.push(countDiffRef.current);
+    if (intervalDiffRef.current) diffs.push(intervalDiffRef.current);
+    onDraftChange(diffs);
+  }, [onDraftChange]);
+
+  const handleCountDraftChange = useCallback((diff: RetryDraftDiff) => {
+    countDiffRef.current = diff;
+    reportDiffs();
+  }, [reportDiffs]);
+
+  const handleIntervalDraftChange = useCallback((diff: RetryDraftDiff) => {
+    intervalDiffRef.current = diff;
+    reportDiffs();
+  }, [reportDiffs]);
+
   const setPending = (which: "count" | "interval", value: boolean) => {
     if (pending.current[which] === value) return;
     pending.current[which] = value;
     setBusyOwners({...pending.current});
-    props.onPending(pending.current.count || pending.current.interval);
+    onPending(pending.current.count || pending.current.interval);
   };
   return (
     <>
       <RetryScalarEditor {...props} variant="count" refreshEpoch={countRefreshEpoch} siblingPending={busyOwners.interval}
         onCommitted={() => setIntervalRefreshEpoch((n) => n + 1)}
-        onPending={(value) => setPending("count", value)} />
+        onPending={(value) => setPending("count", value)}
+        discardEpoch={props.discardEpoch}
+        onDraftChange={handleCountDraftChange} />
       <RetryScalarEditor {...props} variant="interval" refreshEpoch={intervalRefreshEpoch} siblingPending={busyOwners.count}
         onCommitted={() => setCountRefreshEpoch((n) => n + 1)}
-        onPending={(value) => setPending("interval", value)} />
+        onPending={(value) => setPending("interval", value)}
+        discardEpoch={props.discardEpoch}
+        onDraftChange={handleIntervalDraftChange} />
     </>
   );
 }

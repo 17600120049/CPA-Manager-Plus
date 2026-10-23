@@ -146,11 +146,12 @@ export function LegacyConsolePage({
           renderRoute={(pathname) => {
             if (!client) return undefined;
             const route = pathname.replace(/\/+$/, '') || '/';
-            // Keep the original ConfigPage at /config: it owns the visual/source
-            // editor, Manager→CPA binding form, and the existing CPA API-key
-            // controls. Manager-owned keys render in the persistent footer to
-            // retain their original reconciliation operation across navigation.
+            // In Full Web, API keys, Gateway workspace and System configuration
+            // render in the persistent footer panels (RetainedRoutePanel) so that
+            // active drafts, one-time secrets and in-flight operations are
+            // retained across page transitions.
             if (route === '/api-keys') return null;
+            if (route === '/gateway' || route === '/config') return null;
             if (route === '/system') return <SystemPage logoutDisabled={freshPending} />;
             return undefined;
           }}
