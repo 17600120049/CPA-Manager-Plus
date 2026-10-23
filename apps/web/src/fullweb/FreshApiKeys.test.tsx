@@ -69,6 +69,13 @@ describe('Fresh client key persistence UI', () => {
   async function click(text: string) {
     await act(async () => button(text).props.onClick());
   }
+  async function setCreateName(value: string) {
+    await act(async () =>
+      renderer.root
+        .findByProps({ 'data-testid': 'create-key-name-input' })
+        .props.onChange({ target: { value } })
+    );
+  }
 
   it('filters only actual saved metadata without issuing requests or claiming gateway effectiveness', async () => {
     const historical = {
@@ -449,6 +456,164 @@ describe('Fresh client key persistence UI', () => {
     expect(view()).toContain(secret);
     expect(pending.mock.calls[pending.mock.calls.length - 1]).toEqual([false]);
   });
+
+  it.each([400, 404, 409])(
+    'allows correcting a rejected creation name after %s without creating another key',
+    async (status) => {
+      const pending = vi.fn();
+      const current = { ...key, name: 'Concurrent name', nameRevision: 3 };
+      const named = { ...current, name: 'Corrected CLI', nameRevision: 4 };
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(empty())
+        .mockResolvedValueOnce(Response.json({ key, createdSecret: secret }, { status: 201 }))
+        .mockResolvedValueOnce(new Response('', { status }))
+        .mockResolvedValueOnce(Response.json(current))
+        .mockResolvedValueOnce(Response.json(named));
+      await mount(fetchMock, pending);
+      await setCreateName('Prod\tCLI');
+      await click(t('keysCreate'));
+      expect(pending).toHaveBeenLastCalledWith(true);
+      expect(
+        renderer.root.findByProps({ 'data-testid': 'create-key-name-input' }).props.disabled
+      ).toBe(false);
+      expect(button(t('keysCreate')).props.disabled).toBe(true);
+
+      await setCreateName('Corrected CLI');
+      await click(k('retrySaveName'));
+      expect(fetchMock.mock.calls[3][1]?.method).toBe('GET');
+      expect(JSON.parse(String(fetchMock.mock.calls[4][1]?.body))).toEqual({
+        name: 'Corrected CLI',
+        nameRevision: 3,
+      });
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+      expect(view()).toContain('Corrected CLI');
+      expect(view()).toContain(secret);
+      expect(pending).toHaveBeenLastCalledWith(false);
+      expect(
+        renderer.root.findByProps({ 'data-testid': 'create-key-name-input' }).props.value
+      ).toBe('');
+    }
+  );
+
+  it('keeps an unknown name write locked until discard can read its saved result', async () => {
+    const pending = vi.fn();
+    const named = { ...key, name: 'Production', nameRevision: 2 };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(Response.json({ key, createdSecret: secret }, { status: 201 }))
+      .mockRejectedValueOnce(new Error('name reply lost after commit'))
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(Response.json(named));
+    await mount(fetchMock, pending);
+    await setCreateName('Production');
+    await click(t('keysCreate'));
+    await click(k('discardCreateName'));
+    expect(pending).toHaveBeenLastCalledWith(true);
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'create-name-partial-failure' })
+    ).toHaveLength(1);
+
+    await click(k('discardCreateName'));
+    expect(pending).toHaveBeenLastCalledWith(false);
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'create-name-partial-failure' })
+    ).toHaveLength(0);
+    expect(fetchMock.mock.calls.map(([, init]) => init?.method)).toEqual([
+      'GET',
+      'POST',
+      'PUT',
+      'GET',
+      'GET',
+    ]);
+    expect(view()).toContain('Production');
+    expect(view()).toContain(secret);
+    await click(t('keysDismiss'));
+    expect(button(t('keysCreate')).props.disabled).toBe(false);
+    expect(renderer.root.findByProps({ 'data-testid': 'create-key-name-input' }).props.value).toBe(
+      ''
+    );
+  });
+
+  it('reconciles an already-saved creation name without repeating its PUT', async () => {
+    const pending = vi.fn();
+    const named = { ...key, name: 'Production', nameRevision: 2 };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(Response.json({ key, createdSecret: secret }, { status: 201 }))
+      .mockRejectedValueOnce(new Error('name reply lost after commit'))
+      .mockResolvedValueOnce(Response.json(named));
+    await mount(fetchMock, pending);
+    await setCreateName('Production');
+    await click(t('keysCreate'));
+    await click(k('retrySaveName'));
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+    expect(view()).toContain(secret);
+    expect(pending).toHaveBeenLastCalledWith(false);
+  });
+
+  it.each(['save', 'discard'] as const)(
+    'retains the requested name after lost creation reply and lets the user %s it on the same key',
+    async (action) => {
+      const pending = vi.fn();
+      const named = { ...key, name: 'Production', nameRevision: 2 };
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(empty())
+        .mockRejectedValueOnce(new Error('creation reply lost after commit'))
+        .mockResolvedValueOnce(Response.json(key))
+        .mockResolvedValueOnce(Response.json(key))
+        .mockResolvedValueOnce(Response.json(named));
+      await mount(fetchMock, pending);
+      await setCreateName('Production');
+      await click(t('keysCreate'));
+      await click(t('keysCheck'));
+      expect(view()).toContain(k('createNameNotSaved'));
+      expect(view()).not.toContain(t('keysConfirmed'));
+      expect(pending).toHaveBeenLastCalledWith(true);
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0);
+      expect(
+        renderer.root.findByProps({ 'data-testid': 'create-key-name-input' }).props.value
+      ).toBe('Production');
+
+      await click(k(action === 'save' ? 'retrySaveName' : 'discardCreateName'));
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(
+        action === 'save' ? 1 : 0
+      );
+      if (action === 'save') expect(fetchMock.mock.calls[4][0]).toContain('/api-keys/' + key.id);
+      expect(pending).toHaveBeenLastCalledWith(false);
+      expect(view()).not.toContain(secret);
+      expect(
+        renderer.root.findByProps({ 'data-testid': 'create-key-name-input' }).props.value
+      ).toBe('');
+    }
+  );
+
+  it.each(['not_applied', 'effect_unknown'])(
+    'reports unknown Gateway effect rather than a saved-key count for %s metadata',
+    async (runtimeState) => {
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+        Response.json({
+          keys: [{ ...key, runtimeState }],
+          gatewayPending: true,
+          revocationAvailable: false,
+        })
+      );
+      await mount(fetchMock);
+      const runtime = renderer.root.findByProps({ 'data-testid': 'key-summary-runtime' });
+      expect(runtime.findByType('strong').findByType('span').children).toEqual([
+        k('effectUnknown'),
+      ]);
+      expect(
+        renderer.root.findByProps({ 'data-testid': 'key-summary-saved' }).findByType('strong')
+          .children
+      ).toEqual(['1']);
+      expect(fetchMock).toHaveBeenCalledOnce();
+    }
+  );
 
   it('preserves filter, search, and cards view mode when returning from key details and preselects replacement target', async () => {
     const activeA = { ...key, id: '1'.repeat(32), name: 'Alpha Gateway' };

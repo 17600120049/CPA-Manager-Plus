@@ -50,8 +50,6 @@ export function FreshApiKeys({
   const [createName, setCreateName] = useState('');
   const [failedCreateName, setFailedCreateName] = useState<{
     id: string;
-    name: string;
-    nameRevision: number;
     message: string;
   } | null>(null);
   const [selected, setSelected] = useState('');
@@ -232,8 +230,6 @@ export function FreshApiKeys({
           const status = nameErr instanceof PublicApiError ? nameErr.status || 0 : 0;
           setFailedCreateName({
             id: result.key.id,
-            name: desiredName,
-            nameRevision: result.key.nameRevision,
             message: t(
               status === 409
                 ? 'keysNameConflict'
@@ -260,10 +256,10 @@ export function FreshApiKeys({
     }
   }
 
-  async function retryCreateName() {
+  async function retryCreateName(discard = false) {
     if (!failedCreateName || inFlight.current) return;
-    const desiredName = createName.trim() || failedCreateName.name;
-    if (!desiredName || [...desiredName].length > 120) return;
+    const desiredName = createName.trim();
+    if (!discard && [...desiredName].length > 120) return;
     inFlight.current = true;
     setBusy(true);
     setError('');
@@ -276,7 +272,8 @@ export function FreshApiKeys({
       setKeys((previous) =>
         (previous || []).map((item) => (item.id === current.id ? current : item))
       );
-      if (current.name === desiredName) {
+      // Even abandoning an unknown write requires a read of the saved result.
+      if (discard || current.name === desiredName) {
         setFailedCreateName(null);
         setCreateName('');
         creationPendingRef.current = false;
@@ -316,7 +313,6 @@ export function FreshApiKeys({
         previous
           ? {
               ...previous,
-              name: desiredName,
               message: t(
                 status === 409
                   ? 'keysNameConflict'
@@ -362,7 +358,15 @@ export function FreshApiKeys({
       setKeys((previous) => [...(previous || []).filter((item) => item.id !== key.id), key]);
       setConfirmed(true);
       setPending('');
-      creationPendingRef.current = false;
+      // Creation readback must not silently drop the optional name or replay
+      // either write. Let the user save or abandon the name on this same key.
+      if (createName.trim() && key.name !== createName.trim()) {
+        setFailedCreateName({ id: key.id, message: k('createNameNotSaved') });
+        creationPendingRef.current = true;
+      } else {
+        setCreateName('');
+        creationPendingRef.current = false;
+      }
       reportPending();
       setRetryAllowed(false);
     } catch (err) {
@@ -410,7 +414,11 @@ export function FreshApiKeys({
             placeholder={k('createNamePlaceholder')}
             maxLength={120}
             value={createName}
-            disabled={locked || operationPending || keys === null || !!error}
+            disabled={
+              failedCreateName
+                ? busy || operationPending
+                : locked || operationPending || keys === null || !!error
+            }
             onChange={(event) => setCreateName(event.target.value)}
           />
           <button
@@ -492,6 +500,14 @@ export function FreshApiKeys({
               >
                 {k('retrySaveName')}
               </button>
+              <button
+                className="btn btn-secondary"
+                data-testid="discard-create-name"
+                disabled={busy}
+                onClick={() => void retryCreateName(true)}
+              >
+                {k('discardCreateName')}
+              </button>
             </div>
           </div>
         </div>
@@ -548,7 +564,11 @@ export function FreshApiKeys({
           </div>
           <div className="card key-summary-card" data-testid="key-summary-runtime">
             <span className="key-summary-label">{k('summaryRuntimeTitle')}</span>
-            <strong className="key-summary-value">{keys === null ? '—' : savedCount}</strong>
+            <strong className="key-summary-value is-unavailable">
+              <span className="key-state-pill is-pending">
+                {keys === null ? '—' : k('effectUnknown')}
+              </span>
+            </strong>
             <small>{k('summaryRuntimeHelp')}</small>
           </div>
           <div className="card key-summary-card" data-testid="key-summary-replaced">
