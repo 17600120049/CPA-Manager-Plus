@@ -1948,6 +1948,7 @@ const fallbackUsageServiceCodeByStatus = (status?: number): string => {
     case 405:
       return 'method_not_allowed';
     case 412:
+    case 428:
       return 'usage_service_not_configured';
     default:
       return '';
@@ -1965,7 +1966,11 @@ export const getUsageServiceErrorCode = (error: unknown): string => {
   if (!isRecord(error)) return '';
   const code = typeof error.code === 'string' ? error.code : '';
   if (USAGE_SERVICE_ERROR_CODES.has(code)) return code;
-  return readUsageServiceErrorCode(error.data) || readUsageServiceErrorCode(error.details);
+  return (
+    readUsageServiceErrorCode(error.data) ||
+    readUsageServiceErrorCode(error.details) ||
+    fallbackUsageServiceCodeByStatus(typeof error.status === 'number' ? error.status : undefined)
+  );
 };
 
 const readUsageServiceErrorMessage = (value: unknown): string => {

@@ -67,6 +67,7 @@ export function DashboardPage() {
   const serverBuildDate = useAuthStore((state) => state.serverBuildDate);
   const apiBase = useAuthStore((state) => state.apiBase);
   const managementKey = useAuthStore((state) => state.managementKey);
+  const sessionMode = useAuthStore((state) => state.sessionMode);
   const config = useConfigStore((state) => state.config);
   const usageSummary = useDashboardUsageSummary();
   const refreshUsageSummary = usageSummary.refresh;
@@ -178,11 +179,22 @@ export function DashboardPage() {
     try {
       const apiKeys = await resolveApiKeysForModels();
       const primaryKey = apiKeys[0];
-      await fetchModelsFromStore(apiBase, primaryKey);
+      const managerCredential =
+        sessionMode === 'manager_embedded' && /\/api\/v2\/cpamp$/i.test(apiBase)
+          ? managementKey
+          : undefined;
+      await fetchModelsFromStore(apiBase, primaryKey, false, managerCredential);
     } catch {
       // Ignore model fetch errors on dashboard
     }
-  }, [connectionStatus, apiBase, resolveApiKeysForModels, fetchModelsFromStore]);
+  }, [
+    connectionStatus,
+    apiBase,
+    managementKey,
+    sessionMode,
+    resolveApiKeysForModels,
+    fetchModelsFromStore,
+  ]);
 
   const refreshStats = useCallback(async () => {
     if (connectionStatus === 'connected') {

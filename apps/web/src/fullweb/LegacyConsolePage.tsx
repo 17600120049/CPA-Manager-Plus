@@ -1,5 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
-import { BrowserRouter, MemoryRouter, useInRouterContext } from 'react-router-dom';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import {
+  BrowserRouter,
+  createBrowserRouter,
+  MemoryRouter,
+  RouterProvider,
+  useInRouterContext,
+} from 'react-router-dom';
 import '../i18n';
 import { AppLifecycle } from '../app/AppLifecycle';
 import { MainLayout } from '../components/layout/MainLayout';
@@ -13,6 +27,16 @@ import { FreshManagedResources } from './FreshManagedResources';
 import type { createPublicApiClient } from './publicApi';
 import { resolveRoutingContext, type RoutingContext } from './routingContext';
 import { activateFreshSession } from './freshSession';
+
+// The original CPAMP pages use data-router APIs (for example useBlocker on
+// AccountsPage). Keep the route element behind a small context bridge so the
+// data router can be created once for the browser while the surrounding Fresh
+// session can still update logout/pending state without replacing the router.
+const legacyConsoleContentContext = createContext<ReactNode>(null);
+
+function LegacyConsoleRoute() {
+  return useContext(legacyConsoleContentContext);
+}
 
 // The legacy Console is deliberately a post-installation seam.  This module
 // is loaded only after Fresh has authenticated the administrator and observed
@@ -69,6 +93,20 @@ export function LegacyConsolePage({
   useEffect(() => {
     if (activated && !authenticated) onUnauthorizedRef.current();
   }, [activated, authenticated]);
+
+  const browserRouter = useMemo(() => {
+    const hasDOM =
+      typeof window !== 'undefined' &&
+      typeof window.history?.replaceState === 'function' &&
+      typeof document !== 'undefined' &&
+      typeof document.createElement === 'function';
+    if (!activated || !authenticated || inRouter || !hasDOM) return null;
+    return createBrowserRouter([{ path: '*', element: <LegacyConsoleRoute /> }], {
+      basename: context.basePath,
+    });
+  }, [activated, authenticated, context.basePath, inRouter]);
+
+  useEffect(() => () => browserRouter?.dispose(), [browserRouter]);
 
   if (!activated || !authenticated) {
     return (
@@ -136,5 +174,10 @@ export function LegacyConsolePage({
       </MemoryRouter>
     );
   }
-  return <BrowserRouter basename={context.basePath}>{content}</BrowserRouter>;
+  if (!browserRouter) return <BrowserRouter basename={context.basePath}>{content}</BrowserRouter>;
+  return (
+    <legacyConsoleContentContext.Provider value={content}>
+      <RouterProvider router={browserRouter} />
+    </legacyConsoleContentContext.Provider>
+  );
 }

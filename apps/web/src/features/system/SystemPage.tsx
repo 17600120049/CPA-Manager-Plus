@@ -20,7 +20,11 @@ import {
   useThemeStore,
 } from '@/stores';
 import { apiKeysApi } from '@/services/api/apiKeys';
-import { usageServiceApi, type UsageServiceStatus } from '@/services/api/usageService';
+import {
+  getUsageServiceErrorCode,
+  usageServiceApi,
+  type UsageServiceStatus,
+} from '@/services/api/usageService';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH, STORAGE_KEY_QUOTA_CACHE } from '@/utils/constants';
 import iconGemini from '@/assets/icons/gemini.svg';
@@ -65,7 +69,6 @@ export function SystemPage({ logoutDisabled = false }: { logoutDisabled?: boolea
 
   const models = useModelsStore((state) => state.models);
   const modelsLoading = useModelsStore((state) => state.loading);
-  const modelsError = useModelsStore((state) => state.error);
   const fetchModelsFromStore = useModelsStore((state) => state.fetchModels);
 
   const [modelStatus, setModelStatus] = useState<{
@@ -163,7 +166,16 @@ export function SystemPage({ logoutDisabled = false }: { logoutDisabled?: boolea
     try {
       const apiKeys = await resolveApiKeysForModels();
       const primaryKey = apiKeys[0];
-      const list = await fetchModelsFromStore(auth.apiBase, primaryKey, forceRefresh);
+      const managerCredential =
+        auth.sessionMode === 'manager_embedded' && /\/api\/v2\/cpamp$/i.test(auth.apiBase)
+          ? auth.managementKey
+          : undefined;
+      const list = await fetchModelsFromStore(
+        auth.apiBase,
+        primaryKey,
+        forceRefresh,
+        managerCredential
+      );
       const hasModels = list.length > 0;
       setModelStatus({
         type: hasModels ? 'success' : 'warning',
@@ -172,8 +184,17 @@ export function SystemPage({ logoutDisabled = false }: { logoutDisabled?: boolea
           : t('system_info.models_empty'),
       });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
-      const suffix = message ? `: ${message}` : '';
+      const code = getUsageServiceErrorCode(err);
+      const detail = code
+        ? t(`usage_service_errors.${code}`, {
+            defaultValue: t('usage_service_errors.request_failed'),
+          })
+        : err instanceof Error
+          ? err.message
+          : typeof err === 'string'
+            ? err
+            : '';
+      const suffix = detail ? `: ${detail}` : '';
       const text = `${t('system_info.models_error')}${suffix}`;
       setModelStatus({ type: 'error', message: text });
     }
@@ -365,7 +386,6 @@ export function SystemPage({ logoutDisabled = false }: { logoutDisabled?: boolea
           {modelStatus && (
             <div className={`status-badge ${modelStatus.type}`}>{modelStatus.message}</div>
           )}
-          {modelsError && <div className="error-box">{modelsError}</div>}
           {modelsLoading ? (
             <div className="hint">{t('common.loading')}</div>
           ) : models.length === 0 ? (

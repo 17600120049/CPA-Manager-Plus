@@ -495,12 +495,11 @@ export function ConfigPage() {
       setSourceConfigLoaded(true);
       loadVisualValuesFromYaml(data);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('notification.refresh_failed');
-      setError(message);
+      setError(getUsageServiceDisplayError(err, 'config_management.status_load_failed'));
     } finally {
       setLoading(false);
     }
-  }, [loadVisualValuesFromYaml, t, updateSourceSnapshotStale]);
+  }, [getUsageServiceDisplayError, loadVisualValuesFromYaml, updateSourceSnapshotStale]);
 
   useEffect(() => {
     if (activeTab === 'manager') {

@@ -22,6 +22,7 @@ import { formatFileSize } from '@/utils/format';
 import { MAX_AUTH_FILE_SIZE } from '@/utils/constants';
 import { downloadBlob } from '@/utils/download';
 import { parseTimestampMs } from '@/utils/timestamp';
+import { getUsageServiceErrorCode } from '@/services/api/usageService';
 import {
   buildAuthJsonFilePayloads,
   isSub2ApiAuthJsonInput,
@@ -952,7 +953,14 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions = {}): UseAuth
           if (options?.throwOnError) throw err;
           return;
         }
-        const errorMessage = err instanceof Error ? err.message : t('notification.refresh_failed');
+        const usageServiceCode = getUsageServiceErrorCode(err);
+        const errorMessage = usageServiceCode
+          ? t(`usage_service_errors.${usageServiceCode}`, {
+              defaultValue: t('usage_service_errors.request_failed'),
+            })
+          : err instanceof Error
+            ? err.message
+            : t('notification.refresh_failed');
         setError(errorMessage);
         if (options?.throwOnError) {
           throw err instanceof Error ? err : new Error(errorMessage);
