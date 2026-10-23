@@ -133,6 +133,11 @@
 .fresh-system-workspace {
   display: grid;
   gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.fresh-gateway-workspace > [role='tabpanel'] {
   min-width: 0;
 }
 
@@ -180,6 +185,8 @@
 
 .gateway-toolbar-actions {
   display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -187,6 +194,7 @@
 .gateway-tabs {
   display: flex;
   gap: 6px;
+  min-width: 0;
   overflow-x: auto;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border-subtle);
@@ -217,6 +225,190 @@
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
+}
+
+.gateway-tab-count {
+  padding: 1px 6px;
+  border-radius: var(--app-radius-sm, 8px);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.gateway-tab-count.has-errors {
+  background: var(--bg-subtle);
+  color: var(--danger, #dc2626);
+}
+
+.fresh-gateway-workspace [role='tabpanel']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.owner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.owner-actions .btn {
+  margin-top: 0;
+}
+
+.gateway-retry-group > .card-head {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.gateway-retry-group > .card-head h2 {
+  margin-bottom: 6px;
+}
+
+.gateway-retry-group .retry-editor-compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 34%);
+  gap: 6px 24px;
+  margin: 0;
+  padding: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.gateway-retry-group .retry-editor-compact[hidden] {
+  display: none;
+}
+
+.retry-editor-compact > .console-keys-heading {
+  grid-column: 1;
+  grid-row: 1;
+  padding: 0;
+  margin: 0;
+  align-items: center;
+}
+
+.retry-editor-compact .console-keys-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.retry-editor-compact > .retry-field-help {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.retry-editor-compact > .retry-field-path {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.retry-editor-compact > .retry-field-source {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.retry-editor-compact > .retry-current-value {
+  grid-column: 1;
+  grid-row: 5;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  flex-wrap: wrap;
+}
+
+.retry-editor-compact > .retry-field-effect {
+  grid-column: 1;
+  grid-row: 6;
+}
+
+.retry-editor-compact > .retry-diagnostics {
+  grid-column: 1 / -1;
+  grid-row: 7;
+  margin: 2px 0 0;
+}
+
+.retry-editor-compact > .form-group {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  margin: 0;
+}
+
+.retry-editor-compact .form-label {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.retry-editor-compact > .wizard-card-footer {
+  grid-column: 2;
+  grid-row: 5 / span 2;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.retry-editor-compact > .alert,
+.retry-editor-compact > .retry-operation,
+.retry-editor-compact > [role='status'] {
+  grid-column: 1 / -1;
+}
+
+.retry-editor-compact .retry-field-path,
+.retry-editor-compact .retry-field-source,
+.retry-editor-compact .retry-field-effect {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.system-additional-info {
+  padding: 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--app-radius-md, 14px);
+  background: var(--bg-card);
+}
+
+.system-additional-info > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.system-additional-info[open] > summary {
+  margin-bottom: 18px;
+}
+
+@media (max-width: 768px) {
+  .gateway-retry-group .retry-editor-compact {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .retry-editor-compact > .console-keys-heading,
+  .retry-editor-compact > .retry-field-help,
+  .retry-editor-compact > .retry-field-path,
+  .retry-editor-compact > .retry-field-source,
+  .retry-editor-compact > .retry-field-effect,
+  .retry-editor-compact > .retry-current-value,
+  .retry-editor-compact > .retry-diagnostics,
+  .retry-editor-compact > .form-group,
+  .retry-editor-compact > .wizard-card-footer {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .retry-editor-compact > .form-group {
+    margin-top: 8px;
+  }
+
+  .retry-editor-compact > .wizard-card-footer {
+    margin-top: 8px;
+  }
 }
 
 .dirty-dot {
@@ -260,7 +452,9 @@
   padding: 18px;
   background: var(--surface-bg, var(--bg-card));
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .overview-card:hover {

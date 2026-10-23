@@ -1,6 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
 import { FreshGatewayWorkspace } from './FreshGatewayWorkspace';
@@ -30,6 +30,9 @@ vi.mock('../components/ui/Modal', () => ({
     ) : null,
 }));
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
+function RouteProbe() {
+  return <span data-testid="workspace-route">{useLocation().pathname}</span>;
+}
 describe('FreshGatewayWorkspace component', () => {
   let renderer: ReactTestRenderer;
   let count: number, interval: number, revision: number;
@@ -97,10 +100,11 @@ describe('FreshGatewayWorkspace component', () => {
     await i18n.changeLanguage('zh-CN');
     vi.unstubAllGlobals();
   });
-  async function mount() {
+  async function mount(basePath = '') {
     await act(async () => {
       renderer = create(
-        <MemoryRouter>
+        <MemoryRouter basename={basePath || '/'} initialEntries={[basePath + '/config']}>
+          <RouteProbe />
           <FreshGatewayWorkspace
             client={createPublicApiClient(() => context, transport)}
             credential="test-credential"
@@ -143,6 +147,81 @@ describe('FreshGatewayWorkspace component', () => {
     await click('gateway-tab-retry');
     expect(node('retry-editor').props.hidden).toBe(false);
     expect(node('retry-interval-editor').props.hidden).toBe(false);
+    expect(node('retry-editor').props.className).toContain('retry-editor-compact');
+    expect(has('gateway-retry-group')).toBe(true);
+  });
+  it('supports arrow, Home and End tab navigation with one tab stop and the same retained draft', async () => {
+    await mount();
+    await change('retry-value', '4');
+    const key = async (tab: string, value: string) => {
+      const preventDefault = vi.fn();
+      await act(async () =>
+        node('gateway-tab-' + tab).props.onKeyDown({ key: value, preventDefault })
+      );
+      expect(preventDefault).toHaveBeenCalledOnce();
+    };
+    expect(node('gateway-tab-overview').props.tabIndex).toBe(0);
+    expect(node('gateway-tab-common').props.tabIndex).toBe(-1);
+    await key('overview', 'ArrowRight');
+    expect(node('gateway-tab-common').props['aria-selected']).toBe(true);
+    expect(node('gateway-tab-common').props.tabIndex).toBe(0);
+    expect(node('gateway-tab-overview').props.tabIndex).toBe(-1);
+    expect(renderer.root.findByProps({ role: 'tabpanel' }).props['aria-labelledby']).toBe(
+      'gateway-tab-common'
+    );
+    await key('common', 'End');
+    expect(node('gateway-tab-owners').props['aria-selected']).toBe(true);
+    await key('owners', 'ArrowRight');
+    expect(node('gateway-tab-overview').props['aria-selected']).toBe(true);
+    await key('overview', 'ArrowLeft');
+    expect(node('gateway-tab-owners').props['aria-selected']).toBe(true);
+    await key('owners', 'Home');
+    expect(node('gateway-tab-overview').props['aria-selected']).toBe(true);
+    expect(node('retry-value').props.value).toBe('4');
+    expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0);
+  });
+  it('shares dirty and validation metrics between Common and Retry, including a hidden invalid field', async () => {
+    await mount();
+    await click('gateway-tab-common');
+    await change('retry-value', 'abc');
+    for (const tab of ['common', 'retry']) {
+      expect(node('gateway-tab-state-' + tab).props.children).toBe(c('validationIssues', 1));
+      expect(node('gateway-tab-' + tab).props['aria-label']).toContain(c('unsaved', 1));
+    }
+    expect(node('retry-value').props['aria-describedby']).toContain('retry-input-error');
+    await change('gateway-search-input', 'proxy');
+    expect(node('fresh-managed-retry').props.hidden).toBe(true);
+    expect(node('gateway-tab-state-common').props.children).toBe(c('validationIssues', 1));
+    await change('retry-value', '4');
+    await change('retry-interval-value', '301');
+    expect(node('gateway-tab-state-common').props.children).toBe(c('validationIssues', 1));
+    expect(node('gateway-tab-retry').props['aria-label']).toContain(c('unsaved', 2));
+    await discard();
+    expect(has('gateway-tab-state-common')).toBe(false);
+    expect(has('gateway-tab-state-retry')).toBe(false);
+  });
+  it('links available owners within the router basename and closes the ownership dialog on navigation', async () => {
+    await mount('/custom-console');
+    const href = (id: string) => node(id).findByType('a').props.href;
+    expect(href('view-owner-0-link')).toBe('/custom-console/api-keys');
+    expect(href('view-owner-1-link')).toBe('/custom-console/ai-providers');
+    expect(href('view-owner-3-link')).toBe('/custom-console/accounts');
+    await change('retry-value', '4');
+    await click('view-owner-0');
+    const link = node('open-owner-workspace').findByType('a');
+    expect(link.props.href).toBe('/custom-console/api-keys');
+    await act(async () => link.props.onClick({ button: 0, preventDefault: vi.fn() }));
+    expect(has('owner-detail-modal')).toBe(false);
+    expect(node('workspace-route').props.children).toBe('/api-keys');
+    expect(node('retry-value').props.value).toBe('4');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+  it('does not invent links for owners without an existing dedicated editor', async () => {
+    await mount();
+    expect(has('view-owner-2-link')).toBe(false);
+    await click('view-owner-2');
+    expect(has('open-owner-workspace')).toBe(false);
+    expect(JSON.stringify(renderer.toJSON())).toContain(c('ownerUnavailable'));
   });
   it('reports local dirty state separately from operation pending and supports diff/discard', async () => {
     await mount();

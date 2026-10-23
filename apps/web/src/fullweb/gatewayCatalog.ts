@@ -18,6 +18,7 @@ export interface GatewayOwnerMeta {
   path: string;
   owner: string;
   description: string;
+  target?: string;
 }
 export const RETRY_COUNT_PATH = 'routing.retry.request-retry';
 export const RETRY_INTERVAL_PATH = 'routing.retry.max-retry-interval';
@@ -113,16 +114,18 @@ export function gatewayOwners(): GatewayOwnerMeta[] {
   const owner = (
     path: string,
     name: ReferenceTextKey,
-    help: ReferenceTextKey
-  ): GatewayOwnerMeta => ({ path, owner: r(name), description: r(help) });
+    help: ReferenceTextKey,
+    target?: string
+  ): GatewayOwnerMeta => ({ path, owner: r(name), description: r(help), target });
   return [
-    owner('access.api-keys', 'keys', 'keysHelp'),
-    owner('api-keys.*', 'providers', 'providersHelp'),
+    owner('access.api-keys', 'keys', 'keysHelp', '/api-keys'),
+    owner('api-keys.*', 'providers', 'providersHelp', '/ai-providers'),
     owner('models.* / oauth.model-alias / oauth.excluded-models', 'models', 'modelsHelp'),
     owner(
       'oauth.auth-dir / oauth.auth-auto-refresh-workers / oauth.settings / oauth.request-scoped-errors',
       'auth',
-      'authHelp'
+      'authHelp',
+      '/accounts'
     ),
     owner('oauth.providers.codex.live-media-relay.*', 'live', 'liveHelp'),
     owner(
@@ -136,10 +139,10 @@ export function gatewayOwners(): GatewayOwnerMeta[] {
       'specificHelp'
     ),
     owner('credentials.concurrency.* / credentials.in-flight.*', 'runtime', 'runtimeHelp'),
-    owner('observability.logs.* / observability.pprof.*', 'logs', 'logsHelp'),
-    owner('observability.usage.*', 'usage', 'usageHelp'),
-    owner('server.* / management.*', 'deployment', 'deploymentHelp'),
-    owner('plugins.*', 'plugins', 'pluginsHelp'),
+    owner('observability.logs.* / observability.pprof.*', 'logs', 'logsHelp', '/logs'),
+    owner('observability.usage.*', 'usage', 'usageHelp', '/monitoring'),
+    owner('server.* / management.*', 'deployment', 'deploymentHelp', '/system'),
+    owner('plugins.*', 'plugins', 'pluginsHelp', '/plugins'),
     owner(
       'config-version / quota-exceeded.switch-project / quota-exceeded.switch-preview-model',
       'legacy',

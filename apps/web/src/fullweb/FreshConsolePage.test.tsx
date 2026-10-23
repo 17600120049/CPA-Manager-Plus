@@ -282,6 +282,23 @@ describe('Fresh installation and Console authority boundary', () => {
     await navigate('/config');
     await act(async () => find('retry-value').props.onChange({ target: { value: '4' } }));
   }
+  it('keeps existing system information and session tools in a collapsed section below product settings', async () => {
+    await mount();
+    await login();
+    await navigate('/system');
+    const system = renderer.root.findByType(SystemPage);
+    const details = system.findByProps({ className: 'system-additional-info' });
+    expect(details.type).toBe('details');
+    expect(details.props.open).not.toBe(true);
+    expect(details.findByType('summary').props.children).toBe(c('additionalInfo'));
+    expect(details.findAllByType(FreshSystemWorkspace)).toHaveLength(0);
+    expect(system.findAllByType(FreshSystemWorkspace)).toHaveLength(1);
+    expect(
+      details
+        .findAllByType(Button)
+        .some((button) => button.props.children === i18n.t('system_info.clear_login_button'))
+    ).toBe(true);
+  });
   it('keeps a real gateway draft on logout cancellation and clears the session only after confirmation', async () => {
     await editGateway();
     expect(renderer.root.findByType(MainLayout).props.logoutDisabled).toBe(false);

@@ -40,6 +40,48 @@ const messages = {
   viewChanges: ['View changes', '查看变更', '檢視變更', 'Посмотреть изменения'],
   discard: ['Discard drafts', '放弃草稿', '捨棄草稿', 'Отменить правки'],
   dirty: ['Unsaved changes', '有未保存修改', '有未儲存修改', 'Несохранённые изменения'],
+  validationIssues: [
+    'Validation errors: {count}',
+    '{count} 个校验问题',
+    '{count} 個驗證問題',
+    'Ошибок проверки: {count}',
+  ],
+  openOwner: [
+    'Open owning workspace',
+    '打开所属工作区',
+    '開啟所屬工作區',
+    'Открыть рабочую область',
+  ],
+  ownerUnavailable: [
+    'No corresponding editor is available in this Console yet. This is ownership guidance only.',
+    '当前 Console 尚无对应编辑页面，此处仅说明配置归属。',
+    '目前 Console 尚無對應編輯頁面，此處僅說明設定歸屬。',
+    'В этой консоли пока нет соответствующего редактора. Здесь указано только назначение настроек.',
+  ],
+  ownerTargetHelp: [
+    'Open the existing workspace; available settings and permissions are determined there.',
+    '前往既有工作区，具体支持项目与权限以该页面为准。',
+    '前往既有工作區，實際支援項目與權限以該頁面為準。',
+    'Откройте существующую рабочую область; доступные настройки и права определяются там.',
+  ],
+  additionalInfo: [
+    'Other system information and session tools',
+    '其他系统信息与会话工具',
+    '其他系統資訊與工作階段工具',
+    'Прочая информация о системе и инструменты сеанса',
+  ],
+  retryCountMeaning: [
+    'Additional rounds after the initial round exhausts available credentials. Zero disables additional rounds.',
+    '首轮耗尽可用凭据后的额外重试轮次，0 禁止额外轮次。',
+    '首輪耗盡可用憑證後的額外重試輪次，0 停用額外輪次。',
+    'Дополнительные циклы после исчерпания учётных данных в первом цикле. Ноль отключает дополнительные циклы.',
+  ],
+  retryIntervalMeaning: [
+    'Maximum wait for credential cooldown, not a request timeout. Zero disables cooldown waiting.',
+    '等待凭据冷却的最长时间，不是请求超时；0 表示不等待冷却。',
+    '等待憑證冷卻的最長時間，並非請求逾時；0 表示不等待冷卻。',
+    'Максимальное ожидание охлаждения учётных данных, не тайм-аут запроса. Ноль отключает ожидание.',
+  ],
   fields: ['Fields: {count}', '{count} 个配置字段', '{count} 個設定欄位', 'Полей: {count}'],
   mapped: ['Configuration reference', '配置字段说明', '設定欄位說明', 'Справочник настроек'],
   ownerGroups: [
