@@ -11,6 +11,9 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { obfuscatedStorage } from '../services/storage/secureStorage';
 import { STORAGE_KEY_AUTH } from '../utils/constants';
 import { usageServiceApi } from '../services/api/usageService';
+import { ManagerUpdates } from '../features/system/ManagerUpdates';
+import { ConfirmationModal } from '../components/common/ConfirmationModal';
+import { NotificationContainer } from '../components/common/NotificationContainer';
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
 const operation: FreshOperation = {
   identity: {
@@ -56,6 +59,8 @@ describe('Fresh installation and Console authority boundary', () => {
       removeEventListener: vi.fn(),
       setTimeout: globalThis.setTimeout,
       clearTimeout: globalThis.clearTimeout,
+      setInterval: globalThis.setInterval,
+      clearInterval: globalThis.clearInterval,
       matchMedia: () => ({
         matches: false,
         addEventListener: vi.fn(),
@@ -183,6 +188,9 @@ describe('Fresh installation and Console authority boundary', () => {
     await login();
     expect(has('legacy-console')).toBe(true);
     expect(renderer.root.findByType(LegacyConsolePage)).toBeTruthy();
+    expect(renderer.root.findAllByType(ManagerUpdates)).toHaveLength(1);
+    expect(renderer.root.findAllByType(ConfirmationModal)).toHaveLength(1);
+    expect(renderer.root.findAllByType(NotificationContainer)).toHaveLength(1);
     expect(read.mock.calls[0][0]).toBe('https://manager.example/console/api/v2/operation');
     expect(new Headers(read.mock.calls[0][1]?.headers).get('Authorization')).toBe('Bearer ' + key);
     await act(async () => logout().props.onClick());

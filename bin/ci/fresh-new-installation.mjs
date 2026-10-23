@@ -740,6 +740,11 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     }
     await navigate('/system');
     await page.locator('.main-content').waitFor();
+    await page.getByRole('button', { name: '清理登录信息', exact: true }).click();
+    await page.getByRole('dialog').waitFor();
+    await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    assert(await legacyConsole.isVisible());
     await screenshot('legacy-system-' + name);
   }
   await page.goBack();
@@ -757,6 +762,16 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
   pass(
     'language selection updates the existing Console and restores Chinese'
   );
+  await navigate('/system/updates');
+  const updateSettings = page.locator('details').filter({ has: page.locator('#manager-update-channel') });
+  await updateSettings.locator('summary').click();
+  const updateChannel = page.locator('#manager-update-channel');
+  await updateChannel.waitFor();
+  await updateChannel.click();
+  await page.getByRole('option', { name: '测试版 Beta', exact: true }).click();
+  await wait(async () => (await adminGet('cpamp/usage-service/updates')).channel_preference === 'beta', 'original update page saves channel');
+  await screenshot('original-updates-working');
+  pass('original global confirmation can be canceled without logout; original update provider loads and persists channel');
   const storedSecrets = await page.evaluate((adminKey) =>
     [...Object.values(localStorage), ...Object.values(sessionStorage)].some((value) =>
       value.includes(adminKey)

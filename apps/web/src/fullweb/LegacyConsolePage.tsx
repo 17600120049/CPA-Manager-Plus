@@ -4,6 +4,10 @@ import '../i18n';
 import { AppLifecycle } from '../app/AppLifecycle';
 import { MainLayout } from '../components/layout/MainLayout';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
+import { ConfirmationModal } from '../components/common/ConfirmationModal';
+import { NotificationContainer } from '../components/common/NotificationContainer';
+import { ManagerUpdates } from '../features/system/ManagerUpdates';
+import { SystemPage } from '../features/system/SystemPage';
 import { useAuthStore } from '../stores';
 import { FreshManagedResources } from './FreshManagedResources';
 import type { createPublicApiClient } from './publicApi';
@@ -77,37 +81,42 @@ export function LegacyConsolePage({
   const content = (
     <div data-testid="legacy-console">
       <AppLifecycle />
-      {/*
-       * The Full Web router is mounted below the embedded `/console` base.
-       * MainLayout already supports an explicit route base (used by the demo
-       * shell); passing it here keeps its active item, breadcrumbs and
-       * MainRoutes in the same coordinate system as the mounted router.
-       */}
-      <MainLayout
-        routeBase={context.basePath}
-        navigationBase={context.basePath}
-        logoutDisabled={freshPending}
-        contentFooter={
-          client ? (
-            <FreshManagedResources
-              basePath={context.basePath}
-              client={client}
-              credential={credential}
-              onUnauthorized={onUnauthorized}
-              onPending={setFreshPending}
-            />
-          ) : undefined
-        }
-        renderRoute={(pathname) => {
-          if (!client) return undefined;
-          // Keep the original ConfigPage at /config: it owns the visual/source
-          // editor, Manager→CPA binding form, and the existing CPA API-key
-          // controls. Manager-owned keys render in the persistent footer to
-          // retain their original reconciliation operation across navigation.
-          if (pathname === '/api-keys') return null;
-          return undefined;
-        }}
-      />
+      <NotificationContainer />
+      <ConfirmationModal />
+      <ManagerUpdates>
+        {/*
+         * The Full Web router is mounted below the embedded `/console` base.
+         * MainLayout already supports an explicit route base (used by the demo
+         * shell); passing it here keeps its active item, breadcrumbs and
+         * MainRoutes in the same coordinate system as the mounted router.
+         */}
+        <MainLayout
+          routeBase={context.basePath}
+          navigationBase={context.basePath}
+          logoutDisabled={freshPending}
+          contentFooter={
+            client ? (
+              <FreshManagedResources
+                basePath={context.basePath}
+                client={client}
+                credential={credential}
+                onUnauthorized={onUnauthorized}
+                onPending={setFreshPending}
+              />
+            ) : undefined
+          }
+          renderRoute={(pathname) => {
+            if (!client) return undefined;
+            // Keep the original ConfigPage at /config: it owns the visual/source
+            // editor, Manager→CPA binding form, and the existing CPA API-key
+            // controls. Manager-owned keys render in the persistent footer to
+            // retain their original reconciliation operation across navigation.
+            if (pathname === '/api-keys') return null;
+            if (pathname === '/system') return <SystemPage logoutDisabled={freshPending} />;
+            return undefined;
+          }}
+        />
+      </ManagerUpdates>
     </div>
   );
   // The production Full Web entry normally supplies the BrowserRouter from

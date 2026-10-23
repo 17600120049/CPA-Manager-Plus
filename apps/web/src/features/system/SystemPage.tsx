@@ -53,7 +53,7 @@ const MODEL_CATEGORY_ICONS: Record<string, string | { light: string; dark: strin
 
 const DATABASE_STATUS_REFRESH_INTERVAL_MS = 60_000;
 
-export function SystemPage() {
+export function SystemPage({ logoutDisabled = false }: { logoutDisabled?: boolean } = {}) {
   const { t, i18n } = useTranslation();
   const { showNotification, showConfirmation } = useNotificationStore();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -219,6 +219,7 @@ export function SystemPage() {
   ]);
 
   const handleClearLoginStorage = () => {
+    if (logoutDisabled) return;
     showConfirmation({
       title: t('system_info.clear_login_title', { defaultValue: 'Clear Login Storage' }),
       message: t('system_info.clear_login_confirm'),
@@ -406,7 +407,7 @@ export function SystemPage() {
         <Card title={t('system_info.clear_login_title')}>
           <p className={styles.sectionDescription}>{t('system_info.clear_login_desc')}</p>
           <div className={styles.clearLoginActions}>
-            <Button variant="danger" onClick={handleClearLoginStorage}>
+            <Button variant="danger" onClick={handleClearLoginStorage} disabled={logoutDisabled}>
               {t('system_info.clear_login_button')}
             </Button>
           </div>
