@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fullWebText as t } from '../i18n/fullweb';
-import { workspaceText as w } from '../i18n/consoleWorkspace';
+import { useTranslation } from 'react-i18next';
+import { configurationText as c } from '../i18n/configurationWorkspace';
+import { referenceText as r } from '../i18n/configurationReference';
+import { workspaceText } from '../i18n/consoleWorkspace';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 
 
@@ -263,6 +265,7 @@ function RetryScalarEditor({
   siblingPending,
   discardEpoch = 0,
   onDraftChange,
+  visible = true,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
@@ -275,7 +278,12 @@ function RetryScalarEditor({
   siblingPending: boolean;
   discardEpoch?: number;
   onDraftChange?: (diff: RetryDraftDiff) => void;
+  visible?: boolean;
 }) {
+  const { i18n, t: translate } = useTranslation();
+  const t = (key: string) => translate('fullweb.' + key);
+  const w = (key: Parameters<typeof workspaceText>[0]) => workspaceText(key, i18n.resolvedLanguage);
+  const consumedDiscardEpoch = useRef(discardEpoch);
   const retryResource = variant === "interval" ? "gateway/retry/max-retry-interval" : "gateway/retry/request-retry";
   const retryOperationResource = variant === "interval" ? "gateway/retry/interval-operations/" : "gateway/retry/operations/";
   const testPrefix = variant === "interval" ? "retry-interval" : "retry";
@@ -542,7 +550,11 @@ function RetryScalarEditor({
   }, [refreshEpoch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (discardEpoch > 0 && view) {
+    if (consumedDiscardEpoch.current === discardEpoch) return;
+    consumedDiscardEpoch.current = discardEpoch;
+    // Discard only local edits, never disturb an in-flight or uncertain operation.
+    if (flight.current || pendingIdRef.current) return;
+    if (view) {
       dirtyRef.current = false;
       setDraft(view.presence === 'present' && view.value !== null ? String(view.value) : '');
       setMessage('');
@@ -552,17 +564,17 @@ function RetryScalarEditor({
   useEffect(() => {
     if (!onDraftChange) return;
     const path = variant === 'interval' ? 'routing.retry.max-retry-interval' : 'routing.retry.request-retry';
-    const label = variant === 'interval' ? '最大冷却等待（秒）' : '额外重试轮次';
+    const label = r(variant === 'interval' ? 'interval' : 'count');
     const savedStr = view?.presence === 'present' && view.value !== null ? String(view.value) : '';
     const isDirty = dirtyRef.current && draft !== savedStr;
     onDraftChange({
       path,
       label,
-      oldVal: savedStr !== '' ? `${savedStr}${variant === 'interval' ? ' s' : ''}` : '(未设置)',
-      newVal: draft !== '' ? `${draft}${variant === 'interval' ? ' s' : ''}` : '(清空)',
+      oldVal: savedStr !== '' ? `${savedStr}${variant === 'interval' ? ' s' : ''}` : c('unset'),
+      newVal: draft !== '' ? `${draft}${variant === 'interval' ? ' s' : ''}` : c('cleared'),
       dirty: isDirty,
     });
-  }, [draft, view, onDraftChange, variant]);
+  }, [draft, view, onDraftChange, variant, i18n.resolvedLanguage]);
 
   useEffect(() => {
     if (!navigationRequest || variant !== "count") return;
@@ -596,6 +608,7 @@ function RetryScalarEditor({
       ref={sectionRef}
       id={variant === "interval" ? "gateway-retry-interval" : "gateway-retry"}
       className="console-keys retry-editor"
+      hidden={!visible}
       aria-labelledby={variant === "interval" ? "gateway-retry-interval-title" : "gateway-retry-title"}
       aria-busy={busy}
       data-testid={`${testPrefix}-editor`}
@@ -797,6 +810,8 @@ export function FreshRetryConfiguration(props: {
   navigationRequest?: number;
   discardEpoch?: number;
   onDraftChange?: (diffs: RetryDraftDiff[]) => void;
+  countVisible?: boolean;
+  intervalVisible?: boolean;
 }) {
   const { onDraftChange, onPending } = props;
   const pending = useRef({count: false, interval: false});
@@ -833,11 +848,13 @@ export function FreshRetryConfiguration(props: {
   return (
     <>
       <RetryScalarEditor {...props} variant="count" refreshEpoch={countRefreshEpoch} siblingPending={busyOwners.interval}
+        visible={props.countVisible}
         onCommitted={() => setIntervalRefreshEpoch((n) => n + 1)}
         onPending={(value) => setPending("count", value)}
         discardEpoch={props.discardEpoch}
         onDraftChange={handleCountDraftChange} />
       <RetryScalarEditor {...props} variant="interval" refreshEpoch={intervalRefreshEpoch} siblingPending={busyOwners.count}
+        visible={props.intervalVisible}
         onCommitted={() => setCountRefreshEpoch((n) => n + 1)}
         onPending={(value) => setPending("interval", value)}
         discardEpoch={props.discardEpoch}

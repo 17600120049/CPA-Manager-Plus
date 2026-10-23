@@ -34,12 +34,14 @@ export function FreshManagedResources({
   credential,
   onUnauthorized,
   onPending,
+  onDirtyChange,
 }: {
   basePath: string;
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { pathname: locationPath } = useLocation();
   const pathname = locationPath.replace(/\/+$/, '') || '/';
@@ -87,6 +89,7 @@ export function FreshManagedResources({
         active={route === '/config' || route === '/gateway'}
       >
         <FreshGatewayWorkspace
+          onDirtyChange={onDirtyChange}
           client={client}
           credential={credential}
           onUnauthorized={onUnauthorized}

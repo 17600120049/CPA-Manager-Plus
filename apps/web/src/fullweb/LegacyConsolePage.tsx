@@ -60,6 +60,7 @@ export function LegacyConsolePage({
   const inRouter = useInRouterContext();
   const [activated, setActivated] = useState(false);
   const [freshPending, setFreshPending] = useState(false);
+  const [freshDirty, setFreshDirty] = useState(false);
   const onUnauthorizedRef = useRef(onUnauthorized);
 
   useEffect(() => {
@@ -133,6 +134,7 @@ export function LegacyConsolePage({
           routeBase={context.basePath}
           navigationBase={context.basePath}
           logoutDisabled={freshPending}
+          hasUnsavedChanges={freshDirty}
           contentFooter={
             client ? (
               <FreshManagedResources
@@ -141,6 +143,7 @@ export function LegacyConsolePage({
                 credential={credential}
                 onUnauthorized={onUnauthorized}
                 onPending={setFreshPending}
+                onDirtyChange={setFreshDirty}
               />
             ) : undefined
           }
@@ -157,6 +160,7 @@ export function LegacyConsolePage({
               return (
                 <SystemPage
                   logoutDisabled={freshPending}
+                  hasUnsavedChanges={freshDirty}
                   workspace={<FreshSystemWorkspace basePath={context.basePath} />}
                 />
               );

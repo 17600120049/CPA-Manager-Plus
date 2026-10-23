@@ -1,205 +1,269 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import i18n from '../i18n';
 import { FreshGatewayWorkspace } from './FreshGatewayWorkspace';
 import { createPublicApiClient } from './publicApi';
+import { configurationText as c } from '../i18n/configurationWorkspace';
 
+// Component-state tests only; real portal, keyboard and focus behaviour is
+// exercised in browser acceptance, without changing the shared Modal.
+vi.mock('../components/ui/Modal', () => ({
+  Modal: ({
+    open,
+    children,
+    footer,
+    title,
+  }: {
+    open: boolean;
+    children: ReactNode;
+    footer: ReactNode;
+    title: ReactNode;
+  }) =>
+    open ? (
+      <div role="dialog">
+        <h2>{title}</h2>
+        {children}
+        {footer}
+      </div>
+    ) : null,
+}));
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
-
 describe('FreshGatewayWorkspace component', () => {
   let renderer: ReactTestRenderer;
-  const onUnauthorized = vi.fn();
-  const onPending = vi.fn();
-
-  beforeEach(() => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    vi.stubGlobal('window', { location: new URL('https://manager.example/console') });
+  let count: number, interval: number, revision: number;
+  const onUnauthorized = vi.fn(),
+    onPending = vi.fn(),
+    onDirtyChange = vi.fn();
+  const transport = vi.fn<typeof fetch>();
+  const expected = () => ({
+    sourceId: 'isolated-test-source',
+    generation: '1',
+    revision,
+    sha256: 'a'.repeat(64),
+  });
+  beforeEach(async () => {
+    await i18n.changeLanguage('zh-CN');
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.stubGlobal('window', {
+      location: new URL('https://manager.example/console'),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(0xcc) });
+    count = 2;
+    interval = 30;
+    revision = 2;
     onUnauthorized.mockClear();
     onPending.mockClear();
+    onDirtyChange.mockClear();
+    transport.mockReset();
+    transport.mockImplementation(async (url, init) => {
+      const isInterval = String(url).includes('max-retry-interval');
+      if (init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        if (isInterval) interval = body.value;
+        else count = body.value;
+        revision++;
+        return Response.json({
+          operation: {
+            ...expected(),
+            requestId: body.requestId,
+            value: body.value,
+            state: 'persisted',
+            ...(isInterval ? { field: 'max-retry-interval' } : {}),
+          },
+          effective: 'unknown',
+        });
+      }
+      return Response.json({
+        field: isInterval ? 'routing.retry.max-retry-interval' : 'routing.retry.request-retry',
+        presence: 'present',
+        value: isInterval ? interval : count,
+        source: 'isolated-test',
+        authority: 'host-runtime',
+        editable: true,
+        reason: '',
+        persisted: 'persisted',
+        effective: 'unknown',
+        concurrentProtection: 'host-exclusive-runtime-reservation',
+        expected: expected(),
+      });
+    });
   });
-
   afterEach(async () => {
     if (renderer) await act(async () => renderer.unmount());
+    await i18n.changeLanguage('zh-CN');
     vi.unstubAllGlobals();
   });
-
-  async function mount(transport: ReturnType<typeof vi.fn<typeof fetch>>) {
+  async function mount() {
     await act(async () => {
       renderer = create(
-        <MemoryRouter initialEntries={['/console/gateway']}>
+        <MemoryRouter>
           <FreshGatewayWorkspace
             client={createPublicApiClient(() => context, transport)}
             credential="test-credential"
             onUnauthorized={onUnauthorized}
             onPending={onPending}
+            onDirtyChange={onDirtyChange}
           />
         </MemoryRouter>
       );
     });
   }
-
-  function mockDefaultTransport() {
-    return vi.fn<typeof fetch>().mockImplementation((url) => {
-      const isInterval = String(url).includes('max-retry-interval');
-      return Promise.resolve(
-        Response.json({
-          field: isInterval
-            ? 'routing.retry.max-retry-interval'
-            : 'routing.retry.request-retry',
-          presence: 'present',
-          value: isInterval ? 30 : 2,
-          source: 'private-embedded-cpa-v8.0.13',
-          authority: 'host-runtime',
-          editable: true,
-          reason: '',
-          persisted: 'persisted',
-          effective: 'unknown',
-          concurrentProtection: 'host-exclusive-runtime-reservation',
-          expected: {
-            sourceId: 'isolated-source-1234',
-            generation: '7',
-            revision: 2,
-            sha256: 'a'.repeat(64),
-          },
-        })
-      );
-    });
-  }
-
-  it('renders overview tab with catalog stats, search bar and owner cards', async () => {
-    const transport = mockDefaultTransport();
-    await mount(transport);
-
-    expect(
-      renderer.root.findByProps({ 'data-testid': 'gateway-workspace-title' })
-    ).toBeDefined();
-    expect(
-      renderer.root.findByProps({ 'data-testid': 'gateway-overview-content' })
-    ).toBeDefined();
-
-    // Toolbar
-    const searchInput = renderer.root.findByProps({
-      'data-testid': 'gateway-search-input',
-    });
-    expect(searchInput.props.value).toBe('');
-
-    // Owner card interaction
-    const viewOwnerBtn = renderer.root.findByProps({
-      'data-testid': 'view-owner-0',
-    });
-    await act(async () => viewOwnerBtn.props.onClick());
-
-    const modal = renderer.root.findByProps({
-      'data-testid': 'owner-detail-modal',
-    });
-    expect(modal).toBeDefined();
-
-    // Close owner modal
-    const closeBtn = modal.findByProps({ children: '关闭' });
-    await act(async () => closeBtn.props.onClick());
-    expect(
-      renderer.root.findAllByProps({ 'data-testid': 'owner-detail-modal' })
-    ).toHaveLength(0);
-  });
-
-  it('switches between tabs and displays matching sections', async () => {
-    const transport = mockDefaultTransport();
-    await mount(transport);
-
-    // Switch to routing tab
-    const routingTab = renderer.root.findByProps({
-      'data-testid': 'gateway-tab-routing',
-    });
-    await act(async () => routingTab.props.onClick());
-
-    expect(
-      renderer.root.findByProps({ 'data-testid': 'section-routing' })
-    ).toBeDefined();
-
-    // Switch to retry tab
-    const retryTab = renderer.root.findByProps({
-      'data-testid': 'gateway-tab-retry',
-    });
-    await act(async () => retryTab.props.onClick());
-
-    expect(
-      renderer.root.findByProps({ 'data-testid': 'fresh-managed-retry' })
-    ).toBeDefined();
-    expect(
-      renderer.root.findByProps({ 'data-testid': 'retry-editor' })
-    ).toBeDefined();
-    expect(
-      renderer.root.findByProps({ 'data-testid': 'retry-interval-editor' })
-    ).toBeDefined();
-  });
-
-  it('filters fields using search input and handles diff modal and discard', async () => {
-    const transport = mockDefaultTransport();
-    await mount(transport);
-    await act(async () => {});
-
-    // Switch to retry tab
-    const retryTab = renderer.root.findByProps({
-      'data-testid': 'gateway-tab-retry',
-    });
-    await act(async () => retryTab.props.onClick());
-    await act(async () => {});
-
-    // Modify a retry draft
-    const input = renderer.root.findByProps({ 'data-testid': 'retry-value' });
-    await act(async () => input.props.onChange({ target: { value: '4' } }));
-
-    // Dirty count should be updated
-    const dirtyBadge = renderer.root.findByProps({
-      'data-testid': 'gateway-dirty-count',
-    });
-    expect(dirtyBadge.props.children).toBe('1 项未保存');
-
-    // View changes (Diff modal)
-    const viewChangesBtn = renderer.root.findByProps({
-      'data-testid': 'view-changes-btn',
-    });
-    expect(viewChangesBtn.props.disabled).toBe(false);
-
-    await act(async () => viewChangesBtn.props.onClick());
-    const diffModal = renderer.root.findByProps({
-      'data-testid': 'diff-modal',
-    });
-    expect(diffModal).toBeDefined();
-
-    // Close diff modal
-    const closeDiffBtn = diffModal.findByProps({ children: '返回编辑' });
-    await act(async () => closeDiffBtn.props.onClick());
-    expect(
-      renderer.root.findAllByProps({ 'data-testid': 'diff-modal' })
-    ).toHaveLength(0);
-
-    // Search for a keyword
-    const searchInput = renderer.root.findByProps({
-      'data-testid': 'gateway-search-input',
-    });
+  const node = (id: string) => renderer.root.findByProps({ 'data-testid': id });
+  const has = (id: string) => renderer.root.findAllByProps({ 'data-testid': id }).length > 0;
+  const click = async (id: string) => {
+    await act(async () => node(id).props.onClick());
+  };
+  const change = async (id: string, value: string) => {
+    await act(async () => node(id).props.onChange({ target: { value } }));
+  };
+  const changedOnly = async () => {
     await act(async () =>
-      searchInput.props.onChange({ target: { value: 'proxy' } })
+      node('gateway-changed-only').props.onChange({ target: { checked: true } })
     );
+  };
+  const discard = async () => {
+    await click('discard-drafts-btn');
+    await click('confirm-discard-btn');
+  };
 
-    // Discard drafts
-    const discardBtn = renderer.root.findByProps({
-      'data-testid': 'discard-drafts-btn',
-    });
-    await act(async () => discardBtn.props.onClick());
-
-    const discardModal = renderer.root.findByProps({
-      'data-testid': 'discard-modal',
-    });
-    expect(discardModal).toBeDefined();
-
-    const confirmDiscardBtn = discardModal.findByProps({
-      'data-testid': 'confirm-discard-btn',
-    });
-    await act(async () => confirmDiscardBtn.props.onClick());
-
-    // Input should be reset
-    expect(input.props.value).toBe('2');
+  it('renders the integrated overview and opens ownership details through Modal', async () => {
+    await mount();
+    expect(has('gateway-overview-content')).toBe(true);
+    expect(node('gateway-search-input').props.value).toBe('');
+    await click('view-owner-0');
+    expect(has('owner-detail-modal')).toBe(true);
+    await click('close-owner-btn');
+    expect(has('owner-detail-modal')).toBe(false);
+    await click('gateway-tab-routing');
+    expect(has('section-routing')).toBe(true);
+    await click('gateway-tab-retry');
+    expect(node('retry-editor').props.hidden).toBe(false);
+    expect(node('retry-interval-editor').props.hidden).toBe(false);
   });
+  it('reports local dirty state separately from operation pending and supports diff/discard', async () => {
+    await mount();
+    await change('retry-value', '4');
+    expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(onPending.mock.calls.some(([pending]) => pending)).toBe(false);
+    await click('view-changes-btn');
+    expect(JSON.stringify(renderer.toJSON())).toContain('4');
+    await click('close-diff-btn');
+    expect(has('diff-modal')).toBe(false);
+    await discard();
+    expect(node('retry-value').props.value).toBe('2');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+  it('consumes each discard once and preserves later drafts through refresh', async () => {
+    await mount();
+    await change('retry-value', '3');
+    await discard();
+    await change('retry-value', '4');
+    await click('retry-refresh');
+    expect(node('retry-value').props.value).toBe('4');
+    await discard();
+    expect(node('retry-value').props.value).toBe('2');
+  });
+  it.each([false, true])(
+    'preserves a sibling draft after commit (prior discard: %s)',
+    async (priorDiscard) => {
+      await mount();
+      if (priorDiscard) {
+        await change('retry-value', '3');
+        await discard();
+      }
+      await change('retry-interval-value', '60');
+      await change('retry-value', '4');
+      await click('retry-save');
+      expect(node('retry-value').props.value).toBe('4');
+      expect(node('retry-interval-value').props.value).toBe('60');
+      expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    }
+  );
+  it('does not erase the original UNKNOWN operation or replay it when discarding', async () => {
+    await mount();
+    await change('retry-value', '4');
+    transport.mockRejectedValueOnce(new TypeError('response lost'));
+    await click('retry-save');
+    const id = node('retry-operation-id').props.children;
+    await discard();
+    await click('gateway-tab-requests');
+    await click('gateway-tab-retry');
+    expect(node('retry-operation-id').props.children).toBe(id);
+    expect(node('retry-save').props.disabled).toBe(true);
+    expect(onPending).toHaveBeenLastCalledWith(true);
+    expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+  });
+  it.each(['overview', 'common', 'routing', 'owners'])('searches globally from %s', async (tab) => {
+    await mount();
+    await click('gateway-tab-' + tab);
+    await change('gateway-search-input', 'bootstrap');
+    expect(
+      renderer.root.findAllByProps({ id: 'field-requests.streaming.bootstrap-retries' })
+    ).toHaveLength(1);
+    expect(node('fresh-managed-retry').props.hidden).toBe(true);
+  });
+  it('filters actual dirty paths rather than their entire category', async () => {
+    await mount();
+    await change('retry-value', '4');
+    await click('gateway-tab-retry');
+    await changedOnly();
+    expect(node('retry-editor').props.hidden).toBe(false);
+    expect(node('retry-interval-editor').props.hidden).toBe(true);
+    expect(has('section-retry')).toBe(false);
+    await click('gateway-tab-requests');
+    expect(has('section-requests')).toBe(false);
+    expect(node('fresh-managed-retry').props.hidden).toBe(true);
+    expect(node('retry-value').props.value).toBe('4');
+  });
+  it('shows only the modified field when changed-only is enabled from Overview', async () => {
+    await mount();
+    await change('retry-value', '4');
+    await changedOnly();
+    expect(has('gateway-overview-content')).toBe(false);
+    expect(node('retry-editor').props.hidden).toBe(false);
+    expect(node('retry-interval-editor').props.hidden).toBe(true);
+    expect(has('section-routing')).toBe(false);
+  });
+  it('matches translated labels, hides unrelated editors, and retains drafts while searching', async () => {
+    await mount();
+    await change('retry-value', '4');
+    await change('gateway-search-input', '最大冷却');
+    expect(node('retry-editor').props.hidden).toBe(true);
+    expect(node('retry-interval-editor').props.hidden).toBe(false);
+    await change('gateway-search-input', 'proxy');
+    expect(node('fresh-managed-retry').props.hidden).toBe(true);
+    await click('gateway-tab-retry');
+    expect(node('retry-value').props.value).toBe('4');
+  });
+  it('never displays sample values or invented health after a failed read', async () => {
+    transport.mockResolvedValue(new Response('', { status: 503 }));
+    await mount();
+    const text = JSON.stringify(renderer.toJSON());
+    expect(text).not.toContain('Embedded');
+    expect(text).not.toContain('草稿与服务端一致');
+    expect(text).not.toContain('已开放写操作');
+    await click('gateway-tab-media');
+    const input = renderer.root.findByProps({ id: 'field-multimedia.gpt-image-2-base-model' });
+    expect(input.props.value).toBe('');
+    expect(input.props.placeholder).toBe(c('notRead'));
+  });
+  it.each(['en', 'zh-TW', 'ru'])(
+    'translates the workspace, catalog and open dialog in %s without Chinese fallback',
+    async (language) => {
+      await mount();
+      await change('retry-value', '4');
+      await click('view-changes-btn');
+      await act(async () => {
+        await i18n.changeLanguage(language);
+      });
+      expect(node('gateway-workspace-title').props.children).toBe(c('gateway'));
+      expect(JSON.stringify(renderer.toJSON())).not.toMatch(/未保存|额外|网关|配置归属/);
+      expect(node('retry-value').props.value).toBe('4');
+    }
+  );
 });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { configurationText } from '@/i18n/configurationWorkspace';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -60,15 +61,19 @@ const DATABASE_STATUS_REFRESH_INTERVAL_MS = 60_000;
 
 export function SystemPage({
   logoutDisabled = false,
+  hasUnsavedChanges = false,
   workspace,
 }: {
   logoutDisabled?: boolean;
+  hasUnsavedChanges?: boolean;
   workspace?: React.ReactNode;
 } = {}) {
   const { t, i18n } = useTranslation();
   const { showNotification, showConfirmation } = useNotificationStore();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const auth = useAuthStore();
+  const logoutBlockedRef = useRef(logoutDisabled);
+  useEffect(() => { logoutBlockedRef.current = logoutDisabled; }, [logoutDisabled]);
   const featureAvailability = usePanelFeatureAvailability();
   const updates = useManagerUpdates();
   const config = useConfigStore((state) => state.config);
@@ -252,10 +257,11 @@ export function SystemPage({
     if (logoutDisabled) return;
     showConfirmation({
       title: t('system_info.clear_login_title', { defaultValue: 'Clear Login Storage' }),
-      message: t('system_info.clear_login_confirm'),
+      message: t('system_info.clear_login_confirm') + (hasUnsavedChanges ? '\n' + configurationText('leaveHelp') : ''),
       variant: 'danger',
       confirmText: t('common.confirm'),
       onConfirm: () => {
+        if (logoutBlockedRef.current) return;
         auth.logout();
         if (typeof localStorage === 'undefined') return;
         const keysToRemove = [
