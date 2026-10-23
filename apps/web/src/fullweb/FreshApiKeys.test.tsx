@@ -1,9 +1,48 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FreshApiKeys } from './FreshApiKeys';
 import { createPublicApiClient } from './publicApi';
 import { fullWebText as t } from '../i18n/fullweb';
 import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
+import { DropdownMenu } from '../components/ui/DropdownMenu';
+
+// Renderer tests exercise domain state; browser acceptance covers the shared
+// portal, focus, animation and close controls.
+vi.mock('../components/ui/Modal', () => ({
+  Modal: ({
+    open,
+    children,
+    footer,
+  }: {
+    open: boolean;
+    children?: ReactNode;
+    footer?: ReactNode;
+  }) =>
+    open ? (
+      <div>
+        {children}
+        {footer}
+      </div>
+    ) : null,
+}));
+vi.mock('../components/ui/Drawer', () => ({
+  Drawer: ({
+    open,
+    children,
+    footer,
+  }: {
+    open: boolean;
+    children?: ReactNode;
+    footer?: ReactNode;
+  }) =>
+    open ? (
+      <div>
+        {children}
+        {footer}
+      </div>
+    ) : null,
+}));
 
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
 const key = {
@@ -67,15 +106,47 @@ describe('Fresh client key persistence UI', () => {
     });
   }
   async function click(text: string) {
+    if (text === t('keysCreate')) {
+      await openCreate();
+      await act(async () =>
+        renderer.root.findByType('form').props.onSubmit({ preventDefault: vi.fn() })
+      );
+      return;
+    }
     await act(async () => button(text).props.onClick());
   }
+  async function openCreate() {
+    if (!renderer.root.findAllByType('form').length)
+      await act(async () => button(t('keysCreate')).props.onClick());
+  }
   async function setCreateName(value: string) {
+    await openCreate();
     await act(async () =>
       renderer.root
         .findByProps({ 'data-testid': 'create-key-name-input' })
         .props.onChange({ target: { value } })
     );
   }
+
+  it('opens and cancels creation without writing or showing the name input in the page toolbar', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(empty());
+    await mount(fetchMock);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'create-key-name-input' })).toHaveLength(
+      0
+    );
+    await openCreate();
+    await setCreateName('Unsaved draft');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await click(k('cancel'));
+    expect(renderer.root.findAllByProps({ 'data-testid': 'create-key-name-input' })).toHaveLength(
+      0
+    );
+    await openCreate();
+    expect(renderer.root.findByProps({ 'data-testid': 'create-key-name-input' }).props.value).toBe(
+      ''
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 
   it('filters only actual saved metadata without issuing requests or claiming gateway effectiveness', async () => {
     const historical = {
@@ -85,16 +156,19 @@ describe('Fresh client key persistence UI', () => {
       name: 'Retired client',
       lifecycle: 'superseded',
     };
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        Response.json({
-          keys: [{ ...key, name: 'Desktop client' }, historical],
-          gatewayPending: true,
-          revocationAvailable: false,
-        })
-      );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        keys: [{ ...key, name: 'Desktop client' }, historical],
+        gatewayPending: true,
+        revocationAvailable: false,
+      })
+    );
     await mount(fetchMock);
+    await act(async () =>
+      renderer.root
+        .findByProps({ 'aria-label': k('lifecycle') })
+        .props.onChange({ target: { value: 'all' } })
+    );
     expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(2);
     const search = renderer.root.findByProps({ 'aria-label': k('search') });
     await act(async () => search.props.onChange({ target: { value: 'desktop' } }));
@@ -106,7 +180,7 @@ describe('Fresh client key persistence UI', () => {
     await act(async () => search.props.onChange({ target: { value: 'does-not-exist' } }));
     expect(view()).toContain(k('noMatches'));
     await click(k('clear'));
-    expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(2);
+    expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(1);
     expect(view()).toContain(k('notApplied'));
     expect(view()).toContain(k('scope'));
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -230,7 +304,7 @@ describe('Fresh client key persistence UI', () => {
     await click(t('keysCreate'));
     expect(view()).toContain(secret);
     expect(view()).toContain(key.id);
-    expect(view()).toContain(t('keysStaged'));
+    expect(view()).toContain(k('unavailableHelp'));
     expect(button(t('keysCreate')).props.disabled).toBe(true);
     await click(t('keysCopy'));
     expect(navigator.clipboard.writeText).toHaveBeenCalledExactlyOnceWith(secret);
@@ -338,9 +412,10 @@ describe('Fresh client key persistence UI', () => {
       )
       .mockResolvedValueOnce(Response.json(key));
     await mount(fetchMock);
+    await openCreate();
     await act(async () => {
-      button(t('keysCreate')).props.onClick();
-      button(t('keysCreate')).props.onClick();
+      renderer.root.findByType('form').props.onSubmit({ preventDefault: vi.fn() });
+      renderer.root.findByType('form').props.onSubmit({ preventDefault: vi.fn() });
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => reject(new Error('private transport error')));
@@ -431,6 +506,7 @@ describe('Fresh client key persistence UI', () => {
       .mockResolvedValueOnce(Response.json(key))
       .mockResolvedValueOnce(Response.json(named));
     await mount(fetchMock, pending);
+    await openCreate();
     const nameInput = renderer.root.findByProps({ 'data-testid': 'create-key-name-input' });
     await act(async () => nameInput.props.onChange({ target: { value: 'Prod CLI' } }));
     await click(t('keysCreate'));
@@ -454,7 +530,9 @@ describe('Fresh client key persistence UI', () => {
     ).toHaveLength(0);
     expect(view()).toContain('Prod CLI');
     expect(view()).toContain(secret);
-    expect(pending.mock.calls[pending.mock.calls.length - 1]).toEqual([false]);
+    expect(pending).toHaveBeenLastCalledWith(true);
+    await click(t('keysDismiss'));
+    expect(pending).toHaveBeenLastCalledWith(false);
   });
 
   it.each([400, 404, 409])(
@@ -489,10 +567,12 @@ describe('Fresh client key persistence UI', () => {
       expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
       expect(view()).toContain('Corrected CLI');
       expect(view()).toContain(secret);
+      expect(pending).toHaveBeenLastCalledWith(true);
+      await click(t('keysDismiss'));
       expect(pending).toHaveBeenLastCalledWith(false);
-      expect(
-        renderer.root.findByProps({ 'data-testid': 'create-key-name-input' }).props.value
-      ).toBe('');
+      expect(renderer.root.findAllByProps({ 'data-testid': 'create-key-name-input' })).toHaveLength(
+        0
+      );
     }
   );
 
@@ -516,7 +596,7 @@ describe('Fresh client key persistence UI', () => {
     ).toHaveLength(1);
 
     await click(k('discardCreateName'));
-    expect(pending).toHaveBeenLastCalledWith(false);
+    expect(pending).toHaveBeenLastCalledWith(true);
     expect(
       renderer.root.findAllByProps({ 'data-testid': 'create-name-partial-failure' })
     ).toHaveLength(0);
@@ -530,9 +610,10 @@ describe('Fresh client key persistence UI', () => {
     expect(view()).toContain('Production');
     expect(view()).toContain(secret);
     await click(t('keysDismiss'));
+    expect(pending).toHaveBeenLastCalledWith(false);
     expect(button(t('keysCreate')).props.disabled).toBe(false);
-    expect(renderer.root.findByProps({ 'data-testid': 'create-key-name-input' }).props.value).toBe(
-      ''
+    expect(renderer.root.findAllByProps({ 'data-testid': 'create-key-name-input' })).toHaveLength(
+      0
     );
   });
 
@@ -551,6 +632,8 @@ describe('Fresh client key persistence UI', () => {
     await click(k('retrySaveName'));
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
     expect(view()).toContain(secret);
+    expect(pending).toHaveBeenLastCalledWith(true);
+    await click(t('keysDismiss'));
     expect(pending).toHaveBeenLastCalledWith(false);
   });
 
@@ -586,9 +669,9 @@ describe('Fresh client key persistence UI', () => {
       if (action === 'save') expect(fetchMock.mock.calls[4][0]).toContain('/api-keys/' + key.id);
       expect(pending).toHaveBeenLastCalledWith(false);
       expect(view()).not.toContain(secret);
-      expect(
-        renderer.root.findByProps({ 'data-testid': 'create-key-name-input' }).props.value
-      ).toBe('');
+      expect(renderer.root.findAllByProps({ 'data-testid': 'create-key-name-input' })).toHaveLength(
+        0
+      );
     }
   );
 
@@ -667,10 +750,11 @@ describe('Fresh client key persistence UI', () => {
     expect(view()).toContain(k('summaryUsageValue'));
 
     // Switch to Saved filter, search "Alpha", and toggle Cards view
-    const savedTab = renderer.root
-      .findAllByType('button')
-      .find((b) => Array.isArray(b.props.children) && b.props.children[0] === k('saved'))!;
-    await act(async () => savedTab.props.onClick());
+    await act(async () =>
+      renderer.root
+        .findByProps({ 'aria-label': k('lifecycle') })
+        .props.onChange({ target: { value: 'saved' } })
+    );
     const searchInput = renderer.root.findByProps({ type: 'search' });
     await act(async () => searchInput.props.onChange({ target: { value: 'Alpha' } }));
     const cardsBtn = renderer.root.findByProps({ 'data-testid': 'key-view-cards' });
@@ -689,9 +773,15 @@ describe('Fresh client key persistence UI', () => {
 
     // Quick replace preselects target, keeper, and replace mode in FreshKeyRevocation
     await act(async () =>
-      renderer.root.findByProps({ 'data-testid': 'replace-key-' + activeA.id }).props.onClick()
+      renderer.root
+        .findByType(DropdownMenu)
+        .props.items.find((item: { key: string }) => item.key === 'replace')
+        .onClick()
     );
-    const selects = renderer.root.findAllByType('select');
+    await click(k('replacementReady'));
+    const selects = renderer.root
+      .findAllByType('select')
+      .filter((item) => item.props['aria-label'] !== k('lifecycle'));
     expect(selects[0].props.value).toBe(activeA.id);
     expect(selects[1].props.value).toBe(activeB.id);
     expect(selects[2].props.value).toBe('replace');

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
-import { fullWebLanguage } from '../i18n/fullweb';
+import { Modal } from '../components/ui/Modal';
+import { DropdownMenu } from '../components/ui/DropdownMenu';
 import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
 import { FullWebIcon } from './FullWebIcon';
 import './freshKeys.css';
@@ -9,21 +10,6 @@ import { FreshKeyDetails } from './FreshKeyDetails';
 import { FreshKeyRevocation } from './FreshKeyRevocation';
 import { validKey, type Key } from './freshKeyMetadata';
 
-function keyCreationTime(value: number) {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return { iso: undefined, label: '—' };
-  return {
-    iso: date.toISOString(),
-    label: date.toLocaleString(fullWebLanguage(), {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
-  };
-}
-
 export function FreshApiKeys({
   client,
   credential,
@@ -31,6 +17,7 @@ export function FreshApiKeys({
   onCreationPending,
   storedBadge,
   pageDescription,
+  visible = true,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
@@ -38,6 +25,7 @@ export function FreshApiKeys({
   onCreationPending: (pending: boolean) => void;
   storedBadge?: string;
   pageDescription?: string;
+  visible?: boolean;
 }) {
   const [keys, setKeys] = useState<Key[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -48,13 +36,14 @@ export function FreshApiKeys({
   const [copyFeedback, setCopyFeedback] = useState<'copied' | 'failed' | ''>('');
   const [confirmed, setConfirmed] = useState(false);
   const [createName, setCreateName] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
   const [failedCreateName, setFailedCreateName] = useState<{
     id: string;
     message: string;
   } | null>(null);
   const [selected, setSelected] = useState('');
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'saved' | 'replaced'>('all');
+  const [filter, setFilter] = useState<'all' | 'saved' | 'replaced'>('saved');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [detailPending, setDetailPending] = useState(false);
   const [revocationAvailable, setRevocationAvailable] = useState(false);
@@ -71,6 +60,7 @@ export function FreshApiKeys({
   const alive = useRef(true);
   const inFlight = useRef(false);
   const copyAttempt = useRef(0);
+  const secretPendingRef = useRef(false);
   const auth = { kind: 'admin' as const, value: credential };
 
   useEffect(() => {
@@ -84,7 +74,10 @@ export function FreshApiKeys({
   // one panel must not release another panel's unresolved write.
   function reportPending() {
     onCreationPending(
-      creationPendingRef.current || detailPendingRef.current || operationPendingRef.current
+      creationPendingRef.current ||
+        secretPendingRef.current ||
+        detailPendingRef.current ||
+        operationPendingRef.current
     );
   }
 
@@ -145,6 +138,9 @@ export function FreshApiKeys({
     ++copyAttempt.current;
     setCopyFeedback('');
     setSecret('');
+    secretPendingRef.current = false;
+    if (!failedCreateName) setCreateOpen(false);
+    reportPending();
   }
 
   async function createKey() {
@@ -195,6 +191,7 @@ export function FreshApiKeys({
         result.key,
       ]);
       setSecret(result.createdSecret || '');
+      secretPendingRef.current = !!result.createdSecret;
       setConfirmed(true);
       setPending('');
       if (desiredName) {
@@ -293,9 +290,7 @@ export function FreshApiKeys({
         saved.nameRevision !== current.nameRevision + 1
       )
         throw new Error();
-      setKeys((previous) =>
-        (previous || []).map((item) => (item.id === saved.id ? saved : item))
-      );
+      setKeys((previous) => (previous || []).map((item) => (item.id === saved.id ? saved : item)));
       setFailedCreateName(null);
       setCreateName('');
       creationPendingRef.current = false;
@@ -392,10 +387,16 @@ export function FreshApiKeys({
   const savedCount = (keys || []).filter((key) => key.lifecycle !== 'superseded').length;
   const replacedCount = (keys || []).length - savedCount;
   const locked =
-    busy || !!selected || detailPending || !!pending || !!secret || !!failedCreateName;
+    busy ||
+    createOpen ||
+    !!selected ||
+    detailPending ||
+    !!pending ||
+    !!secret ||
+    !!failedCreateName;
   return (
     <section className="key-workspace" aria-labelledby="client-key-title" aria-busy={busy}>
-      <header className="page-header key-workspace-heading">
+      <header className="card page-header key-workspace-heading">
         <div>
           <div className="key-heading-title-row">
             <h1 id="client-key-title">
@@ -406,34 +407,13 @@ export function FreshApiKeys({
           <p className="page-description">{pageDescription || k('description')}</p>
         </div>
         <div className="key-toolbar-actions">
-          <input
-            className="input key-create-name-input"
-            type="text"
-            data-testid="create-key-name-input"
-            aria-label={k('createNameLabel')}
-            placeholder={k('createNamePlaceholder')}
-            maxLength={120}
-            value={createName}
-            disabled={
-              failedCreateName
-                ? busy || operationPending
-                : locked || operationPending || keys === null || !!error
-            }
-            onChange={(event) => setCreateName(event.target.value)}
-          />
-          <button
-            className="btn btn-secondary"
-            aria-label={t('refresh')}
-            disabled={busy || !!selected || detailPending}
-            onClick={() => void refresh()}
-          >
-            <FullWebIcon name="refresh" />
-            {t('refresh')}
-          </button>
           <button
             className="btn btn-primary"
             aria-label={t('keysCreate')}
-            onClick={() => void createKey()}
+            onClick={() => {
+              setConfirmed(false);
+              setCreateOpen(true);
+            }}
             disabled={
               locked ||
               operationPending ||
@@ -447,191 +427,218 @@ export function FreshApiKeys({
           </button>
         </div>
       </header>
-      {error && (
+      {error && !createOpen && !pending && (
         <p role="alert" className="key-notice key-notice-warning">
           <FullWebIcon name="alert" />
           <span>{error}</span>
         </p>
       )}
-      {pending && (
-        <div role="status" className="key-creation-recovery">
-          <FullWebIcon name="clock" />
-          <div>
-            <h3>{k('pending')}</h3>
-            <p>{t('keysUnknown')}</p>
-            <div className="key-toolbar-actions">
-              <button
-                className="btn btn-secondary"
-                disabled={busy}
-                onClick={() => void reconcile()}
-              >
-                {t('keysCheck')}
-              </button>
-              {retryAllowed && (
+      {operationPending && !revocationOpen && (
+        <p className="key-notice" role="status">
+          {t('keysOperationPending')}
+          <button className="btn btn-secondary btn-sm" onClick={() => setRevocationOpen(true)}>
+            {t('keysOperationCheck')}
+          </button>
+        </p>
+      )}
+      <Modal
+        open={visible && (createOpen || !!pending || !!secret || !!failedCreateName)}
+        title={confirmed ? k('secretTitle') : t('keysCreate')}
+        className="key-create-modal"
+        closeDisabled={busy || !!pending || !!failedCreateName}
+        onClose={() => {
+          if (inFlight.current || pending || failedCreateName) return;
+          dismissCreatedSecret();
+          setCreateName('');
+          setCreateOpen(false);
+        }}
+      >
+        {error && (
+          <p className="key-notice key-notice-warning" role="alert">
+            {error}
+          </p>
+        )}
+        {(!confirmed || failedCreateName) && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!failedCreateName) void createKey();
+            }}
+          >
+            <label className="form-label" htmlFor="create-key-name">
+              {k('createNameLabel')}
+            </label>
+            <input
+              id="create-key-name"
+              className="input"
+              type="text"
+              data-testid="create-key-name-input"
+              aria-label={k('createNameLabel')}
+              placeholder={k('createNamePlaceholder')}
+              maxLength={120}
+              value={createName}
+              disabled={busy || operationPending || !!pending}
+              onChange={(event) => setCreateName(event.target.value)}
+            />
+            {!failedCreateName && (
+              <>
+                <p className="key-field-help">{k('generatedOnServer')}</p>
+                <div className="key-modal-actions">
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={busy || !!pending}
+                    onClick={() => {
+                      setCreateName('');
+                      setCreateOpen(false);
+                    }}
+                  >
+                    {k('cancel')}
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    type="submit"
+                    data-testid="confirm-create-key"
+                    disabled={
+                      busy ||
+                      !!pending ||
+                      operationPending ||
+                      keys === null ||
+                      [...createName.trim()].length > 120
+                    }
+                  >
+                    {t('keysCreate')}
+                  </button>
+                </div>
+              </>
+            )}
+          </form>
+        )}
+        {pending && (
+          <div role="status" className="key-creation-recovery">
+            <FullWebIcon name="clock" />
+            <div>
+              <h3>{k('pending')}</h3>
+              <p>{t('keysUnknown')}</p>
+              <div className="key-toolbar-actions">
                 <button
                   className="btn btn-secondary"
                   disabled={busy}
-                  onClick={() => void createKey()}
+                  onClick={() => void reconcile()}
                 >
-                  {t('keysRetry')}
+                  {t('keysCheck')}
                 </button>
-              )}
+                {retryAllowed && (
+                  <button
+                    className="btn btn-secondary"
+                    disabled={busy}
+                    onClick={() => void createKey()}
+                  >
+                    {t('keysRetry')}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      {failedCreateName && (
-        <div
-          role="alert"
-          className="key-creation-recovery key-notice-warning"
-          data-testid="create-name-partial-failure"
-        >
-          <FullWebIcon name="alert" />
-          <div>
-            <h3>{k('createNameFailedTitle')}</h3>
-            <p>{k('createNameFailedHelp')}</p>
-            <p>{failedCreateName.message}</p>
+        )}
+        {failedCreateName && (
+          <div
+            role="alert"
+            className="key-creation-recovery key-notice-warning"
+            data-testid="create-name-partial-failure"
+          >
+            <FullWebIcon name="alert" />
+            <div>
+              <h3>{k('createNameFailedTitle')}</h3>
+              <p>{k('createNameFailedHelp')}</p>
+              <p>{failedCreateName.message}</p>
+              <div className="key-toolbar-actions">
+                <button
+                  className="btn btn-primary"
+                  data-testid="retry-create-name"
+                  disabled={busy}
+                  onClick={() => void retryCreateName()}
+                >
+                  {k('retrySaveName')}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  data-testid="discard-create-name"
+                  disabled={busy}
+                  onClick={() => void retryCreateName(true)}
+                >
+                  {k('discardCreateName')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {confirmed && !secret && !failedCreateName && (
+          <p role="status" className="key-notice">
+            <FullWebIcon name="check" />
+            <span>{t('keysConfirmed')}</span>
+          </p>
+        )}
+        {secret && (
+          <div className="key-secret-panel" role="status">
+            <div className="key-secret-title">
+              <span className="key-resource-icon">
+                <FullWebIcon name="key" size={24} />
+              </span>
+              <div>
+                <h3>{k('secretTitle')}</h3>
+                <p>{t('keysCreated')}</p>
+              </div>
+            </div>
+            <p>{k('secretHelp')}</p>
+            <p className="key-once-note">{t('keysOnce')}</p>
+            <div className="key-secret-value">
+              <code data-testid="created-client-secret">{secret}</code>
+            </div>
             <div className="key-toolbar-actions">
               <button
                 className="btn btn-primary"
-                data-testid="retry-create-name"
-                disabled={busy}
-                onClick={() => void retryCreateName()}
+                aria-label={t('keysCopy')}
+                data-testid="copy-created-client-secret"
+                onClick={() => void copyCreatedSecret()}
               >
-                {k('retrySaveName')}
+                <FullWebIcon name="copy" />
+                {t('keysCopy')}
               </button>
-              <button
-                className="btn btn-secondary"
-                data-testid="discard-create-name"
-                disabled={busy}
-                onClick={() => void retryCreateName(true)}
-              >
-                {k('discardCreateName')}
+              <button className="btn btn-secondary" onClick={dismissCreatedSecret}>
+                {t('keysDismiss')}
               </button>
             </div>
+            {copyFeedback && (
+              <p role="status" data-testid="copy-created-client-secret-feedback">
+                {t(copyFeedback === 'copied' ? 'keysCopied' : 'keysCopyFailed')}
+              </p>
+            )}
           </div>
-        </div>
-      )}
-      {confirmed && !secret && !failedCreateName && (
-        <p role="status" className="key-notice">
-          <FullWebIcon name="check" />
-          <span>{t('keysConfirmed')}</span>
-        </p>
-      )}
-      {secret && (
-        <div className="key-secret-panel" role="status">
-          <div className="key-secret-title">
-            <span className="key-resource-icon">
-              <FullWebIcon name="key" size={24} />
-            </span>
-            <div>
-              <h3>{k('secretTitle')}</h3>
-              <p>{t('keysCreated')}</p>
-            </div>
-          </div>
-          <p>{k('secretHelp')}</p>
-          <p className="key-once-note">{t('keysOnce')}</p>
-          <div className="key-secret-value">
-            <code data-testid="created-client-secret">{secret}</code>
-          </div>
-          <div className="key-toolbar-actions">
-            <button
-              className="btn btn-primary"
-              aria-label={t('keysCopy')}
-              data-testid="copy-created-client-secret"
-              onClick={() => void copyCreatedSecret()}
-            >
-              <FullWebIcon name="copy" />
-              {t('keysCopy')}
-            </button>
-            <button className="btn btn-secondary" onClick={dismissCreatedSecret}>
-              {t('keysDismiss')}
-            </button>
-          </div>
-          {copyFeedback && (
-            <p role="status" data-testid="copy-created-client-secret-feedback">
-              {t(copyFeedback === 'copied' ? 'keysCopied' : 'keysCopyFailed')}
-            </p>
-          )}
-        </div>
-      )}
-      <div className="key-list-workspace" hidden={!!selected}>
-        <div className="key-summary-grid" data-testid="key-summary-grid">
-          <div className="card key-summary-card" data-testid="key-summary-saved">
-            <span className="key-summary-label">{k('summarySavedTitle')}</span>
-            <strong className="key-summary-value">{keys === null ? '—' : savedCount}</strong>
-            <small>{k('summarySavedHelp')}</small>
-          </div>
-          <div className="card key-summary-card" data-testid="key-summary-runtime">
-            <span className="key-summary-label">{k('summaryRuntimeTitle')}</span>
-            <strong className="key-summary-value is-unavailable">
-              <span className="key-state-pill is-pending">
-                {keys === null ? '—' : k('effectUnknown')}
-              </span>
-            </strong>
-            <small>{k('summaryRuntimeHelp')}</small>
-          </div>
-          <div className="card key-summary-card" data-testid="key-summary-replaced">
-            <span className="key-summary-label">{k('summaryReplacedTitle')}</span>
-            <strong className="key-summary-value">{keys === null ? '—' : replacedCount}</strong>
-            <small>{k('summaryReplacedHelp')}</small>
-          </div>
-          <div className="card key-summary-card" data-testid="key-summary-usage">
-            <span className="key-summary-label">{k('summaryUsageTitle')}</span>
-            <strong className="key-summary-value is-unavailable">
-              <span className="key-state-pill is-muted">{k('summaryUsageValue')}</span>
-            </strong>
-            <small>{k('summaryUsageHelp')}</small>
-          </div>
-        </div>
+        )}
+      </Modal>
+      <div className="key-list-workspace">
         <div className="card key-filter-panel">
           <div className="key-filter-bar">
-            <div className="key-filter-tabs" role="group" aria-label={k('list')}>
-              {(['all', 'saved', 'replaced'] as const).map((value) => (
-                <button
-                  key={value}
-                  className={`btn btn-sm ${filter === value ? 'btn-primary' : 'btn-ghost'}`}
-                  aria-pressed={filter === value}
-                  onClick={() => setFilter(value)}
-                >
-                  {k(value)}{' '}
-                  <span>
-                    {keys === null
-                      ? '—'
-                      : value === 'all'
-                        ? keys.length
-                        : value === 'saved'
-                          ? savedCount
-                          : replacedCount}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div
-              className="key-view-toggle"
-              role="group"
-              aria-label={k('viewMode')}
-              data-testid="key-view-toggle"
+            <select
+              className="input"
+              aria-label={k('lifecycle')}
+              value={filter}
+              onChange={(event) => setFilter(event.target.value as typeof filter)}
             >
-              <button
-                type="button"
-                className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
-                data-testid="key-view-table"
-                aria-pressed={viewMode === 'table'}
-                onClick={() => setViewMode('table')}
-              >
-                {k('viewTable')}
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${viewMode === 'cards' ? 'btn-primary' : 'btn-ghost'}`}
-                data-testid="key-view-cards"
-                aria-pressed={viewMode === 'cards'}
-                onClick={() => setViewMode('cards')}
-              >
-                {k('viewCards')}
-              </button>
-            </div>
+              {(['all', 'saved', 'replaced'] as const).map((value) => (
+                <option key={value} value={value}>
+                  {k(value)}{' '}
+                  {keys === null
+                    ? '—'
+                    : value === 'all'
+                      ? keys.length
+                      : value === 'saved'
+                        ? savedCount
+                        : replacedCount}
+                </option>
+              ))}
+            </select>
           </div>
           <label className="key-search">
             <FullWebIcon name="search" />
@@ -644,6 +651,78 @@ export function FreshApiKeys({
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
+          <button
+            className="btn btn-secondary"
+            aria-label={t('refresh')}
+            disabled={busy || !!selected || detailPending}
+            onClick={() => void refresh()}
+          >
+            <FullWebIcon name="refresh" />
+            {t('refresh')}
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              setSearch('');
+              setFilter('saved');
+            }}
+          >
+            {k('clear')}
+          </button>
+        </div>
+        <div className="key-summary-grid" data-testid="key-summary-grid">
+          {(
+            [
+              [
+                'saved',
+                'key',
+                'summarySavedTitle',
+                'summarySavedHelp',
+                keys === null ? '—' : savedCount,
+              ],
+              [
+                'runtime',
+                'shield',
+                'summaryRuntimeTitle',
+                'summaryRuntimeHelp',
+                keys === null ? '—' : k('effectUnknown'),
+              ],
+              [
+                'replaced',
+                'clock',
+                'summaryReplacedTitle',
+                'summaryReplacedHelp',
+                keys === null ? '—' : replacedCount,
+              ],
+              ['usage', 'info', 'summaryUsageTitle', 'summaryUsageHelp', k('summaryUsageValue')],
+            ] as const
+          ).map(([id, icon, label, help, value]) => (
+            <div className="card key-summary-card" key={id} data-testid={'key-summary-' + id}>
+              <span className="key-resource-icon">
+                <FullWebIcon name={icon} />
+              </span>
+              <div>
+                <span className="key-summary-label">{k(label)}</span>
+                <small>{k(help)}</small>
+              </div>
+              <strong
+                className={
+                  'key-summary-value' +
+                  (typeof value === 'string' && value !== '—' ? ' is-unavailable' : '')
+                }
+              >
+                {id === 'runtime' || id === 'usage' ? (
+                  <span
+                    className={'key-state-pill ' + (id === 'runtime' ? 'is-pending' : 'is-muted')}
+                  >
+                    {value}
+                  </span>
+                ) : (
+                  value
+                )}
+              </strong>
+            </div>
+          ))}
         </div>
         <div className="card key-table-panel">
           <div className="key-table-heading">
@@ -651,9 +730,25 @@ export function FreshApiKeys({
               <strong>{k('list')}</strong>
               <small>{k('scope')}</small>
             </div>
-            <span className="key-table-count">
-              {keys === null ? '—' : visibleKeys.length} / {keys?.length ?? '—'}
-            </span>
+            <div
+              className="key-view-toggle"
+              role="group"
+              aria-label={k('viewMode')}
+              data-testid="key-view-toggle"
+            >
+              {(['table', 'cards'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`btn btn-sm ${viewMode === mode ? 'btn-primary' : 'btn-ghost'}`}
+                  data-testid={'key-view-' + mode}
+                  aria-pressed={viewMode === mode}
+                  onClick={() => setViewMode(mode)}
+                >
+                  {k(mode === 'table' ? 'viewTable' : 'viewCards')}
+                </button>
+              ))}
+            </div>
           </div>
           {keys === null ? (
             !error && (
@@ -691,9 +786,7 @@ export function FreshApiKeys({
               <table className={`key-table ${viewMode === 'cards' ? 'is-cards-view' : ''}`}>
                 <thead>
                   <tr>
-                    {(
-                      ['name', 'credential', 'lifecycle', 'created', 'runtime', 'actions'] as const
-                    ).map((label) => (
+                    {(['credential', 'lifecycle', 'actions'] as const).map((label) => (
                       <th key={label} scope="col">
                         {k(label)}
                       </th>
@@ -709,15 +802,19 @@ export function FreshApiKeys({
                             <FullWebIcon name="key" />
                           </span>
                           <div>
-                            <strong>{key.name || t('keysUnnamed')}</strong>
+                            <button
+                              type="button"
+                              className="key-name-link"
+                              disabled={locked}
+                              onClick={() => setSelected(key.id)}
+                            >
+                              {key.name || t('keysUnnamed')}
+                            </button>
                             <small title={key.id}>
-                              {key.id.slice(0, 8)}… · {k('policyGlobalDefault')}
+                              <code>{key.maskedPreview}</code>
                             </small>
                           </div>
                         </div>
-                      </td>
-                      <td data-label={k('credential')}>
-                        <code>{key.maskedPreview}</code>
                       </td>
                       <td data-label={k('lifecycle')}>
                         <span
@@ -726,17 +823,9 @@ export function FreshApiKeys({
                             (key.lifecycle === 'superseded' ? 'is-muted' : 'is-saved')
                           }
                         >
-                          {t(
-                            key.lifecycle === 'superseded' ? 'keysRevokedHistory' : 'keysPersisted'
-                          )}
+                          {k(key.lifecycle === 'superseded' ? 'replaced' : 'saved')}
                         </span>
-                      </td>
-                      <td data-label={k('created')}>
-                        <time dateTime={keyCreationTime(key.createdAtMs).iso}>
-                          {keyCreationTime(key.createdAtMs).label}
-                        </time>
-                      </td>
-                      <td data-label={k('runtime')}>
+                        <br />
                         <span className="key-state-pill is-pending">
                           {k(
                             key.runtimeState === 'effect_unknown' ? 'effectUnknown' : 'notApplied'
@@ -755,27 +844,27 @@ export function FreshApiKeys({
                             <FullWebIcon name="chevronRight" size={15} />
                           </button>
                           {revocationAvailable && key.lifecycle !== 'superseded' && (
-                            <>
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                data-testid={'replace-key-' + key.id}
-                                disabled={locked || operationPending}
-                                onClick={() => openRevocationFor(key.id, 'replace')}
-                              >
-                                {k('quickReplace')}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                data-testid={'revoke-key-' + key.id}
-                                disabled={locked || operationPending || savedCount <= 1}
-                                title={savedCount <= 1 ? k('lastKeyProtectionHelp') : undefined}
-                                onClick={() => openRevocationFor(key.id, 'revoke')}
-                              >
-                                {k('quickRevoke')}
-                              </button>
-                            </>
+                            <DropdownMenu
+                              ariaLabel={k('moreActions') + ': ' + (key.name || t('keysUnnamed'))}
+                              triggerLabel="⋮"
+                              triggerClassName="btn btn-ghost btn-xs"
+                              disabled={locked || operationPending}
+                              items={[
+                                {
+                                  key: 'replace',
+                                  label: k('quickReplace'),
+                                  onClick: () => openRevocationFor(key.id, 'replace'),
+                                },
+                                { key: 'divider', type: 'divider' },
+                                {
+                                  key: 'revoke',
+                                  label: k('quickRevoke'),
+                                  tone: 'danger',
+                                  disabled: savedCount <= 1,
+                                  onClick: () => openRevocationFor(key.id, 'revoke'),
+                                },
+                              ]}
+                            />
                           )}
                         </div>
                       </td>
@@ -801,12 +890,12 @@ export function FreshApiKeys({
           <div>
             <strong>{k('unavailable')}</strong>
             <p>{k('unavailableHelp')}</p>
-            <small>{t('keysStaged')}</small>
           </div>
         </aside>
       </div>
       {selected && (
         <FreshKeyDetails
+          open={visible}
           key={selected}
           id={selected}
           client={client}
@@ -828,35 +917,31 @@ export function FreshApiKeys({
           }
         />
       )}
-      <details
-        className="card key-management-section"
-        open={operationPending || revocationOpen || undefined}
-        onToggle={(event) => setRevocationOpen((event.currentTarget as HTMLDetailsElement).open)}
-      >
-        <summary>
-          <FullWebIcon name="shield" />
-          {k('manage')}
-          <FullWebIcon name="chevron" size={15} />
-        </summary>
-        {revocationAvailable && keys ? (
-          <FreshKeyRevocation
-            keys={keys}
-            client={client}
-            credential={credential}
-            disabled={locked}
-            preset={revocationPreset}
-            onUnauthorized={onUnauthorized}
-            onPending={(value) => {
-              operationPendingRef.current = value;
-              setOperationPending(value);
-              reportPending();
-            }}
-            onChanged={() => void refresh()}
-          />
-        ) : (
-          <p>{t('keysRevokeUnavailable')}</p>
-        )}
-      </details>
+      {revocationAvailable && keys && (
+        <FreshKeyRevocation
+          open={visible && revocationOpen}
+          onClose={() => {
+            if (!operationPendingRef.current) setRevocationOpen(false);
+          }}
+          onCreateReplacement={() => {
+            setRevocationOpen(false);
+            setConfirmed(false);
+            setCreateOpen(true);
+          }}
+          keys={keys}
+          client={client}
+          credential={credential}
+          disabled={locked}
+          preset={revocationPreset}
+          onUnauthorized={onUnauthorized}
+          onPending={(value) => {
+            operationPendingRef.current = value;
+            setOperationPending(value);
+            reportPending();
+          }}
+          onChanged={() => void refresh()}
+        />
+      )}
     </section>
   );
 }

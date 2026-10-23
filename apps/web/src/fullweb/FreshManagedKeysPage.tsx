@@ -14,15 +14,18 @@ export function FreshManagedKeysPage({
   credential,
   onUnauthorized,
   onPending,
+  visible = true,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
+  visible?: boolean;
 }) {
   return (
     <div className="fresh-managed-config key-managed-page" data-testid="fresh-managed-keys">
       <FreshApiKeys
+        visible={visible}
         client={client}
         credential={credential}
         onUnauthorized={onUnauthorized}
