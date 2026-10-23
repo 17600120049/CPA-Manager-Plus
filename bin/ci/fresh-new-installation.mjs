@@ -664,6 +664,14 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
       path === ''
         ? page.locator('aside.sidebar a[href="/console"], aside.sidebar a[href="/console/"]')
         : page.locator(`aside.sidebar a[href="${href}"]`);
+    if (!(await link.isVisible())) {
+      const section = path.startsWith('/ai-providers') || ['/accounts', '/oauth'].includes(path)
+        ? 'resources'
+        : path === '/api-keys' ? 'clients'
+          : ['/monitoring', '/usage-analytics', '/model-prices'].includes(path) ? 'observe'
+            : 'system';
+      await page.locator(`aside.sidebar button[aria-controls="nav-${section}"]`).click();
+    }
     await link.waitFor();
     await link.click();
     await wait(

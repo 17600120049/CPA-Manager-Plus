@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
@@ -58,6 +59,7 @@ import type { Theme, VisualEffectsMode } from '@/types';
 
 const SIDEBAR_ICON_SIZE = 20;
 const GITHUB_REPOSITORY_URL = 'https://github.com/seakee/CPA-Manager-Plus';
+const NAV_SECTIONS_STORAGE_KEY = `${STORAGE_KEY_SIDEBAR}-sections`;
 
 const sidebarIcons: Record<string, ReactNode> = {
   dashboard: <IconSidebarDashboard size={SIDEBAR_ICON_SIZE} />,
@@ -237,6 +239,8 @@ interface MainLayoutProps {
   demoMode?: boolean;
   onLogout?: () => void;
   logoutDisabled?: boolean;
+  navigationDisabled?: boolean;
+  contentFooter?: ReactNode;
   /**
    * Optional host-owned route seam. Full Web uses this only for resources
    * whose authority is not the historical CPA panel (for example the
@@ -254,6 +258,8 @@ function MainLayoutContent({
   renderRoute,
   onLogout,
   logoutDisabled = false,
+  navigationDisabled = false,
+  contentFooter,
 }: MainLayoutProps = {}) {
   const { t } = useTranslation();
   const { showNotification } = useNotificationStore();
@@ -289,14 +295,26 @@ function MainLayoutContent({
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [visualEffectsMenuOpen, setVisualEffectsMenuOpen] = useState(false);
-  const [openNavSections, setOpenNavSections] = useState<Record<string, boolean>>({
-    overview: true,
-    configuration: true,
-    accounts: true,
-    operations: true,
-    plugins: true,
-    system: true,
+  const [openNavSections, setOpenNavSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(NAV_SECTIONS_STORAGE_KEY) ?? '{}');
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+        return Object.fromEntries(
+          Object.entries(saved).filter(([, value]) => typeof value === 'boolean')
+        );
+      }
+    } catch {
+      // Navigation remains usable when browser storage is unavailable.
+    }
+    return {};
   });
+  const [navFlyout, setNavFlyout] = useState<{ id: string; top: number; left: number } | null>(
+    null
+  );
+  const navFlyoutRef = useRef<HTMLDivElement | null>(null);
+  const [lastNavPath, setLastNavPath] = useState<string | null>(null);
+  const navToggleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const sidebarRef = useRef<HTMLElement | null>(null);
   const [pluginResources, setPluginResources] = useState<PluginResourceEntry[]>([]);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const languageMenuRef = useRef<HTMLDivElement | null>(null);
@@ -565,14 +583,6 @@ function MainLayoutContent({
         icon: sidebarIcons.monitoring,
       }
     : null;
-  const operationNavItems: NavItem[] = [
-    {
-      path: '/logs',
-      label: t('nav.logs'),
-      shortLabel: navShortLabel('nav.logs', t('nav.logs')),
-      icon: sidebarIcons.logs,
-    },
-  ];
   const pluginControlNavItems: NavItem[] = pluginControlMenuVisible
     ? [
         {
@@ -593,57 +603,20 @@ function MainLayoutContent({
     : [];
   const navSections: NavSection[] = [
     {
-      id: 'overview',
-      label: t('nav.group_overview', { defaultValue: 'Overview' }),
-      icon: sidebarIcons.dashboard,
+      id: 'resources',
+      label: t('nav.group_resources'),
+      icon: sidebarIcons.authFiles,
       items: [
-        dashboardNavItem,
-        ...(usageAnalyticsNavItem ? [usageAnalyticsNavItem] : []),
-        ...(monitoringNavItem ? [monitoringNavItem] : []),
-      ],
-    },
-    {
-      id: 'configuration',
-      label: t('nav.group_configuration', { defaultValue: 'Configuration' }),
-      icon: sidebarIcons.config,
-      items: [
-        ...(renderRoute
-          ? [
-              {
-                path: '/api-keys',
-                label: t('nav.api_keys', { defaultValue: t('keysTitle') }),
-                shortLabel: navShortLabel('nav.api_keys', t('keysTitle')),
-                icon: sidebarIcons.config,
-              },
-            ]
-          : []),
         {
-          path: '/config',
-          label: t('nav.config_management'),
-          shortLabel: navShortLabel('nav.config_management', t('nav.config_management')),
-          icon: sidebarIcons.config,
+          path: '/accounts',
+          label: t('nav.accounts', { defaultValue: t('accounts.title') }),
+          icon: sidebarIcons.authFiles,
         },
         {
           path: '/ai-providers',
           label: t('nav.ai_providers'),
           shortLabel: navShortLabel('nav.ai_providers', t('nav.ai_providers')),
           icon: sidebarIcons.aiProviders,
-        },
-      ],
-    },
-    {
-      id: 'accounts',
-      label: t('nav.group_accounts', { defaultValue: 'Accounts' }),
-      icon: sidebarIcons.authFiles,
-      items: [
-        {
-          path: '/accounts',
-          label: t('nav.accounts', { defaultValue: t('accounts.title') }),
-          shortLabel: navShortLabel(
-            'nav.accounts',
-            t('nav.accounts', { defaultValue: t('accounts.title') })
-          ),
-          icon: sidebarIcons.authFiles,
         },
         {
           path: '/oauth',
@@ -654,20 +627,40 @@ function MainLayoutContent({
       ],
     },
     {
-      id: 'operations',
-      label: t('nav.group_operations', { defaultValue: 'Operations' }),
-      icon: sidebarIcons.logs,
-      items: operationNavItems,
+      id: 'clients',
+      label: t('nav.group_clients'),
+      icon: sidebarIcons.config,
+      items: renderRoute
+        ? [
+            {
+              path: '/api-keys',
+              label: t('nav.api_keys'),
+              icon: sidebarIcons.config,
+            },
+          ]
+        : [],
     },
     {
-      id: 'plugins',
-      label: t('nav.group_plugins', { defaultValue: 'Plugins' }),
-      icon: sidebarIcons.plugins,
-      items: [...pluginControlNavItems, ...pluginResourceNavItems],
+      id: 'observe',
+      label: t('nav.group_observe'),
+      icon: sidebarIcons.monitoring,
+      items: [
+        ...(monitoringNavItem ? [monitoringNavItem] : []),
+        ...(usageAnalyticsNavItem ? [usageAnalyticsNavItem] : []),
+        ...(featureAvailability.modelPricesAvailable
+          ? [
+              {
+                path: '/model-prices',
+                label: t('nav.model_prices'),
+                icon: sidebarIcons.usageAnalytics,
+              },
+            ]
+          : []),
+      ],
     },
     {
       id: 'system',
-      label: t('nav.group_system', { defaultValue: 'System' }),
+      label: t('nav.group_system'),
       icon: sidebarIcons.system,
       items: [
         {
@@ -675,11 +668,33 @@ function MainLayoutContent({
           label: t('nav.system_info'),
           shortLabel: navShortLabel('nav.system_info', t('nav.system_info')),
           icon: sidebarIcons.system,
+          exact: true,
+        },
+        {
+          path: '/config',
+          label: t('nav.config_management'),
+          icon: sidebarIcons.config,
+        },
+        {
+          path: '/logs',
+          label: t('nav.logs'),
+          icon: sidebarIcons.logs,
+        },
+        {
+          path: '/system/updates',
+          label: t('manager_updates.title'),
+          icon: sidebarIcons.system,
         },
       ],
     },
+    {
+      id: 'plugins',
+      label: t('nav.group_plugins'),
+      icon: sidebarIcons.plugins,
+      items: [...pluginControlNavItems, ...pluginResourceNavItems],
+    },
   ].filter((section) => section.items.length > 0);
-  const navItems = navSections.flatMap((section) => section.items);
+  const navItems = [dashboardNavItem, ...navSections.flatMap((section) => section.items)];
   const navOrder = navItems.map((item) => item.path);
   const getRouteOrder = (pathname: string) => {
     const trimmedPath =
@@ -778,6 +793,130 @@ function MainLayoutContent({
   const currentSection = navSections.find((section) =>
     section.items.some((item) => item === activeNavItem)
   );
+  const currentSectionId = currentSection?.id;
+  const flyoutSection = navSections.find((section) => section.id === navFlyout?.id);
+  const nestedRouteLabel = currentPath.startsWith('/ai-providers/')
+    ? currentPath.endsWith('/models')
+      ? t('nav.provider_models')
+      : currentPath.includes('/new')
+        ? t('common.add')
+        : t('common.edit')
+    : currentPath === '/monitoring/account-actions'
+      ? t('nav.account_actions')
+      : null;
+
+  // Manual collapse remains respected until navigation changes the route.
+  const navRouteKey = `${currentPath}:${currentSectionId ?? ''}`;
+  if (lastNavPath !== navRouteKey) {
+    setLastNavPath(navRouteKey);
+    setNavFlyout(null);
+    if (currentSectionId) {
+      setOpenNavSections((current) => ({ ...current, [currentSectionId]: true }));
+    }
+  }
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(NAV_SECTIONS_STORAGE_KEY, JSON.stringify(openNavSections));
+    } catch {
+      // Persistence is optional; the current navigation state still works.
+    }
+  }, [openNavSections]);
+
+  useEffect(() => {
+    if (!navFlyout) return;
+    navFlyoutRef.current?.querySelector<HTMLAnchorElement>('a')?.focus();
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (
+        !navFlyoutRef.current?.contains(event.target as Node) &&
+        !navToggleRefs.current[navFlyout.id]?.contains(event.target as Node)
+      ) {
+        setNavFlyout(null);
+      }
+    };
+    const closeOnResize = () => setNavFlyout(null);
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    window.addEventListener('resize', closeOnResize);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      window.removeEventListener('resize', closeOnResize);
+    };
+  }, [navFlyout]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const mobileViewport = window.matchMedia('(max-width: 768px)');
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      if (!event.matches) setSidebarOpen(false);
+    };
+    mobileViewport.addEventListener('change', handleViewportChange);
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusable = () =>
+      Array.from(
+        sidebarRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? []
+      );
+    focusable()[0]?.focus();
+    const handleKeyboard = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSidebarOpen(false);
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyboard);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyboard);
+      mobileViewport.removeEventListener('change', handleViewportChange);
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, [sidebarOpen]);
+
+  const renderNavLink = (item: NavItem, inFlyout = false) => {
+    const target = prefixRouteBase(item.path, navigationBase || routeBase);
+    const active = activeNavItem === item;
+    return (
+      <a
+        key={item.path}
+        href={target}
+        aria-current={active ? 'page' : undefined}
+        aria-disabled={navigationDisabled || undefined}
+        className={`nav-item ${active ? 'active' : ''}`}
+        onClick={(event) => {
+          if (navigationDisabled) {
+            event.preventDefault();
+            return;
+          }
+          if (
+            event.defaultPrevented ||
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          )
+            return;
+          event.preventDefault();
+          setSidebarOpen(false);
+          setNavFlyout(null);
+          navigate(navigationBase ? item.path : routeBase ? target : item.path);
+        }}
+        title={item.label}
+      >
+        <span className="nav-icon">{item.icon}</span>
+        {(showSidebarLabels || inFlyout) && <span className="nav-label">{item.label}</span>}
+      </a>
+    );
+  };
 
   return (
     <div
@@ -796,6 +935,7 @@ function MainLayoutContent({
               type="button"
               className="hamburger-container"
               onClick={() => {
+                setNavFlyout(null);
                 if (window.matchMedia('(max-width: 768px)').matches) {
                   setSidebarOpen((prev) => !prev);
                   return;
@@ -827,10 +967,41 @@ function MainLayoutContent({
               {currentSection && (
                 <>
                   <span className="breadcrumb-item">{currentSection.label}</span>
-                  <span className="breadcrumb-separator" aria-hidden="true">/</span>
+                  <span className="breadcrumb-separator" aria-hidden="true">
+                    /
+                  </span>
                 </>
               )}
-              <span className="breadcrumb-item">{currentRouteLabel}</span>
+              {nestedRouteLabel ? (
+                <>
+                  <a
+                    className="breadcrumb-item"
+                    href={prefixRouteBase(activeNavItem?.path ?? '/', navigationBase || routeBase)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      if (!navigationDisabled && activeNavItem) {
+                        navigate(
+                          navigationBase
+                            ? activeNavItem.path
+                            : prefixRouteBase(activeNavItem.path, routeBase)
+                        );
+                      }
+                    }}
+                  >
+                    {currentRouteLabel}
+                  </a>
+                  <span className="breadcrumb-separator" aria-hidden="true">
+                    /
+                  </span>
+                  <span className="breadcrumb-item" aria-current="page">
+                    {nestedRouteLabel}
+                  </span>
+                </>
+              ) : (
+                <span className="breadcrumb-item" aria-current="page">
+                  {currentRouteLabel}
+                </span>
+              )}
             </nav>
           </div>
 
@@ -1004,6 +1175,8 @@ function MainLayoutContent({
         />
 
         <aside
+          ref={sidebarRef}
+          aria-label={t('common.navigation')}
           className={`sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}
         >
           <div className="sidebar-brand" title={fullBrandName}>
@@ -1030,75 +1203,115 @@ function MainLayoutContent({
             </div>
           </div>
 
-          <div className="nav-section">
-            {navSections.map((section, sectionIndex) => (
+          <nav className="nav-section" onScroll={() => setNavFlyout(null)}>
+            {renderNavLink(dashboardNavItem)}
+            {navSections.map((section) => (
               <div className="nav-menu-section" key={section.id}>
-                {sectionIndex > 0 && <div className="nav-menu-divider" aria-hidden="true" />}
                 <button
+                  ref={(element) => {
+                    navToggleRefs.current[section.id] = element;
+                  }}
                   type="button"
-                  className="nav-section-toggle nav-item"
-                  aria-expanded={openNavSections[section.id] ?? true}
+                  className={`nav-section-toggle nav-item ${!showSidebarLabels && currentSectionId === section.id ? 'active' : ''}`}
+                  aria-label={section.label}
+                  aria-expanded={
+                    showSidebarLabels ? !!openNavSections[section.id] : navFlyout?.id === section.id
+                  }
                   aria-controls={`nav-${section.id}`}
-                  onClick={() =>
+                  onClick={(event) => {
+                    if (!showSidebarLabels) {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setNavFlyout((current) =>
+                        current?.id === section.id
+                          ? null
+                          : {
+                              id: section.id,
+                              top: Math.max(
+                                8,
+                                Math.min(
+                                  rect.top,
+                                  window.innerHeight - (section.items.length * 42 + 64)
+                                )
+                              ),
+                              left: rect.right + 12,
+                            }
+                      );
+                      return;
+                    }
                     setOpenNavSections((current) => ({
                       ...current,
-                      [section.id]: !(current[section.id] ?? true),
-                    }))
-                  }
+                      [section.id]: !current[section.id],
+                    }));
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown' && !showSidebarLabels) {
+                      event.preventDefault();
+                      event.currentTarget.click();
+                    }
+                  }}
                   title={section.label}
                 >
                   <span className="nav-icon">{section.icon}</span>
                   {showSidebarLabels && <span className="nav-label">{section.label}</span>}
                   {showSidebarLabels && (
                     <span className="nav-section-chevron" aria-hidden="true">
-                      {openNavSections[section.id] ?? true ? '⌄' : '›'}
+                      {openNavSections[section.id] ? '⌄' : '›'}
                     </span>
                   )}
                 </button>
-                {(openNavSections[section.id] ?? true) && (
-                  <div id={`nav-${section.id}`}>
-                    {section.items.map((item) => (
-                      (() => {
-                        const target = prefixRouteBase(item.path, navigationBase || routeBase);
-                        const active = matchesNavPath(item, currentPath);
-                        return (
-                          <a
-                            key={item.path}
-                            href={target}
-                            aria-current={active ? 'page' : undefined}
-                            className={`nav-item ${active ? 'active' : ''}`}
-                            onClick={(event) => {
-                              setSidebarOpen(false);
-                              if (
-                                event.defaultPrevented ||
-                                event.button !== 0 ||
-                                event.metaKey ||
-                                event.ctrlKey ||
-                                event.shiftKey ||
-                                event.altKey
-                              )
-                                return;
-                              event.preventDefault();
-                              // BrowserRouter's basename already owns the
-                              // verified Full Web prefix. DemoRouteAdapter
-                              // still receives the fully prefixed target when
-                              // no navigationBase is supplied.
-                              navigate(navigationBase ? item.path : routeBase ? target : item.path);
-                            }}
-                            title={item.label}
-                          >
-                            <span className="nav-icon">{item.icon}</span>
-                            {showSidebarLabels && <span className="nav-label">{item.label}</span>}
-                          </a>
-                        );
-                      })()
-                    ))}
+                {showSidebarLabels && openNavSections[section.id] && (
+                  <div className="nav-section-children" id={`nav-${section.id}`}>
+                    {section.items.map((item) => renderNavLink(item))}
                   </div>
                 )}
               </div>
             ))}
-          </div>
+          </nav>
         </aside>
+        {navFlyout &&
+          flyoutSection &&
+          !showSidebarLabels &&
+          createPortal(
+            <div
+              ref={navFlyoutRef}
+              id={`nav-${flyoutSection.id}`}
+              className="nav-flyout"
+              aria-label={flyoutSection.label}
+              style={{ top: navFlyout.top, left: navFlyout.left }}
+              onBlur={(event) => {
+                const next = event.relatedTarget as Node;
+                const isGroupToggle = Object.values(navToggleRefs.current).some((toggle) =>
+                  toggle?.contains(next)
+                );
+                if (!event.currentTarget.contains(next) && !isGroupToggle) setNavFlyout(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setNavFlyout(null);
+                  navToggleRefs.current[flyoutSection.id]?.focus();
+                }
+                if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+                event.preventDefault();
+                const links = Array.from(
+                  event.currentTarget.querySelectorAll<HTMLAnchorElement>('a')
+                );
+                const current = links.indexOf(document.activeElement as HTMLAnchorElement);
+                const next =
+                  event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? links.length - 1
+                      : (current + (event.key === 'ArrowUp' ? -1 : 1) + links.length) %
+                        links.length;
+                links[next]?.focus();
+              }}
+            >
+              <div className="nav-flyout-title">{flyoutSection.label}</div>
+              {flyoutSection.items.map((item) => renderNavLink(item, true))}
+            </div>,
+            document.body
+          )}
 
         <div
           className={[
@@ -1145,6 +1358,7 @@ function MainLayoutContent({
               }
               scrollContainerRef={contentRef}
             />
+            {contentFooter}
           </main>
         </div>
       </div>

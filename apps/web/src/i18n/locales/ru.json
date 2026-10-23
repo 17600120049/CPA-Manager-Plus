@@ -538,7 +538,12 @@
     "group_accounts": "Аккаунты",
     "group_operations": "Операции",
     "group_plugins": "Плагины",
-    "group_system": "Система"
+    "group_system": "Управление системой",
+    "group_resources": "Ресурсы",
+    "group_clients": "Доступ клиентов",
+    "group_observe": "Мониторинг и аналитика",
+    "model_prices": "Цены моделей",
+    "provider_models": "Модели провайдера"
   },
   "account_actions": {
     "eyebrow": "Проблемы аккаунтов",

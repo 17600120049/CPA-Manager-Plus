@@ -480,6 +480,56 @@
 .nav-menu-section {
   display: flex;
   flex-direction: column;
+  margin-top: 8px;
+}
+
+.nav-section-children .nav-item {
+  min-height: 38px;
+  height: auto;
+  padding: 9px 10px 9px 42px;
+  font-size: 14px;
+  font-weight: 400;
+
+  .nav-icon {
+    display: none;
+  }
+}
+
+.nav-flyout {
+  position: fixed;
+  z-index: $z-notification + 6;
+  width: 220px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 8px 0;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  background: var(--sidebar-bg-color);
+  box-shadow: var(--sidebar-shadow);
+  backdrop-filter: var(--glass-backdrop-filter);
+
+  .nav-item {
+    min-height: 38px;
+    height: auto;
+    padding: 9px 10px;
+    font-size: 14px;
+  }
+}
+
+.nav-flyout-title {
+  padding: 6px 22px 10px;
+  color: var(--sidebar-text-color);
+  font-weight: 600;
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid var(--sidebar-active-text-color);
+  outline-offset: -2px;
+}
+
+.nav-item[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 .nav-menu-divider {

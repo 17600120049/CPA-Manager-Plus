@@ -540,7 +540,12 @@
     "group_accounts": "Accounts",
     "group_operations": "Operations",
     "group_plugins": "Plugins",
-    "group_system": "System"
+    "group_system": "System Management",
+    "group_resources": "Resources",
+    "group_clients": "Client Access",
+    "group_observe": "Monitoring & Analytics",
+    "model_prices": "Model Prices",
+    "provider_models": "Provider Models"
   },
   "account_actions": {
     "eyebrow": "Account issues",

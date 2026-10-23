@@ -152,11 +152,13 @@ describe('Fresh installation and Console authority boundary', () => {
     await act(async () => find('console-login').props.onSubmit({ preventDefault: vi.fn() }));
   }
   async function navigate(route: string) {
+    const section = ['/accounts', '/oauth'].includes(route) || route.startsWith('/ai-providers')
+      ? 'resources' : route === '/api-keys' ? 'clients' : 'system';
     if (!renderer.root.findAllByType('a').some((link) => link.props.href === '/console' + route))
       await act(async () =>
         renderer.root
           .findAllByType('button')
-          .find((button) => button.props['aria-controls'] === 'nav-system')!
+          .find((button) => button.props['aria-controls'] === `nav-${section}`)!
           .props.onClick({ currentTarget: null })
       );
     await act(async () =>
@@ -293,6 +295,23 @@ describe('Fresh installation and Console authority boundary', () => {
     expect(renderer.root.findByType(FreshManagedRuntime).props.guided).toBe(true);
     expect(has('legacy-console')).toBe(false);
     expect(read.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
+  });
+  it('requires confirmed completion and enters the original Console from the wizard', async () => {
+    read.mockImplementation(() =>
+      Promise.resolve(Response.json({ ...operation, productComplete: false }))
+    );
+    await mount();
+    await login();
+    // A view callback is not authority to admit the business Console.
+    // Keep the non-DOM router harness while observing its browser navigation.
+    const history = window.history;
+    Object.defineProperty(window, 'history', { value: { ...history, replaceState: vi.fn() }, configurable: true });
+    await act(async () => renderer.root.findByType(FreshManagedRuntime).props.onContinue());
+    Object.defineProperty(window, 'history', { value: history, configurable: true });
+    expect(has('legacy-console')).toBe(false);
+    expect(renderer.root.findByType(FreshManagedRuntime)).toBeTruthy();
+    await act(async () => renderer.root.findByType(FreshManagedRuntime).props.onOperation(operation));
+    expect(has('legacy-console')).toBe(true);
   });
   it.each([401, 403, 409, 503])('refuses authentication on HTTP %s', async (status) => {
     read.mockImplementation(() => Promise.resolve(new Response('', { status })));

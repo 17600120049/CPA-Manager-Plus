@@ -5,7 +5,7 @@ import { AppLifecycle } from '../app/AppLifecycle';
 import { MainLayout } from '../components/layout/MainLayout';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { useAuthStore } from '../stores';
-import { FreshManagedConfigPage } from './FreshManagedConfigPage';
+import { FreshManagedResources } from './FreshManagedResources';
 import type { createPublicApiClient } from './publicApi';
 import { resolveRoutingContext, type RoutingContext } from './routingContext';
 import { activateFreshSession } from './freshSession';
@@ -87,23 +87,24 @@ export function LegacyConsolePage({
         routeBase={context.basePath}
         navigationBase={context.basePath}
         logoutDisabled={freshPending}
+        contentFooter={
+          client ? (
+            <FreshManagedResources
+              basePath={context.basePath}
+              client={client}
+              credential={credential}
+              onUnauthorized={onUnauthorized}
+              onPending={setFreshPending}
+            />
+          ) : undefined
+        }
         renderRoute={(pathname) => {
           if (!client) return undefined;
           // Keep the original ConfigPage at /config: it owns the visual/source
           // editor, Manager→CPA binding form, and the existing CPA API-key
-          // controls. Fresh's Manager-owned credentials get their own explicit
-          // route so adding Fresh New does not remove or replace the shipped
-          // CPAMP configuration surface.
-          if (pathname === '/api-keys') {
-            return (
-              <FreshManagedConfigPage
-                client={client}
-                credential={credential}
-                onUnauthorized={onUnauthorizedRef.current}
-                onPending={setFreshPending}
-              />
-            );
-          }
+          // controls. Manager-owned keys render in the persistent footer to
+          // retain their original reconciliation operation across navigation.
+          if (pathname === '/api-keys') return null;
           return undefined;
         }}
       />

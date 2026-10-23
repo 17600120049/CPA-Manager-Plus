@@ -537,8 +537,13 @@
     "group_configuration": "配置",
     "group_accounts": "账户",
     "group_operations": "运行操作",
-    "group_plugins": "插件",
-    "group_system": "系统"
+    "group_plugins": "插件扩展",
+    "group_system": "系统管理",
+    "group_resources": "资源管理",
+    "group_clients": "客户端接入",
+    "group_observe": "监控分析",
+    "model_prices": "模型价格",
+    "provider_models": "提供商模型"
   },
   "account_actions": {
     "eyebrow": "账号异常",

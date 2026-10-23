@@ -332,7 +332,7 @@ describe('usage analytics app wiring', () => {
     );
   });
 
-  it('places Usage Analytics in the top-level sidebar between dashboard and monitoring when monitoring is available', () => {
+  it('places Usage Analytics with request monitoring in the monitoring and analytics group', () => {
     const dashboardIndex = layoutSource.indexOf('const dashboardNavItem: NavItem = {');
     const usageIndex = layoutSource.indexOf(
       '...(usageAnalyticsNavItem ? [usageAnalyticsNavItem] : [])'
@@ -348,12 +348,13 @@ describe('usage analytics app wiring', () => {
     expect(layoutSource).toContain("label: t('nav.usage_analytics')");
     expect(dashboardIndex).toBeGreaterThanOrEqual(0);
     expect(usageIndex).toBeGreaterThan(dashboardIndex);
-    expect(monitoringIndex).toBeGreaterThan(usageIndex);
+    expect(layoutSource).toContain("id: 'observe'");
+    expect(monitoringIndex).toBeLessThan(usageIndex);
   });
 
   it('renders full sidebar labels when the sidebar is expanded', () => {
     expect(layoutSource).toContain(
-      '{showSidebarLabels && <span className="nav-label">{item.label}</span>}'
+      '(showSidebarLabels || inFlyout)'
     );
     expect(layoutSource).not.toContain('item.shortLabel ?? item.label');
   });

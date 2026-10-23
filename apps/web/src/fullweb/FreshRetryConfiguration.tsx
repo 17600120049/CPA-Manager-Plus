@@ -533,7 +533,7 @@ function RetryScalarEditor({
     if (!navigationRequest || variant !== "count") return;
     titleRef.current?.focus({ preventScroll: true });
     sectionRef.current?.scrollIntoView({ block: 'start' });
-  }, [navigationRequest]);
+  }, [navigationRequest, variant]);
 
   const currentValue =
     view?.presence === 'present' && view.value !== null
@@ -567,7 +567,7 @@ function RetryScalarEditor({
     >
       <div className="console-keys-heading">
         <div>
-          <p className="console-section-kicker">{t('retryNavigation')}</p>
+          <p className="console-section-kicker">{w('connection')}</p>
           <h2 id={variant === 'interval' ? 'gateway-retry-interval-title' : 'gateway-retry-title'} ref={titleRef} tabIndex={-1}>
             {t(variant === 'interval' ? 'retryIntervalTitle' : 'retryTitle')}
           </h2>
@@ -576,7 +576,7 @@ function RetryScalarEditor({
           {busy ? t('retryBusy') : canEdit ? t('retryEditable') : t('retryReadonly')}
         </span>
       </div>
-      <p>{t(variant === 'interval' ? 'retryIntervalHelp' : 'retryHelp')}</p>
+      <p>{w('connectionHelp')}</p>
       {message && (
         <p className="alert alert-info" role="status">
           {t(message)}

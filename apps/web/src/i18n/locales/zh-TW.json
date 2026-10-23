@@ -531,8 +531,13 @@
     "group_configuration": "設定",
     "group_accounts": "帳戶",
     "group_operations": "執行作業",
-    "group_plugins": "插件",
-    "group_system": "系統"
+    "group_plugins": "插件擴充",
+    "group_system": "系統管理",
+    "group_resources": "資源管理",
+    "group_clients": "用戶端接入",
+    "group_observe": "監控分析",
+    "model_prices": "模型價格",
+    "provider_models": "提供商模型"
   },
   "account_actions": {
     "eyebrow": "帳號異常",
