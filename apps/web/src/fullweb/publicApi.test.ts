@@ -89,7 +89,7 @@ describe('canonical Full Web Public API transport', () => {
     expect(JSON.stringify(error)).not.toContain('secret');
   });
 
-  it.each(['GET', 'PUT'])('bounds saved-setting %s without retries', async (method) => {
+  it.each(['GET', 'PUT', 'operation'])('bounds setting/operation %s without retries', async (method) => {
     browserOrigin();
     vi.useFakeTimers();
     try {
@@ -101,7 +101,9 @@ describe('canonical Full Web Public API transport', () => {
       );
       const client = createPublicApiClient(() => context, transport);
       const pending =
-        method === 'GET'
+        method === 'operation'
+          ? client.get('operation', credential)
+          : method === 'GET'
           ? client.get('settings/update-channel', credential)
           : client.put('settings/update-channel', { channel_preference: 'stable' }, credential);
       const assertion = expect(pending).rejects.toMatchObject({ kind: 'network' });

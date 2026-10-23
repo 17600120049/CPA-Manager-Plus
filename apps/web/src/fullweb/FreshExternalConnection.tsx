@@ -1,70 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
+import { shellText as s } from '../i18n/consoleShell';
+import { FullWebIcon } from './FullWebIcon';
 import { sameIdentity, type FreshOperation } from './bootstrapTransport';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 
-type Client = ReturnType<typeof createPublicApiClient>;
-
-const externalDigest = /^external:sha256:[a-f0-9]{64}$/;
-
-// Restrict the browser to URLs whose canonical bytes match Go's strict v8
-// normalizer. An ambiguity is refused before the one-shot POST, not guessed.
+// Normalize only harmless whitespace/trailing slashes. The server validates the
+// target and reads CPA safely; this input is never an authority assertion.
 function canonicalExternalURL(raw: string): string | null {
-  if (!raw || /[\\%@?#\s]/.test(raw)) return null;
+  const value = raw.trim().replace(/\/+$/, '');
+  if (!value || /[\\%@?#\s]/.test(value)) return null;
   try {
-    const url = new URL(raw);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
-        url.search || url.hash) return null;
-    const canonical = url.origin + url.pathname.replace(/\/+$/, '');
-    return canonical === raw ? canonical : null;
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    return url.origin + url.pathname.replace(/\/+$/, '') === value ? value : null;
   } catch {
     return null;
   }
-}
-
-async function targetDigest(normalizedURL: string): Promise<string> {
-  if (!globalThis.crypto?.subtle) throw new Error('Secure origin required');
-  const data = new TextEncoder().encode(normalizedURL);
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', data);
-  return 'external:sha256:' + Array.from(new Uint8Array(digest), (value) =>
-    value.toString(16).padStart(2, '0')).join('');
-}
-
-
-// A Manager checkpoint is not an acknowledgement of the browser's specific
-// Management Key. Only POST-ack + a matching subsequent GET can confirm it.
-function sameExternalReceipt(
-  operation: FreshOperation,
-  post: FreshOperation,
-  read: FreshOperation,
-  submittedTarget: string
-): boolean {
-  const sameRouting = (next: FreshOperation) =>
-    next.routing.committed === true &&
-    next.routing.stage === 'committed' &&
-    next.routing.target === operation.routing.target &&
-    next.routing.revision === operation.routing.revision &&
-    next.routing.operationId === operation.identity.operationId;
-  const valid = (next: FreshOperation) =>
-    sameIdentity(next?.identity, operation.identity) &&
-    next.adminInitialized === true &&
-    next.gatewayPending === true &&
-    next.productComplete === false &&
-    sameRouting(next) &&
-    next.strategy?.strategy === 'connect_external' &&
-    next.strategy.stage === 'committed' &&
-    next.strategy.targetGeneration === 1 &&
-    externalDigest.test(next.strategy.targetIdentity || '') &&
-    !next.strategy.targetArtifactId &&
-    Number.isSafeInteger(next.revision);
-  return (
-    valid(post) &&
-    valid(read) &&
-    post.revision === operation.revision + 2 &&
-    read.revision === post.revision &&
-    read.strategy?.targetIdentity === post.strategy?.targetIdentity &&
-    post.strategy?.targetIdentity === submittedTarget
-  );
 }
 
 export function FreshExternalConnection({
@@ -74,26 +26,31 @@ export function FreshExternalConnection({
   onOperation,
   onPending,
   onUnauthorized,
+  onBack,
+  onContinue,
 }: {
-  client: Client;
+  client: ReturnType<typeof createPublicApiClient>;
   credential: string;
   operation: FreshOperation;
   onOperation: (next: FreshOperation) => void;
   onPending: (pending: boolean) => void;
   onUnauthorized: () => void;
+  onBack?: () => void;
+  onContinue?: () => void;
 }) {
   const [baseURL, setBaseURL] = useState('');
   const [managementKey, setManagementKey] = useState('');
+  const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [unknown, setUnknown] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const inflight = useRef(false);
   const alive = useRef(true);
-  const strategy = operation.strategy;
-  const selected = strategy?.strategy === 'connect_external';
-  const locked = !!strategy?.strategy;
-  const hostStop = selected && strategy?.stage === 'validated';
+  const saved =
+    operation.strategy?.strategy === 'connect_external' && operation.strategy.stage === 'committed';
+  const complete = saved && operation.productComplete;
+  const activeStep = saved || unknown || busy ? 3 : step;
+  const auth = { kind: 'admin' as const, value: credential };
 
   useEffect(() => {
     alive.current = true;
@@ -102,14 +59,8 @@ export function FreshExternalConnection({
     };
   }, []);
 
-  useEffect(() => {
-    if (hostStop) onPending(true);
-  }, [hostStop, onPending]);
-
-  const auth = { kind: 'admin' as const, value: credential };
-
-  async function readCurrent(): Promise<FreshOperation> {
-    const next = await client.get<FreshOperation>('operation', auth);
+  function accept(next: FreshOperation) {
+    const checkpoint = next?.strategy;
     if (
       !sameIdentity(next?.identity, operation.identity) ||
       !Number.isSafeInteger(next.revision) ||
@@ -121,8 +72,16 @@ export function FreshExternalConnection({
       next.routing.target !== operation.routing.target ||
       next.routing.revision !== operation.routing.revision ||
       next.routing.operationId !== operation.identity.operationId ||
-      (strategy?.strategy && next.strategy?.strategy !== strategy.strategy) ||
-      (strategy?.targetIdentity && next.strategy?.targetIdentity !== strategy.targetIdentity)
+      (checkpoint?.strategy &&
+        (checkpoint.strategy !== 'connect_external' ||
+          !['validated', 'committed'].includes(checkpoint.stage || '') ||
+          !/^external:sha256:[a-f0-9]{64}$/.test(checkpoint.targetIdentity || '') ||
+          checkpoint.targetGeneration !== 1 ||
+          !!checkpoint.targetArtifactId)) ||
+      (next.productComplete && checkpoint?.stage !== 'committed') ||
+      (saved &&
+        (checkpoint?.stage !== 'committed' ||
+          checkpoint.targetIdentity !== operation.strategy?.targetIdentity))
     ) {
       throw new Error('Untrusted External checkpoint');
     }
@@ -130,184 +89,341 @@ export function FreshExternalConnection({
     return next;
   }
 
-  async function refresh() {
+  async function readCurrent() {
+    return accept(await client.get<FreshOperation>('operation', auth));
+  }
+
+  function review() {
+    const url = canonicalExternalURL(baseURL);
+    if (
+      !url ||
+      !managementKey ||
+      managementKey.length > 4096 ||
+      Array.from(managementKey).some((c) => (c.codePointAt(0) ?? 0) < 0x21 || c === '\x7f') ||
+      /\s/u.test(managementKey)
+    ) {
+      setError(t('externalInvalid'));
+      return;
+    }
+    setBaseURL(url);
+    setError('');
+    setStep(2);
+  }
+
+  async function act(action: 'connect' | 'complete' | 'refresh') {
     if (inflight.current) return;
     inflight.current = true;
     setBusy(true);
     setError('');
-    try {
-      await readCurrent();
-      // UNKNOWN cannot be discharged by GET: no key identity or POST receipt.
-    } catch (err) {
-      if (!alive.current) return;
-      if (err instanceof PublicApiError && err.kind === 'authentication') {
-        onUnauthorized();
-        return;
-      }
-      setError(t('externalUnavailable'));
-    } finally {
-      inflight.current = false;
-      if (alive.current) setBusy(false);
-    }
-  }
-
-  async function submit() {
-    if (inflight.current || locked || unknown || busy || confirmed) return;
-
-    const submittedBaseURL = canonicalExternalURL(baseURL.trim());
-    const submittedKey = managementKey;
-    if (!submittedBaseURL || !submittedKey || submittedKey.trim() !== submittedKey ||
-        submittedKey.length > 4096 || Array.from(submittedKey).some((character) => {
-      const code = character.codePointAt(0) ?? 0;
-      return code < 0x21 || code === 0x7f;
-    })) {
-      setError(t('externalInvalid'));
-      return;
-    }
-
-    // Obtain the only local and Console-owned submission lock synchronously,
-    // before Web Crypto's asynchronous digest can allow logout/mode switching.
-    inflight.current = true;
-    setBusy(true);
     onPending(true);
-    setError('');
     let dispatched = false;
     try {
-      const bytes = new Uint8Array(16);
-      if (!globalThis.crypto?.getRandomValues) throw new Error('Secure random unavailable');
-      globalThis.crypto.getRandomValues(bytes);
-      const attemptId = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-      const submittedTarget = await targetDigest(submittedBaseURL);
-      // An unmounted/replaced page has no authority to dispatch a queued POST.
-      if (!alive.current) return;
-
-      // From this point the original request outcome may be unknown. Never
-      // retry it, including after logout, refresh, or a lost response.
-      setUnknown(true);
-      setManagementKey('');
-      dispatched = true;
-      const post = await client.post<FreshOperation>(
-        'strategy',
-        {
-          identity: operation.identity,
-          expectedRevision: operation.revision,
-          attemptId,
-          strategy: 'connect_external',
-          baseUrl: submittedBaseURL,
-          managementKey: submittedKey,
-        },
-        auth
-      );
-      if (
-        !sameIdentity(post?.identity, operation.identity) ||
-        post.strategy?.strategy !== 'connect_external' ||
-        post.strategy.stage !== 'committed' ||
-        !externalDigest.test(post.strategy.targetIdentity || '') ||
-        post.gatewayPending !== true ||
-        post.productComplete !== false
-      ) {
-        throw new Error('No trustworthy POST acknowledgement');
+      if (action === 'connect') {
+        if (saved || unknown) return;
+        const bytes = new Uint8Array(16);
+        globalThis.crypto.getRandomValues(bytes);
+        const attemptId = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+        const key = managementKey;
+        setManagementKey('');
+        setStep(3);
+        dispatched = true;
+        const post = accept(
+          await client.post<FreshOperation>(
+            'strategy',
+            {
+              identity: operation.identity,
+              expectedRevision: operation.revision,
+              attemptId,
+              strategy: 'connect_external',
+              baseUrl: baseURL,
+              managementKey: key,
+            },
+            auth
+          )
+        );
+        if (post.strategy?.stage !== 'committed') {
+          throw new Error('Uncommitted External connection');
+        }
+      } else if (action === 'complete') {
+        if (!saved) return;
+        dispatched = true;
+        const post = accept(await client.post<FreshOperation>('complete', {}, auth));
+        if (!post.productComplete) throw new Error('Incomplete External setup');
       }
-      const read = await readCurrent();
-      if (!sameExternalReceipt(operation, post, read, submittedTarget)) {
-        throw new Error('Unmatched External receipt');
-      }
+      // GET is authoritative for saved configuration after a lost reply/reload.
+      // It never claims which browser's typed Management Key was saved.
+      await readCurrent();
       if (alive.current) {
-        setConfirmed(true);
         setUnknown(false);
-        onPending(false);
+        setStep(1);
       }
     } catch (err) {
       if (!alive.current) return;
-      if (!dispatched) {
-        // No POST left the browser; retain the Key and allow a fresh attempt.
-        setError(t('externalUnavailable'));
-        onPending(false);
-        return;
-      }
-      // A 401/403 retires the Admin credential; a previously issued POST may
-      // still have landed. The durable server fence, not this UI, owns it.
       if (err instanceof PublicApiError && err.kind === 'authentication') {
         onUnauthorized();
         return;
       }
-      setError(t(err instanceof PublicApiError && err.code === 'management_authentication_rejected'
-        ? 'externalSourceAuthRejected'
-        : err instanceof PublicApiError && err.status === 409 ? 'externalConflict' : 'externalUnknown'));
-      try {
-        await readCurrent();
-      } catch (readError) {
-        if (readError instanceof PublicApiError && readError.kind === 'authentication') {
-          onUnauthorized();
-          return;
+      let recovered = false;
+      if (dispatched) {
+        try {
+          const next = await readCurrent();
+          if (!alive.current) return;
+          recovered = true;
+          if (next.strategy?.stage === 'committed') {
+            setUnknown(false);
+            return;
+          }
+        } catch (readError) {
+          if (!alive.current) return;
+          if (readError instanceof PublicApiError && readError.kind === 'authentication') {
+            onUnauthorized();
+            return;
+          }
         }
       }
-      // Never clear UNKNOWN on a later GET, including a matching target hash.
+      setUnknown((dispatched && !recovered) || action === 'refresh');
+      setStep(1);
+      setError(
+        t(
+          err instanceof PublicApiError && err.code === 'management_authentication_rejected'
+            ? 'externalSourceAuthRejected'
+            : err instanceof PublicApiError && err.status === 409
+              ? 'externalConflict'
+              : 'externalUnavailable'
+        )
+      );
     } finally {
       inflight.current = false;
-      if (alive.current) setBusy(false);
+      if (alive.current) {
+        setBusy(false);
+        onPending(false);
+      }
     }
   }
 
   return (
-    <section className="info-card" data-testid="fresh-external-connection">
-      <h2>{t('externalTitle')}</h2>
-      <p>{t('externalHelp')}</p>
-      {confirmed ? (
-        <p role="status" className="alert alert-info">{t('externalConfirmed')}</p>
-      ) : locked ? (
-        <p role="status" className="alert alert-warn">
-          {hostStop ? t('externalHostStop') : t('externalExisting')}
-        </p>
-      ) : null}
-      {(unknown || hostStop) && (
-        <p role="status" className="alert alert-warn">{t('externalUnknown')}</p>
-      )}
-      {error && <p role="alert" className="alert alert-warn">{error}</p>}
-      {!locked && !unknown && !confirmed && (
-        <>
-          <label className="form-label" htmlFor="fresh-external-base-url">{t('externalBaseURL')}</label>
-          <input
-            className="form-input"
-            id="fresh-external-base-url"
-            data-testid="external-base-url"
-            value={baseURL}
-            onChange={(event) => setBaseURL(event.target.value)}
-            disabled={busy}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <label className="form-label" htmlFor="fresh-external-management-key">{t('externalManagementKey')}</label>
-          <input
-            className="form-input"
-            id="fresh-external-management-key"
-            type="password"
-            data-testid="external-management-key"
-            value={managementKey}
-            onChange={(event) => setManagementKey(event.target.value)}
-            disabled={busy}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-          />
-        </>
-      )}
-      {locked && (
-        <p data-testid="external-stage">{strategy?.stage}</p>
-      )}
-      <div className="wizard-card-footer">
-        {!locked && !unknown && !confirmed && (
-          <button type="button" className="btn btn-primary" data-testid="external-connect"
-            disabled={busy || !baseURL.trim() || !managementKey}
-            onClick={() => void submit()}>
-            {busy ? t('externalSubmitting') : t('externalSubmit')}
-          </button>
-        )}
-        <button type="button" className="btn btn-secondary" data-testid="external-refresh"
-          disabled={busy} onClick={() => void refresh()}>
-          {t('refresh')}
-        </button>
+    <section
+      className="installation-flow cpamp-installation"
+      data-testid="fresh-external-connection"
+      aria-busy={busy}
+    >
+      <div className="wizard-card">
+        <ol className="journey-steps" aria-label={s('installation')}>
+          {(['choose', 'configure', 'confirm', 'execute'] as const).map((label, index) => (
+            <li
+              key={label}
+              className={
+                complete || index < activeStep ? 'done' : index === activeStep ? 'active' : ''
+              }
+              aria-current={activeStep === index ? 'step' : undefined}
+            >
+              <span className="journey-step-dot">
+                {complete || index < activeStep ? (
+                  <FullWebIcon name="check" size={22} />
+                ) : (
+                  index + 1
+                )}
+              </span>
+              <span>{s(label)}</span>
+            </li>
+          ))}
+        </ol>
+        <div className="journey-body">
+          <div className={complete ? 'journey-heading journey-success-heading' : 'journey-heading'}>
+            {complete && (
+              <span className="journey-success-symbol">
+                <FullWebIcon name="check" size={34} />
+              </span>
+            )}
+            <div>
+              <h1 className="wizard-title">
+                {complete
+                  ? s('ready')
+                  : saved
+                    ? t('externalConfirmed')
+                    : step === 2
+                      ? s('reviewTitle')
+                      : t('externalTitle')}
+              </h1>
+              <p className="wizard-desc">{t('externalHelp')}</p>
+            </div>
+          </div>
+          {error && (
+            <p role="alert" className="alert alert-warn">
+              {error}
+            </p>
+          )}
+          {unknown && (
+            <p role="status" className="alert alert-warn">
+              {t('externalUnknown')}
+            </p>
+          )}
+          {!saved && !unknown && !busy && step === 1 && (
+            <>
+              {operation.strategy?.stage === 'validated' && (
+                <p className="alert alert-info">{t('externalHostStop')}</p>
+              )}
+              <div className="journey-field">
+                <label className="form-label" htmlFor="fresh-external-base-url">
+                  {t('externalBaseURL')}
+                </label>
+                <input
+                  className="form-input"
+                  id="fresh-external-base-url"
+                  data-testid="external-base-url"
+                  value={baseURL}
+                  onChange={(event) => setBaseURL(event.target.value)}
+                  placeholder="http://cpa:8317"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="journey-field">
+                <label className="form-label" htmlFor="fresh-external-management-key">
+                  {t('externalManagementKey')}
+                </label>
+                <input
+                  className="form-input"
+                  id="fresh-external-management-key"
+                  type="password"
+                  data-testid="external-management-key"
+                  value={managementKey}
+                  onChange={(event) => setManagementKey(event.target.value)}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                />
+              </div>
+            </>
+          )}
+          {step === 2 && !saved && !busy && !unknown && (
+            <dl className="journey-summary">
+              <div className="journey-summary-row">
+                <FullWebIcon name="link" size={22} />
+                <dt>{t('externalBaseURL')}</dt>
+                <dd>{baseURL}</dd>
+              </div>
+              <div className="journey-summary-row">
+                <FullWebIcon name="shield" size={22} />
+                <dt>{t('externalManagementKey')}</dt>
+                <dd>••••••••</dd>
+              </div>
+              <div className="journey-summary-row">
+                <FullWebIcon name="link" size={22} />
+                <dt>{s('consoleAddress')}</dt>
+                <dd>{operation.routing.target}</dd>
+              </div>
+            </dl>
+          )}
+          {busy && (
+            <p role="status" className="journey-quiet">
+              <span className="loading-spinner" />
+              {t('externalSubmitting')}
+            </p>
+          )}
+          {saved && (
+            <p role="status" className="alert alert-info">
+              {t('externalExisting')}
+            </p>
+          )}
+          <p className="journey-quiet">
+            <FullWebIcon name="info" size={20} />
+            {t('externalBoundary')}
+          </p>
+          <details className="journey-disclosure installation-diagnostics">
+            <summary>{s('technical')}</summary>
+            <dl className="console-state">
+              <dt>{t('operation')}</dt>
+              <dd>{operation.identity.operationId}</dd>
+              <dt>{t('revision')}</dt>
+              <dd>{operation.revision}</dd>
+              <dt>{s('destination')}</dt>
+              <dd>{operation.strategy?.targetIdentity || '—'}</dd>
+              <dt>{s('stage')}</dt>
+              <dd data-testid="external-stage">{operation.strategy?.stage || '—'}</dd>
+            </dl>
+          </details>
+        </div>
+        <footer className="journey-footer">
+          {!saved && !unknown && step === 1 && (
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy || !!operation.strategy?.strategy}
+                onClick={onBack}
+              >
+                {s('back')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                data-testid="external-review"
+                disabled={busy || !baseURL.trim() || !managementKey}
+                onClick={review}
+              >
+                {s('next')}
+                <FullWebIcon name="arrowRight" size={20} />
+              </button>
+            </>
+          )}
+          {!saved && !unknown && step === 2 && (
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={() => setStep(1)}
+              >
+                {s('back')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                data-testid="external-connect"
+                disabled={busy}
+                onClick={() => void act('connect')}
+              >
+                {t('externalSubmit')}
+              </button>
+            </>
+          )}
+          {(saved || unknown || step === 3) && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              data-testid="external-refresh"
+              disabled={busy}
+              onClick={() => void act('refresh')}
+            >
+              {t('refresh')}
+            </button>
+          )}
+          {saved && !complete && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              data-testid="external-complete"
+              disabled={busy || unknown}
+              onClick={() => void act('complete')}
+            >
+              {t('externalComplete')}
+            </button>
+          )}
+          {complete && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              data-testid="external-console"
+              disabled={busy}
+              onClick={onContinue}
+            >
+              {s('console')}
+              <FullWebIcon name="arrowRight" size={20} />
+            </button>
+          )}
+        </footer>
       </div>
     </section>
   );

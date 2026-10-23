@@ -75,7 +75,7 @@ func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.
 				"identity": before.Operation.Identity, "expectedRevision": before.Operation.Revision,
 				"strategy": item.strategy, "adoptSourceClass": item.class,
 				"attemptId": strings.Repeat("a", 32),
-				"baseUrl": "http://127.0.0.1:1", "managementKey": "private-source-secret",
+				"baseUrl":   "http://127.0.0.1:1", "managementKey": "private-source-secret",
 				"expectedRuntimeIdentity": "claimed-runtime", "expectedRuntimeGeneration": 7,
 				"expectedArtifactId": "sha256:b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
 			}
@@ -99,11 +99,6 @@ func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.
 						t.Fatalf("HTTP %s accepted: %d", injected, response.Code)
 					}
 					delete(body, injected)
-				} else if item.strategy == bootstrap.ConnectExternal {
-					// A production-qualified CPA safe-read is not private A3 Host authority.
-					if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
-						t.Fatalf("External without A3 Host permit was admitted: %d %s", response.Code, response.Body.String())
-					}
 				} else if item.strategy == bootstrap.AdoptExisting {
 					// Production qualification never grants an unapproved Host takeover.
 					if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
@@ -153,8 +148,8 @@ func TestFreshAdoptCanonicalDeniedBeforeSourceAndStateMutation(t *testing.T) {
 		bootstrap.AdoptNetworkExisting, bootstrap.AdoptLegacyManaged,
 	} {
 		body, err := json.Marshal(struct {
-			Identity bootstrap.FreshIdentity `json:"identity"`
-			ExpectedRevision uint64 `json:"expectedRevision"`
+			Identity         bootstrap.FreshIdentity `json:"identity"`
+			ExpectedRevision uint64                  `json:"expectedRevision"`
 			freshstrategy.Request
 		}{before.Operation.Identity, before.Operation.Revision, freshstrategy.Request{
 			Strategy: bootstrap.AdoptExisting, AdoptSourceClass: sourceClass,

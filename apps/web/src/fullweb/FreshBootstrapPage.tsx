@@ -1,18 +1,17 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { fullWebText as t } from '../i18n/fullweb';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { bootstrapJourneyText as journey } from '../i18n/bootstrapJourney';
+import { shellText } from '../i18n/consoleShell';
 import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
 import logoOnDark from '../assets/brand/cpamp-logo-horizontal-on-dark.svg?inline';
 import { FullWebIcon } from './FullWebIcon';
-import { validControlBasePath } from './routingContext';
 import {
   BootstrapTransportClient,
   BootstrapTransportError,
   FreshOperation,
   Handoff,
-  validateFreshAdminKey,
 } from './bootstrapTransport';
 
+import { FreshSetupWizard } from './FreshSetupWizard';
 export interface FreshBootstrapPageProps {
   handoff: Handoff | null;
   transport: BootstrapTransportClient;
@@ -97,16 +96,6 @@ function publicDiscoveryGuidance(payload: unknown): DiscoveryGuidance | null {
   return null;
 }
 
-let commitSeq = 0;
-
-function createCommitId(): string {
-  commitSeq += 1;
-  if (typeof globalThis.crypto?.randomUUID === 'function') {
-    return `commit_${globalThis.crypto.randomUUID().replace(/-/g, '')}`;
-  }
-  return `commit_${Date.now().toString(36)}_${commitSeq.toString(36)}`;
-}
-
 function describeBootstrapError(
   err: unknown,
   stage: 'start' | 'generate' | 'commit' | 'refresh'
@@ -180,83 +169,11 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   const [discoveryNote, setDiscoveryNote] = useState<DiscoveryGuidance | null>(null);
   const [discoveryChecked, setDiscoveryChecked] = useState(false);
   const [discoveryAttempt, setDiscoveryAttempt] = useState(0);
-
-  const [adminKey, setAdminKey] = useState('');
-  const [commitId, setCommitId] = useState<string>(() => createCommitId());
-  const [showKey, setShowKey] = useState(false);
-  const [confirmedSaved, setConfirmedSaved] = useState(false);
-
-  const [generating, setGenerating] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [commitUnresolved, setCommitUnresolved] = useState(false);
-  const [candidateSubmitted, setCandidateSubmitted] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
-  const [commitCompletedInSession, setCommitCompletedInSession] = useState(false);
-  const [routeTarget, setRouteTarget] = useState('/console');
-  const [attemptedTarget, setAttemptedTarget] = useState('');
-  const [routingBusy, setRoutingBusy] = useState(false);
-  const [verifiedRoute, setVerifiedRoute] = useState('');
-  const [routingError, setRoutingError] = useState('');
-
-  const keyInputRef = useRef<HTMLInputElement | null>(null);
   const startedRef = useRef(false);
-
-  const preparedTarget = operation?.routing.target || attemptedTarget;
-
-  async function handleEnableConsole(event: React.FormEvent) {
-    event.preventDefault();
-    if (routingBusy || refreshing || !operation?.adminInitialized) return;
-    const target = preparedTarget || routeTarget;
-    if (!validControlBasePath(target)) {
-      setRoutingError(t('invalidPath'));
-      return;
-    }
-    setRoutingBusy(true);
-    setRoutingError('');
-    setAttemptedTarget(target);
-    try {
-      // Always reconcile the original intent; never create a new route owner.
-      if (!operation.routing.target) {
-        const next = await transport.prepareRouting(target);
-        setOperation(next);
-      }
-      setVerifiedRoute(await transport.activateRouting());
-      transport.clear();
-    } catch (err) {
-      const kind = err instanceof BootstrapTransportError ? err.kind : 'unknown';
-      setRoutingError(
-        t(
-          kind === 'conflict'
-            ? 'routeConflict'
-            : kind === 'unavailable'
-              ? 'routeUnavailable'
-              : kind === 'rejected' || kind === 'authority'
-                ? 'routeRejected'
-                : kind === 'mismatch'
-                  ? 'routeMismatch'
-                  : 'routeFailure'
-        )
-      );
-      // Prepare may have persisted before the connection was lost. Failure to
-      // read it keeps the attempted target locked rather than inventing state.
-      try {
-        const current = await transport.fetchOperation();
-        setOperation(current);
-        if (!current.routing.target) setAttemptedTarget('');
-      } catch {
-        /* Retry stays on the original intent. */
-      }
-    } finally {
-      setRoutingBusy(false);
-    }
-  }
-
   useEffect(() => {
     document.documentElement.classList.toggle('light', lightTheme);
     document.documentElement.setAttribute('data-theme', lightTheme ? 'white' : 'dark');
   }, [lightTheme]);
-
   const executeStart = useCallback(
     async (targetHandoff: Handoff) => {
       setPhase('connecting');
@@ -266,9 +183,6 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
         const op = await transport.start(targetHandoff);
         setOperation(op);
         setPhase('ready');
-        if (op.adminInitialized) {
-          setAdminKey('');
-        }
       } catch (err) {
         const kind = err instanceof BootstrapTransportError ? err.kind : 'unknown';
         setInitErrorKind(kind);
@@ -314,198 +228,18 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
   }, [handoff, discoveryAttempt]);
 
   useEffect(() => {
-    if (!handoff) {
-      setPhase('no_handoff');
-      return;
-    }
+    // main.tsx remounts this boundary for each handoff/hash change. The
+    // initial phase already covers a missing handoff without another render.
+    if (!handoff) return;
     if (startedRef.current) {
       return;
     }
     startedRef.current = true;
+    // A newly mounted host handoff starts one external claim exchange. The
+    // callback also owns the pending/error transitions used by manual retry.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void executeStart(handoff);
   }, [handoff, executeStart]);
-
-  function handleKeyInputChange(nextValue: string) {
-    if (submitting || refreshing || commitUnresolved || candidateSubmitted) return;
-    setAdminKey(nextValue);
-    setCommitId(createCommitId());
-    setConfirmedSaved(false);
-    setFeedback(null);
-  }
-
-  async function handleGenerateKey() {
-    if (
-      generating ||
-      submitting ||
-      refreshing ||
-      commitUnresolved ||
-      candidateSubmitted ||
-      !operation ||
-      operation.adminInitialized
-    )
-      return;
-    setGenerating(true);
-    setFeedback(null);
-    try {
-      const generated = await transport.generateAdminKey();
-      setAdminKey(generated);
-      setCommitId(createCommitId());
-      setShowKey(true);
-      setConfirmedSaved(false);
-      setFeedback({
-        tone: 'info',
-        title: journey('generated'),
-        detail: journey('generatedHelp'),
-      });
-    } catch (err) {
-      setFeedback(describeBootstrapError(err, 'generate'));
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  async function handleCopyKey() {
-    if (!adminKey) return;
-    try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error('Clipboard unavailable');
-      }
-      await navigator.clipboard.writeText(adminKey);
-      setFeedback({
-        tone: 'success',
-        title: '管理员密钥已复制到剪贴板',
-        detail: '请将其存入密码管理器或受控凭据库，确认无误后勾选下方确认框并提交。',
-      });
-    } catch {
-      setShowKey(true);
-      setTimeout(() => {
-        keyInputRef.current?.focus();
-        keyInputRef.current?.select();
-      }, 0);
-      setFeedback({
-        tone: 'warn',
-        title: '浏览器剪贴板访问受限，已为您展开并选中密钥',
-        detail: '请直接使用键盘快捷键（macOS 按 Cmd+C，Windows/Linux 按 Ctrl+C）手动复制。',
-      });
-    }
-  }
-
-  async function handleRefreshOperation() {
-    if (refreshing || submitting || generating || routingBusy || verifiedRoute) return;
-    setRefreshing(true);
-    setFeedback(null);
-    try {
-      const next = await transport.fetchOperation();
-      setOperation(next);
-      setCommitUnresolved(false);
-      if (next.adminInitialized) {
-        setAdminKey('');
-        setShowKey(false);
-      }
-      setFeedback({
-        tone: 'info',
-        title: journey('progressRead'),
-        detail: journey(next.adminInitialized ? 'adminComplete' : 'adminPending'),
-      });
-    } catch (err) {
-      setFeedback(describeBootstrapError(err, 'refresh'));
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  async function handleCommitAdmin(event: React.FormEvent) {
-    event.preventDefault();
-    if (
-      submitting ||
-      generating ||
-      refreshing ||
-      commitUnresolved ||
-      !operation ||
-      operation.adminInitialized
-    )
-      return;
-
-    const validation = validateFreshAdminKey(adminKey);
-    if (!validation.valid) {
-      setFeedback({
-        tone: 'danger',
-        title: '管理员密钥未满足安全校验要求',
-        detail: validation.reason,
-      });
-      return;
-    }
-    if (!confirmedSaved) {
-      setFeedback({
-        tone: 'warn',
-        title: '请先确认已妥善保存管理员密钥',
-        detail: '勾选确认框后方可提交，提交成功后服务端仅保存不可逆密钥校验值，不保存明文。',
-      });
-      return;
-    }
-
-    setSubmitting(true);
-    setCommitUnresolved(true);
-    setCandidateSubmitted(true);
-    setFeedback(null);
-    try {
-      const updated = await transport.commitAdminKey(commitId, adminKey);
-      setOperation(updated);
-      setCommitUnresolved(false);
-      setAdminKey('');
-      setShowKey(false);
-      setCommitCompletedInSession(true);
-      setFeedback({
-        tone: 'success',
-        title: journey('commitSaved'),
-        detail: journey('commitSavedHelp'),
-      });
-    } catch (err) {
-      if (err instanceof BootstrapTransportError && err.kind === 'bad_request') {
-        setCommitUnresolved(false);
-        setCandidateSubmitted(false);
-      } else if (
-        !(err instanceof BootstrapTransportError) ||
-        !['mismatch', 'authority'].includes(err.kind)
-      ) {
-        try {
-          const latest = await transport.fetchOperation();
-          setOperation(latest);
-          setCommitUnresolved(false);
-          if (latest.adminInitialized) {
-            setAdminKey('');
-            setShowKey(false);
-            setFeedback({
-              tone: 'info',
-              title: journey('reconciled'),
-              detail: journey('reconciledHelp'),
-            });
-            return;
-          }
-        } catch {
-          // Keep original commit error feedback if status refresh also fails.
-        }
-      }
-      setFeedback(describeBootstrapError(err, 'commit'));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const keyValidation = validateFreshAdminKey(adminKey);
-  const strengthScore = !adminKey
-    ? 0
-    : keyValidation.valid
-      ? 4
-      : Math.max(
-          1,
-          (keyValidation.byteLength >= 24 ? 1 : 0) +
-            (keyValidation.classCount >= 3 ? 1 : 0) +
-            (keyValidation.distinctCount >= 12 ? 1 : 0)
-        );
-
-  const isAdminDone = Boolean(operation?.adminInitialized);
-  const preparationStep = verifiedRoute ? 3 : isAdminDone ? 2 : phase === 'ready' ? 1 : 0;
 
   return (
     <div className="bootstrap-shell" data-testid="fresh-bootstrap-shell">
@@ -519,10 +253,10 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
           </span>
           {operation && (
             <span
-              className={`badge ${operation.gatewayPending ? 'badge-amber' : 'badge-emerald'}`}
+              className={`badge ${operation.productComplete ? 'badge-emerald' : 'badge-amber'}`}
               data-testid="gateway-status-badge"
             >
-              {operation.gatewayPending ? journey('pending') : journey('gatewayReady')}
+              {operation.productComplete ? shellText('ready') : journey('pending')}
             </span>
           )}
         </div>
@@ -541,26 +275,7 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
       </header>
 
       <main className="bootstrap-main">
-        <div className="wizard-container">
-          {!(phase === 'no_handoff' && discoveryNote?.flow !== 'fresh') && (
-            <ol className="journey-steps" aria-label={journey('progress')}>
-              {(['claim', 'administrator', 'address', 'continue'] as const).map((label, index) => (
-                <li
-                  key={label}
-                  className={
-                    index < preparationStep ? 'done' : index === preparationStep ? 'active' : ''
-                  }
-                  aria-current={index === preparationStep ? 'step' : undefined}
-                >
-                  <span className="journey-step-dot">
-                    {index < preparationStep ? <FullWebIcon name="check" size={22} /> : index + 1}
-                  </span>
-                  <span>{journey(label)}</span>
-                </li>
-              ))}
-            </ol>
-          )}
-
+        <div className={`wizard-container ${phase === 'ready' ? 'wizard-container-setup' : ''}`}>
           {phase === 'no_handoff' && (
             <section className="wizard-card" data-testid="bootstrap-no-handoff">
               <div className="wizard-card-header">
@@ -777,394 +492,11 @@ export function FreshBootstrapPage({ handoff, transport }: FreshBootstrapPagePro
           )}
 
           {phase === 'ready' && operation && (
-            <section className="wizard-card" data-testid="bootstrap-operation-ready">
-              <div className="wizard-card-header">
-                <div className="wizard-step-tag">
-                  <span>{journey(isAdminDone ? 'address' : 'administrator')}</span>
-                </div>
-                <h1 className="wizard-title">
-                  {isAdminDone ? journey('addressTitle') : journey('adminTitle')}
-                </h1>
-                <p className="wizard-desc">
-                  {isAdminDone ? journey('addressHelp') : journey('adminHelp')}
-                </p>
-              </div>
-
-              <div className="wizard-card-body">
-                {feedback && (
-                  <div
-                    className={`alert alert-${feedback.tone}`}
-                    role="status"
-                    data-testid="bootstrap-action-feedback"
-                  >
-                    <FullWebIcon
-                      name={
-                        feedback.tone === 'success'
-                          ? 'check'
-                          : feedback.tone === 'danger'
-                            ? 'alert'
-                            : 'info'
-                      }
-                      size={22}
-                    />
-                    <div className="alert-content">
-                      <div className="alert-title" data-testid="feedback-title">
-                        {feedback.title}
-                      </div>
-                      <div className="alert-desc" data-testid="feedback-detail">
-                        {feedback.detail}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <details data-testid="bootstrap-diagnostics">
-                  <summary>{journey('diagnostics')}</summary>
-                  <div className="info-card" data-testid="operation-status-card">
-                    <div className="info-row">
-                      <span className="info-key">{journey('revision')}</span>
-                      <span className="info-val">#{operation.revision}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-key">Operation ID</span>
-                      <span className="info-val" data-testid="op-id">
-                        {operation.identity.operationId}
-                      </span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-key">Installation / Generation</span>
-                      <span className="info-val" data-testid="op-install-gen">
-                        {operation.identity.installationId} / {operation.identity.generation}
-                      </span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-key">Admission ID</span>
-                      <span className="info-val" data-testid="op-admission-id">
-                        {operation.identity.admissionId}
-                      </span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-key">会话建立方式</span>
-                      <span className="info-val" data-testid="op-session-mode">
-                        {handoff?.resume
-                          ? '恢复会话（Resume Session）'
-                          : '首次认领交换（Claim Exchange）'}
-                      </span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-key">管理员初始化状态</span>
-                      <span
-                        className="info-val"
-                        data-testid="op-admin-status"
-                        style={{
-                          color: isAdminDone ? 'var(--emerald)' : 'var(--amber)',
-                        }}
-                      >
-                        {isAdminDone
-                          ? '已初始化（Admin Initialized）'
-                          : '待初始化（Pending Commit）'}
-                      </span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-key">CPA 数据面网关状态</span>
-                      <span
-                        className="info-val"
-                        data-testid="op-gateway-status"
-                        style={{ color: 'var(--amber)' }}
-                      >
-                        {operation.gatewayPending
-                          ? 'Pending · Fail-Closed（未激活，保持受控阻断）'
-                          : 'Active'}
-                      </span>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-key">正式路由切流状态</span>
-                      <span className="info-val" data-testid="op-routing-status">
-                        {verifiedRoute
-                          ? t('routeVerifiedState')
-                          : operation.routing.committed
-                            ? `Committed (${operation.routing.target || 'console'})`
-                            : '未切换 · 当前位于独立受控 Bootstrap 入口'}
-                      </span>
-                    </div>
-                  </div>
-                </details>
-
-                {!isAdminDone ? (
-                  <form
-                    onSubmit={(e) => void handleCommitAdmin(e)}
-                    data-testid="admin-init-form"
-                    noValidate
-                  >
-                    {commitUnresolved && (
-                      <p
-                        className="alert alert-warn"
-                        role="status"
-                        data-testid="admin-commit-unresolved"
-                      >
-                        初始化提交结果未知。请先同步服务端状态；确认前不能更换密钥或再次提交。
-                        若授权已过期，请保留已保存的密钥，在宿主机停止 Manager 后重新执行 initialize
-                        获取恢复链接，勿删除数据卷。
-                      </p>
-                    )}
-                    {candidateSubmitted && !commitUnresolved && (
-                      <p className="alert alert-info" role="status">
-                        {journey('original')}
-                      </p>
-                    )}
-                    <div className="form-group">
-                      <div className="form-label">
-                        <label htmlFor="fresh-admin-key-input">{journey('key')}</label>
-                        <span className="form-hint">{journey('keyRules')}</span>
-                      </div>
-                      <div className="input-wrap">
-                        <input
-                          ref={keyInputRef}
-                          id="fresh-admin-key-input"
-                          data-testid="admin-key-input"
-                          type={showKey ? 'text' : 'password'}
-                          className="form-input"
-                          value={adminKey}
-                          onChange={(e) => handleKeyInputChange(e.target.value)}
-                          placeholder={journey('keyPlaceholder')}
-                          autoComplete="off"
-                          autoCorrect="off"
-                          autoCapitalize="off"
-                          spellCheck={false}
-                          disabled={
-                            submitting ||
-                            generating ||
-                            refreshing ||
-                            commitUnresolved ||
-                            candidateSubmitted
-                          }
-                        />
-                        <div className="input-actions">
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-xs"
-                            data-testid="toggle-key-visibility-btn"
-                            onClick={() => setShowKey((prev) => !prev)}
-                            disabled={
-                              submitting ||
-                              generating ||
-                              refreshing ||
-                              commitUnresolved ||
-                              candidateSubmitted
-                            }
-                          >
-                            <FullWebIcon name="eye" size={20} />
-                            {journey(showKey ? 'hide' : 'show')}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-xs"
-                            data-testid="generate-key-btn"
-                            onClick={() => void handleGenerateKey()}
-                            disabled={
-                              submitting ||
-                              generating ||
-                              refreshing ||
-                              commitUnresolved ||
-                              candidateSubmitted
-                            }
-                          >
-                            <FullWebIcon name="key" size={18} />
-                            {journey(generating ? 'generating' : 'generate')}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-xs"
-                            data-testid="copy-key-btn"
-                            onClick={() => void handleCopyKey()}
-                            disabled={!adminKey || submitting || generating}
-                          >
-                            <FullWebIcon name="copy" size={18} />
-                            {journey('copy')}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="strength-meter" aria-hidden="true">
-                        {[1, 2, 3, 4].map((level) => {
-                          let barClass = 'strength-bar';
-                          if (strengthScore >= level) {
-                            barClass +=
-                              strengthScore === 4
-                                ? ' active-strong'
-                                : strengthScore >= 2
-                                  ? ' active-medium'
-                                  : ' active-weak';
-                          }
-                          return <div key={level} className={barClass} />;
-                        })}
-                      </div>
-                      <div
-                        className="strength-text"
-                        data-testid="admin-key-validation-text"
-                        style={{
-                          color: !adminKey
-                            ? 'var(--text-tertiary)'
-                            : keyValidation.valid
-                              ? 'var(--emerald)'
-                              : 'var(--amber)',
-                        }}
-                      >
-                        {keyValidation.reason}
-                        {adminKey
-                          ? `（当前：${keyValidation.byteLength} 字节 / ${keyValidation.classCount} 类字符 / ${keyValidation.distinctCount} 个不同字符）`
-                          : ''}
-                      </div>
-                    </div>
-
-                    <label
-                      className={`checkbox-card ${confirmedSaved ? 'checked' : ''}`}
-                      htmlFor="confirm-key-saved"
-                      style={{ marginTop: 14 }}
-                    >
-                      <input
-                        id="confirm-key-saved"
-                        data-testid="confirm-key-saved-checkbox"
-                        type="checkbox"
-                        checked={confirmedSaved}
-                        onChange={(e) => setConfirmedSaved(e.target.checked)}
-                        disabled={
-                          submitting ||
-                          generating ||
-                          refreshing ||
-                          commitUnresolved ||
-                          candidateSubmitted
-                        }
-                      />
-                      <span className="checkbox-text">
-                        <strong>{journey('savedConfirm')}</strong>
-                        {journey('savedWarning')}
-                      </span>
-                    </label>
-
-                    <div
-                      className="wizard-card-footer"
-                      style={{ marginTop: 18, padding: '16px 0 0' }}
-                    >
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        data-testid="refresh-operation-btn"
-                        onClick={() => void handleRefreshOperation()}
-                        disabled={submitting || generating || refreshing}
-                      >
-                        {journey(refreshing ? 'refreshing' : 'refresh')}
-                      </button>
-                      <button
-                        type="submit"
-                        className="btn btn-primary"
-                        data-testid="commit-admin-btn"
-                        disabled={submitting || generating || refreshing || commitUnresolved}
-                      >
-                        {journey(submitting ? 'saving' : 'save')}
-                        <FullWebIcon name="arrowRight" size={20} />
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <div data-testid="admin-init-complete-panel">
-                    <div className="alert alert-success">
-                      <FullWebIcon name="shield" size={24} />
-                      <div className="alert-content">
-                        <div className="alert-title">
-                          {commitCompletedInSession ? journey('saved') : journey('restored')}
-                        </div>
-                        <div className="alert-desc">{journey('savedHelp')}</div>
-                      </div>
-                    </div>
-
-                    <p className="journey-quiet">
-                      <FullWebIcon name="info" size={20} />
-                      {journey('installNotStarted')}
-                    </p>
-
-                    <form
-                      onSubmit={(event) => void handleEnableConsole(event)}
-                      data-testid="routing-form"
-                      style={{ marginTop: 24 }}
-                    >
-                      <h2>{journey('routeTitle')}</h2>
-                      <label className="form-label" htmlFor="console-path">
-                        {journey('path')}
-                      </label>
-                      <div className="input-wrap">
-                        <input
-                          id="console-path"
-                          className="form-input"
-                          data-testid="console-path"
-                          value={preparedTarget || routeTarget}
-                          onChange={(event) => setRouteTarget(event.target.value)}
-                          disabled={!!preparedTarget || routingBusy || !!verifiedRoute}
-                          autoComplete="off"
-                          spellCheck={false}
-                        />
-                      </div>
-                      <p className="form-hint">{journey('pathHelp')}</p>
-                      <div className="journey-preview">
-                        <FullWebIcon name="link" size={22} />
-                        <div>
-                          {journey('pathPreview')}
-                          <span>
-                            {window.location.origin + (preparedTarget || routeTarget || '/')}
-                          </span>
-                        </div>
-                      </div>
-                      {routingError && (
-                        <p role="alert" className="alert alert-warn">
-                          {routingError}
-                        </p>
-                      )}
-                      {verifiedRoute ? (
-                        <div role="status">
-                          <p>{journey('routeReady')}</p>
-                          <a
-                            className="btn btn-primary"
-                            href={verifiedRoute}
-                            data-testid="continue-console"
-                          >
-                            {journey('continue')}
-                            <FullWebIcon name="arrowRight" size={20} />
-                          </a>
-                        </div>
-                      ) : (
-                        <button
-                          type="submit"
-                          className="btn btn-primary"
-                          data-testid="enable-console"
-                          disabled={routingBusy || refreshing}
-                        >
-                          {journey(routingBusy ? 'enabling' : 'enable')}
-                          <FullWebIcon name="arrowRight" size={20} />
-                        </button>
-                      )}
-                    </form>
-
-                    <div
-                      className="wizard-card-footer"
-                      style={{ marginTop: 18, padding: '16px 0 0' }}
-                    >
-                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                        {verifiedRoute ? journey('loginHelp') : journey('refresh')}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        data-testid="refresh-operation-btn"
-                        onClick={() => void handleRefreshOperation()}
-                        disabled={refreshing || routingBusy || !!verifiedRoute}
-                      >
-                        {journey(refreshing ? 'refreshing' : 'refresh')}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
+            <FreshSetupWizard
+              initialOperation={operation}
+              transport={transport}
+              onOperation={setOperation}
+            />
           )}
         </div>
       </main>

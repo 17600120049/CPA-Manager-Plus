@@ -2,7 +2,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOOTSTRAP_UI, createBootstrapTransport } from './bootstrapTransport';
 import { FreshBootstrapPage } from './FreshBootstrapPage';
-import { fullWebText, setFullWebLanguage } from '../i18n/fullweb';
+import { setFullWebLanguage } from '../i18n/fullweb';
 import { bootstrapJourneyText } from '../i18n/bootstrapJourney';
 
 const identity = {
@@ -70,178 +70,280 @@ describe('FreshBootstrapPage product preview workflow', () => {
     vi.unstubAllGlobals();
   });
 
-
   it('never flashes initialize while source discovery is pending', async () => {
     let resolveDiscovery!: (value: Response) => void;
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Promise<Response>((resolve) => {
-      resolveDiscovery = resolve;
-    })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveDiscovery = resolve;
+          })
+      )
+    );
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+      renderer = create(
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
+      );
     });
-    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('正在读取来源状态');
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain(
+      '正在读取来源状态'
+    );
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
     expect(renderer.root.findAllByProps({ 'aria-label': 'Fresh Bootstrap 进度' })).toHaveLength(0);
     await act(async () => {
-      resolveDiscovery(Response.json({
-        contract_version: 'cpamp.phase4-01.discovery.v1',
-        status: 'recovery_required',
-        mode: 'recovery',
-        auth_entry: 'host_intervention',
-        reason: 'recovery_host_intervention',
-        authentication_required: false,
-      }));
+      resolveDiscovery(
+        Response.json({
+          contract_version: 'cpamp.phase4-01.discovery.v1',
+          status: 'recovery_required',
+          mode: 'recovery',
+          auth_entry: 'host_intervention',
+          reason: 'recovery_host_intervention',
+          authentication_required: false,
+        })
+      );
     });
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-    expect(textOf(findByTestId(renderer.root, 'host-preflight-command'))).toContain('legacy-preflight');
+    expect(textOf(findByTestId(renderer.root, 'host-preflight-command'))).toContain(
+      'legacy-preflight'
+    );
   });
 
   it('shows initialize only after a canonical Fresh discovery response', async () => {
     let resolveDiscovery!: (value: Response) => void;
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Promise<Response>((resolve) => {
-      resolveDiscovery = resolve;
-    })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveDiscovery = resolve;
+          })
+      )
+    );
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+      renderer = create(
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
+      );
     });
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
     await act(async () => {
-      resolveDiscovery(Response.json({
-        contract_version: 'cpamp.phase4-01.discovery.v1',
-        status: 'fresh_claim_required',
-        mode: 'fresh',
-        auth_entry: 'fresh_claim',
-        reason: 'fresh_claim_required',
-        authentication_required: true,
-      }));
+      resolveDiscovery(
+        Response.json({
+          contract_version: 'cpamp.phase4-01.discovery.v1',
+          status: 'fresh_claim_required',
+          mode: 'fresh',
+          auth_entry: 'fresh_claim',
+          reason: 'fresh_claim_required',
+          authentication_required: true,
+        })
+      );
     });
-    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe('cpa-manager-plus initialize');
+    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
+      'cpa-manager-plus initialize'
+    );
   });
 
   it('does not suggest Fresh initialization when discovery fails', async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+      renderer = create(
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
+      );
     });
-    expect(textOf(findByTestId(renderer.root, 'bootstrap-no-handoff'))).toContain('来源状态无法确认');
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-no-handoff'))).toContain(
+      '来源状态无法确认'
+    );
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
+    ).toHaveLength(0);
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('来源状态无法确认');
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain(
+      '来源状态无法确认'
+    );
   });
 
   it('rechecks an unknown source and shows Fresh guidance only after verified discovery', async () => {
-    const publicDiscovery = vi.fn<typeof fetch>()
+    const publicDiscovery = vi
+      .fn<typeof fetch>()
       .mockRejectedValueOnce(new TypeError('temporary network error'))
-      .mockResolvedValueOnce(Response.json({
-        contract_version: 'cpamp.phase4-01.discovery.v1',
-        status: 'fresh_claim_required',
-        mode: 'fresh',
-        auth_entry: 'fresh_claim',
-        reason: 'fresh_claim_required',
-        authentication_required: true,
-      }));
+      .mockResolvedValueOnce(
+        Response.json({
+          contract_version: 'cpamp.phase4-01.discovery.v1',
+          status: 'fresh_claim_required',
+          mode: 'fresh',
+          auth_entry: 'fresh_claim',
+          reason: 'fresh_claim_required',
+          authentication_required: true,
+        })
+      );
     const bootstrapTransport = vi.fn();
     vi.stubGlobal('fetch', publicDiscovery);
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(
-        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(bootstrapTransport)} />
+        <FreshBootstrapPage
+          handoff={null}
+          transport={createBootstrapTransport(bootstrapTransport)}
+        />
       );
     });
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-    await act(async () => findByTestId(renderer.root, 'bootstrap-recheck-discovery').props.onClick());
+    await act(async () =>
+      findByTestId(renderer.root, 'bootstrap-recheck-discovery').props.onClick()
+    );
     expect(publicDiscovery).toHaveBeenCalledTimes(2);
     expect(publicDiscovery.mock.calls[1][0]).toBe('/.well-known/cpamp-bootstrap');
     expect(publicDiscovery.mock.calls[1][1]).toMatchObject({
-      method: 'GET', mode: 'same-origin', credentials: 'omit', redirect: 'error',
+      method: 'GET',
+      mode: 'same-origin',
+      credentials: 'omit',
+      redirect: 'error',
       cache: 'no-store',
     });
-    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe('cpa-manager-plus initialize');
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
+      'cpa-manager-plus initialize'
+    );
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })
+    ).toHaveLength(0);
     expect(bootstrapTransport).not.toHaveBeenCalled();
   });
 
   it('rechecks canonical 503 unavailable and remains read-only until Fresh is verified', async () => {
     let resolveRecheck!: (response: Response) => void;
-    const publicDiscovery = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({
-        contract_version: 'cpamp.phase4-01.discovery.v1',
-        status: 'unavailable',
-        auth_entry: 'unavailable',
-        reason: 'observation_unavailable',
-        authentication_required: false,
-      }, { status: 503 }))
-      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveRecheck = resolve; }));
+    const publicDiscovery = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            contract_version: 'cpamp.phase4-01.discovery.v1',
+            status: 'unavailable',
+            auth_entry: 'unavailable',
+            reason: 'observation_unavailable',
+            authentication_required: false,
+          },
+          { status: 503 }
+        )
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveRecheck = resolve;
+          })
+      );
     const bootstrapTransport = vi.fn();
     vi.stubGlobal('fetch', publicDiscovery);
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(
-        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(bootstrapTransport)} />
+        <FreshBootstrapPage
+          handoff={null}
+          transport={createBootstrapTransport(bootstrapTransport)}
+        />
       );
     });
-    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain('来源状态暂无法确认');
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(1);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain(
+      '来源状态暂无法确认'
+    );
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })
+    ).toHaveLength(1);
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-    await act(async () => findByTestId(renderer.root, 'bootstrap-recheck-discovery').props.onClick());
+    await act(async () =>
+      findByTestId(renderer.root, 'bootstrap-recheck-discovery').props.onClick()
+    );
     expect(publicDiscovery).toHaveBeenCalledTimes(2);
-    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('正在读取来源状态');
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain(
+      '正在读取来源状态'
+    );
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })
+    ).toHaveLength(0);
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
     expect(bootstrapTransport).not.toHaveBeenCalled();
     await act(async () => {
-      resolveRecheck(Response.json({
-        contract_version: 'cpamp.phase4-01.discovery.v1',
-        status: 'fresh_claim_required',
-        mode: 'fresh',
-        auth_entry: 'fresh_claim',
-        reason: 'fresh_claim_required',
-        authentication_required: true,
-      }));
+      resolveRecheck(
+        Response.json({
+          contract_version: 'cpamp.phase4-01.discovery.v1',
+          status: 'fresh_claim_required',
+          mode: 'fresh',
+          auth_entry: 'fresh_claim',
+          reason: 'fresh_claim_required',
+          authentication_required: true,
+        })
+      );
     });
-    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe('cpa-manager-plus initialize');
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'cli-handoff-command'))).toBe(
+      'cpa-manager-plus initialize'
+    );
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })
+    ).toHaveLength(0);
     expect(bootstrapTransport).not.toHaveBeenCalled();
   });
 
   it('keeps an invalid source fail-closed during and after a read-only recheck', async () => {
     let resolveRecheck!: (response: Response) => void;
-    const publicDiscovery = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({
-        contract_version: 'cpamp.phase4-01.discovery.v1',
-        status: 'fresh_claim_required',
-        mode: 'fresh',
-        auth_entry: 'fresh_claim',
-        reason: 'qualification_unavailable',
-        authentication_required: true,
-      }))
-      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveRecheck = resolve; }));
+    const publicDiscovery = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          contract_version: 'cpamp.phase4-01.discovery.v1',
+          status: 'fresh_claim_required',
+          mode: 'fresh',
+          auth_entry: 'fresh_claim',
+          reason: 'qualification_unavailable',
+          authentication_required: true,
+        })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveRecheck = resolve;
+          })
+      );
     const bootstrapTransport = vi.fn();
     vi.stubGlobal('fetch', publicDiscovery);
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(
-        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(bootstrapTransport)} />
+        <FreshBootstrapPage
+          handoff={null}
+          transport={createBootstrapTransport(bootstrapTransport)}
+        />
       );
     });
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-    await act(async () => findByTestId(renderer.root, 'bootstrap-recheck-discovery').props.onClick());
+    await act(async () =>
+      findByTestId(renderer.root, 'bootstrap-recheck-discovery').props.onClick()
+    );
     expect(publicDiscovery).toHaveBeenCalledTimes(2);
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
-    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('正在读取来源状态');
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })
+    ).toHaveLength(0);
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain(
+      '正在读取来源状态'
+    );
     await act(async () => {
-      resolveRecheck(Response.json({
-        contract_version: 'cpamp.phase4-01.discovery.v1',
-        status: 'unavailable',
-        auth_entry: 'unavailable',
-        reason: 'observation_unavailable',
-        authentication_required: false,
-      }, { status: 503 }));
+      resolveRecheck(
+        Response.json(
+          {
+            contract_version: 'cpamp.phase4-01.discovery.v1',
+            status: 'unavailable',
+            auth_entry: 'unavailable',
+            reason: 'observation_unavailable',
+            authentication_required: false,
+          },
+          { status: 503 }
+        )
+      );
     });
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain('来源状态暂无法确认');
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain(
+      '来源状态暂无法确认'
+    );
     expect(bootstrapTransport).not.toHaveBeenCalled();
   });
 
@@ -320,7 +422,9 @@ describe('FreshBootstrapPage product preview workflow', () => {
       renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
     ).toHaveLength(0);
     expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('来源状态无法确认');
+    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain(
+      '来源状态无法确认'
+    );
   });
 
   it.each([
@@ -364,21 +468,24 @@ describe('FreshBootstrapPage product preview workflow', () => {
           <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
         );
       });
-      expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain(
-        title
+      expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-guidance'))).toContain(title);
+      expect(renderer.root.findAllByProps({ 'aria-label': 'Fresh Bootstrap 进度' })).toHaveLength(
+        0
       );
-      expect(renderer.root.findAllByProps({ 'aria-label': 'Fresh Bootstrap 进度' })).toHaveLength(0);
       expect(textOf(findByTestId(renderer.root, 'host-preflight-command'))).toBe(
         'cpa-manager-plus legacy-preflight --db /path/to/usage.sqlite --summary'
       );
-      expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-      expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })).toHaveLength(0);
+      expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(
+        0
+      );
+      expect(
+        renderer.root.findAllByProps({ 'data-testid': 'bootstrap-recheck-discovery' })
+      ).toHaveLength(0);
       expect(textOf(findByTestId(renderer.root, 'bootstrap-no-handoff'))).not.toContain(
         'cpa-manager-plus initialize'
       );
     }
   );
-
 
   it('shows read-only Host guidance for a canonical unavailable discovery on HTTP 503', async () => {
     const unavailable = {
@@ -392,7 +499,9 @@ describe('FreshBootstrapPage product preview workflow', () => {
     vi.stubGlobal('fetch', discovery);
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+      renderer = create(
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
+      );
     });
     const gate = textOf(findByTestId(renderer.root, 'bootstrap-no-handoff'));
     expect(gate).toContain('来源状态暂无法确认');
@@ -400,312 +509,130 @@ describe('FreshBootstrapPage product preview workflow', () => {
     expect(textOf(findByTestId(renderer.root, 'host-preflight-command'))).toBe(
       'cpa-manager-plus legacy-preflight --db /path/to/usage.sqlite --summary'
     );
-    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).not.toContain(bootstrapJourneyText('preview'));
-    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).toContain(bootstrapJourneyText('preflight'));
+    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).not.toContain(
+      bootstrapJourneyText('preview')
+    );
+    expect(textOf(findByTestId(renderer.root, 'fresh-bootstrap-shell'))).toContain(
+      bootstrapJourneyText('preflight')
+    );
     expect(discovery).toHaveBeenCalledTimes(1);
   });
 
   it('does not infer read-only Host eligibility from an inconsistent 503 payload', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
-      contract_version: 'cpamp.phase4-01.discovery.v1',
-      status: 'unavailable',
-      mode: 'fresh',
-      auth_entry: 'unavailable',
-      reason: 'observation_unavailable',
-      authentication_required: false,
-    }, { status: 503 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            contract_version: 'cpamp.phase4-01.discovery.v1',
+            status: 'unavailable',
+            mode: 'fresh',
+            auth_entry: 'unavailable',
+            reason: 'observation_unavailable',
+            authentication_required: false,
+          },
+          { status: 503 }
+        )
+      )
+    );
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
+      renderer = create(
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
+      );
     });
-    expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(
+      0
+    );
   });
 
   it.each([
-    [503, {
-      contract_version: 'cpamp.phase4-01.discovery.v1',
-      status: 'fresh_claim_required',
-      mode: 'fresh',
-      auth_entry: 'fresh_claim',
-      reason: 'fresh_claim_required',
-      authentication_required: true,
-    }],
-    [503, {
-      contract_version: 'cpamp.phase4-01.discovery.v1',
-      status: 'unsupported_upgrade',
-      mode: 'unsupported_upgrade',
-      auth_entry: 'admin_session',
-      reason: 'qualification_unavailable',
-      authentication_required: true,
-    }],
-    [200, {
-      contract_version: 'cpamp.phase4-01.discovery.v1',
-      status: 'unavailable',
-      auth_entry: 'unavailable',
-      reason: 'observation_unavailable',
-      authentication_required: false,
-    }],
-  ])('rejects inconsistent HTTP %i and discovery status without suggesting setup', async (status, payload) => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(payload, { status })));
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
-    });
-    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-    expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(0);
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })).toHaveLength(0);
-    expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain('来源状态无法确认');
-  });
-
-  it('rejects mismatched non-Fresh discovery tuples and preserves the existing safe fallback', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      contract_version: 'cpamp.phase4-01.discovery.v1',
-      status: 'unsupported_upgrade',
-      mode: 'unsupported_upgrade',
-      auth_entry: 'fresh_claim',
-      reason: 'qualification_unavailable',
-      authentication_required: true,
-    }))));
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />);
-    });
-    expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(0);
-    expect(renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })).toHaveLength(0);
-    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
-  });
-
-  it('completes real claim exchange, key generation, admin commit, and operation refresh', async () => {
-    const generatedKey = 'cpamp_9876543210abcdefABCDEFGH12';
-    const committedOperation = {
-      ...pendingOperation,
-      revision: 2,
-      adminInitialized: true,
-    };
-
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: 'session-token-1', operation: pendingOperation }))
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ key: generatedKey })))
-      .mockResolvedValueOnce(new Response(JSON.stringify(committedOperation)))
-      .mockResolvedValueOnce(new Response(JSON.stringify(committedOperation)));
-
-    const transport = createBootstrapTransport(fetchMock);
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={handoff} transport={transport} />);
-    });
-
-    expect(textOf(findByTestId(renderer.root, 'op-id'))).toBe('op-fresh-01');
-    expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('待初始化');
-    expect(textOf(findByTestId(renderer.root, 'op-gateway-status'))).toContain(
-      'Pending · Fail-Closed'
-    );
-
-    const generateBtn = findByTestId(renderer.root, 'generate-key-btn');
-    await act(async () => {
-      generateBtn.props.onClick();
-    });
-
-    const input = findByTestId(renderer.root, 'admin-key-input');
-    expect(input.props.value).toBe(generatedKey);
-
-    const checkbox = findByTestId(renderer.root, 'confirm-key-saved-checkbox');
-    await act(async () => {
-      checkbox.props.onChange({ target: { checked: true } });
-    });
-
-    const form = findByTestId(renderer.root, 'admin-init-form');
-    await act(async () => {
-      form.props.onSubmit({ preventDefault: vi.fn() });
-    });
-
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    const commitCallBody = JSON.parse(fetchMock.mock.calls[2][1].body as string);
-    expect(commitCallBody).toMatchObject({
-      identity,
-      key: generatedKey,
-    });
-    expect(commitCallBody.commitId).toMatch(/^commit_/);
-
-    const completePanel = findByTestId(renderer.root, 'admin-init-complete-panel');
-    expect(textOf(completePanel)).toContain(bootstrapJourneyText('saved'));
-    expect(textOf(completePanel)).toContain(bootstrapJourneyText('installNotStarted'));
-    expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('已初始化');
-
-    const refreshBtn = findByTestId(renderer.root, 'refresh-operation-btn');
-    await act(async () => {
-      refreshBtn.props.onClick();
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchMock.mock.calls[3][0]).toContain('/.well-known/cpamp-bootstrap/api/v2/operation');
-  });
-
-  it('reads actual state after a lost commit response without repeating the write and blocks invalid keys locally', async () => {
-    const validKey = 'cpamp_9876543210abcdefABCDEFGH12';
-    const committedOperation = {
-      ...pendingOperation,
-      revision: 2,
-      adminInitialized: true,
-    };
-
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: 'session-token-1', operation: pendingOperation }))
-      )
-      .mockRejectedValueOnce(new TypeError('network down'))
-      .mockResolvedValueOnce(new Response(JSON.stringify(committedOperation)));
-
-    const transport = createBootstrapTransport(fetchMock);
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={handoff} transport={transport} />);
-    });
-
-    const input = findByTestId(renderer.root, 'admin-key-input');
-    const form = findByTestId(renderer.root, 'admin-init-form');
-
-    // Submit weak key -> blocked locally before network call
-    await act(async () => {
-      input.props.onChange({ target: { value: 'too-short' } });
-    });
-    await act(async () => {
-      form.props.onSubmit({ preventDefault: vi.fn() });
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(textOf(findByTestId(renderer.root, 'feedback-title'))).toContain(
-      '管理员密钥未满足安全校验要求'
-    );
-
-    // Enter valid key and confirm saved
-    await act(async () => {
-      input.props.onChange({ target: { value: validKey } });
-    });
-    const checkbox = findByTestId(renderer.root, 'confirm-key-saved-checkbox');
-    await act(async () => {
-      checkbox.props.onChange({ target: { checked: true } });
-    });
-
-    // First submit fails due to network error
-    await act(async () => {
-      form.props.onSubmit({ preventDefault: vi.fn() });
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[2][1].method).toBe('GET');
-    expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('已初始化');
-
-    expect(renderer.root.findAllByProps({ 'data-testid': 'admin-init-form' })).toHaveLength(0);
-  });
-
-  it.each(['transport', 'response', 'unavailable'])(
-    'locks an unknown %s commit until a successful state read and preserves the retry identity',
-    async (failure) => {
-      const validKey = 'cpamp_9876543210abcdefABCDEFGH12';
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValueOnce(
-          Response.json({ token: 'session-token-1', operation: pendingOperation })
-        );
-      if (failure === 'transport') fetchMock.mockRejectedValueOnce(new TypeError('lost response'));
-      else
-        fetchMock.mockResolvedValueOnce(
-          new Response(failure === 'response' ? 'invalid JSON' : '', {
-            status: failure === 'response' ? 200 : 503,
-          })
-        );
-      fetchMock
-        .mockRejectedValueOnce(new TypeError('state unavailable'))
-        .mockResolvedValueOnce(Response.json(pendingOperation))
-        .mockResolvedValueOnce(
-          Response.json({ ...pendingOperation, revision: 3, adminInitialized: true })
-        );
+    [
+      503,
+      {
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'fresh_claim_required',
+        mode: 'fresh',
+        auth_entry: 'fresh_claim',
+        reason: 'fresh_claim_required',
+        authentication_required: true,
+      },
+    ],
+    [
+      503,
+      {
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'unsupported_upgrade',
+        mode: 'unsupported_upgrade',
+        auth_entry: 'admin_session',
+        reason: 'qualification_unavailable',
+        authentication_required: true,
+      },
+    ],
+    [
+      200,
+      {
+        contract_version: 'cpamp.phase4-01.discovery.v1',
+        status: 'unavailable',
+        auth_entry: 'unavailable',
+        reason: 'observation_unavailable',
+        authentication_required: false,
+      },
+    ],
+  ])(
+    'rejects inconsistent HTTP %i and discovery status without suggesting setup',
+    async (status, payload) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(payload, { status })));
       let renderer!: ReactTestRenderer;
       await act(async () => {
         renderer = create(
-          <FreshBootstrapPage handoff={handoff} transport={createBootstrapTransport(fetchMock)} />
+          <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
         );
       });
-      await act(async () => {
-        findByTestId(renderer.root, 'admin-key-input').props.onChange({
-          target: { value: validKey },
-        });
-      });
-      await act(async () => {
-        findByTestId(renderer.root, 'confirm-key-saved-checkbox').props.onChange({
-          target: { checked: true },
-        });
-      });
-      await act(async () => {
-        findByTestId(renderer.root, 'admin-init-form').props.onSubmit({ preventDefault: vi.fn() });
-      });
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-      for (const id of [
-        'admin-key-input',
-        'generate-key-btn',
-        'confirm-key-saved-checkbox',
-        'commit-admin-btn',
-      ]) {
-        expect(findByTestId(renderer.root, id).props.disabled).toBe(true);
-      }
-      expect(textOf(findByTestId(renderer.root, 'admin-commit-unresolved'))).toContain(
-        '勿删除数据卷'
+      expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(
+        0
       );
-      await act(async () => {
-        findByTestId(renderer.root, 'admin-key-input').props.onChange({
-          target: { value: 'different-key' },
-        });
-        findByTestId(renderer.root, 'generate-key-btn').props.onClick();
-        findByTestId(renderer.root, 'admin-init-form').props.onSubmit({ preventDefault: vi.fn() });
-      });
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-      expect(findByTestId(renderer.root, 'admin-key-input').props.value).toBe(validKey);
-      await act(async () => {
-        findByTestId(renderer.root, 'refresh-operation-btn').props.onClick();
-      });
-      expect(findByTestId(renderer.root, 'commit-admin-btn').props.disabled).toBe(false);
-      expect(findByTestId(renderer.root, 'admin-key-input').props.disabled).toBe(true);
-      expect(findByTestId(renderer.root, 'generate-key-btn').props.disabled).toBe(true);
-      await act(async () => {
-        findByTestId(renderer.root, 'admin-init-form').props.onSubmit({ preventDefault: vi.fn() });
-      });
-      expect(fetchMock).toHaveBeenCalledTimes(5);
-      expect(fetchMock.mock.calls.map((call) => call[1].method)).toEqual([
-        'POST',
-        'POST',
-        'GET',
-        'GET',
-        'POST',
-      ]);
-      expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toEqual(
-        JSON.parse(fetchMock.mock.calls[1][1].body)
+      expect(
+        renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })
+      ).toHaveLength(0);
+      expect(
+        renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
+      ).toHaveLength(0);
+      expect(textOf(findByTestId(renderer.root, 'bootstrap-discovery-unconfirmed'))).toContain(
+        '来源状态无法确认'
       );
     }
   );
 
-  it('resumes an already initialized operation directly without claim exchange', async () => {
-    const resumedOperation = {
-      ...pendingOperation,
-      revision: 2,
-      adminInitialized: true,
-    };
-    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(resumedOperation)));
-    const transport = createBootstrapTransport(fetchMock);
+  it('rejects mismatched non-Fresh discovery tuples and preserves the existing safe fallback', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            contract_version: 'cpamp.phase4-01.discovery.v1',
+            status: 'unsupported_upgrade',
+            mode: 'unsupported_upgrade',
+            auth_entry: 'fresh_claim',
+            reason: 'qualification_unavailable',
+            authentication_required: true,
+          })
+        )
+      )
+    );
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(
-        <FreshBootstrapPage handoff={{ ...handoff, resume: true }} transport={transport} />
+        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
       );
     });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toContain('/.well-known/cpamp-bootstrap/api/v2/operation');
-    expect(textOf(findByTestId(renderer.root, 'op-session-mode'))).toContain('恢复会话');
-    expect(textOf(findByTestId(renderer.root, 'admin-init-complete-panel'))).toContain(
-      bootstrapJourneyText('restored')
+    expect(renderer.root.findAllByProps({ 'data-testid': 'host-preflight-command' })).toHaveLength(
+      0
     );
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'bootstrap-discovery-guidance' })
+    ).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'cli-handoff-command' })).toHaveLength(0);
   });
 
   it('displays authority rejection feedback when claim exchange returns HTTP 401', async () => {
@@ -717,94 +644,6 @@ describe('FreshBootstrapPage product preview workflow', () => {
     });
 
     expect(textOf(findByTestId(renderer.root, 'init-error-title'))).toContain('HTTP 401');
-  });
-
-  it('reconciles operation state via GET operation when admin commit encounters HTTP 409 conflict', async () => {
-    const validKey = 'cpamp_9876543210abcdefABCDEFGH12';
-    const committedOperation = {
-      ...pendingOperation,
-      revision: 2,
-      adminInitialized: true,
-    };
-
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: 'session-token-1', operation: pendingOperation }))
-      )
-      .mockResolvedValueOnce(new Response('conflict', { status: 409 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(committedOperation)));
-
-    const transport = createBootstrapTransport(fetchMock);
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={handoff} transport={transport} />);
-    });
-
-    const input = findByTestId(renderer.root, 'admin-key-input');
-    const checkbox = findByTestId(renderer.root, 'confirm-key-saved-checkbox');
-    const form = findByTestId(renderer.root, 'admin-init-form');
-
-    await act(async () => {
-      input.props.onChange({ target: { value: validKey } });
-      checkbox.props.onChange({ target: { checked: true } });
-    });
-
-    await act(async () => {
-      form.props.onSubmit({ preventDefault: vi.fn() });
-    });
-
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[2][0]).toContain('/.well-known/cpamp-bootstrap/api/v2/operation');
-    expect(textOf(findByTestId(renderer.root, 'op-admin-status'))).toContain('已初始化');
-  });
-
-  it('resets confirmedSaved when adminKey is edited after confirmation and blocks unconfirmed submission', async () => {
-    const keyA = 'cpamp_9876543210abcdefABCDEFGH12';
-    const keyB = 'cpamp_9876543210abcdefABCDEFGH99';
-
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: 'session-token-1', operation: pendingOperation }))
-      );
-
-    const transport = createBootstrapTransport(fetchMock);
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={handoff} transport={transport} />);
-    });
-
-    const input = findByTestId(renderer.root, 'admin-key-input');
-    const checkbox = findByTestId(renderer.root, 'confirm-key-saved-checkbox');
-    const form = findByTestId(renderer.root, 'admin-init-form');
-
-    await act(async () => {
-      input.props.onChange({ target: { value: keyA } });
-    });
-    await act(async () => {
-      checkbox.props.onChange({ target: { checked: true } });
-    });
-    expect(findByTestId(renderer.root, 'confirm-key-saved-checkbox').props.checked).toBe(true);
-
-    // Editing keyA -> keyB must invalidate confirmedSaved
-    await act(async () => {
-      input.props.onChange({ target: { value: keyB } });
-    });
-    expect(findByTestId(renderer.root, 'confirm-key-saved-checkbox').props.checked).toBe(false);
-
-    // Submitting without re-checking must be blocked locally
-    await act(async () => {
-      form.props.onSubmit({ preventDefault: vi.fn() });
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(textOf(findByTestId(renderer.root, 'feedback-title'))).toContain(
-      '请先确认已妥善保存管理员密钥'
-    );
-    expect(textOf(findByTestId(renderer.root, 'feedback-detail'))).toContain(
-      '服务端仅保存不可逆密钥校验值，不保存明文'
-    );
-    expect(textOf(renderer.root)).not.toContain('Argon2id');
   });
 
   it('explains single retry and HTTP 401 re-initialization when initial claim exchange encounters a transport error', async () => {
@@ -823,249 +662,25 @@ describe('FreshBootstrapPage product preview workflow', () => {
     );
   });
 
-  it('defines every CSS class in Full Web layout or maintained CPAMP shared components', async () => {
-    const fs = (
-      globalThis as unknown as {
-        process: {
-          getBuiltinModule: (id: string) => {
-            readFileSync: (path: URL, encoding: string) => string;
-          };
-        };
-      }
-    ).process.getBuiltinModule('node:fs');
-    const carrierCss = fs.readFileSync(new URL('./carrier.css', import.meta.url), 'utf8') +
-      fs.readFileSync(new URL('../styles/components.scss', import.meta.url), 'utf8');
-    const definedClasses = new Set(
-      Array.from(carrierCss.matchAll(/\.([a-zA-Z0-9_-]+)/g), (m) => m[1])
-    );
-    expect(definedClasses.has('cpamp-shell')).toBe(false);
-
-    const renderedClasses = new Set<string>();
-    const collectClasses = (root: ReactTestInstance) => {
-      for (const node of root.findAll((n) => typeof n.props?.className === 'string')) {
-        for (const cls of String(node.props.className).split(/\s+/)) {
-          if (cls) renderedClasses.add(cls);
-        }
-      }
-    };
-
-    // 1. no_handoff state
+  it('opens the unified CPA, key and route journey after claim rather than a separate Admin setup', async () => {
+    const transport = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ token: 'installation-session', operation: pendingOperation })
+      );
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(
-        <FreshBootstrapPage handoff={null} transport={createBootstrapTransport(vi.fn())} />
+        <FreshBootstrapPage handoff={handoff} transport={createBootstrapTransport(transport)} />
       );
     });
-    collectClasses(renderer.root);
-
-    // 2. init_error state
-    await act(async () => {
-      renderer = create(
-        <FreshBootstrapPage
-          handoff={handoff}
-          transport={createBootstrapTransport(vi.fn().mockRejectedValueOnce(new TypeError('down')))}
-        />
-      );
-    });
-    collectClasses(renderer.root);
-
-    // 3. ready pending + completed states
-    const committedOperation = { ...pendingOperation, revision: 2, adminInitialized: true };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: 'session-token-1', operation: pendingOperation }))
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify(committedOperation)));
-    await act(async () => {
-      renderer = create(
-        <FreshBootstrapPage handoff={handoff} transport={createBootstrapTransport(fetchMock)} />
-      );
-    });
-    collectClasses(renderer.root);
-
-    const input = findByTestId(renderer.root, 'admin-key-input');
-    const checkbox = findByTestId(renderer.root, 'confirm-key-saved-checkbox');
-    const form = findByTestId(renderer.root, 'admin-init-form');
-    await act(async () => {
-      input.props.onChange({ target: { value: 'cpamp_9876543210abcdefABCDEFGH12' } });
-    });
-    await act(async () => {
-      checkbox.props.onChange({ target: { checked: true } });
-    });
-    collectClasses(renderer.root);
-    await act(async () => {
-      form.props.onSubmit({ preventDefault: vi.fn() });
-    });
-    collectClasses(renderer.root);
-
-    for (const cls of renderedClasses) {
-      expect(definedClasses.has(cls), `Missing CSS class .${cls} in Full Web or shared components`).toBe(true);
-    }
+    expect(findByTestId(renderer.root, 'fresh-setup-wizard')).toBeDefined();
+    expect(renderer.root.findAllByProps({ 'data-testid': 'admin-init-form' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'choose-new_managed' })).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'choose-connect_external' })).toHaveLength(
+      1
+    );
+    expect(transport).toHaveBeenCalledTimes(1);
+    await act(async () => renderer.unmount());
   });
-
-  it('enables only a server-committed verified route and clears Fresh authority before continuing', async () => {
-    const prepared = {
-      ...pendingOperation,
-      adminInitialized: true,
-      revision: 3,
-      routing: {
-        target: '/console',
-        operationId: identity.operationId,
-        revision: 1,
-        stage: 'intent_persisted',
-        committed: false,
-      },
-    };
-    const committed = {
-      ...prepared,
-      revision: 6,
-      routing: { ...prepared.routing, stage: 'committed', committed: true },
-    };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        Response.json({
-          token: 'session',
-          operation: { ...prepared, routing: { committed: false } },
-        })
-      )
-      .mockResolvedValueOnce(Response.json(prepared))
-      .mockResolvedValueOnce(Response.json(committed))
-      .mockResolvedValueOnce(
-        Response.json(
-          {
-            installationId: identity.installationId,
-            generation: identity.generation,
-            operationId: identity.operationId,
-            revision: 1,
-            target: '/console',
-            committed: true,
-          },
-          { headers: { 'X-CPAMP-Route-Owner': 'manager' } }
-        )
-      );
-    const transport = createBootstrapTransport(fetchMock);
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(<FreshBootstrapPage handoff={handoff} transport={transport} />);
-    });
-    expect(renderer.root.findAllByProps({ 'data-testid': 'continue-console' })).toHaveLength(0);
-    await act(async () =>
-      findByTestId(renderer.root, 'routing-form').props.onSubmit({ preventDefault: vi.fn() })
-    );
-    expect(findByTestId(renderer.root, 'continue-console').props.href).toBe('/console');
-    expect(textOf(findByTestId(renderer.root, 'continue-console'))).toBe(bootstrapJourneyText('continue'));
-    expect(textOf(findByTestId(renderer.root, 'admin-init-complete-panel'))).toContain(
-      bootstrapJourneyText('routeReady')
-    );
-    expect(findByTestId(renderer.root, 'op-routing-status').children.join('')).toBe(
-      fullWebText('routeVerifiedState')
-    );
-    expect(findByTestId(renderer.root, 'op-routing-status').children.join('')).not.toContain(
-      '未切换'
-    );
-    expect(findByTestId(renderer.root, 'console-path').props.disabled).toBe(true);
-    await expect(transport.fetchOperation()).rejects.toMatchObject({ kind: 'authority' });
-  });
-
-  it('reconciles lost prepare responses and locks the persisted target without claiming success', async () => {
-    const initial = { ...pendingOperation, adminInitialized: true };
-    const prepared = {
-      ...initial,
-      revision: 3,
-      routing: {
-        target: '/console',
-        operationId: identity.operationId,
-        revision: 1,
-        stage: 'intent_persisted',
-        committed: false,
-      },
-    };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(Response.json({ token: 'session', operation: initial }))
-      .mockRejectedValueOnce(new Error('network'))
-      .mockResolvedValueOnce(Response.json(prepared))
-      .mockResolvedValueOnce(new Response('', { status: 503 }))
-      .mockResolvedValueOnce(
-        Response.json(
-          {
-            installationId: identity.installationId,
-            generation: identity.generation,
-            operationId: identity.operationId,
-            revision: 1,
-            target: '/console',
-            committed: false,
-          },
-          { headers: { 'X-CPAMP-Route-Owner': 'manager' } }
-        )
-      )
-      .mockResolvedValueOnce(Response.json(prepared));
-    let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(
-        <FreshBootstrapPage handoff={handoff} transport={createBootstrapTransport(fetchMock)} />
-      );
-    });
-    await act(async () =>
-      findByTestId(renderer.root, 'routing-form').props.onSubmit({ preventDefault: vi.fn() })
-    );
-    expect(findByTestId(renderer.root, 'console-path').props.disabled).toBe(true);
-    await act(async () =>
-      findByTestId(renderer.root, 'routing-form').props.onSubmit({ preventDefault: vi.fn() })
-    );
-    expect(fetchMock.mock.calls[3][0]).toContain('/routing/activate');
-    expect(renderer.root.findAllByProps({ 'data-testid': 'continue-console' })).toHaveLength(0);
-    expect(JSON.stringify(renderer.toJSON())).toContain('503');
-  });
-
-  it.each(['zh-CN', 'zh-TW', 'en'])(
-    'keeps normal %s setup readable and diagnostics collapsed',
-    async (language) => {
-      setFullWebLanguage(language);
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValueOnce(
-          Response.json({ token: 'session-token-1', operation: pendingOperation })
-        );
-      let renderer!: ReactTestRenderer;
-      await act(async () => {
-        renderer = create(
-          <FreshBootstrapPage handoff={handoff} transport={createBootstrapTransport(fetchMock)} />
-        );
-      });
-      expect(textOf(renderer.root.findByType('h1'))).toBe(bootstrapJourneyText('adminTitle'));
-      expect(textOf(findByTestId(renderer.root, 'commit-admin-btn'))).toBe(
-        bootstrapJourneyText('save')
-      );
-      const diagnostics = findByTestId(renderer.root, 'bootstrap-diagnostics');
-      expect(diagnostics.type).toBe('details');
-      expect(diagnostics.props.open).toBeUndefined();
-      expect(textOf(diagnostics)).toContain(identity.operationId);
-      expect(textOf(diagnostics)).not.toContain(handoff.token);
-      expect(textOf(diagnostics)).not.toContain('session-token-1');
-      const visibleText = (node: ReactTestInstance): string => {
-        if (node.type === 'details') return textOf(node.findByType('summary'));
-        return node.children
-          .map((child) => (typeof child === 'string' ? child : visibleText(child)))
-          .join('');
-      };
-      const visible = visibleText(renderer.root);
-      expect(visible).not.toContain('Operation');
-      expect(visible).not.toContain('Revision');
-      expect(visible).not.toContain('Fail-Closed');
-      expect(visible).not.toContain(identity.operationId);
-      expect(visible).toContain(bootstrapJourneyText('claim'));
-      expect(visible).toContain(bootstrapJourneyText('administrator'));
-      expect(visible).toContain(bootstrapJourneyText('address'));
-      expect(visible).toContain(bootstrapJourneyText('continue'));
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(document.documentElement.setAttribute).toHaveBeenLastCalledWith('data-theme', 'white');
-      await act(async () => {
-        renderer.root.findByProps({ 'aria-label': bootstrapJourneyText('theme') }).props.onClick();
-      });
-      expect(document.documentElement.setAttribute).toHaveBeenLastCalledWith('data-theme', 'dark');
-    }
-  );
 });

@@ -702,6 +702,15 @@ input {
   border-radius: 0;
 }
 
+[data-testid='fresh-bootstrap-shell'] .wizard-container-setup {
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: visible;
+}
+
 [data-testid='fresh-bootstrap-shell'] .wizard-step-tag {
   display: none;
 }
@@ -978,6 +987,11 @@ input {
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 11px;
+}
+
+.journey-configuration {
+  display: grid;
+  gap: 24px;
 }
 
 .journey-readonly {

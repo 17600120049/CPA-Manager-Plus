@@ -68,6 +68,7 @@ export function FreshManagedRuntime({
   onPending,
   guided = false,
   onContinue,
+  onSelectExternal,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
@@ -77,6 +78,7 @@ export function FreshManagedRuntime({
   onPending: (pending: boolean) => void;
   guided?: boolean;
   onContinue?: () => void;
+  onSelectExternal?: () => void;
 }) {
   const [observation, setObservation] = useState('');
   const [busy, setBusy] = useState(false);
@@ -440,7 +442,14 @@ export function FreshManagedRuntime({
                 </div>
                 <details className="journey-disclosure">
                   <summary>{journey('advanced')}</summary>
-                  <div className="journey-choice is-unavailable" aria-disabled="true">
+                  <button
+                    type="button"
+                    className="journey-choice"
+                    aria-label={s('external')}
+                    onClick={onSelectExternal}
+                    disabled={!onSelectExternal}
+                    data-testid="choose-external"
+                  >
                     <span className="journey-tile-icon">
                       <FullWebIcon name="link" size={30} />
                     </span>
@@ -448,7 +457,7 @@ export function FreshManagedRuntime({
                       <h2>{s('external')}</h2>
                       <p>{s('externalHelp')}</p>
                     </div>
-                  </div>
+                  </button>
                   <p className="journey-help">{s('upgradeHelp')}</p>
                 </details>
               </div>

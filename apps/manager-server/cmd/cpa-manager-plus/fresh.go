@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -156,9 +154,14 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	// Pending/missing evidence retains the existing typed strategy blockers.
 	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL})
 	a.runtime = runtime
-	a.externalPermit = privateFreshExternalAdmitted
+	// Normal Fresh initialization is authorized by the admitted installation
+	// and its Admin/session. Retain the opt-in private harness restriction only
+	// for hosts explicitly running that profile.
+	if os.Getenv("CPAMP_PRIVATE_A3_PROFILE") != "" {
+		a.externalPermit = privateFreshExternalAdmitted
+	}
 	a.fixed = freshbootstrap.Handler{Authority: a.authority, Routing: a.routing, Current: a.current,
-		Shell: httpapi.BootstrapWebHandler(), Strategy: http.HandlerFunc(a.fixedStrategy)}
+		Shell: httpapi.BootstrapWebHandler(), Strategy: http.HandlerFunc(a.fixedStrategy), Runtime: http.HandlerFunc(a.fixedRuntime)}
 	return a
 }
 
@@ -263,7 +266,18 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		writeFreshJSON(w, freshrouting.StateFor(op))
 		return
 	}
-	if !op.Routing.Committed || record.Admin == nil || !security.VerifyAdminKey(*record.Admin, security.ExtractBearerToken(r.Header.Get("Authorization"))) {
+	continuation, freshAuth := freshbootstrap.SessionToken(r)
+	if freshAuth {
+		// The existing claim may finish its own installation after route
+		// cutover, but is never an Admin credential for the Console/CPA proxy.
+		allowed := resource == "operation" && r.Method == http.MethodGet || !op.ProductComplete &&
+			(resource == "installation/runtime" && r.Method == http.MethodGet ||
+				(resource == "strategy" || resource == "complete") && r.Method == http.MethodPost)
+		if !allowed || a.authority.ValidateContinuation(record, continuation) != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	} else if !op.Routing.Committed || record.Admin == nil || !security.VerifyAdminKey(*record.Admin, security.ExtractBearerToken(r.Header.Get("Authorization"))) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -291,9 +305,7 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 	case resource == "strategy" && r.Method == http.MethodPost:
 		a.executeStrategy(w, r, op)
 	case resource == "complete" && r.Method == http.MethodPost:
-		// External is a connection checkpoint, not an activated product.
-		if op.Strategy.Strategy == bootstrap.ConnectExternal || op.Strategy.Strategy == bootstrap.AdoptExisting {
-			// Neither External nor Adopt has ProductComplete authorization.
+		if op.Strategy.Strategy == bootstrap.AdoptExisting {
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
@@ -301,11 +313,28 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 			writeFreshJSON(w, op)
 			return
 		}
-		if !a.managedInstallationReady(r.Context(), op) {
+		if op.Strategy.Strategy == bootstrap.ConnectExternal {
+			// The safe-read result and encrypted Manager configuration were saved
+			// atomically. Completing Manager setup does not activate model traffic
+			// or take ownership of the external CPA lifecycle.
+			if op.Strategy.Stage != "committed" || record.Connection == nil || a.protector == nil {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+			if _, err := a.protector.UnprotectString(record.Connection.ManagementKey); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+		} else if !a.managedInstallationReady(r.Context(), op) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		next, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
+			if freshAuth {
+				if err := a.authority.ValidateContinuation(*record, continuation); err != nil {
+					return err
+				}
+			}
 			if record.Operation.Strategy.Stage != "committed" {
 				return freshstore.ErrConflict
 			}
@@ -320,6 +349,20 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (a *freshApplication) fixedRuntime(w http.ResponseWriter, r *http.Request) {
+	token, ok := freshbootstrap.SessionToken(r)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	op, err := a.authority.Authorize(r.Context(), token)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	a.installationRuntime(w, r, op)
 }
 
 func (a *freshApplication) fixedStrategy(w http.ResponseWriter, r *http.Request) {
@@ -385,8 +428,8 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 	}
 	var externalBaseURL string
 	if request.Strategy == bootstrap.ConnectExternal {
-		// Replays and inadmissible input must never reserve the only Fresh attempt.
-		if op.Strategy.Strategy != "" {
+		if op.ProductComplete || (op.Strategy.Strategy != "" &&
+			(op.Strategy.Strategy != bootstrap.ConnectExternal || op.Strategy.Stage != "validated")) {
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
@@ -398,54 +441,18 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 			writeFreshStrategyError(w, preflightErr)
 			return
 		}
-		// The browser-generated attempt ID is ephemeral and never in GET/store.
-		// A new tab/refresh must not consume a Host permit for the first POST.
+		// Non-secret request identifier, never a credential or authorization.
 		if !validFreshExternalAttemptID(request.AttemptID) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		// A Host grant binds the original revision, URL, Key, and request ID.
-		// Only the original per-page attempt can claim an empty checkpoint.
-		if a.externalPermit == nil || !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
+		if a.externalPermit != nil && !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		digest := sha256.Sum256([]byte(externalBaseURL))
-		target := "external:sha256:" + hex.EncodeToString(digest[:])
-		// Persist an exclusive durable attempt fence BEFORE contacting CPA.
-		// validated without a stored connection is an intentionally terminal
-		// Host-reconciliation state if the source read or reply is lost.
-		claimed, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
-			if record.Operation.Strategy.Strategy != "" {
-				return freshstore.ErrConflict
-			}
-			if !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
-				return errFreshExternalPermitRevoked
-			}
-			if token, fixed := freshbootstrap.SessionToken(r); fixed {
-				if err := a.authority.ValidateSession(*record, token); err != nil {
-					return err
-				}
-			}
-			record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
-				Strategy: bootstrap.ConnectExternal, TargetIdentity: target,
-				TargetGeneration: 1, Stage: "validated",
-			}
-			return nil
-		})
-		if err != nil {
-			if errors.Is(err, errFreshExternalPermitRevoked) {
-				w.WriteHeader(http.StatusServiceUnavailable)
-			} else {
-				w.WriteHeader(http.StatusConflict)
-			}
-			return
-		}
-		op = claimed.Operation
-		if !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
+		// CPA validation is read-only. Reserve no durable failure state before
+		// it: a failed read is safe to retry. Only the final CAS may select the
+		// connection. Also recover old validated-only checkpoints in place.
 	}
 	if request.Strategy == bootstrap.AdoptExisting {
 		record, err := a.store.Load(r.Context())
@@ -455,19 +462,23 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		}
 		request.Request.AdoptionCiphertext = record.AdoptionCiphertext
 	}
-	result, err := a.strategy.Execute(r.Context(), op, request.Request)
+	executionOp := op
+	if request.Strategy == bootstrap.ConnectExternal && op.Strategy.Stage == "validated" {
+		executionOp.Strategy = bootstrap.FreshStrategyCheckpoint{}
+	}
+	result, err := a.strategy.Execute(r.Context(), executionOp, request.Request)
 	if err != nil {
 		writeFreshStrategyError(w, err)
 		return
 	}
-	if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
+	if request.Strategy == bootstrap.ConnectExternal && a.externalPermit != nil && !a.externalPermit(op, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
 		// A revoked/expired Host permit cannot complete a previously claimed attempt.
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
-	if token, fixed := freshbootstrap.SessionToken(r); fixed {
-		current, err := a.authority.Authorize(r.Context(), token)
-		if err != nil || current.Identity != op.Identity || current.Revision != op.Revision {
+	if token, freshAuth := freshbootstrap.SessionToken(r); freshAuth {
+		current, err := a.store.Load(r.Context())
+		if err != nil || current.Operation.Identity != op.Identity || current.Operation.Revision != op.Revision || a.validateInstallationSession(current, token) != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -480,11 +491,11 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	next, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
-		if request.Strategy == bootstrap.ConnectExternal && !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
+		if request.Strategy == bootstrap.ConnectExternal && a.externalPermit != nil && !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
 			return errFreshExternalPermitRevoked
 		}
-		if token, fixed := freshbootstrap.SessionToken(r); fixed {
-			if err := a.authority.ValidateSession(*record, token); err != nil {
+		if token, freshAuth := freshbootstrap.SessionToken(r); freshAuth {
+			if err := a.validateInstallationSession(*record, token); err != nil {
 				return err
 			}
 		}
@@ -506,6 +517,13 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeFreshJSON(w, next.Operation)
+}
+
+func (a *freshApplication) validateInstallationSession(record freshstore.Record, token string) error {
+	if record.Operation.Routing.Committed {
+		return a.authority.ValidateContinuation(record, token)
+	}
+	return a.authority.ValidateSession(record, token)
 }
 
 func writeFreshJSON(w http.ResponseWriter, v any) {

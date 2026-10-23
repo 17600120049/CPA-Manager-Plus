@@ -1,6 +1,16 @@
 import { fullWebLanguage } from './fullweb';
 
 const en = {
+  loginKeyPlaceholder: 'Enter your saved CPAMP administrator key',
+  draftHelp:
+    'Configure your administrator key, Console address and CPA together. Nothing is saved until you confirm installation.',
+  setupError:
+    'Setup could not finish. Check the saved operation before continuing; your existing installation will not be recreated.',
+  invalidSetup: 'Check the administrator key and Console path before continuing.',
+  waitingRuntime: 'CPA is starting. Check this operation, then continue when it is ready.',
+  finishLogin: 'Sign in and enter CPAMP',
+  copied: 'Administrator key copied. Save it securely before installing.',
+  copyFailed: 'Clipboard unavailable. The key is visible; select and copy it manually.',
   welcome: 'Welcome to CPAMP',
   chooseHelp: 'Choose how to set up your installation.',
   recommended: 'Recommended',
@@ -97,6 +107,14 @@ const en = {
     'Open the secure installation link provided by your deployment host to begin or resume setup.',
 };
 const zh: typeof en = {
+  loginKeyPlaceholder: '请输入已保存的 CPAMP 管理员密钥',
+  draftHelp: '一起设置管理员密钥、管理入口和 CPA。确认开始安装前不会保存这些配置。',
+  setupError: '初始化尚未完成。请先检查原操作的已保存进度，再继续；不会重新创建已有安装。',
+  invalidSetup: '请检查管理员密钥和管理入口路径后再继续。',
+  waitingRuntime: 'CPA 正在启动。请检查原操作，待服务就绪后继续。',
+  finishLogin: '登录并进入 CPAMP',
+  copied: '管理员密钥已复制，请在安装前妥善保存。',
+  copyFailed: '剪贴板不可用，已显示密钥，请手动选中并复制。',
   welcome: '欢迎使用 CPAMP',
   chooseHelp: '选择适合你的安装方式。',
   recommended: '推荐',
@@ -186,6 +204,14 @@ const zh: typeof en = {
 };
 const tw: typeof en = {
   ...zh,
+  loginKeyPlaceholder: '請輸入已儲存的 CPAMP 管理員金鑰',
+  draftHelp: '一起設定管理員金鑰、管理入口和 CPA。確認開始安裝前不會儲存這些設定。',
+  setupError: '初始化尚未完成。請先檢查原操作的已儲存進度，再繼續；不會重新建立已有安裝。',
+  invalidSetup: '請檢查管理員金鑰和管理入口路徑後再繼續。',
+  waitingRuntime: 'CPA 正在啟動。請檢查原操作，待服務就緒後繼續。',
+  finishLogin: '登入並進入 CPAMP',
+  copied: '管理員金鑰已複製，請在安裝前妥善儲存。',
+  copyFailed: '剪貼簿不可用，已顯示金鑰，請手動選取並複製。',
   welcome: '歡迎使用 CPAMP',
   chooseHelp: '選擇適合你的安裝方式。',
   recommended: '推薦',

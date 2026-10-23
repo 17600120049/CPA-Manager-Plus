@@ -173,6 +173,26 @@ never Admin Key or normal Console authentication. A verified initial canonical
 route commit retires the entire namespace to generic 404 immediately, before
 Gateway readiness or Fresh strategy completion if necessary.
 
+The product journey remains one installation wizard: choose the CPA strategy,
+configure the administrator key, management entry and CPA connection, review,
+then execute to completion. Configuration is a browser-memory draft until the
+user confirms execution. Ordinary Console login is not an intermediate setup
+step. New installations normally commit the CPA strategy before activating the
+management entry.
+
+Route cutover retires the fixed carrier, not the original installation's
+short-lived authority. The same Fresh session may continue at the independently
+verified canonical entry, limited to its operation, strategy, Runtime observation
+and final completion. It retains the original expiry and claim generation; it
+cannot initialize another administrator, change routing, access Console/CPA
+resources or become an Admin session. After completion it may only read that
+operation's receipt until expiry, so a lost completion response can be reconciled.
+The browser then enters the existing administrator login and Console. Ordinary
+updates of a completed installation preserve that state and must not repeat the
+installation wizard. A major v1-to-v2 migration instead requires existing-Admin
+authentication and an explicit migration decision; it never consumes a Fresh
+claim or creates a replacement administrator key.
+
 Administrator initialization is independent of Bootstrap classification. A
 matching durable Fresh installation, generation and OperationID checkpoint can
 retain `Fresh` in progress after administrator initialization. Administrator

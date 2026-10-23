@@ -10,6 +10,7 @@ import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
 import logoOnDark from '../assets/brand/cpamp-logo-horizontal-on-dark.svg?inline';
 import './consoleWorkspace.css';
 import { activateFreshSession, clearFreshSession, rememberedFreshCredential } from './freshSession';
+import { bootstrapJourneyText } from '../i18n/bootstrapJourney';
 
 const defaultClient = createPublicApiClient();
 const LegacyConsolePage = lazy(() =>
@@ -30,6 +31,7 @@ export function FreshConsolePage({
   const [rememberPassword, setRememberPassword] = useState(false);
   const [operation, setOperation] = useState<FreshOperation | null>(null);
   const [enteredConsole, setEnteredConsole] = useState(false);
+  const [externalSelected, setExternalSelected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [light, setLight] = useState(true);
@@ -69,6 +71,7 @@ export function FreshConsolePage({
     setCredential('');
     setOperation(null);
     setEnteredConsole(false);
+    setExternalSelected(false);
     setBusy(false);
     setError('');
   }
@@ -137,6 +140,7 @@ export function FreshConsolePage({
         <FullWebLoginPage
           adapter={{
             address: new URL(context.basePath, window.location.origin).toString(),
+            credentialPlaceholder: bootstrapJourneyText('loginKeyPlaceholder'),
             error,
             authenticate: readOperation,
             restore: async () => {
@@ -166,13 +170,19 @@ export function FreshConsolePage({
                 {error}
               </p>
             )}
-            {operation.strategy?.strategy === 'connect_external' ? (
+            {operation.strategy?.strategy === 'connect_external' ||
+            (!operation.strategy?.strategy && externalSelected) ? (
               <FreshExternalConnection
                 client={client}
                 credential={credential}
                 operation={operation}
                 onOperation={acceptOperation}
                 onUnauthorized={unauthorized}
+                onBack={() => setExternalSelected(false)}
+                onContinue={() => {
+                  setEnteredConsole(true);
+                  window.history.replaceState(null, '', context.basePath);
+                }}
                 onPending={(pending) => {
                   installationPendingRef.current = pending;
                 }}
@@ -193,6 +203,7 @@ export function FreshConsolePage({
                   setEnteredConsole(true);
                   window.history.replaceState(null, '', context.basePath);
                 }}
+                onSelectExternal={() => setExternalSelected(true)}
               />
             )}
           </div>

@@ -139,7 +139,22 @@ func (s *Service) Exchange(ctx context.Context, req ExchangeRequest) (SessionRes
 	return SessionResult{Token: token, Operation: next.Operation}, nil
 }
 func (s *Service) session(r freshstore.Record, token string) bool {
-	return !r.Operation.Routing.Committed && r.Authority.SessionGeneration == r.Authority.ClaimGeneration && s.now().UnixMilli() < r.Authority.SessionExpiresAtMS && tokenMatches(token, r.Authority.SessionHash)
+	return !r.Operation.Routing.Committed && s.continuation(r, token)
+}
+
+func (s *Service) continuation(r freshstore.Record, token string) bool {
+	return r.Authority.SessionGeneration == r.Authority.ClaimGeneration && s.now().UnixMilli() < r.Authority.SessionExpiresAtMS && tokenMatches(token, r.Authority.SessionHash)
+}
+
+// ValidateContinuation carries only the original installation authority across
+// route cutover. It never authenticates a Console user or reopens fixed routes.
+// The canonical HTTP owner must restrict it to installation resources. A
+// completed operation remains readable as a receipt until the original expiry.
+func (s *Service) ValidateContinuation(r freshstore.Record, token string) error {
+	if r.Operation.Validate() != nil || !r.Operation.Routing.Committed || !s.continuation(r, token) {
+		return ErrAuthority
+	}
+	return nil
 }
 
 // ValidateSession rechecks a held Fresh transaction at the final commit fence.

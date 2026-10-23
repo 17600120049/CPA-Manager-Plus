@@ -2,6 +2,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FreshConsolePage } from './FreshConsolePage';
 import { FreshManagedRuntime } from './FreshManagedRuntime';
+import { FreshExternalConnection } from './FreshExternalConnection';
 import { createPublicApiClient } from './publicApi';
 import type { FreshOperation } from './bootstrapTransport';
 import { fullWebText as t } from '../i18n/fullweb';
@@ -334,6 +335,51 @@ describe('Fresh installation and Console authority boundary', () => {
     expect(has('legacy-console')).toBe(false);
     expect(renderer.root.findByType(FreshManagedRuntime)).toBeTruthy();
     await act(async () => renderer.root.findByType(FreshManagedRuntime).props.onOperation(operation));
+    expect(has('legacy-console')).toBe(true);
+  });
+  it('opens External from the existing journey and can return without selecting a strategy', async () => {
+    read.mockResolvedValue(Response.json({ ...operation, productComplete: false }));
+    await mount();
+    await login();
+    await act(async () => renderer.root.findByType(FreshManagedRuntime).props.onSelectExternal());
+    expect(renderer.root.findByType(FreshExternalConnection)).toBeTruthy();
+    expect(has('legacy-console')).toBe(false);
+    await act(async () => renderer.root.findByType(FreshExternalConnection).props.onBack());
+    expect(renderer.root.findByType(FreshManagedRuntime)).toBeTruthy();
+    expect(read.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
+  });
+
+  it('restores External setup and enters the original Console only after completion', async () => {
+    const external = {
+      ...operation,
+      productComplete: false,
+      strategy: {
+        strategy: 'connect_external',
+        stage: 'committed',
+        targetGeneration: 1,
+        targetIdentity: 'external:sha256:' + 'a'.repeat(64),
+      },
+    };
+    read.mockImplementation(() => Promise.resolve(Response.json(external)));
+    await mount();
+    await login();
+    expect(renderer.root.findByType(FreshExternalConnection)).toBeTruthy();
+    expect(has('legacy-console')).toBe(false);
+    await act(async () =>
+      renderer.root
+        .findByType(FreshExternalConnection)
+        .props.onOperation({ ...external, productComplete: true, revision: 7 })
+    );
+    expect(has('legacy-console')).toBe(false);
+    const history = window.history;
+    Object.defineProperty(window, 'history', {
+      value: { ...history, replaceState: vi.fn() },
+      configurable: true,
+    });
+    await act(async () => {
+      renderer.root.findByType(FreshExternalConnection).props.onContinue();
+      Object.defineProperty(window, 'history', { value: history, configurable: true });
+    });
     expect(has('legacy-console')).toBe(true);
   });
   it.each([401, 403, 409, 503])('refuses authentication on HTTP %s', async (status) => {

@@ -1,8 +1,11 @@
 package freshstore
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -153,3 +156,52 @@ func TestPendingFreshRejectsLegacySettings(t *testing.T) {
 }
 
 func configTestBool(value bool) *bool { return &value }
+
+func TestCompletedExternalAllowsExistingConfigConnectionEdits(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manager.sqlite")
+	db, err := sqlite.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	protector, err := security.NewProtector([]byte("external config test data key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := New(db)
+	id := bootstrap.FreshIdentity{AdmissionID: "a", InstallationID: "i", Generation: "g", DatabasePath: path, OperationID: "external-config"}
+	admin, err := security.NewAdminCredential("Cpamp_Config_Admin_Secret_839216", "host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := st.Create(t.Context(), id, &admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := protector.ProtectString("original-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte("http://original-cpa:8317"))
+	record, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error {
+		r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: id.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}
+		r.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.ConnectExternal, TargetIdentity: "external:sha256:" + hex.EncodeToString(digest[:]), TargetGeneration: 1, Stage: "committed"}
+		r.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: "http://original-cpa:8317", ManagementKey: secret}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error { r.Operation.ProductComplete = true; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := model.ManagerConfig{CPAConnection: model.ManagerCPAConnectionConfig{CPABaseURL: "http://replacement-cpa:8317", ManagementKey: "replacement-secret"}, Collector: model.ManagerCollectorConfig{Enabled: configTestBool(false)}}
+	if err = setting.New(db, protector).SaveManagerConfigAndSetup(t.Context(), cfg, model.Setup{CPAUpstreamURL: cfg.CPAConnection.CPABaseURL, ManagementKey: cfg.CPAConnection.ManagementKey}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := st.Load(t.Context())
+	if err != nil || !reflect.DeepEqual(loaded.Operation, record.Operation) || loaded.Connection == nil || loaded.Connection.CPABaseURL != cfg.CPAConnection.CPABaseURL {
+		t.Fatal("post-install Config edit invalidated Fresh authority", err)
+	}
+}
