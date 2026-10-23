@@ -181,7 +181,10 @@ func valid(r Record) error {
 		// The strategy service persists its normalized URL and hashes those
 		// exact bytes. Check the same durable fact without service/network reads.
 		digest := sha256.Sum256([]byte(r.Connection.CPABaseURL))
-		if r.Operation.Strategy.TargetIdentity != "external:sha256:"+hex.EncodeToString(digest[:]) {
+		// Once setup completes, the existing Manager Config service owns
+		// connection edits. The installation target is historical provenance,
+		// not a permanent lock on the configured CPA address.
+		if !r.Operation.ProductComplete && r.Operation.Strategy.TargetIdentity != "external:sha256:"+hex.EncodeToString(digest[:]) {
 			return ErrNotFresh
 		}
 	}

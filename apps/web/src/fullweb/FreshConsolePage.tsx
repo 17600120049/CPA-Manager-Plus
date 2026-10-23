@@ -30,6 +30,7 @@ export function FreshConsolePage({
   const [rememberPassword, setRememberPassword] = useState(false);
   const [operation, setOperation] = useState<FreshOperation | null>(null);
   const [enteredConsole, setEnteredConsole] = useState(false);
+  const [externalSelected, setExternalSelected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [light, setLight] = useState(true);
@@ -69,6 +70,7 @@ export function FreshConsolePage({
     setCredential('');
     setOperation(null);
     setEnteredConsole(false);
+    setExternalSelected(false);
     setBusy(false);
     setError('');
   }
@@ -166,13 +168,19 @@ export function FreshConsolePage({
                 {error}
               </p>
             )}
-            {operation.strategy?.strategy === 'connect_external' ? (
+            {operation.strategy?.strategy === 'connect_external' ||
+            (!operation.strategy?.strategy && externalSelected) ? (
               <FreshExternalConnection
                 client={client}
                 credential={credential}
                 operation={operation}
                 onOperation={acceptOperation}
                 onUnauthorized={unauthorized}
+                onBack={() => setExternalSelected(false)}
+                onContinue={() => {
+                  setEnteredConsole(true);
+                  window.history.replaceState(null, '', context.basePath);
+                }}
                 onPending={(pending) => {
                   installationPendingRef.current = pending;
                 }}
@@ -193,6 +201,7 @@ export function FreshConsolePage({
                   setEnteredConsole(true);
                   window.history.replaceState(null, '', context.basePath);
                 }}
+                onSelectExternal={() => setExternalSelected(true)}
               />
             )}
           </div>

@@ -60,7 +60,7 @@ const en = {
   adoptHelp: 'Host takeover authorization is not available. This path cannot run yet.',
   external: 'Connect external CPA',
   externalHelp:
-    'A Host-authorized connection checkpoint is available separately; it cannot complete installation.',
+    'Connect your existing CPA without taking over its lifecycle. Verify the connection and finish CPAMP setup.',
   upgradeHelp:
     'Upgrading an existing installation is not supported by this Fresh flow. Existing data must be preserved.',
   next: 'Continue',
@@ -164,7 +164,7 @@ const zh: typeof en = {
   adopt: '接管现有 CPA',
   adoptHelp: '受信宿主机接管授权尚未交付，当前不能执行。',
   external: '连接外部 CPA',
-  externalHelp: '现有能力仅保存经宿主机授权的连接检查点，尚不能完成安装。',
+  externalHelp: '保留已有 CPA 的管理方式，验证并保存连接后完成 CPAMP 初始化。',
   upgradeHelp: '本新装流程不支持升级既有安装；已有数据必须保留。',
   next: '下一步',
   back: '上一步',
@@ -246,7 +246,7 @@ const tw: typeof en = {
   adopt: '接管現有 CPA',
   adoptHelp: '受信任主機的接管授權尚未交付，目前無法執行。',
   external: '連線至外部 CPA',
-  externalHelp: '現有能力僅儲存經主機授權的連線檢查點，尚無法完成安裝。',
+  externalHelp: '保留既有 CPA 的管理方式，驗證並儲存連線後完成 CPAMP 初始化。',
   upgradeHelp: '本新裝流程不支援升級既有安裝；既有資料必須保留。',
   next: '下一步',
   back: '上一步',
@@ -332,7 +332,7 @@ const ru: typeof en = {
     'Доверенная авторизация хоста для передачи управления ещё не доступна. Этот вариант пока нельзя выполнить.',
   external: 'Подключить внешний CPA',
   externalHelp:
-    'Отдельно доступно сохранение контрольной точки подключения с авторизацией хоста; оно не завершает установку.',
+    'Сохраните управление CPA у себя. Проверьте подключение и завершите настройку CPAMP.',
   upgradeHelp:
     'Обновление существующей установки в этом процессе не поддерживается. Существующие данные необходимо сохранить.',
   next: 'Продолжить',

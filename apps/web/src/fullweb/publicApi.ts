@@ -73,6 +73,7 @@ export function createPublicApiClient(
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const controller =
       body !== undefined ||
+      resource === 'operation' ||
       resource === 'installation/runtime' ||
       resource.startsWith('api-keys/') ||
       resource === 'settings/update-channel' ||

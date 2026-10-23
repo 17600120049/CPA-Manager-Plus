@@ -169,9 +169,6 @@ func TestFreshCommittedStrategyReplayChecksTargetsWithoutUpdating(t *testing.T) 
 					response := httptest.NewRecorder()
 					app.canonicalAPI(response, req)
 					wantComplete := http.StatusOK
-					if strategy == bootstrap.ConnectExternal {
-						wantComplete = http.StatusConflict
-					}
 					if response.Code != wantComplete {
 						t.Fatalf("strategy completion boundary failed: %d (want %d)", response.Code, wantComplete)
 					}
