@@ -716,6 +716,9 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     await retryPanel.scrollIntoViewIfNeeded();
     await wait(async () => page.evaluate(() => {
       const retry = document.querySelector('[data-testid="fresh-managed-retry"]').getBoundingClientRect();
+      const toggle = document.querySelector('.hamburger-container');
+      const box = toggle.getBoundingClientRect();
+      if (!toggle.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))) return false;
       return [...document.querySelectorAll('[class*="floatingSidebarContainer"]')].every((rail) => {
         if (getComputedStyle(rail).opacity === '0') return true;
         return rail.getBoundingClientRect().bottom <= retry.top + 1;
