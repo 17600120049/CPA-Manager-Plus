@@ -54,7 +54,7 @@ describe('Fresh resources within the original Console', () => {
   const panel = (name: string) =>
     renderer.root.findByProps({ 'data-testid': `fresh-route-${name}` });
 
-  it('mounts resources only on their own page and never adds an update-channel editor', async () => {
+  it.each(['', '/'])('mounts resources only on their own page (suffix %j) and never adds an update-channel editor', async (suffix) => {
     const transport = vi
       .fn<typeof fetch>()
       .mockImplementation((url) =>
@@ -66,13 +66,13 @@ describe('Fresh resources within the original Console', () => {
       );
     await mount(transport);
     expect(transport).not.toHaveBeenCalled();
-    await navigate('/console/api-keys');
+    await navigate('/console/api-keys' + suffix);
     expect(panel('keys').props.hidden).toBe(false);
     expect(renderer.root.findAllByProps({ 'data-testid': 'retry-editor' })).toHaveLength(0);
     expect(transport.mock.calls.map(([url]) => String(url))).toEqual([
       'https://manager.example/console/api/v2/api-keys',
     ]);
-    await navigate('/console/config');
+    await navigate('/console/config' + suffix);
     expect(panel('keys').props.hidden).toBe(true);
     expect(panel('retry').props.hidden).toBe(false);
     await navigate('/console/system/updates');

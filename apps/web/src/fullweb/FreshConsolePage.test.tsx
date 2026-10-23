@@ -14,6 +14,9 @@ import { usageServiceApi } from '../services/api/usageService';
 import { ManagerUpdates } from '../features/system/ManagerUpdates';
 import { ConfirmationModal } from '../components/common/ConfirmationModal';
 import { NotificationContainer } from '../components/common/NotificationContainer';
+import { MainLayout } from '../components/layout/MainLayout';
+import { FreshManagedResources } from './FreshManagedResources';
+import { SystemPage } from '../features/system/SystemPage';
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
 const operation: FreshOperation = {
   identity: {
@@ -203,6 +206,18 @@ describe('Fresh installation and Console authority boundary', () => {
     // payload while allowing those normal cache writes.
     expect(persist.mock.calls.flat().some((value) => String(value).includes(key))).toBe(false);
     expect(obfuscatedStorage.getItem<{ state: { managementKey?: string } }>(STORAGE_KEY_AUTH)?.state.managementKey).toBeUndefined();
+  });
+  it('keeps clear-login locked on both System route spellings while an editor needs recovery', async () => {
+    await mount();
+    await login();
+    await act(async () => renderer.root.findByType(FreshManagedResources).props.onPending(true));
+    const renderRoute = renderer.root.findByType(MainLayout).props.renderRoute;
+    for (const path of ['/system', '/system/']) {
+      const page = renderRoute(path);
+      expect(page.type).toBe(SystemPage);
+      expect(page.props.logoutDisabled).toBe(true);
+    }
+    expect(renderRoute('/api-keys/')).toBeNull();
   });
   it('never calls legacy discovery or legacy login/restore before the business Console is admitted', async () => {
     const discovery = vi.spyOn(usageServiceApi, 'getInfo').mockRejectedValue(new Error('Legacy discovery is forbidden'));

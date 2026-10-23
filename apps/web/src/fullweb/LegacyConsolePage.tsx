@@ -107,12 +107,13 @@ export function LegacyConsolePage({
           }
           renderRoute={(pathname) => {
             if (!client) return undefined;
+            const route = pathname.replace(/\/+$/, '') || '/';
             // Keep the original ConfigPage at /config: it owns the visual/source
             // editor, Manager→CPA binding form, and the existing CPA API-key
             // controls. Manager-owned keys render in the persistent footer to
             // retain their original reconciliation operation across navigation.
-            if (pathname === '/api-keys') return null;
-            if (pathname === '/system') return <SystemPage logoutDisabled={freshPending} />;
+            if (route === '/api-keys') return null;
+            if (route === '/system') return <SystemPage logoutDisabled={freshPending} />;
             return undefined;
           }}
         />

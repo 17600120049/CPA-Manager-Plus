@@ -42,7 +42,8 @@ export function FreshManagedResources({
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
 }) {
-  const { pathname } = useLocation();
+  const { pathname: locationPath } = useLocation();
+  const pathname = locationPath.replace(/\/+$/, '') || '/';
   const route =
     pathname === basePath
       ? '/'
