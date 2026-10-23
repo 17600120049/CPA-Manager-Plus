@@ -393,4 +393,33 @@ describe('Canonical key detail and rename', () => {
     expect(view()).toContain(t('keysNameSaved'));
     expect(saved.mock.calls[saved.mock.calls.length - 1]?.[0].name).toBe('');
   });
+
+  it('displays honest usage/policy boundaries and forwards quick replacement requests', async () => {
+    const onRequestOperation = vi.fn();
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(key));
+    await act(async () => {
+      renderer = create(
+        <FreshKeyDetails
+          id={key.id}
+          client={createPublicApiClient(() => context, fetchMock)}
+          credential="test-admin"
+          onUnauthorized={unauthorized}
+          onPending={pending}
+          onSaved={saved}
+          onClose={close}
+          onRequestOperation={onRequestOperation}
+        />
+      );
+    });
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'key-detail-usage-policy' }).length
+    ).toBeGreaterThan(0);
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'key-detail-metadata' }).length
+    ).toBeGreaterThan(0);
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'detail-replace-key' }).props.onClick()
+    );
+    expect(onRequestOperation).toHaveBeenCalledWith('replace');
+  });
 });

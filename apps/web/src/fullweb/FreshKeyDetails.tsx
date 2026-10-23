@@ -1,11 +1,26 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { fullWebText as t } from '../i18n/fullweb';
+import { fullWebLanguage, fullWebText as t } from '../i18n/fullweb';
 import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
 import { FullWebIcon } from './FullWebIcon';
 import './freshKeys.css';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { validKey, type Key } from './freshKeyMetadata';
 import { FreshKeyInstallation } from './FreshKeyInstallation';
+
+function detailTime(value: number) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return { iso: undefined, label: '—' };
+  return {
+    iso: date.toISOString(),
+    label: date.toLocaleString(fullWebLanguage(), {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  };
+}
 
 export function FreshKeyDetails({
   id,
@@ -15,6 +30,7 @@ export function FreshKeyDetails({
   onPending,
   onSaved,
   onClose,
+  onRequestOperation,
 }: {
   id: string;
   client: ReturnType<typeof createPublicApiClient>;
@@ -23,6 +39,7 @@ export function FreshKeyDetails({
   onPending: (value: boolean) => void;
   onSaved: (key: Key) => void;
   onClose: () => void;
+  onRequestOperation?: (mode: 'replace' | 'revoke') => void;
 }) {
   const [record, setRecord] = useState<Key | null>(null);
   const [name, setName] = useState('');
@@ -188,14 +205,38 @@ export function FreshKeyDetails({
               <strong>{record.maskedPreview}</strong>
               <p>{k('privateKey')}</p>
             </div>
-            <span
-              className={
-                'key-state-pill ' + (record.lifecycle === 'superseded' ? 'is-muted' : 'is-saved')
-              }
-            >
-              {t(record.lifecycle === 'superseded' ? 'keysRevokedHistory' : 'keysPersisted')}
-            </span>
+            <div className="key-detail-badges">
+              <span
+                className={
+                  'key-state-pill ' +
+                  (record.lifecycle === 'superseded' ? 'is-muted' : 'is-saved')
+                }
+              >
+                {t(record.lifecycle === 'superseded' ? 'keysRevokedHistory' : 'keysPersisted')}
+              </span>
+              <span className="key-state-pill is-pending">
+                {k(record.runtimeState === 'effect_unknown' ? 'effectUnknown' : 'notApplied')}
+              </span>
+            </div>
           </div>
+          <dl className="key-detail-meta-grid" data-testid="key-detail-metadata">
+            <div>
+              <dt>{k('created')}</dt>
+              <dd>
+                <time dateTime={detailTime(record.createdAtMs).iso}>
+                  {detailTime(record.createdAtMs).label}
+                </time>
+              </dd>
+            </div>
+            <div>
+              <dt>{k('revisionLabel')}</dt>
+              <dd>v{record.nameRevision}</dd>
+            </div>
+            <div>
+              <dt>{k('policyScopeLabel')}</dt>
+              <dd>{k('policyGlobalDefault')}</dd>
+            </div>
+          </dl>
           <div className="key-detail-columns">
             <section className="key-detail-section">
               <header>
@@ -265,6 +306,72 @@ export function FreshKeyDetails({
                 )}
               </div>
             </section>
+            <section className="key-detail-section" data-testid="key-detail-usage-policy">
+              <header>
+                <FullWebIcon name="info" />
+                <h4>{k('usageSectionTitle')}</h4>
+              </header>
+              <div className="key-detail-section-body">
+                <dl className="key-usage-boundary-list">
+                  <div>
+                    <dt>{k('usageStatusLabel')}</dt>
+                    <dd>
+                      <span className="key-state-pill is-muted">{k('usageUnavailableBadge')}</span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{k('usageCoverageLabel')}</dt>
+                    <dd>
+                      <span className="key-state-pill is-muted">{k('usageUnavailableBadge')}</span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{k('policyScopeLabel')}</dt>
+                    <dd>
+                      <span className="key-state-pill is-saved">{k('policyGlobalDefault')}</span>
+                    </dd>
+                  </div>
+                </dl>
+                <p className="key-detail-description">{k('usageUnavailableDetail')}</p>
+                <p className="key-field-help">{k('policyGlobalHelp')}</p>
+              </div>
+            </section>
+            {record.lifecycle !== 'superseded' && onRequestOperation && (
+              <section className="key-detail-section" data-testid="key-detail-operation-entry">
+                <header>
+                  <FullWebIcon name="shield" />
+                  <h4>{k('manage')}</h4>
+                </header>
+                <div className="key-detail-section-body">
+                  <p className="key-detail-description">{k('detailReplaceHelp')}</p>
+                  <ol className="key-replace-steps">
+                    <li>{k('replaceStep1')}</li>
+                    <li>{k('replaceStep2')}</li>
+                    <li>{k('replaceStep3')}</li>
+                  </ol>
+                  <div className="key-toolbar-actions">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      data-testid="detail-replace-key"
+                      disabled={busy || unknown || installationPending || dirty}
+                      onClick={() => onRequestOperation('replace')}
+                    >
+                      {k('quickReplace')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      data-testid="detail-revoke-key"
+                      disabled={busy || unknown || installationPending || dirty}
+                      onClick={() => onRequestOperation('revoke')}
+                    >
+                      {k('quickRevoke')}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
           </div>
         </>
       )}

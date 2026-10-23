@@ -412,4 +412,123 @@ describe('Fresh client key persistence UI', () => {
     expect(button(t('keysCreate')).props.disabled).toBe(true);
     expect(view()).toContain(t('keysUnavailable'));
   });
+
+  it('creates a named key and recovers from partial name-save failure without re-creating the key', async () => {
+    const pending = vi.fn();
+    const named = { ...key, name: 'Prod CLI', nameRevision: 2 };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(Response.json({ key, createdSecret: secret }, { status: 201 }))
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockResolvedValueOnce(Response.json(key))
+      .mockResolvedValueOnce(Response.json(named));
+    await mount(fetchMock, pending);
+    const nameInput = renderer.root.findByProps({ 'data-testid': 'create-key-name-input' });
+    await act(async () => nameInput.props.onChange({ target: { value: 'Prod CLI' } }));
+    await click(t('keysCreate'));
+
+    // Key and one-time secret are preserved while name PUT failed
+    expect(view()).toContain(secret);
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'create-name-partial-failure' }).length
+    ).toBeGreaterThan(0);
+    expect(pending.mock.calls[pending.mock.calls.length - 1]).toEqual([true]);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+
+    // Retry only checks + saves the name on the existing key without another POST
+    const retryBtn = renderer.root.findByProps({ 'data-testid': 'retry-create-name' });
+    await act(async () => retryBtn.props.onClick());
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(2);
+    expect(
+      renderer.root.findAllByProps({ 'data-testid': 'create-name-partial-failure' })
+    ).toHaveLength(0);
+    expect(view()).toContain('Prod CLI');
+    expect(view()).toContain(secret);
+    expect(pending.mock.calls[pending.mock.calls.length - 1]).toEqual([false]);
+  });
+
+  it('preserves filter, search, and cards view mode when returning from key details and preselects replacement target', async () => {
+    const activeA = { ...key, id: '1'.repeat(32), name: 'Alpha Gateway' };
+    const activeB = {
+      ...key,
+      id: '2'.repeat(32),
+      requestId: '3'.repeat(32),
+      maskedPreview: 'cpamp_sk_…8888',
+      name: 'Beta Worker',
+    };
+    const replacedC = {
+      ...key,
+      id: '4'.repeat(32),
+      requestId: '5'.repeat(32),
+      maskedPreview: 'cpamp_sk_…9999',
+      name: 'Alpha Old',
+      lifecycle: 'superseded' as const,
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((url) => {
+      const target = String(url);
+      if (target.endsWith('/operations/latest'))
+        return Promise.resolve(
+          Response.json({
+            operation: null,
+            nextStep: '',
+            runtimeState: 'effect_unknown',
+            expiresAtMs: 0,
+          })
+        );
+      if (target.endsWith('/api-keys/' + activeA.id))
+        return Promise.resolve(Response.json(activeA));
+      return Promise.resolve(
+        Response.json({
+          keys: [activeA, activeB, replacedC],
+          gatewayPending: true,
+          revocationAvailable: true,
+        })
+      );
+    });
+    await mount(fetchMock);
+
+    // Summary strip shows real counts and explicit Unavailable usage
+    expect(
+      renderer.root.findByProps({ 'data-testid': 'key-summary-saved' }).findByType('strong')
+        .children
+    ).toEqual(['2']);
+    expect(
+      renderer.root.findByProps({ 'data-testid': 'key-summary-replaced' }).findByType('strong')
+        .children
+    ).toEqual(['1']);
+    expect(view()).toContain(k('summaryUsageValue'));
+
+    // Switch to Saved filter, search "Alpha", and toggle Cards view
+    const savedTab = renderer.root
+      .findAllByType('button')
+      .find((b) => Array.isArray(b.props.children) && b.props.children[0] === k('saved'))!;
+    await act(async () => savedTab.props.onClick());
+    const searchInput = renderer.root.findByProps({ type: 'search' });
+    await act(async () => searchInput.props.onChange({ target: { value: 'Alpha' } }));
+    const cardsBtn = renderer.root.findByProps({ 'data-testid': 'key-view-cards' });
+    await act(async () => cardsBtn.props.onClick());
+    expect(renderer.root.findByType('table').props.className).toContain('is-cards-view');
+    expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(1);
+
+    // Open details and return: filter, search, and cards view remain intact
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'open-key-' + activeA.id }).props.onClick()
+    );
+    await click(t('keysCloseDetails'));
+    expect(renderer.root.findByProps({ type: 'search' }).props.value).toBe('Alpha');
+    expect(renderer.root.findByType('table').props.className).toContain('is-cards-view');
+    expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(1);
+
+    // Quick replace preselects target, keeper, and replace mode in FreshKeyRevocation
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'replace-key-' + activeA.id }).props.onClick()
+    );
+    const selects = renderer.root.findAllByType('select');
+    expect(selects[0].props.value).toBe(activeA.id);
+    expect(selects[1].props.value).toBe(activeB.id);
+    expect(selects[2].props.value).toBe('replace');
+  });
 });

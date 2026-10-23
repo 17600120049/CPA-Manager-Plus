@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
+import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
+import { FullWebIcon } from './FullWebIcon';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import type { Key } from './freshKeyMetadata';
 
@@ -57,6 +59,7 @@ export function FreshKeyRevocation({
   onPending,
   onChanged,
   disabled,
+  preset,
 }: {
   keys: Key[];
   client: ReturnType<typeof createPublicApiClient>;
@@ -65,6 +68,7 @@ export function FreshKeyRevocation({
   onPending: (value: boolean) => void;
   onChanged: () => void;
   disabled: boolean;
+  preset?: { targetId: string; mode: 'revoke' | 'replace'; seq: number } | null;
 }) {
   const [target, setTarget] = useState('');
   const [keeper, setKeeper] = useState('');
@@ -92,6 +96,25 @@ export function FreshKeyRevocation({
       active.current = false;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (
+      !preset ||
+      request ||
+      (result?.operation && result.operation.outcome !== 'committed')
+    )
+      return;
+    if (available.some((item) => item.id === preset.targetId)) {
+      setTarget(preset.targetId);
+      setMode(preset.mode);
+      const fallbackKeeper = available.find((item) => item.id !== preset.targetId)?.id || '';
+      setKeeper((previous) =>
+        previous && previous !== preset.targetId && available.some((item) => item.id === previous)
+          ? previous
+          : fallbackKeeper
+      );
+    }
+  }, [preset, keys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function accept(value: Result, expected?: string, selection = request, observed = true) {
     if (
@@ -231,10 +254,36 @@ export function FreshKeyRevocation({
   }
   const unresolved = !!request || (!!result?.operation && result.operation.outcome !== 'committed');
   return (
-    <section className="console-key-result" aria-busy={busy}>
+    <section className="console-key-result key-revocation-workspace" aria-busy={busy}>
+      {/* CI browser proofs locate controls via this heading's direct parent. */}
       <h3>{t('keysRevokeTitle')}</h3>
       <p>{t('keysOperationHelp')}</p>
-      {message && <p role="alert">{message}</p>}
+      <div className="key-replace-guide" data-testid="key-replacement-guide">
+        <strong>{k('replaceGuideTitle')}</strong>
+        <ol className="key-replace-steps">
+          <li>{k('replaceStep1')}</li>
+          <li>{k('replaceStep2')}</li>
+          <li>{k('replaceStep3')}</li>
+        </ol>
+      </div>
+      {available.length <= 1 && (
+        <div
+          className="key-notice key-notice-warning"
+          data-testid="last-key-protection-notice"
+        >
+          <FullWebIcon name="shield" />
+          <div>
+            <strong>{k('lastKeyProtectionTitle')}</strong>
+            <p>{k('lastKeyProtectionHelp')}</p>
+          </div>
+        </div>
+      )}
+      {message && (
+        <p role="alert" className="key-notice key-notice-warning">
+          <FullWebIcon name="alert" />
+          <span>{message}</span>
+        </p>
+      )}
       {request && (
         <p>
           {t('keysOperationId')}: <code>{request.id}</code>
