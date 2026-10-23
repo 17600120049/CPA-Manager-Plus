@@ -124,6 +124,7 @@ export interface ConsoleLoginAdapter {
   address: string;
   error: string;
   credentialPlaceholder?: string;
+  connectionHint?: string;
   restore: () => Promise<void>;
   authenticate: (credential: string, remember: boolean) => Promise<boolean>;
 }
@@ -884,9 +885,9 @@ export function LoginPage({ consoleAuth }: { consoleAuth?: ConsoleLoginAdapter }
                     <div className={styles.label}>{t('login.connection_current')}</div>
                     <div className={styles.value}>{apiBase || detectedBase}</div>
                     <div className={styles.hint}>
-                      {isManagerServerMode
+                      {consoleAuth?.connectionHint || (isManagerServerMode
                         ? t('login.usage_service_configured_hint')
-                        : t('login.connection_auto_hint')}
+                        : t('login.connection_auto_hint'))}
                     </div>
                   </div>
 
