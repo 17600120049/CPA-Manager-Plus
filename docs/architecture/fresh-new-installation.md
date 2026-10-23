@@ -83,11 +83,13 @@ After signing in, the installation wizard continues the same durable operation:
    locks writes. Use **Check original operation**, or refresh, sign in with the
    same Admin Key and **Continue original installation**. A conflicting Runtime
    identity/generation requires Host reconciliation; it is never silently rebound.
-5. **Enter Console** opens the two-level navigation. API keys, gateway retry
-   settings, system settings (update-channel preference) and installation overview
-   have real routes under the configured Console address. Unsupported entries
-   are hidden. Existing Key/Config writer permissions remain unchanged: a normal
-   deployment cannot enable private writers through navigation.
+5. **Enter Console** opens the original CPAMP layout, toolbar and business
+   pages with two-level navigation. Client access contains API keys; System
+   management contains the original configuration and update pages. Recoverable
+   retry controls appear on the configuration page. Key and retry operations
+   retain their pending state when navigating away and returning. Unsupported
+   entries are hidden. Existing Key/Config writer permissions remain unchanged:
+   a normal deployment cannot enable private writers through navigation.
 
 Installation completion requires a committed Fresh New checkpoint and a real
 Runtime observation of **ready**, matching the original identity, generation
