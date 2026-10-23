@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { FreshManagedRuntime } from './FreshManagedRuntime';
 import type { FreshOperation } from './bootstrapTransport';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
+import { shellText as s } from '../i18n/consoleShell';
+import { fullWebText as t } from '../i18n/fullweb';
 
 const identity = {
   admissionId: 'a',
@@ -50,7 +52,8 @@ const committed: FreshOperation = {
 async function mount(
   get: ReturnType<typeof vi.fn>,
   post: ReturnType<typeof vi.fn>,
-  operation = initial
+  operation = initial,
+  guided = false
 ) {
   const pending = vi.fn(),
     unauthorized = vi.fn();
@@ -59,6 +62,7 @@ async function mount(
     const [current, update] = useState(operation);
     return (
       <FreshManagedRuntime
+        guided={guided}
         client={client}
         credential="admin-secret"
         operation={current}
@@ -87,6 +91,69 @@ async function mount(
 }
 
 describe('Fresh New existing Runtime strategy integration', () => {
+  it('guides a user through review and one install action using server observations only', async () => {
+    let current = initial;
+    const get = vi
+      .fn()
+      .mockImplementation((resource: string) =>
+        Promise.resolve(
+          resource === 'installation/runtime' ? { ...status, state: 'ready' } : current
+        )
+      );
+    const post = vi.fn().mockImplementation((resource: string) => {
+      current =
+        resource === 'complete'
+          ? { ...committed, revision: 7, productComplete: true }
+          : current.strategy
+            ? committed
+            : staged;
+      return Promise.resolve(current);
+    });
+    const ui = await mount(get, post, initial, true);
+    expect(ui.renderer.root.findAllByType('textarea')).toHaveLength(0);
+    const next = ui.node('choose-installation');
+    await act(async () => next.props.onClick());
+    await ui.click('inspect-installation');
+    expect(post).not.toHaveBeenCalled();
+    expect(ui.node('install-runtime').props.disabled).toBe(true);
+    await act(async () =>
+      ui.renderer.root.findByType('input').props.onChange({ target: { checked: true } })
+    );
+    await ui.click('install-runtime');
+    expect(post.mock.calls.map(([resource]) => resource)).toEqual([
+      'strategy',
+      'strategy',
+      'complete',
+    ]);
+    expect(ui.node('install-stage').props.children).toBe(t('installComplete'));
+    expect(post.mock.calls[0][1].expectedRuntimeGeneration).toBe(status.runtimeGeneration);
+    await act(async () => ui.renderer.unmount());
+  });
+
+  it('resumes a confirmed destination without creating a second strategy', async () => {
+    const done = { ...committed, revision: 7, productComplete: true };
+    const get = vi
+      .fn()
+      .mockImplementation((resource: string) =>
+        Promise.resolve(resource === 'installation/runtime' ? { ...status, state: 'ready' } : done)
+      );
+    const post = vi.fn().mockResolvedValue(done);
+    const ui = await mount(get, post, committed, true);
+    await ui.click('install-runtime');
+    expect(post.mock.calls.map(([resource]) => resource)).toEqual(['complete']);
+    await act(async () => ui.renderer.unmount());
+  });
+
+  it('does not complete a saved destination when the live Host generation changed', async () => {
+    const get = vi.fn().mockResolvedValue({ ...status, runtimeGeneration: 4, state: 'ready' });
+    const post = vi.fn();
+    const ui = await mount(get, post, committed, true);
+    await ui.click('install-runtime');
+    expect(post).not.toHaveBeenCalled();
+    expect(JSON.stringify(ui.renderer.toJSON())).toContain(s('failureHelp'));
+    await act(async () => ui.renderer.unmount());
+  });
+
   it('requires a host target then stages, starts and completes with authoritative reads', async () => {
     const get = vi
       .fn()
@@ -200,35 +267,45 @@ describe('Fresh New existing Runtime strategy integration', () => {
   it.each([
     { action: 'stage', before: initial, after: staged, requiresObservation: true },
     { action: 'start', before: staged, after: committed, requiresObservation: false },
-    { action: 'complete', before: committed, after: { ...committed, revision: 7, productComplete: true }, requiresObservation: false },
-  ])('keeps $action UNKNOWN while GET only returns the pre-write state', async ({ before, after, requiresObservation }) => {
-    let current = before;
-    const get = vi.fn().mockImplementation(async () => current);
-    const post = vi.fn().mockRejectedValue(new PublicApiError('network'));
-    const ui = await mount(get, post, before);
-    if (requiresObservation) await ui.observe();
+    {
+      action: 'complete',
+      before: committed,
+      after: { ...committed, revision: 7, productComplete: true },
+      requiresObservation: false,
+    },
+  ])(
+    'keeps $action UNKNOWN while GET only returns the pre-write state',
+    async ({ before, after, requiresObservation }) => {
+      let current = before;
+      const get = vi.fn().mockImplementation(async () => current);
+      const post = vi.fn().mockRejectedValue(new PublicApiError('network'));
+      const ui = await mount(get, post, before);
+      if (requiresObservation) await ui.observe();
 
-    await ui.click('install-runtime');
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(ui.node('install-runtime').props.disabled).toBe(true);
-    expect(ui.pending).toHaveBeenLastCalledWith(true);
+      await ui.click('install-runtime');
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(ui.node('install-runtime').props.disabled).toBe(true);
+      expect(ui.pending).toHaveBeenLastCalledWith(true);
 
-    await ui.click('refresh-installation');
-    expect(ui.node('install-runtime').props.disabled).toBe(true);
-    expect(ui.pending).toHaveBeenLastCalledWith(true);
-    expect(post).toHaveBeenCalledTimes(1);
+      await ui.click('refresh-installation');
+      expect(ui.node('install-runtime').props.disabled).toBe(true);
+      expect(ui.pending).toHaveBeenLastCalledWith(true);
+      expect(post).toHaveBeenCalledTimes(1);
 
-    // Only the original, correctly-targeted transition unlocks this session.
-    current = after;
-    await ui.click('refresh-installation');
-    expect(ui.pending).toHaveBeenLastCalledWith(false);
-    if (after.productComplete) {
-      expect(ui.renderer.root.findAllByProps({ 'data-testid': 'install-runtime' })).toHaveLength(0);
-    } else {
-      expect(ui.node('install-runtime').props.disabled).toBe(false);
+      // Only the original, correctly-targeted transition unlocks this session.
+      current = after;
+      await ui.click('refresh-installation');
+      expect(ui.pending).toHaveBeenLastCalledWith(false);
+      if (after.productComplete) {
+        expect(ui.renderer.root.findAllByProps({ 'data-testid': 'install-runtime' })).toHaveLength(
+          0
+        );
+      } else {
+        expect(ui.node('install-runtime').props.disabled).toBe(false);
+      }
+      expect(post).toHaveBeenCalledTimes(1);
     }
-    expect(post).toHaveBeenCalledTimes(1);
-  });
+  );
 
   it('does not unlock a lost Start on an unrelated revision change', async () => {
     let current: FreshOperation = staged;

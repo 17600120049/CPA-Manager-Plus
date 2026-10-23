@@ -32,6 +32,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Select } from '@/components/ui/Select';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { providersApi } from '@/services/api';
+import { getUsageServiceErrorCode } from '@/services/api/usageService';
 import { useAuthStore, useConfigStore, useNotificationStore, useThemeStore } from '@/stores';
 import {
   CloakConfig,
@@ -126,11 +127,17 @@ export function AiProvidersPage() {
     enabled: isCurrentLayer,
   });
 
-  const getErrorMessage = (err: unknown) => {
+  const getErrorMessage = useCallback((err: unknown) => {
+    const code = getUsageServiceErrorCode(err);
+    if (code) {
+      return t(`usage_service_errors.${code}`, {
+        defaultValue: t('usage_service_errors.request_failed'),
+      });
+    }
     if (err instanceof Error) return err.message;
     if (typeof err === 'string') return err;
     return '';
-  };
+  }, [t]);
 
   const loadConfigs = useCallback(async () => {
     const hasValidCache = isCacheValid();
@@ -175,7 +182,7 @@ export function AiProvidersPage() {
     } finally {
       setLoading(false);
     }
-  }, [clearCache, fetchConfig, isCacheValid, t, updateConfigValue]);
+  }, [clearCache, fetchConfig, getErrorMessage, isCacheValid, t, updateConfigValue]);
 
   useEffect(() => {
     if (hasMounted.current) return;

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FreshApiKeys } from './FreshApiKeys';
 import { createPublicApiClient } from './publicApi';
 import { fullWebText as t } from '../i18n/fullweb';
+import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
 
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
 const key = {
@@ -47,7 +48,9 @@ describe('Fresh client key persistence UI', () => {
   });
   const view = () => JSON.stringify(renderer.toJSON());
   const button = (text: string) =>
-    renderer.root.findAllByType('button').find((item) => item.props.children === text)!;
+    renderer.root
+      .findAllByType('button')
+      .find((item) => item.props['aria-label'] === text || item.props.children === text)!;
   async function mount(
     fetchMock: ReturnType<typeof vi.fn<typeof fetch>>,
     onCreationPending = vi.fn()
@@ -66,6 +69,41 @@ describe('Fresh client key persistence UI', () => {
   async function click(text: string) {
     await act(async () => button(text).props.onClick());
   }
+
+  it('filters only actual saved metadata without issuing requests or claiming gateway effectiveness', async () => {
+    const historical = {
+      ...key,
+      id: 'd'.repeat(32),
+      requestId: 'e'.repeat(32),
+      name: 'Retired client',
+      lifecycle: 'superseded',
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({
+          keys: [{ ...key, name: 'Desktop client' }, historical],
+          gatewayPending: true,
+          revocationAvailable: false,
+        })
+      );
+    await mount(fetchMock);
+    expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(2);
+    const search = renderer.root.findByProps({ 'aria-label': k('search') });
+    await act(async () => search.props.onChange({ target: { value: 'desktop' } }));
+    expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(1);
+    expect(view()).toContain('Desktop client');
+    await act(async () => search.props.onChange({ target: { value: historical.id } }));
+    expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(1);
+    expect(view()).toContain('Retired client');
+    await act(async () => search.props.onChange({ target: { value: 'does-not-exist' } }));
+    expect(view()).toContain(k('noMatches'));
+    await click(k('clear'));
+    expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(2);
+    expect(view()).toContain(k('notApplied'));
+    expect(view()).toContain(k('scope'));
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 
   it('keeps the Console exit lock when a revocation read finishes during an unknown S1 install', async () => {
     const onCreationPending = vi.fn();
@@ -92,21 +130,29 @@ describe('Fresh client key persistence UI', () => {
           Response.json({ keys: [key], gatewayPending: true, revocationAvailable: true })
         );
       if (address.endsWith('/api-keys/operations/latest'))
-        return new Promise<Response>((resolve) => { finishOperation = resolve; });
+        return new Promise<Response>((resolve) => {
+          finishOperation = resolve;
+        });
       if (address.endsWith('/api-keys/' + key.id) && options?.method === 'GET')
         return Promise.resolve(Response.json(key));
       if (address.endsWith('/initial-install') && options?.method === 'GET')
         return Promise.resolve(
           Response.json(
-            initialReads++ === 0 ? initial : { ...initial, attempted: true, installAvailable: false }
+            initialReads++ === 0
+              ? initial
+              : { ...initial, attempted: true, installAvailable: false }
           )
         );
       if (address.endsWith('/initial-install') && options?.method === 'POST')
-        return new Promise<Response>((_resolve, reject) => { rejectInstall = reject; });
+        return new Promise<Response>((_resolve, reject) => {
+          rejectInstall = reject;
+        });
       return Promise.reject(new Error('unexpected Key API: ' + address));
     });
     await mount(fetchMock, onCreationPending);
-    await act(async () => renderer.root.findAllByType('li')[0].findByType('button').props.onClick());
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'open-key-' + key.id }).props.onClick()
+    );
     await click(t('keysCheckInstallation'));
     await act(async () => button(t('keysInstallOne')).props.onClick());
     expect(onCreationPending).toHaveBeenLastCalledWith(true);
@@ -160,7 +206,9 @@ describe('Fresh client key persistence UI', () => {
       .mockResolvedValueOnce(Response.json(key));
     await mount(fetchMock, onCreationPending);
     expect(onCreationPending).toHaveBeenLastCalledWith(true);
-    await act(async () => renderer.root.findAllByType('li')[0].findByType('button').props.onClick());
+    await act(async () =>
+      renderer.root.findByProps({ 'data-testid': 'open-key-' + key.id }).props.onClick()
+    );
     expect(onCreationPending).toHaveBeenLastCalledWith(true);
     expect(fetchMock.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
   });
@@ -217,7 +265,6 @@ describe('Fresh client key persistence UI', () => {
     expect(view()).not.toContain(secret);
     expect(view()).not.toContain(t('keysCopyFailed'));
   });
-
 
   it.each(['success', 'failure'] as const)(
     'ignores a delayed clipboard %s after the one-time secret is dismissed',

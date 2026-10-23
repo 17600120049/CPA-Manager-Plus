@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
+import { shellText as s } from '../i18n/consoleShell';
+import { bootstrapJourneyText as journey } from '../i18n/bootstrapJourney';
+import { FullWebIcon, type FullWebIconName } from './FullWebIcon';
 import { sameIdentity, type FreshOperation } from './bootstrapTransport';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { parseRuntimeJSON, validRuntimeGeneration } from './runtimeGeneration';
@@ -63,6 +66,8 @@ export function FreshManagedRuntime({
   onOperation,
   onUnauthorized,
   onPending,
+  guided = false,
+  onContinue,
 }: {
   client: ReturnType<typeof createPublicApiClient>;
   credential: string;
@@ -70,12 +75,20 @@ export function FreshManagedRuntime({
   onOperation: (operation: FreshOperation) => void;
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
+  guided?: boolean;
+  onContinue?: () => void;
 }) {
   const [observation, setObservation] = useState('');
   const [busy, setBusy] = useState(false);
   const [unknown, setUnknown] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [error, setError] = useState('');
+  const [step, setStep] = useState(operation.strategy?.strategy ? 3 : 0);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [readiness, setReadiness] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const runningRef = useRef(false);
   const inFlight = useRef(false);
   const alive = useRef(true);
   const expectedTarget = useRef<ReturnType<typeof hostTarget> | null>(null);
@@ -133,22 +146,24 @@ export function FreshManagedRuntime({
   async function reconcile() {
     const next = await client.get<FreshOperation>('operation', auth);
     if (alive.current) accept(next);
+    return next;
   }
 
-  async function act(write: boolean) {
+  async function act(write: boolean, current = operation) {
     if (
       inFlight.current ||
-      (write && (unknown || conflict || foreign || invalidCheckpoint || operation.productComplete))
+      (write && (unknown || conflict || foreign || invalidCheckpoint || current.productComplete))
     )
       return;
     let body: Record<string, unknown> = {};
+    const checkpoint = current.strategy;
     if (write && checkpoint?.stage !== 'committed') {
       try {
         if (!checkpoint?.strategy && !expectedTarget.current)
           expectedTarget.current = hostTarget(observation);
         body = {
-          identity: operation.identity,
-          expectedRevision: operation.revision,
+          identity: current.identity,
+          expectedRevision: current.revision,
           strategy: 'new_managed',
           ...(checkpoint?.strategy
             ? {
@@ -170,8 +185,13 @@ export function FreshManagedRuntime({
     try {
       if (write) {
         pendingWrite.current = {
-          revision: operation.revision,
-          action: checkpoint?.stage === 'committed' ? 'complete' : checkpoint?.strategy ? 'start' : 'stage',
+          revision: current.revision,
+          action:
+            checkpoint?.stage === 'committed'
+              ? 'complete'
+              : checkpoint?.strategy
+                ? 'start'
+                : 'stage',
           previousStage: checkpoint?.stage,
         };
         setUnknown(true);
@@ -182,7 +202,7 @@ export function FreshManagedRuntime({
         );
         // Read the durable checkpoint even when the write reply was received.
       }
-      await reconcile();
+      return await reconcile();
     } catch (err) {
       if (!alive.current) return;
       if (err instanceof PublicApiError && err.kind === 'authentication') {
@@ -194,8 +214,9 @@ export function FreshManagedRuntime({
       setError(t(stopped ? 'installConflict' : 'installUnavailable'));
       try {
         if (!write) throw err;
-        await reconcile();
+        const next = await reconcile();
         if (!stopped) setError('');
+        if (!stopped) return next;
       } catch (readError) {
         if (!alive.current) return;
         if (readError instanceof PublicApiError && readError.kind === 'authentication')
@@ -216,7 +237,468 @@ export function FreshManagedRuntime({
     }
   }
 
+  async function inspect() {
+    if (checking || running) return;
+    setChecking(true);
+    setError('');
+    try {
+      const status = await client.get<unknown>('installation/runtime', auth);
+      const raw = JSON.stringify(status);
+      const target = hostTarget(raw);
+      if (alive.current) {
+        expectedTarget.current = target;
+        setObservation(raw);
+        setStep(2);
+      }
+    } catch (err) {
+      if (alive.current) {
+        if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
+        else setError(s('unavailable'));
+      }
+    } finally {
+      if (alive.current) setChecking(false);
+    }
+  }
+
+  async function run() {
+    if (runningRef.current || inFlight.current || unknown || conflict) return;
+    runningRef.current = true;
+    setRunning(true);
+    setStep(3);
+    let current = operation;
+    try {
+      // Every next action consumes a confirmed durable read of this operation.
+      // A lost reply with no confirming read pauses, never retries the write.
+      for (let attempt = 0; attempt < 4 && alive.current && !current.productComplete; attempt++) {
+        if (current.strategy?.stage === 'committed') {
+          let ready = false;
+          for (let probe = 0; probe < 30 && alive.current; probe++) {
+            const status = await client.get<{ state: string }>('installation/runtime', auth);
+            const target = hostTarget(JSON.stringify(status));
+            if (
+              target.expectedRuntimeIdentity !== current.strategy.targetIdentity ||
+              target.expectedRuntimeGeneration !== current.strategy.targetGeneration ||
+              target.expectedArtifactId !== current.strategy.targetArtifactId
+            )
+              throw new Error('Runtime identity changed');
+            if (status.state === 'ready') {
+              ready = true;
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          if (!alive.current) return;
+          if (!ready) throw new Error('Readiness unavailable');
+          setReadiness(true);
+        }
+        const next = await act(true, current);
+        if (!next || !alive.current) return;
+        current = next;
+        if (current.strategy?.stage === 'starting') return;
+      }
+    } catch (err) {
+      if (alive.current) {
+        if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
+        else setError(s('failureHelp'));
+      }
+    } finally {
+      runningRef.current = false;
+      if (alive.current) setRunning(false);
+    }
+  }
+
   if (foreign) return null;
+
+  if (guided) {
+    const complete = operation.productComplete === true;
+    const progress = complete
+      ? 4
+      : checkpoint?.stage === 'committed'
+        ? readiness
+          ? 3
+          : 2
+        : checkpoint?.stage === 'starting'
+          ? 1
+          : checkpoint?.stage === 'staged'
+            ? 1
+            : 0;
+    const activeStep = complete ? 3 : step;
+    const summaryRows: { icon: FullWebIconName; label: string; value: string }[] = complete
+      ? [
+          { icon: 'server', label: 'CPA', value: journey('cpaReady') },
+          { icon: 'shield', label: journey('key'), value: journey('keepKey') },
+          { icon: 'link', label: s('consoleAddress'), value: operation.routing.target || '' },
+        ]
+      : [
+          { icon: 'server', label: s('choiceTitle'), value: s('newManaged') },
+          { icon: 'shield', label: journey('key'), value: journey('keyHidden') },
+          { icon: 'link', label: s('consoleAddress'), value: operation.routing.target || '' },
+          { icon: 'installation', label: journey('creates'), value: s('version') },
+        ];
+    return (
+      <section
+        className="installation-flow cpamp-installation"
+        data-testid="fresh-managed-runtime"
+        aria-busy={running || checking}
+      >
+        <div className="wizard-card">
+          <ol className="journey-steps" aria-label={s('installation')}>
+            {(['choose', 'configure', 'confirm', 'execute'] as const).map((label, index) => (
+              <li
+                key={label}
+                className={
+                  complete || index < activeStep ? 'done' : index === activeStep ? 'active' : ''
+                }
+                aria-current={activeStep === index ? 'step' : undefined}
+              >
+                <span className="journey-step-dot">
+                  {complete || index < activeStep ? (
+                    <FullWebIcon name="check" size={22} />
+                  ) : (
+                    index + 1
+                  )}
+                </span>
+                <span>{s(label)}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="journey-body">
+            <div className={`journey-heading ${complete ? 'journey-success-heading' : ''}`}>
+              {complete && (
+                <span className="journey-success-symbol">
+                  <FullWebIcon name="check" size={34} />
+                </span>
+              )}
+              <div>
+                <h1 className="wizard-title">
+                  {complete
+                    ? s('ready')
+                    : step === 2
+                      ? s('reviewTitle')
+                      : step === 3
+                        ? s(unknown ? 'unknown' : running ? 'installing' : 'failure')
+                        : step === 1
+                          ? journey('configureHeading')
+                          : journey('welcome')}
+                </h1>
+                <p className="wizard-desc">
+                  {complete
+                    ? journey('successHelp')
+                    : step === 2
+                      ? s('reviewHelp')
+                      : step === 3
+                        ? journey('progressHelp')
+                        : step === 1
+                          ? journey('configurationSaved')
+                          : journey('chooseHelp')}
+                </p>
+              </div>
+            </div>
+            {error && (
+              <div className="alert alert-warn" role="alert">
+                <FullWebIcon name="alert" size={22} />
+                <p>{error}</p>
+              </div>
+            )}
+            {unknown && (
+              <div role="status" className="alert alert-warn">
+                <FullWebIcon name="alert" size={22} />
+                <div>
+                  <strong>{s('unknown')}</strong>
+                  <p>{s('unknownHelp')}</p>
+                </div>
+              </div>
+            )}
+            {invalidCheckpoint && <p role="alert">{s('failureHelp')}</p>}
+            {!complete && step === 0 && (
+              <div className="journey-choices">
+                <div className="journey-choice selected">
+                  <span className="journey-radio" aria-hidden="true" />
+                  <span className="journey-tile-icon">
+                    <FullWebIcon name="server" size={34} />
+                  </span>
+                  <div>
+                    <h2>
+                      {s('newManaged')}
+                      <span className="badge badge-indigo">{journey('recommended')}</span>
+                    </h2>
+                    <p>{s('newDetail')}</p>
+                  </div>
+                </div>
+                <div className="journey-choice is-unavailable" aria-disabled="true">
+                  <span className="journey-radio" aria-hidden="true" />
+                  <span className="journey-tile-icon">
+                    <FullWebIcon name="copy" size={34} />
+                  </span>
+                  <div>
+                    <h2>
+                      {s('adopt')}
+                      <span className="badge badge-neutral">{journey('unavailable')}</span>
+                    </h2>
+                    <p>{s('adoptHelp')}</p>
+                  </div>
+                </div>
+                <details className="journey-disclosure">
+                  <summary>{journey('advanced')}</summary>
+                  <div className="journey-choice is-unavailable" aria-disabled="true">
+                    <span className="journey-tile-icon">
+                      <FullWebIcon name="link" size={30} />
+                    </span>
+                    <div>
+                      <h2>{s('external')}</h2>
+                      <p>{s('externalHelp')}</p>
+                    </div>
+                  </div>
+                  <p className="journey-help">{s('upgradeHelp')}</p>
+                </details>
+              </div>
+            )}
+            {!complete && step === 1 && (
+              <>
+                <div className="journey-key-strip">
+                  <FullWebIcon name="shield" size={24} />
+                  <strong>{journey('key')}</strong>
+                  <span>{journey('keyHidden')}</span>
+                </div>
+                <div className="journey-field">
+                  <span className="form-label">{s('consoleAddress')}</span>
+                  <div className="journey-readonly">
+                    <FullWebIcon name="link" size={22} />
+                    <span>{operation.routing.target}</span>
+                    <FullWebIcon name="check" size={20} />
+                  </div>
+                  <p className="journey-help">{s('configHelp')}</p>
+                </div>
+                <div className="journey-preview">
+                  <FullWebIcon name="server" size={22} />
+                  <div>
+                    <strong>
+                      {s('host')} · {s('version')}
+                    </strong>
+                    <p>{journey('createsHelp')}</p>
+                  </div>
+                </div>
+              </>
+            )}
+            {((!complete && step === 2) || complete) && (
+              <>
+                <dl className="journey-summary">
+                  {summaryRows.map((row) => (
+                    <div className="journey-summary-row" key={row.label}>
+                      <FullWebIcon name={row.icon} size={22} />
+                      <dt>{row.label}</dt>
+                      <dd>{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {complete ? (
+                  <>
+                    <p className="journey-quiet">
+                      <FullWebIcon name="info" size={20} />
+                      {journey('bookmark')}
+                    </p>
+                    <div className="alert alert-info">
+                      <FullWebIcon name="shield" size={22} />
+                      <div>
+                        <strong>{journey('gatewayBlocked')}</strong>
+                        <p>{s('readyHelp')}</p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="alert alert-info">
+                      <FullWebIcon name="info" size={22} />
+                      <p>{journey('noMigration')}</p>
+                    </div>
+                    <label className="journey-checkline">
+                      <input
+                        type="checkbox"
+                        checked={acknowledged}
+                        onChange={(event) => setAcknowledged(event.target.checked)}
+                      />
+                      {s('acknowledgement')}
+                    </label>
+                  </>
+                )}
+              </>
+            )}
+            {step === 3 && !complete && (
+              <>
+                <ol className="journey-stages" aria-live="polite">
+                  {(['stage', 'start', 'verify', 'complete'] as const).map((label, index) => (
+                    <li
+                      key={label}
+                      className={
+                        index < progress
+                          ? 'done'
+                          : index === progress
+                            ? unknown || error || conflict
+                              ? 'warn'
+                              : running
+                                ? 'active'
+                                : ''
+                            : ''
+                      }
+                    >
+                      <span
+                        className={`journey-stage-mark ${running && index === progress && !unknown && !error ? 'is-spinning' : ''}`}
+                        aria-hidden="true"
+                      >
+                        {index < progress ? (
+                          <FullWebIcon name="check" size={20} />
+                        ) : index === progress && (unknown || error || conflict) ? (
+                          <FullWebIcon name="alert" size={22} />
+                        ) : null}
+                      </span>
+                      <div>
+                        <strong>{s(label)}</strong>
+                        <p>
+                          {journey(
+                            (
+                              [
+                                'stagePrepare',
+                                'stageStart',
+                                'stageVerify',
+                                'stageComplete',
+                              ] as const
+                            )[index]
+                          )}
+                        </p>
+                      </div>
+                      <small>
+                        {s(
+                          index < progress
+                            ? 'done'
+                            : running && index === progress
+                              ? 'active'
+                              : 'pending'
+                        )}
+                      </small>
+                    </li>
+                  ))}
+                </ol>
+                <p className="journey-quiet" data-testid="install-stage">
+                  <FullWebIcon name="info" size={20} />
+                  {unknown ? s('unknown') : running ? s('installing') : s('failure')}
+                </p>
+              </>
+            )}
+            {complete && (
+              <p className="journey-quiet" data-testid="install-stage">
+                {t('installComplete')}
+              </p>
+            )}
+            <details className="journey-disclosure installation-diagnostics">
+              <summary>{s('technical')}</summary>
+              <dl className="console-state">
+                <dt>{t('operation')}</dt>
+                <dd>{operation.identity.operationId}</dd>
+                <dt>{t('revision')}</dt>
+                <dd>{operation.revision}</dd>
+                <dt>{s('destination')}</dt>
+                <dd>
+                  {checkpoint?.targetIdentity ||
+                    expectedTarget.current?.expectedRuntimeIdentity ||
+                    '—'}
+                </dd>
+              </dl>
+            </details>
+          </div>
+          <footer className="journey-footer">
+            {!complete && step === 0 && (
+              <>
+                <span className="journey-quiet">
+                  <FullWebIcon name="info" size={20} />
+                  {journey('installNotStarted')}
+                </span>
+                <button
+                  className="btn btn-primary"
+                  data-testid="choose-installation"
+                  onClick={() => setStep(1)}
+                >
+                  {s('next')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+            {!complete && step === 1 && (
+              <>
+                <button
+                  className="btn btn-secondary"
+                  disabled={checking}
+                  onClick={() => setStep(0)}
+                >
+                  <FullWebIcon name="arrowLeft" size={20} />
+                  {s('back')}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  data-testid="inspect-installation"
+                  disabled={checking}
+                  onClick={() => void inspect()}
+                >
+                  {s(checking ? 'inspecting' : 'inspect')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+            {!complete && step === 2 && (
+              <>
+                <button className="btn btn-secondary" onClick={() => setStep(1)}>
+                  <FullWebIcon name="arrowLeft" size={20} />
+                  {s('back')}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  data-testid="install-runtime"
+                  disabled={!acknowledged || running}
+                  onClick={() => void run()}
+                >
+                  {s('submit')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+            {step === 3 && !complete && (
+              <>
+                <button
+                  className="btn btn-secondary"
+                  data-testid="refresh-installation"
+                  disabled={running || busy}
+                  onClick={() => void act(false)}
+                >
+                  <FullWebIcon name="refresh" size={20} />
+                  {s('refresh')}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  data-testid="install-runtime"
+                  disabled={running || busy || unknown || conflict || invalidCheckpoint}
+                  onClick={() => void run()}
+                >
+                  {s(running ? 'installing' : 'recover')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+            {complete && (
+              <>
+                <span className="journey-quiet">
+                  <FullWebIcon name="shield" size={20} />
+                  {journey('keepKey')}
+                </span>
+                <button className="btn btn-primary" onClick={onContinue}>
+                  {s('console')}
+                  <FullWebIcon name="arrowRight" size={20} />
+                </button>
+              </>
+            )}
+          </footer>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="info-card" data-testid="fresh-managed-runtime">

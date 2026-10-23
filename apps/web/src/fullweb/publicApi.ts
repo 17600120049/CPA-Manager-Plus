@@ -73,6 +73,7 @@ export function createPublicApiClient(
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const controller =
       body !== undefined ||
+      resource === 'installation/runtime' ||
       resource.startsWith('api-keys/') ||
       resource === 'settings/update-channel' ||
       resource.startsWith('gateway/retry/')
@@ -100,11 +101,11 @@ export function createPublicApiClient(
         // retain their original 409/503 status and cannot authorize writes.
         let operationResult: unknown;
         let code: string | undefined;
-        const retryResource =
-          resource.startsWith('gateway/retry/');
+        const retryResource = resource.startsWith('gateway/retry/');
         const operationResource = method === 'GET' && resource.startsWith('api-keys/operations/');
         if (
-          (retryResource || operationResource ||
+          (retryResource ||
+            operationResource ||
             (resource === 'strategy' && response.status === 409)) &&
           (response.status === 409 ||
             response.status === 503 ||
@@ -141,7 +142,7 @@ export function createPublicApiClient(
         throw new PublicApiError('http', response.status, operationResult, code);
       }
       return (
-        ['operation', 'strategy', 'complete'].includes(resource)
+        ['operation', 'strategy', 'complete', 'installation/runtime'].includes(resource)
           ? parseRuntimeJSON(await response.text())
           : await response.json()
       ) as T;

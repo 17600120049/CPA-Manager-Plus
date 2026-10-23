@@ -424,3 +424,38 @@ describe('AiProvidersPage current-layer config refresh', () => {
     act(() => renderer.unmount());
   });
 });
+
+describe('AiProvidersPage error presentation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.cacheValid = false;
+    mocks.transitionLayer = null;
+    mocks.config = {
+      geminiApiKeys: [],
+      interactionsApiKeys: [],
+      codexApiKeys: [],
+      xaiApiKeys: [],
+      claudeApiKeys: [],
+      vertexApiKeys: [],
+      openaiCompatibility: [],
+    };
+    mocks.fetchConfig.mockRejectedValue(
+      Object.assign(new Error('usage service is not configured'), { status: 428 })
+    );
+    mocks.getVertexConfigs.mockResolvedValue([]);
+    mocks.getOpenAIProviders.mockResolvedValue([]);
+  });
+
+  it('maps an unconfigured Manager response to the product error message', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<AiProvidersPage />);
+    });
+    await flush();
+
+    expect(renderer.root.findByProps({ className: 'error-box' }).children.join('')).toBe(
+      'usage_service_errors.usage_service_not_configured'
+    );
+    act(() => renderer.unmount());
+  });
+});

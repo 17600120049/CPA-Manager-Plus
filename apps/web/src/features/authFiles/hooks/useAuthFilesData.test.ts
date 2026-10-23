@@ -227,6 +227,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('useAuthFilesData service errors', () => {
+  it('maps an unconfigured Manager response to the product error message', async () => {
+    const error = Object.assign(new Error('usage service is not configured'), { status: 428 });
+    mocks.list.mockRejectedValueOnce(error);
+    const hook = mountUseAuthFilesData();
+
+    await act(async () => hook.getCurrent().loadFiles());
+
+    expect(hook.getCurrent().error).toBe('usage_service_errors.usage_service_not_configured');
+    hook.unmount();
+  });
+});
+
 describe('buildPastedAuthJsonPayloads', () => {
   it('keeps explicit file names for pasted CPA auth JSON', () => {
     const input = {

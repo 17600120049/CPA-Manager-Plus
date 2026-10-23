@@ -18,6 +18,36 @@ const GEMINI_MODELS_IN_FLIGHT = new Map<string, Promise<ReturnType<typeof normal
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
+/**
+ * The embedded Manager deliberately keeps the model Gateway closed until a
+ * real CPA/provider configuration is applied. Keep that expected 503 in
+ * product language instead of exposing the Gateway's transport text.
+ */
+export const isGatewayPendingError = (error: unknown): boolean => {
+  const response = axios.isAxiosError(error) ? error.response : undefined;
+  const record = isRecord(error) ? error : undefined;
+  const responseData = response?.data ?? record?.data ?? record?.details;
+  const status =
+    response?.status ?? (typeof record?.status === 'number' ? record.status : undefined);
+  const messageCandidates = [
+    error instanceof Error ? error.message : undefined,
+    typeof responseData === 'string' ? responseData : undefined,
+    isRecord(responseData) && typeof responseData.error === 'string'
+      ? responseData.error
+      : undefined,
+    isRecord(responseData) && typeof responseData.message === 'string'
+      ? responseData.message
+      : undefined,
+    typeof record?.error === 'string' ? record.error : undefined,
+  ];
+  return (
+    status === 503 &&
+    messageCandidates.some(
+      (candidate) => candidate?.trim().toLowerCase() === 'gateway pending configuration'
+    )
+  );
+};
+
 const buildRequestSignature = (
   url: string,
   headers: Record<string, string>,

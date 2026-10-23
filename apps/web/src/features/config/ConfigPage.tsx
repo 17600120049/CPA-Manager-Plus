@@ -340,6 +340,7 @@ export function ConfigPage() {
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const managementKey = useAuthStore((state) => state.managementKey);
+  const authenticatedApiBase = useAuthStore((state) => state.apiBase);
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const setUsageServiceConfig = useUsageServiceStore((state) => state.setUsageServiceConfig);
   const isMobile = useMediaQuery('(max-width: 768px)');
@@ -431,7 +432,16 @@ export function ConfigPage() {
     managerCPAUsage?.redisUsageQueueRetentionSeconds ||
     Number(visualValues.redisUsageQueueRetentionSeconds) ||
     60;
-  const detectedPanelBase = useMemo(() => detectApiBaseFromLocation(), []);
+  const detectedPanelBase = useMemo(() => {
+    // Full Web embeds the existing Manager page below Fresh's authenticated
+    // Public API namespace. Prefer that verified bridge for Manager/usage
+    // probes; falling back to the browser origin preserves standalone Panel
+    // and ordinary Manager deployments.
+    if (/\/api\/v2\/cpamp$/i.test(authenticatedApiBase.trim())) {
+      return normalizeUsageServiceBase(authenticatedApiBase);
+    }
+    return detectApiBaseFromLocation();
+  }, [authenticatedApiBase]);
   const managerCollectorModeOptions = useMemo(
     () => [
       { value: 'auto', label: t('config_management.manager.collector_mode_auto') },
@@ -485,12 +495,11 @@ export function ConfigPage() {
       setSourceConfigLoaded(true);
       loadVisualValuesFromYaml(data);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('notification.refresh_failed');
-      setError(message);
+      setError(getUsageServiceDisplayError(err, 'config_management.status_load_failed'));
     } finally {
       setLoading(false);
     }
-  }, [loadVisualValuesFromYaml, t, updateSourceSnapshotStale]);
+  }, [getUsageServiceDisplayError, loadVisualValuesFromYaml, updateSourceSnapshotStale]);
 
   useEffect(() => {
     if (activeTab === 'manager') {
@@ -505,7 +514,7 @@ export function ConfigPage() {
     let cancelled = false;
     const detectUsageServiceHost = async () => {
       try {
-        const info = await usageServiceApi.getInfo(detectedPanelBase);
+        const info = await usageServiceApi.getInfo(detectedPanelBase, managementKey);
         if (!cancelled) {
           setPanelHostedByUsageService(isUsageServiceId(info.service));
         }
@@ -519,7 +528,7 @@ export function ConfigPage() {
     return () => {
       cancelled = true;
     };
-  }, [detectedPanelBase]);
+  }, [detectedPanelBase, managementKey]);
 
   useEffect(() => {
     if (panelHostedByUsageService !== false || activeTab !== 'manager') return;

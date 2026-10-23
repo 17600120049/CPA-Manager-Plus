@@ -526,7 +526,18 @@
     "logs": "記錄檢視",
     "logs_short": "記錄",
     "system_info": "系統資訊",
-    "system_info_short": "系統"
+    "system_info_short": "系統",
+    "group_overview": "總覽",
+    "group_configuration": "設定",
+    "group_accounts": "帳戶",
+    "group_operations": "執行作業",
+    "group_plugins": "插件擴充",
+    "group_system": "系統管理",
+    "group_resources": "資源管理",
+    "group_clients": "用戶端接入",
+    "group_observe": "監控分析",
+    "model_prices": "模型價格",
+    "provider_models": "提供商模型"
   },
   "account_actions": {
     "eyebrow": "帳號異常",
@@ -4705,6 +4716,7 @@
     "models_loading": "正在載入可用模型...",
     "models_empty": "未從 /models 取得到模型資料",
     "models_error": "取得模型清單失敗",
+    "models_gateway_pending": "閘道接入等待設定",
     "models_count": "可用模型 {{count}} 個",
     "version_check_title": "版本檢查",
     "version_check_desc": "檢查伺服器版本，並提示是否有可用更新。",

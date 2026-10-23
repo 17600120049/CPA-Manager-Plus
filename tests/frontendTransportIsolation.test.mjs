@@ -55,7 +55,7 @@ function runtimeImports(file) {
   return imports;
 }
 
-function graph(entry, panel = false) {
+function graph(entry, panel = false, { skipLegacyCompatibility = false } = {}) {
   const seen = new Set();
   const pending = [path.join(src, entry)];
   while (pending.length) {
@@ -63,6 +63,18 @@ function graph(entry, panel = false) {
     if (seen.has(file)) continue;
     seen.add(file);
     for (const specifier of runtimeImports(file)) {
+      // Bootstrap and the canonical transport stay isolated. The verified
+      // Console route explicitly reuses the original login/session modules,
+      // and only mounts business pages after ProductComplete. These are the
+      // three bounded compatibility edges; Fresh login runtime tests assert
+      // that they never call legacy discovery/login instead of canonical auth.
+      if (
+        skipLegacyCompatibility &&
+        file.endsWith('/fullweb/FreshConsolePage.tsx') &&
+        ['./LegacyConsolePage', './FullWebLoginPage', './freshSession'].includes(specifier)
+      ) {
+        continue;
+      }
       const resolution = ts.resolveModuleName(
         specifier,
         file,
@@ -124,8 +136,13 @@ describe('Full Web / Panel Lite runtime dependency isolation', () => {
     }
   });
 
-  it('Full Web does not import legacy CPA transport/auth/base or Panel modules, including lazy chunks', () => {
-    const files = [...new Set([...graph('fullweb/main.tsx'), ...graph('fullweb/publicApi.ts')])];
+  it('Full Web core excludes legacy transport outside the explicit login/session/Console compatibility edges', () => {
+    const files = [
+      ...new Set([
+        ...graph('fullweb/main.tsx', false, { skipLegacyCompatibility: true }),
+        ...graph('fullweb/publicApi.ts'),
+      ]),
+    ];
     expect(files.length).toBeGreaterThan(2);
     expect(
       files.filter(
@@ -138,6 +155,16 @@ describe('Full Web / Panel Lite runtime dependency isolation', () => {
       const source = readFileSync(path.join(src, file), 'utf8');
       expect(source, file).not.toMatch(/localStorage|sessionStorage|\/v0\/management/);
     }
+  });
+
+  it('mounts the existing Console only through the authenticated canonical bridge seam', () => {
+    const seam = readFileSync(path.join(src, 'fullweb/LegacyConsolePage.tsx'), 'utf8');
+    const session = readFileSync(path.join(src, 'fullweb/freshSession.ts'), 'utf8');
+    expect(seam).toContain('activateFreshSession(verified, credential,');
+    expect(session).toContain("new URL(`${context.apiBase}/cpamp`, window.location.origin)");
+    expect(session).toContain('apiClient.setConfig({ apiBase, managementKey: credential })');
+    expect(session).toContain('useAuthStore.setState');
+    expect(seam).toContain('resolveRoutingContext');
   });
 
   it('Panel graph excludes Full Web transport/auth and replaces the legacy Manager transport', () => {

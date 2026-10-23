@@ -16,7 +16,7 @@ vi.mock('./apiCall', async (importOriginal) => {
   };
 });
 
-import { modelsApi } from './models';
+import { isGatewayPendingError, modelsApi } from './models';
 
 const successfulResult = (body: unknown) => ({
   statusCode: 200,
@@ -28,6 +28,27 @@ const successfulResult = (body: unknown) => ({
 
 beforeEach(() => {
   mocks.request.mockReset();
+});
+
+describe('gateway availability errors', () => {
+  it('recognizes the expected closed-gateway response without treating other 503s as pending', () => {
+    expect(
+      isGatewayPendingError(
+        Object.assign(new Error('gateway pending configuration'), { status: 503 })
+      )
+    ).toBe(true);
+    expect(
+      isGatewayPendingError(
+        Object.assign(new Error('Request failed with status code 503'), {
+          status: 503,
+          data: 'gateway pending configuration',
+        })
+      )
+    ).toBe(true);
+    expect(
+      isGatewayPendingError(Object.assign(new Error('upstream unavailable'), { status: 503 }))
+    ).toBe(false);
+  });
 });
 
 describe('modelsApi request-level proxy', () => {

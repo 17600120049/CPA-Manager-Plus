@@ -25,7 +25,7 @@ it('consumes a new host Handoff in an already-open Bootstrap tab and retires its
   });
   vi.stubGlobal('document', { getElementById: () => null });
   await import('./main');
-  const first = render.mock.calls[0][0];
+  const first = render.mock.calls[0][0].props.children[1].props.children;
   expect(first.props.handoff).toBeNull();
   const clear = vi.spyOn(first.props.transport, 'clear');
   const handoff = {
@@ -44,7 +44,7 @@ it('consumes a new host Handoff in an already-open Bootstrap tab and retires its
     '#handoff=' +
     btoa(JSON.stringify(handoff)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   hashChanged();
-  const second = render.mock.calls[1][0];
+  const second = render.mock.calls[1][0].props.children[1].props.children;
   expect(clear).toHaveBeenCalledOnce();
   expect(location.hash).toBe('');
   expect(second.key).not.toBe(first.key);

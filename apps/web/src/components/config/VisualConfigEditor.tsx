@@ -426,6 +426,7 @@ export function VisualConfigEditor({
       floatingElement.style.removeProperty('max-height');
       floatingElement.style.removeProperty('opacity');
       floatingElement.style.removeProperty('pointer-events');
+      floatingElement.style.removeProperty('clip-path');
     };
 
     if (!shouldRenderFloatingSidebar || !anchorElement || !workspaceElement) {
@@ -461,7 +462,10 @@ export function VisualConfigEditor({
       const viewportPadding = 16;
       const maxTop = workspaceRect.bottom - cachedFloatingHeight;
       const unclampedTop = Math.min(Math.max(anchorRect.top, stickyTop), maxTop);
-      const top = Math.max(unclampedTop, viewportPadding);
+      // Like a native sticky element, the rail must leave the viewport when
+      // its own workspace ends. Clamping it to the viewport would overlap
+      // subsequent sections on the same configuration page.
+      const top = Math.min(Math.max(unclampedTop, viewportPadding), maxTop);
       const left = Math.max(anchorRect.left, viewportPadding);
       const width = Math.max(
         Math.min(anchorRect.width, window.innerWidth - left - viewportPadding),
@@ -474,6 +478,9 @@ export function VisualConfigEditor({
       floatingElement.style.transform = `translate3d(${left}px, ${top}px, 0)`;
       floatingElement.style.width = `${width}px`;
       floatingElement.style.maxHeight = `${maxHeight}px`;
+      // This rail is portaled above the app stacking context. Clip the part
+      // leaving its workspace so it cannot cover the global header controls.
+      floatingElement.style.clipPath = `inset(${Math.max(headerHeight - top, 0)}px 0 0 0)`;
       floatingElement.style.opacity = isVisible ? '1' : '0';
       floatingElement.style.pointerEvents = isVisible ? 'auto' : 'none';
     };

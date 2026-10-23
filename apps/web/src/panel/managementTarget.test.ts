@@ -42,6 +42,18 @@ describe('Panel Lite CPA transport boundary', () => {
     ).toThrow();
   });
 
+  it('allows only the authenticated Full Web legacy bridge target', () => {
+    expect(() =>
+      assertPanelManagementTarget(
+        'https://manager.example/control/api/v2/cpamp/v0/management',
+        '/config'
+      )
+    ).not.toThrow();
+    expect(() =>
+      assertPanelManagementTarget('https://manager.example/control/api/v2/v0/management', '/config')
+    ).toThrow();
+  });
+
   it('legacy Manager compatibility calls cannot reach the network', async () => {
     await expect(usageServiceApi.getInfo('https://manager.example')).rejects.toThrow(
       'unavailable in Panel Lite'

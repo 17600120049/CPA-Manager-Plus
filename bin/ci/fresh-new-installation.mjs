@@ -26,10 +26,12 @@ const report = {
   result: 'FAIL',
   project,
   checks: [],
+  screenshots: [],
   pageErrors: [],
   notRun: [
     'Real Provider/model traffic, public Gateway, other four journeys, arm64, power-loss and production rollback',
     'Natural ten-minute claim expiry (expired server timestamp is injected offline only in this disposable fixture)',
+    'Non-Chinese locale layouts, other browser engines',
   ],
 };
 // Pin a free loopback port in HostConfig. Publishing port 0 can allocate a new
@@ -79,6 +81,15 @@ const images = Object.fromEntries(
   })
 );
 report.images = images;
+report.imageSourceRevisions = Object.fromEntries(
+  Object.entries(images).map(([service, image]) => [
+    service,
+    JSON.parse(docker('image', 'inspect', image))[0].Config.Labels?.[
+      'org.opencontainers.image.revision'
+    ] || 'unknown',
+  ])
+);
+report.testedSourceCommit = report.imageSourceRevisions['cpamp-manager'];
 report.source = docker('version', '--format', '{{.Server.Os}}/{{.Server.Arch}}');
 report.gitHead = run(['git', 'rev-parse', 'HEAD']).stdout.trim();
 report.diffSha256 = createHash('sha256')
@@ -95,7 +106,9 @@ report.sourceFiles = Object.fromEntries(
         .split('\n')
     ),
   ]
-    .filter((file) => /^(apps\/web\/src\/|bin\/ci\/fresh-new-installation)/.test(file))
+    .filter((file) =>
+      /^(apps\/(web\/src|manager-server\/cmd)\/|bin\/ci\/fresh-new-installation)/.test(file)
+    )
     .map((file) => [
       file,
       createHash('sha256')
@@ -141,6 +154,52 @@ const dc = (...args) => run([...compose, ...args]).stdout.trim();
 function pass(name) {
   report.checks.push({ name, result: 'PASS' });
   console.log('PASS ' + name);
+}
+async function screenshot(name, fullPage = true) {
+  const overflow = await page.evaluate(() => ({
+    width: innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    elements: [...document.querySelectorAll('body *')]
+      .filter((element) => element.getBoundingClientRect().right > innerWidth + 1)
+      .slice(0, 15)
+      .map((element) => ({
+        tag: element.tagName,
+        class: element.getAttribute('class'),
+        right: element.getBoundingClientRect().right,
+      })),
+  }));
+  assert(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    'horizontal overflow: ' + name + ' ' + JSON.stringify(overflow)
+  );
+  await page.screenshot({
+    path: resolve(out, name + '.png'),
+    fullPage: fullPage && page.viewportSize().width > 768,
+    animations: 'disabled',
+  });
+  report.screenshots.push({
+    name,
+    path: name + '.png',
+    viewport: page.viewportSize(),
+    theme: await page
+      .locator('html')
+      .evaluate((html) => (html.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')),
+    route: new URL(page.url()).pathname,
+  });
+}
+async function installationScreenshots(stage) {
+  for (const [name, width, light] of [
+    ['desktop-dark', 1440, false],
+    ['desktop-light', 1440, true],
+    ['mobile-light', 390, true],
+    ['mobile-dark', 390, false],
+  ]) {
+    await page.setViewportSize({ width, height: 1000 });
+    if ((await page.locator('html').evaluate((html) => html.classList.contains('light'))) !== light)
+      await page.getByRole('button', { name: '切换明暗主题', exact: true }).click();
+    await screenshot('installation-' + stage + '-' + name);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
 }
 async function wait(check, label, timeout = 45000) {
   const end = Date.now() + timeout;
@@ -198,7 +257,20 @@ try {
   )[0];
   taskNetwork = network;
   await wait(async () => (await fetch(origin + bootstrap)).ok, 'public Discovery');
-  assert.equal((await fetch(origin + bootstrap + '/ui')).status, 404);
+  assert.equal((await fetch(origin + bootstrap + '/ui')).status, 200);
+  for (const path of ['claim/exchange', 'admin/generate', 'admin/commit']) {
+    assert.equal(
+      (
+        await fetch(origin + api + path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        })
+      ).status,
+      404,
+      'read-only discovery must not expose ' + path
+    );
+  }
   assert.equal(
     dc(
       'exec',
@@ -283,7 +355,9 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   await page.goto(origin + handoff);
   await page.getByTestId('bootstrap-operation-ready').waitFor();
   assert.equal(new URL(page.url()).hash, '');
-  const operationId = await page.getByTestId('op-id').innerText();
+  await screenshot('bootstrap-administrator-desktop-light');
+  const operationId = (await page.getByTestId('op-id').textContent()).trim();
+  assert(operationId, 'claimed operation identity must be present');
   report.operationId = operationId;
   const replayPage = await context.newPage();
   await replayPage.goto(origin + handoff);
@@ -344,6 +418,26 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   pass('routing failure retains intent; lost activation reply reconciles exact public identity');
   await page.getByTestId('continue-console').click();
   await page.getByTestId('console-login').waitFor();
+  assert.equal(await page.locator('.console-login-panel').count(), 0);
+  await page.getByRole('checkbox', { name: '记住凭证', exact: true }).waitFor();
+  for (const [name, width, light] of [
+    ['desktop-light', 1440, true],
+    ['desktop-dark', 1440, false],
+    ['mobile-dark', 390, false],
+    ['mobile-light', 390, true],
+  ]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const dark = await page.locator('html').getAttribute('data-theme') === 'dark';
+      if (dark === !light) break;
+      await page.getByRole('button', { name: '主题', exact: true }).click();
+    }
+    assert.equal(await page.locator('html').getAttribute('data-theme') === 'dark', !light);
+    assert.equal(await page.getByRole('button', { name: '主题', exact: true }).count(), 1);
+    await screenshot('original-login-' + name, false);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  pass('original CPAMP login page, language/theme tools and remember-credential control render on desktop/mobile light/dark');
   const login = async (key) => {
     await page.locator('#console-admin-key').fill(key);
     await page.getByTestId('console-login').locator('button[type=submit]').click();
@@ -353,8 +447,22 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   await page.getByRole('alert').waitFor();
   assert(await page.getByTestId('console-login').isVisible());
   await login(admin);
-  await page.getByTestId('console-operation').waitFor();
+  await page.getByTestId('fresh-managed-runtime').waitFor();
   pass('Console rejects missing/wrong Admin Key and accepts the installed Admin Key');
+  const adminGet = async (path) => {
+    const response = await fetch(origin + '/console/api/v2/' + path, {
+      headers: { Authorization: 'Bearer ' + admin },
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  for (const key of ['', 'incorrect-admin-key']) {
+    const denied = await fetch(origin + '/console/api/v2/installation/runtime', {
+      headers: key ? { Authorization: 'Bearer ' + key } : {},
+    });
+    assert.equal(denied.status, 401);
+  }
+  pass('deployment Runtime observation rejects missing/wrong administrator credentials');
   const runtimeToken = dc('exec', '-T', 'cpamp-runtime', 'cat', '/run/cpamp/runtime-secret/token');
   secretValues.push(runtimeToken);
   const statusProgram = `import urllib.request,json,sys
@@ -384,28 +492,72 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     pin
   );
   assert.equal(status.state, 'offline');
-  await page.getByTestId('runtime-observation').fill(statusJSON);
-  await page.getByTestId('install-runtime').click();
-  await wait(
-    async () => (await page.getByTestId('install-stage').innerText()) === 'staged',
-    'saved Runtime target'
+  await installationScreenshots('choice');
+  assert.equal(await page.getByTestId('runtime-observation').count(), 0);
+  await page.getByRole('button', { name: '下一步', exact: true }).click();
+  await installationScreenshots('configure');
+  await page.route(
+    '**/console/api/v2/installation/runtime',
+    (route) => route.fulfill({ status: 503, body: '' }),
+    { times: 1 }
   );
-  assert.equal(report.strategyGenerations[0], status.runtimeGeneration);
+  await page.getByTestId('inspect-installation').click();
+  await page.getByRole('alert').filter({ hasText: '暂时无法读取部署环境' }).waitFor();
+  assert.equal(report.strategyGenerations.length, 0);
+  assert.equal((await adminGet('operation')).identity.operationId, operationId);
+  pass(
+    'failed deployment check preserves the original operation and performs no installation write'
+  );
+  await page.getByTestId('inspect-installation').click();
+  await page.getByTestId('install-runtime').waitFor();
+  assert(await page.getByTestId('install-runtime').isDisabled());
+  await page.getByRole('checkbox').check();
+  await installationScreenshots('review');
   let starts = 0;
+  let strategyWrites = 0;
+  let disconnected = false;
+  await page.route('**/console/api/v2/operation', async (route) => {
+    if (disconnected) await route.abort('failed');
+    else await route.continue();
+  });
   await page.route('**/console/api/v2/strategy', async (route) => {
-    starts++;
+    strategyWrites++;
     const reply = await route.fetch();
     assert.equal(reply.status(), 200);
-    await route.abort('failed');
+    if (strategyWrites === 1) await route.fulfill({ response: reply });
+    else {
+      starts++;
+      disconnected = true;
+      await route.abort('failed'); // Real Start committed; subsequent status reads disconnected.
+    }
   });
   await page.getByTestId('install-runtime').click();
+  await wait(async () => starts === 1, 'real Runtime Start with lost browser reply');
   await wait(
-    async () => (await page.getByTestId('install-stage').innerText()) === 'committed',
-    'started Runtime'
+    async () => (await page.getByTestId('install-stage').innerText()) === '结果待确认',
+    'unconfirmed original installation'
   );
+  assert(await page.getByTestId('install-runtime').isDisabled());
   assert.equal(starts, 1);
+  assert.equal(strategyWrites, 2);
+  assert.equal(report.strategyGenerations[0], status.runtimeGeneration);
   assert.equal(report.strategyGenerations[1], status.runtimeGeneration);
+  await installationScreenshots('result-unconfirmed');
+  disconnected = false;
+  await page.unroute('**/console/api/v2/operation');
   await page.unroute('**/console/api/v2/strategy');
+  await page.reload();
+  await page.getByTestId('console-login').waitFor();
+  await login(admin);
+  await page.getByTestId('fresh-managed-runtime').waitFor();
+  assert.equal((await adminGet('operation')).identity.operationId, operationId);
+  assert.equal((await adminGet('operation')).strategy.stage, 'committed');
+  await page.getByTestId('install-runtime').click();
+  await wait(
+    async () => (await adminGet('operation')).productComplete === true,
+    'original installation recovered and completed after reload'
+  );
+  assert.equal(report.strategyGenerations.length, 2);
   const started = JSON.parse(
     run(
       [
@@ -445,52 +597,186 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
       .update(readFileSync(resolve(root, 'docker/runtime/config.v8.default.seed.yaml')))
       .digest('hex')
   );
-  await page.getByTestId('install-runtime').click();
   await wait(
     async () => (await page.getByTestId('install-stage').innerText()) === '安装已完成',
     'completed installation'
   );
   pass(
-    'official default CPA v8 target staged, started through existing strategy, and installation completed after lost Start reply'
+    'one user install submission staged and started official CPA; reload recovered the same operation after lost reply without repeating Start'
   );
-  const adminGet = async (path) => {
-    const response = await fetch(origin + '/console/api/v2/' + path, {
-      headers: { Authorization: 'Bearer ' + admin },
-    });
-    assert.equal(response.status, 200);
-    return response.json();
+  await installationScreenshots('complete');
+  await page.getByRole('button', { name: '进入 Console', exact: true }).click();
+  const legacyConsole = page.getByTestId('legacy-console');
+  await legacyConsole.waitFor();
+  await legacyConsole.locator('.app-shell').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/console');
+  const bridgeInfo = await fetch(origin + '/console/api/v2/cpamp/usage-service/info', {
+    headers: { Authorization: 'Bearer ' + admin },
+  });
+  assert.equal(bridgeInfo.status, 200);
+  const configBefore = await fetch(origin + '/console/api/v2/cpamp/config', {
+    headers: { Authorization: 'Bearer ' + admin },
+  });
+  assert.equal(configBefore.status, 200);
+  const configPayload = await configBefore.json();
+  assert(configPayload.config && typeof configPayload.config === 'object');
+  const configToSave = {
+    ...configPayload.config,
+    // A fresh Managed install intentionally has no CPA Management Key yet.
+    // Keep the existing manager-config invariant truthful in this disposable
+    // probe: an empty connection may be saved only with collection disabled.
+    collector: {
+      ...configPayload.config.collector,
+      ...(configPayload.config.cpaConnection?.cpaBaseUrl
+        ? {}
+        : { enabled: false }),
+    },
   };
+  const configSave = await fetch(origin + '/console/api/v2/cpamp/config', {
+    method: 'PUT',
+    headers: {
+      Authorization: 'Bearer ' + admin,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ config: configToSave }),
+  });
+  assert.equal(configSave.status, 200);
+  const configAfter = await fetch(origin + '/console/api/v2/cpamp/config', {
+    headers: { Authorization: 'Bearer ' + admin },
+  });
+  assert.equal(configAfter.status, 200);
+  assert.equal((await adminGet('operation')).productComplete, true);
+  pass(
+    'Fresh New completion enters the existing CPAMP MainLayout; authenticated Config GET/PUT remains readable'
+  );
   const before = await adminGet('operation');
   assert.equal(before.productComplete, true);
   assert.equal(before.gatewayPending, true);
-  await wait(async () => !(await page.locator('#update-channel').isDisabled()), 'channel read');
-  await page.locator('#update-channel').selectOption('beta');
-  await page.getByRole('button', { name: '保存频道', exact: true }).click();
-  await wait(
-    async () => (await adminGet('settings/update-channel')).channel_preference === 'beta',
-    'persisted channel'
-  );
-  for (const [name, width, theme] of [
+  const normalizeConsolePath = (path) => {
+    const pathname = new URL(page.url()).pathname.replace(/\/$/, '');
+    return pathname || '/';
+  };
+  const navigate = async (path) => {
+    if (page.viewportSize().width < 768 && (await page.locator('aside.sidebar.open').count()) === 0)
+      await page.locator('button.hamburger-container').click();
+    const href = '/console' + (path || '/');
+    const link =
+      path === ''
+        ? page.locator('aside.sidebar a[href="/console"], aside.sidebar a[href="/console/"]')
+        : page.locator(`aside.sidebar a[href="${href}"]`);
+    if (!(await link.isVisible())) {
+      const section = path.startsWith('/ai-providers') || ['/accounts', '/oauth'].includes(path)
+        ? 'resources'
+        : path === '/api-keys' ? 'clients'
+          : ['/monitoring', '/usage-analytics', '/model-prices'].includes(path) ? 'observe'
+            : 'system';
+      await page.locator(`aside.sidebar button[aria-controls="nav-${section}"]`).click();
+    }
+    await link.waitFor();
+    await link.click();
+    await wait(
+      async () => normalizeConsolePath() === href.replace(/\/$/, ''),
+      'navigation ' + path
+    );
+    const currentLink = page.locator('a[aria-current="page"]');
+    await wait(
+      async () =>
+        (await currentLink.count()) === 1 &&
+        (await currentLink.getAttribute('href'))?.replace(/\/$/, '') === href.replace(/\/$/, ''),
+      'active navigation ' + path
+    );
+    assert.equal(
+      (await currentLink.getAttribute('href'))?.replace(/\/$/, ''),
+      href.replace(/\/$/, '')
+    );
+    assert((await page.locator('.app-breadcrumb').innerText()).length > 0);
+  };
+  for (const [name, width, light] of [
     ['desktop-dark', 1440, false],
+    ['desktop-light', 1440, true],
     ['mobile-light', 390, true],
+    ['mobile-dark', 390, false],
   ]) {
     await page.setViewportSize({ width, height: 1000 });
-    if (theme) await page.getByRole('button', { name: '切换明暗主题', exact: true }).click();
-    assert(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-      'horizontal overflow'
-    );
-    await page.screenshot({
-      path: resolve(out, name + '.png'),
-      fullPage: true,
-      animations: 'disabled',
-    });
+    const isLight = await page
+      .locator('html')
+      .evaluate((html) => html.getAttribute('data-theme') !== 'dark');
+    if (isLight !== light) {
+      await page.getByRole('button', { name: '主题', exact: true }).click();
+      await page
+        .getByRole('menuitemradio', { name: light ? '明亮' : '黑夜', exact: true })
+        .click();
+    }
+    await navigate('');
+    await screenshot('legacy-home-' + name);
+    await navigate('/config');
+    await page.locator('[role="tablist"]').first().waitFor();
+    await screenshot('legacy-config-' + name);
+    const retryPanel = page.getByTestId('fresh-managed-retry');
+    await retryPanel.scrollIntoViewIfNeeded();
+    await wait(async () => page.evaluate(() => {
+      const retry = document.querySelector('[data-testid="fresh-managed-retry"]').getBoundingClientRect();
+      const toggle = document.querySelector('.hamburger-container');
+      const box = toggle.getBoundingClientRect();
+      if (!toggle.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))) return false;
+      return [...document.querySelectorAll('[class*="floatingSidebarContainer"]')].every((rail) => {
+        if (getComputedStyle(rail).opacity === '0') return true;
+        return rail.getBoundingClientRect().bottom <= retry.top + 1;
+      });
+    }), 'configuration navigation stays inside its original workspace');
+    await screenshot('integrated-retry-' + name);
+    if (width < 768) {
+      await page.locator('button.hamburger-container').click();
+      await page.locator('aside.sidebar.open').waitFor();
+      await screenshot('legacy-navigation-' + name);
+      await page
+        .locator('.sidebar-backdrop.visible')
+        .click({ position: { x: page.viewportSize().width - 20, y: 200 } });
+    } else {
+      await page.locator('button.hamburger-container').click();
+      await page.locator('aside.sidebar.collapsed').waitFor();
+      await screenshot('legacy-navigation-collapsed-' + name);
+      await page.locator('button.hamburger-container').click();
+    }
+    await navigate('/system');
+    await page.locator('.main-content').waitFor();
+    await page.getByRole('button', { name: '清理登录信息', exact: true }).click();
+    await page.getByRole('dialog').waitFor();
+    await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    assert(await legacyConsole.isVisible());
+    await screenshot('legacy-system-' + name);
   }
-  for (const storage of await page.evaluate(() => [
-    Object.keys(localStorage),
-    Object.keys(sessionStorage),
-  ]))
-    assert.equal(storage.length, 0);
+  await page.goBack();
+  assert.equal(normalizeConsolePath(), '/console/config');
+  await page.goForward();
+  assert.equal(normalizeConsolePath(), '/console/system');
+  pass(
+    'existing CPAMP two-level navigation, breadcrumbs, history, desktop collapse and mobile drawer work in light/dark themes'
+  );
+  await page.getByRole('button', { name: '语言', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'English', exact: true }).click();
+  await page.getByRole('button', { name: 'Language', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: '简体中文', exact: true }).click();
+  await page.getByRole('button', { name: '语言', exact: true }).waitFor();
+  pass(
+    'language selection updates the existing Console and restores Chinese'
+  );
+  await navigate('/system/updates');
+  const updateSettings = page.locator('details').filter({ has: page.locator('#manager-update-channel') });
+  await updateSettings.locator('summary').click();
+  const updateChannel = page.locator('#manager-update-channel');
+  await updateChannel.waitFor();
+  await updateChannel.click();
+  await page.getByRole('option', { name: '测试版 Beta', exact: true }).click();
+  await wait(async () => (await adminGet('cpamp/usage-service/updates')).channel_preference === 'beta', 'original update page saves channel');
+  await screenshot('original-updates-working');
+  pass('original global confirmation can be canceled without logout; original update provider loads and persists channel');
+  const storedSecrets = await page.evaluate((adminKey) =>
+    [...Object.values(localStorage), ...Object.values(sessionStorage)].some((value) =>
+      value.includes(adminKey)
+    ), admin);
+  assert.equal(storedSecrets, false);
   const closed = async () => {
     for (const path of [
       '/v1/models',
@@ -535,10 +821,10 @@ except OSError:pass`,
   await page.reload();
   await page.getByTestId('console-login').waitFor();
   await login(admin);
-  await page.getByTestId('console-operation').waitFor();
+  await page.getByTestId('legacy-console').waitFor();
+  await page.locator('.app-shell').waitFor();
   const after = await adminGet('operation');
   assert.deepEqual(after, before);
-  assert.equal((await adminGet('settings/update-channel')).channel_preference, 'beta');
   assert.equal(dc('exec', '-T', 'cpamp-manager', 'sha256sum', '/data/data.key'), keyDigest);
   assert.equal((await fetch(origin + bootstrap + '/ui')).status, 404);
   await closed();
@@ -589,6 +875,30 @@ except OSError:pass`,
   pass(
     'stale Runtime generation returns 409 managed_target_identity_mismatch without rebinding or retry'
   );
+  await page.getByRole('button', { name: '登出', exact: true }).click();
+  await page.getByTestId('console-login').waitFor();
+  await page.getByText('记住凭证', { exact: true }).click();
+  assert(await page.getByRole('checkbox', { name: '记住凭证', exact: true }).isChecked());
+  await login(admin);
+  await page.getByTestId('legacy-console').waitFor();
+  await navigate('/config');
+  await page.reload();
+  await page.getByTestId('legacy-console').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/console/config');
+  assert.equal(await page.getByTestId('console-login').count(), 0);
+  assert.deepEqual(await adminGet('operation'), before);
+  await screenshot('remembered-console-after-refresh');
+  pass('remembered login revalidates the real Admin Key after refresh and restores the original deep route');
+  await page.getByRole('button', { name: '登出', exact: true }).click();
+  await page.getByTestId('console-login').waitFor();
+  await page.reload();
+  await page.getByTestId('console-login').waitFor();
+  assert.equal(await page.getByTestId('legacy-console').count(), 0);
+  if (await page.getByRole('checkbox', { name: '记住凭证', exact: true }).isChecked())
+    await page.getByText('记住凭证', { exact: true }).click();
+  await login(admin);
+  await page.getByTestId('legacy-console').waitFor();
+  pass('explicit logout clears remembered authority; refresh stays on the original login page');
   const recoverProgram = `import urllib.request,json,sys,time
 token=sys.stdin.read().strip(); headers={'Authorization':'Bearer '+token,'X-CPAMP-Runtime-Features':'active-gateway-artifact-v1'}
 opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))

@@ -207,6 +207,7 @@ export function DemoPage() {
         timestamp: Date.now(),
         apiBase: DEMO_API_BASE,
         apiKey: '',
+        managementKey: DEMO_MANAGEMENT_KEY,
       },
     });
     useQuotaStore.setState(getDemoQuotaStoreState());

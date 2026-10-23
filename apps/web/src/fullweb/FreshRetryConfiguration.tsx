@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullWebText as t } from '../i18n/fullweb';
+import { workspaceText as w } from '../i18n/consoleWorkspace';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 
 
@@ -532,7 +533,7 @@ function RetryScalarEditor({
     if (!navigationRequest || variant !== "count") return;
     titleRef.current?.focus({ preventScroll: true });
     sectionRef.current?.scrollIntoView({ block: 'start' });
-  }, [navigationRequest]);
+  }, [navigationRequest, variant]);
 
   const currentValue =
     view?.presence === 'present' && view.value !== null
@@ -566,7 +567,7 @@ function RetryScalarEditor({
     >
       <div className="console-keys-heading">
         <div>
-          <p className="console-section-kicker">{t('retryNavigation')}</p>
+          <p className="console-section-kicker">{w('connection')}</p>
           <h2 id={variant === 'interval' ? 'gateway-retry-interval-title' : 'gateway-retry-title'} ref={titleRef} tabIndex={-1}>
             {t(variant === 'interval' ? 'retryIntervalTitle' : 'retryTitle')}
           </h2>
@@ -575,7 +576,7 @@ function RetryScalarEditor({
           {busy ? t('retryBusy') : canEdit ? t('retryEditable') : t('retryReadonly')}
         </span>
       </div>
-      <p>{t(variant === 'interval' ? 'retryIntervalHelp' : 'retryHelp')}</p>
+      <p>{w('connectionHelp')}</p>
       {message && (
         <p className="alert alert-info" role="status">
           {t(message)}
@@ -593,6 +594,8 @@ function RetryScalarEditor({
       )}
       {view ? (
         <>
+          <div className="retry-current-value"><span>{t('retryCurrentValue')}</span><strong>{currentValue}</strong><span>{view.persisted === 'persisted' ? t('retryPersistedConfirmed') : view.persisted === 'recovered' ? t('retryPersistedRecovered') : t('retryStatusUnknown')}</span></div>
+          <details className="retry-diagnostics"><summary>{w('diagnostic')}</summary>
           <div className="info-card retry-facts">
             <div className="info-row">
               <span className="info-key">{t('retryField')}</span>
@@ -643,6 +646,7 @@ function RetryScalarEditor({
               <span className="info-val">{view.concurrentProtection}</span>
             </div>
           </div>
+          </details>
           {!canEdit && !readUnavailable && !operationUnknown && (
             <p className="alert alert-warn">{t(lockReason || 'retryPermission')}</p>
           )}

@@ -20,3 +20,7 @@ void i18n.init({
   interpolation: { escapeValue: false },
 });
 export const fullWebText = (key: keyof typeof en): string => i18n.t(key);
+export function setFullWebLanguage(language: string) {
+  void i18n.changeLanguage(language);
+}
+export const fullWebLanguage = () => i18n.resolvedLanguage || 'zh-CN';

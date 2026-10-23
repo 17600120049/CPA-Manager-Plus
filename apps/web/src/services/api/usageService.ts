@@ -1948,6 +1948,7 @@ const fallbackUsageServiceCodeByStatus = (status?: number): string => {
     case 405:
       return 'method_not_allowed';
     case 412:
+    case 428:
       return 'usage_service_not_configured';
     default:
       return '';
@@ -1965,7 +1966,11 @@ export const getUsageServiceErrorCode = (error: unknown): string => {
   if (!isRecord(error)) return '';
   const code = typeof error.code === 'string' ? error.code : '';
   if (USAGE_SERVICE_ERROR_CODES.has(code)) return code;
-  return readUsageServiceErrorCode(error.data) || readUsageServiceErrorCode(error.details);
+  return (
+    readUsageServiceErrorCode(error.data) ||
+    readUsageServiceErrorCode(error.details) ||
+    fallbackUsageServiceCodeByStatus(typeof error.status === 'number' ? error.status : undefined)
+  );
 };
 
 const readUsageServiceErrorMessage = (value: unknown): string => {
@@ -2597,7 +2602,7 @@ const getDemoModelPriceSyncResponse = (models?: string[]): ModelPriceSyncRespons
 };
 
 export const usageServiceApi = {
-  getInfo: async (base: string): Promise<UsageServiceInfo> => {
+  getInfo: async (base: string, managementKey?: string): Promise<UsageServiceInfo> => {
     if (__DEMO_SITE__ && isDemoMode()) {
       return getDemoUsageServiceInfo();
     }
@@ -2605,6 +2610,7 @@ export const usageServiceApi = {
     return withUsageServiceError(async () => {
       const response = await axios.get<UsageServiceInfo>(buildUrl(base, '/usage-service/info'), {
         timeout: USAGE_SERVICE_TIMEOUT_MS,
+        headers: authHeaders(managementKey),
       });
       return response.data;
     });

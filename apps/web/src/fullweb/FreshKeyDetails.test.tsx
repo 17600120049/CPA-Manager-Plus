@@ -39,7 +39,9 @@ describe('Canonical key detail and rename', () => {
   });
   const view = () => JSON.stringify(renderer.toJSON());
   const button = (text: string) =>
-    renderer.root.findAllByType('button').find((item) => item.props.children === text)!;
+    renderer.root
+      .findAllByType('button')
+      .find((item) => item.props['aria-label'] === text || item.props.children === text)!;
   async function mount(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>, id = key.id) {
     await act(async () => {
       renderer = create(
@@ -115,8 +117,14 @@ describe('Canonical key detail and rename', () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json(key))
       .mockResolvedValueOnce(Response.json(installReady))
-      .mockReturnValueOnce(new Promise<Response>((_resolve, reject) => { rejectInstall = reject; }))
-      .mockResolvedValueOnce(Response.json({ ...installReady, attempted: true, installAvailable: false }));
+      .mockReturnValueOnce(
+        new Promise<Response>((_resolve, reject) => {
+          rejectInstall = reject;
+        })
+      )
+      .mockResolvedValueOnce(
+        Response.json({ ...installReady, attempted: true, installAvailable: false })
+      );
     await mount(fetchMock);
     await act(async () => button(t('keysCheckInstallation')).props.onClick());
     await act(async () => {
@@ -161,8 +169,16 @@ describe('Canonical key detail and rename', () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json(key))
       .mockResolvedValueOnce(Response.json(ready))
-      .mockReturnValueOnce(new Promise<Response>((resolve) => { finishRead = resolve; }))
-      .mockReturnValueOnce(new Promise<Response>((_resolve, reject) => { rejectInstall = reject; }))
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          finishRead = resolve;
+        })
+      )
+      .mockReturnValueOnce(
+        new Promise<Response>((_resolve, reject) => {
+          rejectInstall = reject;
+        })
+      )
       .mockResolvedValueOnce(Response.json({ ...ready, attempted: true, installAvailable: false }));
     await mount(fetchMock);
     await act(async () => button(t('keysCheckInstallation')).props.onClick());

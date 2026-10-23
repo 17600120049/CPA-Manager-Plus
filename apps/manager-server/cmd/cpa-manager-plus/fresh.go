@@ -7,17 +7,22 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityreconcile"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/collector"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/freshbootstrap"
 	healthcontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/health"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/router"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	keyrepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
@@ -25,6 +30,7 @@ import (
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
+	collectorservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/collector"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
@@ -35,6 +41,7 @@ import (
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/updatecheck"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/worker"
 )
 
 // initialize is a host-owned offline operation. It admits the actual store and
@@ -73,23 +80,41 @@ func freshPaths(cfg config.Config) (sqliterepo.InspectionPaths, error) {
 var errFreshExternalPermitRevoked = errors.New("fresh external host permit revoked")
 
 type freshApplication struct {
-	store       freshstore.Store
-	authority   *fresh.Service
-	routing     *freshrouting.Service
-	strategy    *freshstrategy.Service
-	externalPermit func(bootstrap.FreshOperation, uint64, string, string, string) bool
-	protector   *security.Protector
-	fixed       http.Handler
-	keys        *freshkeys.Service
-	keyApply    *freshkeyapply.Service
-	updates     *updatecheck.Service
-	configRetry *freshconfig.Service
-	pahS0       bool
+	store           freshstore.Store
+	authority       *fresh.Service
+	routing         *freshrouting.Service
+	strategy        *freshstrategy.Service
+	runtime         runtimeservice.RuntimeClient
+	externalPermit  func(bootstrap.FreshOperation, uint64, string, string, string) bool
+	protector       *security.Protector
+	fixed           http.Handler
+	keys            *freshkeys.Service
+	keyApply        *freshkeyapply.Service
+	updates         *updatecheck.Service
+	configRetry     *freshconfig.Service
+	legacy          http.Handler
+	collectorWorker *worker.CollectorWorker
+	identityWorker  *identityreconcile.Worker
+	pahS0           bool
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
 	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector, pahS0: cfg.PAHS0Enabled}
+	// Fresh owns the SQLite admission and keeps the old app bootstrap bypassed,
+	// but the already-built CPAMP services remain the source of truth for
+	// Full Web's shared Dashboard/Config/System resources. This context reuses
+	// the admitted connection and starts no collector until a user explicitly
+	// saves a supported Manager configuration.
+	legacyStore := store.New(opened.DB, opened.Protector)
+	legacyCollector := collector.NewManager(cfg, legacyStore)
+	legacyCollectorService := collectorservice.New(legacyCollector)
+	legacyContext := app.FromExistingWithModelsDev(cfg, legacyStore, legacyCollector, time.Now().UnixMilli(), nil, nil, nil, nil, "cpa-manager-plus")
+	// Fresh startup deliberately bypasses the historical app bootstrap. Keep
+	// the existing collector lifecycle, but restore it only from the persisted
+	// completed Manager Config after ProductComplete; pending installs remain
+	// unable to start collection through an old route.
+	a.collectorWorker = worker.NewCollectorWorker(cfg, legacyStore, legacyCollectorService)
 	a.keys = freshkeys.New(keyrepo.New(opened.DB), opened.Protector)
 	// Reuse the existing settings authority without opening a Legacy app,
 	// collector, CPA client, or second SQLite connection.
@@ -98,6 +123,22 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtime = runtimeservice.NewEmbeddedClientWithTokenSource(cfg.RuntimeURL, runtimeservice.NewFileRuntimeTokenSource(cfg.RuntimeTokenFile))
 	}
+	// Attach the same durable mutation services as the normal Embedded app
+	// before publishing its routes. An incomplete graph must never fall back to
+	// unjournaled API-key rotation or credential deletion.
+	identityWiring, err := wireFreshIdentityMutations(legacyContext, runtime)
+	if err != nil {
+		log.Printf("Fresh Console mutation services unavailable: %v", err)
+	} else {
+		a.identityWorker, err = newFreshIdentityReconcileWorker(legacyContext, identityWiring)
+		if err != nil {
+			log.Printf("Fresh identity reconciliation unavailable: %v", err)
+		}
+	}
+	// An unavailable Embedded writer must not remove unrelated Console reads,
+	// and External has no identity worker to install. Always construct the
+	// router, but fail writes closed if either mutation wiring step failed.
+	a.legacy = guardFreshLegacyWrites(router.New(legacyContext), err)
 	// The private host launcher alone mounts the short-lived permit. The default
 	// v7 profile and existing environments never opt into this consumer.
 	h1Mode := os.Getenv("CPAMP_PRIVATE_H1")
@@ -114,6 +155,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
 	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL})
+	a.runtime = runtime
 	a.externalPermit = privateFreshExternalAdmitted
 	a.fixed = freshbootstrap.Handler{Authority: a.authority, Routing: a.routing, Current: a.current,
 		Shell: httpapi.BootstrapWebHandler(), Strategy: http.HandlerFunc(a.fixedStrategy)}
@@ -225,6 +267,14 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+	// The legacy CPAMP router is a post-installation resource. Reusing the
+	// Fresh Admin credential is not enough to authorize it while the selected
+	// strategy is still staged or being recovered: those writes must remain
+	// behind the Fresh operation/journal/permit boundary until completion.
+	if strings.HasPrefix(resource, "cpamp/") && !op.ProductComplete {
+		w.WriteHeader(http.StatusPreconditionRequired)
+		return
+	}
 	switch {
 	case resource == "gateway/retry/request-retry" || resource == "gateway/retry/max-retry-interval" || strings.HasPrefix(resource, "gateway/retry/operations/") || strings.HasPrefix(resource, "gateway/retry/interval-operations/"):
 		a.retryConfiguration(w, r, resource)
@@ -234,6 +284,10 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		a.clientKeys(w, r, op, resource)
 	case resource == "operation" && r.Method == http.MethodGet:
 		writeFreshJSON(w, op)
+	case strings.HasPrefix(resource, "cpamp/"):
+		a.legacyResource(w, r, resource)
+	case resource == "installation/runtime" && r.Method == http.MethodGet:
+		a.installationRuntime(w, r, op)
 	case resource == "strategy" && r.Method == http.MethodPost:
 		a.executeStrategy(w, r, op)
 	case resource == "complete" && r.Method == http.MethodPost:
@@ -245,6 +299,10 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		}
 		if op.ProductComplete {
 			writeFreshJSON(w, op)
+			return
+		}
+		if !a.managedInstallationReady(r.Context(), op) {
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		next, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
@@ -511,6 +569,12 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 	}
 	app := newFreshApplication(opened, cfg, freshDriver(cfg))
 	h.SetFreshHandler(app)
+	if opened.Record.Operation.ProductComplete && app.collectorWorker != nil {
+		app.collectorWorker.Start(ctx)
+	}
+	if opened.Record.Operation.ProductComplete && app.identityWorker != nil {
+		go app.identityWorker.Run(ctx)
+	}
 	go restoreFreshRouting(ctx, app.routing)
 	go app.runFreshUpdateChecks(ctx)
 	return opened, nil

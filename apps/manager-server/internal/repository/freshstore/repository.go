@@ -38,7 +38,7 @@ type queryer interface {
 func load(ctx context.Context, q queryer) (Record, error) {
 	var r Record
 	var legacy int
-	if err := q.QueryRowContext(ctx, "select count(*) from settings where key in ('setup','bootstrap_state_v1','runtime_desired_v1')").Scan(&legacy); err != nil || legacy != 0 {
+	if err := q.QueryRowContext(ctx, "select count(*) from settings where key in ('bootstrap_state_v1','runtime_desired_v1')").Scan(&legacy); err != nil || legacy != 0 {
 		return Record{}, ErrNotFresh
 	}
 	for _, item := range []struct {
@@ -59,20 +59,36 @@ func load(ctx context.Context, q queryer) (Record, error) {
 		}
 		err = json.Unmarshal([]byte(data), item.v)
 		if item.k == retryKey {
-			if err != nil || r.Retry == nil || !validRetry(r.Retry) { r.RetryInvalid = true; r.Retry = nil }
+			if err != nil || r.Retry == nil || !validRetry(r.Retry) {
+				r.RetryInvalid = true
+				r.Retry = nil
+			}
 		} else if item.k == intervalKey {
-			if err != nil || r.Interval == nil || !validInterval(r.Interval) { r.IntervalInvalid = true; r.Interval = nil }
+			if err != nil || r.Interval == nil || !validInterval(r.Interval) {
+				r.IntervalInvalid = true
+				r.Interval = nil
+			}
 		} else if err != nil {
+			return Record{}, ErrNotFresh
+		}
+	}
+	// After installation, the existing Config service persists a compatibility
+	// setup row together with manager_config_v1. It does not replace the Fresh
+	// operation's ownership. Pending installations still reject that state.
+	if !r.Operation.ProductComplete {
+		if err := q.QueryRowContext(ctx, "select count(*) from settings where key='setup'").Scan(&legacy); err != nil || legacy != 0 {
 			return Record{}, ErrNotFresh
 		}
 	}
 	var connectionData string
 	if err := q.QueryRowContext(ctx, "select value from settings where key='manager_config_v1'").Scan(&connectionData); err == nil {
 		var cfg model.ManagerConfig
-		if json.Unmarshal([]byte(connectionData), &cfg) != nil || cfg.Collector.Enabled == nil || *cfg.Collector.Enabled {
+		if json.Unmarshal([]byte(connectionData), &cfg) != nil || !r.Operation.ProductComplete && (cfg.Collector.Enabled == nil || *cfg.Collector.Enabled) {
 			return Record{}, ErrNotFresh
 		}
-		r.Connection = &cfg.CPAConnection
+		if !r.Operation.ProductComplete || cfg.CPAConnection.CPABaseURL != "" || cfg.CPAConnection.ManagementKey != "" {
+			r.Connection = &cfg.CPAConnection
+		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return Record{}, err
 	}
@@ -122,7 +138,9 @@ func validInterval(r *RetryJournal) bool {
 			if b, e := hex.DecodeString(o.SHA256); e != nil || hex.EncodeToString(b) != o.SHA256 {
 				return false
 			}
-			if o.ParentID == "" { return false }
+			if o.ParentID == "" {
+				return false
+			}
 			if o.ParentID != "" {
 				if o.ParentID != "c:"+id || !o.Attempted || o.ClaimRevision <= o.Revision || !retryHash(o.IntentDigest) || (o.HTTP200 && o.BeginRevision <= o.ClaimRevision) || (!o.HTTP200 && (o.BeginRevision != 0 || o.Receipt != "")) || (o.State != "unknown" && (o.State != "persisted" || !o.HTTP200 || !retryHash(o.Receipt))) || (o.State == "unknown" && o.Receipt != "") {
 					return false
@@ -141,7 +159,7 @@ func retryHash(s string) bool {
 
 // ValidateRetryJournal lets the shared admission checkpoint reject a damaged
 // Config journal with exactly the same rules as its owning repository.
-func ValidateRetryJournal(r *RetryJournal) bool { return r != nil && validRetry(r) }
+func ValidateRetryJournal(r *RetryJournal) bool    { return r != nil && validRetry(r) }
 func ValidateIntervalJournal(r *RetryJournal) bool { return r != nil && validInterval(r) }
 func valid(r Record) error {
 	if !validRetry(r.Retry) || r.RetryInvalid && r.Retry != nil || !validInterval(r.Interval) || r.IntervalInvalid && r.Interval != nil {
@@ -323,7 +341,9 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	}
 	if v.Interval != nil {
 		copy := &RetryJournal{Latest: v.Interval.Latest, Operations: make(map[string]RetryOperation, len(v.Interval.Operations))}
-		for k, o := range v.Interval.Operations { copy.Operations[k] = o }
+		for k, o := range v.Interval.Operations {
+			copy.Operations[k] = o
+		}
 		before.Interval = copy
 	}
 	before.Operation.Strategy.AdoptionDecisions = slices.Clone(v.Operation.Strategy.AdoptionDecisions)
@@ -444,8 +464,12 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		cfg := model.ManagerConfig{CPAConnection: *v.Connection, Collector: model.ManagerCollectorConfig{Enabled: &disabled}, UpdatedAtMS: time.Now().UnixMilli()}
 		err = write(ctx, tx, "manager_config_v1", cfg)
 	}
-	if err == nil && !reflect.DeepEqual(before.Retry, v.Retry) { err = write(ctx, tx, retryKey, v.Retry) }
-	if err == nil && !reflect.DeepEqual(before.Interval, v.Interval) { err = write(ctx, tx, intervalKey, v.Interval) }
+	if err == nil && !reflect.DeepEqual(before.Retry, v.Retry) {
+		err = write(ctx, tx, retryKey, v.Retry)
+	}
+	if err == nil && !reflect.DeepEqual(before.Interval, v.Interval) {
+		err = write(ctx, tx, intervalKey, v.Interval)
+	}
 	if err != nil {
 		return Record{}, err
 	}

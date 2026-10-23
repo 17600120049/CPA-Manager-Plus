@@ -324,7 +324,7 @@ describe('panel feature availability', () => {
       });
 
       expect(getInfoSpy).toHaveBeenCalledTimes(1);
-      expect(getInfoSpy).toHaveBeenNthCalledWith(1, 'http://panel.local:5174');
+      expect(getInfoSpy).toHaveBeenNthCalledWith(1, 'http://panel.local:5174', 'management-key');
       expect(getManagerConfigSpy).not.toHaveBeenCalled();
     } finally {
       act(() => {

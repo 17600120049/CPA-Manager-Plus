@@ -2,9 +2,11 @@
 // paths must stay beneath the configured CPA Management namespace.
 export function assertPanelManagementTarget(base: string, resource: string): void {
   const path = resource.split('?')[0];
+  const normalizedBase = base.replace(/\/+$/, '');
+  const fullWebLegacyBridge = /\/api\/v2\/cpamp\/v0\/management$/i.test(normalizedBase);
   if (
-    !base.replace(/\/+$/, '').endsWith('/v0/management') ||
-    /\/api\/v2(?:\/|$)/.test(base) ||
+    !normalizedBase.endsWith('/v0/management') ||
+    (/\/api\/v2(?:\/|$)/.test(normalizedBase) && !fullWebLegacyBridge) ||
     !path.startsWith('/') ||
     path.startsWith('//') ||
     /[\\#]/.test(resource) ||

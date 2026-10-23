@@ -20,7 +20,12 @@ import {
   useThemeStore,
 } from '@/stores';
 import { apiKeysApi } from '@/services/api/apiKeys';
-import { usageServiceApi, type UsageServiceStatus } from '@/services/api/usageService';
+import {
+  getUsageServiceErrorCode,
+  usageServiceApi,
+  type UsageServiceStatus,
+} from '@/services/api/usageService';
+import { isGatewayPendingError } from '@/services/api/models';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH, STORAGE_KEY_QUOTA_CACHE } from '@/utils/constants';
 import iconGemini from '@/assets/icons/gemini.svg';
@@ -53,7 +58,7 @@ const MODEL_CATEGORY_ICONS: Record<string, string | { light: string; dark: strin
 
 const DATABASE_STATUS_REFRESH_INTERVAL_MS = 60_000;
 
-export function SystemPage() {
+export function SystemPage({ logoutDisabled = false }: { logoutDisabled?: boolean } = {}) {
   const { t, i18n } = useTranslation();
   const { showNotification, showConfirmation } = useNotificationStore();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -65,7 +70,6 @@ export function SystemPage() {
 
   const models = useModelsStore((state) => state.models);
   const modelsLoading = useModelsStore((state) => state.loading);
-  const modelsError = useModelsStore((state) => state.error);
   const fetchModelsFromStore = useModelsStore((state) => state.fetchModels);
 
   const [modelStatus, setModelStatus] = useState<{
@@ -163,7 +167,16 @@ export function SystemPage() {
     try {
       const apiKeys = await resolveApiKeysForModels();
       const primaryKey = apiKeys[0];
-      const list = await fetchModelsFromStore(auth.apiBase, primaryKey, forceRefresh);
+      const managerCredential =
+        auth.sessionMode === 'manager_embedded' && /\/api\/v2\/cpamp$/i.test(auth.apiBase)
+          ? auth.managementKey
+          : undefined;
+      const list = await fetchModelsFromStore(
+        auth.apiBase,
+        primaryKey,
+        forceRefresh,
+        managerCredential
+      );
       const hasModels = list.length > 0;
       setModelStatus({
         type: hasModels ? 'success' : 'warning',
@@ -172,8 +185,19 @@ export function SystemPage() {
           : t('system_info.models_empty'),
       });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
-      const suffix = message ? `: ${message}` : '';
+      const code = getUsageServiceErrorCode(err);
+      const detail = isGatewayPendingError(err)
+        ? t('system_info.models_gateway_pending')
+        : code
+          ? t(`usage_service_errors.${code}`, {
+              defaultValue: t('usage_service_errors.request_failed'),
+            })
+          : err instanceof Error
+            ? err.message
+            : typeof err === 'string'
+              ? err
+              : '';
+      const suffix = detail ? `: ${detail}` : '';
       const text = `${t('system_info.models_error')}${suffix}`;
       setModelStatus({ type: 'error', message: text });
     }
@@ -219,6 +243,7 @@ export function SystemPage() {
   ]);
 
   const handleClearLoginStorage = () => {
+    if (logoutDisabled) return;
     showConfirmation({
       title: t('system_info.clear_login_title', { defaultValue: 'Clear Login Storage' }),
       message: t('system_info.clear_login_confirm'),
@@ -364,7 +389,6 @@ export function SystemPage() {
           {modelStatus && (
             <div className={`status-badge ${modelStatus.type}`}>{modelStatus.message}</div>
           )}
-          {modelsError && <div className="error-box">{modelsError}</div>}
           {modelsLoading ? (
             <div className="hint">{t('common.loading')}</div>
           ) : models.length === 0 ? (
@@ -406,7 +430,7 @@ export function SystemPage() {
         <Card title={t('system_info.clear_login_title')}>
           <p className={styles.sectionDescription}>{t('system_info.clear_login_desc')}</p>
           <div className={styles.clearLoginActions}>
-            <Button variant="danger" onClick={handleClearLoginStorage}>
+            <Button variant="danger" onClick={handleClearLoginStorage} disabled={logoutDisabled}>
               {t('system_info.clear_login_button')}
             </Button>
           </div>
