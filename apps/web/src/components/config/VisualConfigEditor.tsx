@@ -461,7 +461,10 @@ export function VisualConfigEditor({
       const viewportPadding = 16;
       const maxTop = workspaceRect.bottom - cachedFloatingHeight;
       const unclampedTop = Math.min(Math.max(anchorRect.top, stickyTop), maxTop);
-      const top = Math.max(unclampedTop, viewportPadding);
+      // Like a native sticky element, the rail must leave the viewport when
+      // its own workspace ends. Clamping it to the viewport would overlap
+      // subsequent sections on the same configuration page.
+      const top = Math.min(Math.max(unclampedTop, viewportPadding), maxTop);
       const left = Math.max(anchorRect.left, viewportPadding);
       const width = Math.max(
         Math.min(anchorRect.width, window.innerWidth - left - viewportPadding),

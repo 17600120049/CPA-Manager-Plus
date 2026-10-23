@@ -174,7 +174,7 @@ async function screenshot(name, fullPage = true) {
   );
   await page.screenshot({
     path: resolve(out, name + '.png'),
-    fullPage,
+    fullPage: fullPage && page.viewportSize().width > 768,
     animations: 'disabled',
   });
   report.screenshots.push({
@@ -712,6 +712,16 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     await navigate('/config');
     await page.locator('[role="tablist"]').first().waitFor();
     await screenshot('legacy-config-' + name);
+    const retryPanel = page.getByTestId('fresh-managed-retry');
+    await retryPanel.scrollIntoViewIfNeeded();
+    await wait(async () => page.evaluate(() => {
+      const retry = document.querySelector('[data-testid="fresh-managed-retry"]').getBoundingClientRect();
+      return [...document.querySelectorAll('[class*="floatingSidebarContainer"]')].every((rail) => {
+        if (getComputedStyle(rail).opacity === '0') return true;
+        return rail.getBoundingClientRect().bottom <= retry.top + 1;
+      });
+    }), 'configuration navigation stays inside its original workspace');
+    await screenshot('integrated-retry-' + name);
     if (width < 768) {
       await page.locator('button.hamburger-container').click();
       await page.locator('aside.sidebar.open').waitFor();
