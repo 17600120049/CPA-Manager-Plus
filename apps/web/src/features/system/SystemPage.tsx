@@ -58,7 +58,13 @@ const MODEL_CATEGORY_ICONS: Record<string, string | { light: string; dark: strin
 
 const DATABASE_STATUS_REFRESH_INTERVAL_MS = 60_000;
 
-export function SystemPage({ logoutDisabled = false }: { logoutDisabled?: boolean } = {}) {
+export function SystemPage({
+  logoutDisabled = false,
+  workspace,
+}: {
+  logoutDisabled?: boolean;
+  workspace?: React.ReactNode;
+} = {}) {
   const { t, i18n } = useTranslation();
   const { showNotification, showConfirmation } = useNotificationStore();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -294,6 +300,7 @@ export function SystemPage({ logoutDisabled = false }: { logoutDisabled?: boolea
 
   return (
     <div className={styles.container}>
+      {workspace && <div style={{ marginBottom: '24px' }}>{workspace}</div>}
       <div className={styles.content}>
         <Card
           title={t('system_info.quick_links_title')}

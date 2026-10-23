@@ -22,6 +22,7 @@ import { ConfirmationModal } from '../components/common/ConfirmationModal';
 import { NotificationContainer } from '../components/common/NotificationContainer';
 import { ManagerUpdates } from '../features/system/ManagerUpdates';
 import { SystemPage } from '../features/system/SystemPage';
+import { FreshSystemWorkspace } from './FreshSystemWorkspace';
 import { useAuthStore } from '../stores';
 import { FreshManagedResources } from './FreshManagedResources';
 import type { createPublicApiClient } from './publicApi';
@@ -152,7 +153,14 @@ export function LegacyConsolePage({
             // retained across page transitions.
             if (route === '/api-keys') return null;
             if (route === '/gateway' || route === '/config') return null;
-            if (route === '/system') return <SystemPage logoutDisabled={freshPending} />;
+            if (route === '/system') {
+              return (
+                <SystemPage
+                  logoutDisabled={freshPending}
+                  workspace={<FreshSystemWorkspace basePath={context.basePath} />}
+                />
+              );
+            }
             return undefined;
           }}
         />

@@ -18,6 +18,7 @@ import { NotificationContainer } from '../components/common/NotificationContaine
 import { MainLayout } from '../components/layout/MainLayout';
 import { FreshManagedResources } from './FreshManagedResources';
 import { SystemPage } from '../features/system/SystemPage';
+import { FreshSystemWorkspace } from './FreshSystemWorkspace';
 const context = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
 const operation: FreshOperation = {
   identity: {
@@ -217,6 +218,7 @@ describe('Fresh installation and Console authority boundary', () => {
       const page = renderRoute(path);
       expect(page.type).toBe(SystemPage);
       expect(page.props.logoutDisabled).toBe(true);
+      expect(page.props.workspace.type).toBe(FreshSystemWorkspace);
     }
     expect(renderRoute('/api-keys/')).toBeNull();
   });

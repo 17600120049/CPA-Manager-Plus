@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   GATEWAY_SECTIONS,
   GATEWAY_OWNERS,
@@ -55,6 +55,21 @@ export function FreshGatewayWorkspace({
     [draftDiffs]
   );
   const dirtyCount = dirtyDiffs.length;
+
+  useEffect(() => {
+    if (dirtyCount === 0) return;
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+      }
+    };
+  }, [dirtyCount]);
 
   const handleDiscard = () => {
     setDiscardEpoch((n) => n + 1);
