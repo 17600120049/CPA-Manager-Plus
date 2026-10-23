@@ -10,6 +10,7 @@ import logo from '../assets/brand/cpamp-logo-horizontal-color.svg?inline';
 import logoOnDark from '../assets/brand/cpamp-logo-horizontal-on-dark.svg?inline';
 import './consoleWorkspace.css';
 import { activateFreshSession, clearFreshSession, rememberedFreshCredential } from './freshSession';
+import { bootstrapJourneyText } from '../i18n/bootstrapJourney';
 
 const defaultClient = createPublicApiClient();
 const LegacyConsolePage = lazy(() =>
@@ -139,6 +140,7 @@ export function FreshConsolePage({
         <FullWebLoginPage
           adapter={{
             address: new URL(context.basePath, window.location.origin).toString(),
+            credentialPlaceholder: bootstrapJourneyText('loginKeyPlaceholder'),
             error,
             authenticate: readOperation,
             restore: async () => {

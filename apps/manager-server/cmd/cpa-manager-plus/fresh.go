@@ -161,7 +161,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		a.externalPermit = privateFreshExternalAdmitted
 	}
 	a.fixed = freshbootstrap.Handler{Authority: a.authority, Routing: a.routing, Current: a.current,
-		Shell: httpapi.BootstrapWebHandler(), Strategy: http.HandlerFunc(a.fixedStrategy)}
+		Shell: httpapi.BootstrapWebHandler(), Strategy: http.HandlerFunc(a.fixedStrategy), Runtime: http.HandlerFunc(a.fixedRuntime)}
 	return a
 }
 
@@ -266,7 +266,18 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		writeFreshJSON(w, freshrouting.StateFor(op))
 		return
 	}
-	if !op.Routing.Committed || record.Admin == nil || !security.VerifyAdminKey(*record.Admin, security.ExtractBearerToken(r.Header.Get("Authorization"))) {
+	continuation, freshAuth := freshbootstrap.SessionToken(r)
+	if freshAuth {
+		// The existing claim may finish its own installation after route
+		// cutover, but is never an Admin credential for the Console/CPA proxy.
+		allowed := resource == "operation" && r.Method == http.MethodGet || !op.ProductComplete &&
+			(resource == "installation/runtime" && r.Method == http.MethodGet ||
+				(resource == "strategy" || resource == "complete") && r.Method == http.MethodPost)
+		if !allowed || a.authority.ValidateContinuation(record, continuation) != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	} else if !op.Routing.Committed || record.Admin == nil || !security.VerifyAdminKey(*record.Admin, security.ExtractBearerToken(r.Header.Get("Authorization"))) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -319,6 +330,11 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		next, err := a.store.Update(r.Context(), op.Identity, op.Revision, func(record *freshstore.Record) error {
+			if freshAuth {
+				if err := a.authority.ValidateContinuation(*record, continuation); err != nil {
+					return err
+				}
+			}
 			if record.Operation.Strategy.Stage != "committed" {
 				return freshstore.ErrConflict
 			}
@@ -333,6 +349,20 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (a *freshApplication) fixedRuntime(w http.ResponseWriter, r *http.Request) {
+	token, ok := freshbootstrap.SessionToken(r)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	op, err := a.authority.Authorize(r.Context(), token)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	a.installationRuntime(w, r, op)
 }
 
 func (a *freshApplication) fixedStrategy(w http.ResponseWriter, r *http.Request) {
@@ -446,9 +476,9 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
-	if token, fixed := freshbootstrap.SessionToken(r); fixed {
-		current, err := a.authority.Authorize(r.Context(), token)
-		if err != nil || current.Identity != op.Identity || current.Revision != op.Revision {
+	if token, freshAuth := freshbootstrap.SessionToken(r); freshAuth {
+		current, err := a.store.Load(r.Context())
+		if err != nil || current.Operation.Identity != op.Identity || current.Operation.Revision != op.Revision || a.validateInstallationSession(current, token) != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -464,8 +494,8 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		if request.Strategy == bootstrap.ConnectExternal && a.externalPermit != nil && !a.externalPermit(record.Operation, request.ExpectedRevision, externalBaseURL, request.ManagementKey, request.AttemptID) {
 			return errFreshExternalPermitRevoked
 		}
-		if token, fixed := freshbootstrap.SessionToken(r); fixed {
-			if err := a.authority.ValidateSession(*record, token); err != nil {
+		if token, freshAuth := freshbootstrap.SessionToken(r); freshAuth {
+			if err := a.validateInstallationSession(*record, token); err != nil {
 				return err
 			}
 		}
@@ -487,6 +517,13 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeFreshJSON(w, next.Operation)
+}
+
+func (a *freshApplication) validateInstallationSession(record freshstore.Record, token string) error {
+	if record.Operation.Routing.Committed {
+		return a.authority.ValidateContinuation(record, token)
+	}
+	return a.authority.ValidateSession(record, token)
 }
 
 func writeFreshJSON(w http.ResponseWriter, v any) {

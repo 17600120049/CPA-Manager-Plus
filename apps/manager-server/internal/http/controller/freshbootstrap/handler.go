@@ -25,6 +25,7 @@ type Handler struct {
 	Current   func(context.Context) (bootstrap.FreshOperation, error)
 	Shell     http.Handler
 	Strategy  http.Handler
+	Runtime   http.Handler
 }
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +88,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, result)
 		return
 	}
-	known := map[string]string{"operation": http.MethodGet, "admin/generate": http.MethodPost, "admin/commit": http.MethodPost, "routing/prepare": http.MethodPost, "routing/activate": http.MethodPost, "strategy": http.MethodPost}
+	known := map[string]string{"operation": http.MethodGet, "admin/generate": http.MethodPost, "admin/commit": http.MethodPost, "routing/prepare": http.MethodPost, "routing/activate": http.MethodPost, "strategy": http.MethodPost, "installation/runtime": http.MethodGet}
 	method, ok := known[resource]
 	if !ok {
 		http.NotFound(w, r)
@@ -172,6 +173,12 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.Strategy.ServeHTTP(w, r)
+	case "installation/runtime":
+		if h.Runtime == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		h.Runtime.ServeHTTP(w, r)
 	}
 }
 

@@ -123,6 +123,7 @@ function getLocalizedErrorMessage(
 export interface ConsoleLoginAdapter {
   address: string;
   error: string;
+  credentialPlaceholder?: string;
   restore: () => Promise<void>;
   authenticate: (credential: string, remember: boolean) => Promise<boolean>;
 }
@@ -172,9 +173,11 @@ export function LoginPage({ consoleAuth }: { consoleAuth?: ConsoleLoginAdapter }
   const loginCredentialLabel = isManagerServerMode
     ? t('login.admin_key_label')
     : t('login.cpa_management_key_label');
-  const loginCredentialPlaceholder = isManagerServerMode
-    ? t('login.admin_key_placeholder')
-    : t('login.cpa_management_key_placeholder');
+  const loginCredentialPlaceholder =
+    consoleAuth?.credentialPlaceholder ||
+    (isManagerServerMode
+      ? t('login.admin_key_placeholder')
+      : t('login.cpa_management_key_placeholder'));
   const loginCredentialHint = isManagerServerMode
     ? t('login.admin_key_hint')
     : t('login.cpa_management_key_hint');

@@ -1,7 +1,12 @@
 // Bounded pre-canonical carrier. It has no CPA/Admin transport and persists no
 // secrets. This module belongs to the existing Full Web entry graph.
 import { validControlBasePath } from './routingContext';
-import { parseRuntimeJSON, runtimeRequestJSON, type RuntimeGeneration } from './runtimeGeneration';
+import {
+  parseRuntimeJSON,
+  runtimeRequestJSON,
+  validRuntimeGeneration,
+  type RuntimeGeneration,
+} from './runtimeGeneration';
 export const BOOTSTRAP_ROOT = '/.well-known/cpamp-bootstrap';
 export const BOOTSTRAP_UI = `${BOOTSTRAP_ROOT}/ui`;
 const API = `${BOOTSTRAP_ROOT}/api/v2/`;
@@ -183,10 +188,33 @@ function classifyStatus(status: number): BootstrapErrorKind {
 }
 
 function validOperationState(next: FreshOperation | undefined, previous?: FreshOperation): boolean {
+  const checkpoint = next?.strategy;
+  const previousCheckpoint = previous?.strategy;
   return (
     !!next &&
     typeof next.adminInitialized === 'boolean' &&
     next.gatewayPending === true &&
+    (!next.productComplete || (next.routing.committed && checkpoint?.stage === 'committed')) &&
+    (!previous?.productComplete || next.productComplete === true) &&
+    (!checkpoint?.strategy ||
+      (next.adminInitialized &&
+        typeof checkpoint.targetIdentity === 'string' &&
+        !!checkpoint.targetIdentity.trim() &&
+        (checkpoint.strategy === 'new_managed'
+          ? validRuntimeGeneration(checkpoint.targetGeneration) &&
+            /^sha256:[a-f0-9]{64}$/.test(checkpoint.targetArtifactId || '') &&
+            ['staged', 'starting', 'committed'].includes(checkpoint.stage || '')
+          : checkpoint.strategy === 'connect_external' &&
+            checkpoint.targetGeneration === 1 &&
+            !checkpoint.targetArtifactId &&
+            /^external:sha256:[a-f0-9]{64}$/.test(checkpoint.targetIdentity) &&
+            ['validated', 'committed'].includes(checkpoint.stage || '')))) &&
+    (!previousCheckpoint?.strategy ||
+      (checkpoint?.strategy === previousCheckpoint.strategy &&
+        checkpoint.targetIdentity === previousCheckpoint.targetIdentity &&
+        checkpoint.targetGeneration === previousCheckpoint.targetGeneration &&
+        checkpoint.targetArtifactId === previousCheckpoint.targetArtifactId &&
+        (previousCheckpoint.stage !== 'committed' || checkpoint.stage === 'committed'))) &&
     Number.isSafeInteger(next.revision) &&
     next.revision > 0 &&
     (!previous ||
@@ -252,22 +280,30 @@ const methods = {
   'routing/prepare': 'POST',
   'routing/activate': 'POST',
   strategy: 'POST',
+  'installation/runtime': 'GET',
+  complete: 'POST',
 } as const;
 type Resource = keyof typeof methods;
 
 export function createBootstrapTransport(transport: typeof fetch = globalThis.fetch) {
   let token: string | undefined;
   let operation: FreshOperation | undefined;
+  let canonicalBase: string | undefined;
   async function request<T>(resource: Resource, body?: unknown): Promise<T> {
     if (
       window.location.pathname !== BOOTSTRAP_UI ||
       !['http:', 'https:'].includes(window.location.protocol) ||
       !Object.prototype.hasOwnProperty.call(methods, resource) ||
+      (canonicalBase &&
+        !['operation', 'strategy', 'installation/runtime', 'complete'].includes(resource)) ||
       (resource !== 'claim/exchange' && !token)
     ) {
       throw new BootstrapTransportError('Bootstrap authority unavailable', 'authority');
     }
-    const target = new URL(API + resource, window.location.origin);
+    const target = new URL(
+      (canonicalBase ? canonicalBase + '/api/v2/' : API) + resource,
+      window.location.origin
+    );
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (token) headers.Authorization = `Fresh ${token}`;
@@ -303,6 +339,60 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
         response.status
       );
     }
+  }
+  async function verifyCanonical(prepared: FreshOperation): Promise<string> {
+    // No Fresh/Admin credential is ever sent to this public verification
+    // leaf. Its path is the server-persisted prepare checkpoint, not input.
+    let response: Response;
+    try {
+      response = await transport(
+        new URL(prepared.routing.target! + '/api/v2/bootstrap/identity', window.location.origin)
+          .href,
+        {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          mode: 'same-origin',
+          credentials: 'omit',
+          redirect: 'error',
+          cache: 'no-store',
+        }
+      );
+    } catch {
+      throw new BootstrapTransportError('Routing verification unavailable', 'transport');
+    }
+    if (!response.ok)
+      throw new BootstrapTransportError(
+        'Routing verification unavailable',
+        classifyStatus(response.status),
+        response.status
+      );
+    let state: {
+      installationId: string;
+      generation: string;
+      operationId: string;
+      revision: number;
+      target: string;
+      committed: boolean;
+    };
+    try {
+      state = await response.json();
+    } catch {
+      throw new BootstrapTransportError('Routing verification unavailable', 'response');
+    }
+    if (
+      !state ||
+      response.headers.get('X-CPAMP-Route-Owner') !== 'manager' ||
+      state.installationId !== prepared.identity.installationId ||
+      state.generation !== prepared.identity.generation ||
+      state.operationId !== prepared.identity.operationId ||
+      state.revision !== prepared.routing.revision ||
+      state.target !== prepared.routing.target
+    ) {
+      throw new BootstrapTransportError('Routing verification incomplete', 'mismatch');
+    }
+    if (state.committed !== true)
+      throw new BootstrapTransportError('Routing verification incomplete', 'mismatch');
+    return state.target;
   }
   return {
     async start(handoff: Handoff): Promise<FreshOperation> {
@@ -343,7 +433,22 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
       return operation;
     },
     async fetchOperation(): Promise<FreshOperation> {
-      const next = await request<FreshOperation>('operation');
+      let next: FreshOperation;
+      try {
+        next = await request<FreshOperation>('operation');
+      } catch (err) {
+        if (
+          canonicalBase ||
+          !operation?.routing.target ||
+          !(err instanceof BootstrapTransportError) ||
+          !['transport', 'not_found', 'unavailable'].includes(err.kind)
+        )
+          throw err;
+        // Read-only reconciliation of a lost cutover reply. Verify the exact
+        // saved route before attaching the bounded installation credential.
+        canonicalBase = await verifyCanonical(operation);
+        next = await request<FreshOperation>('operation');
+      }
       if (!operation || !sameIdentity(next.identity, operation.identity)) {
         token = undefined;
         operation = undefined;
@@ -419,7 +524,7 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
         throw new BootstrapTransportError('Routing authority unavailable', 'authority');
       }
       const prepared = operation;
-      let activationError: BootstrapTransportError | undefined;
+      if (canonicalBase) return canonicalBase;
       try {
         const next = await request<FreshOperation>('routing/activate', {
           identity: prepared.identity,
@@ -444,68 +549,51 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
           !['transport', 'not_found', 'unavailable', 'response'].includes(err.kind)
         )
           throw err;
-        activationError = err;
       }
-      // No Fresh/Admin credential is ever sent to this public verification
-      // leaf. Its path is the server-persisted prepare checkpoint, not input.
-      let response: Response;
-      try {
-        response = await transport(
-          new URL(prepared.routing.target! + '/api/v2/bootstrap/identity', window.location.origin)
-            .href,
-          {
-            method: 'GET',
-            headers: { Accept: 'application/json' },
-            mode: 'same-origin',
-            credentials: 'omit',
-            redirect: 'error',
-            cache: 'no-store',
-          }
-        );
-      } catch {
-        throw new BootstrapTransportError('Routing verification unavailable', 'transport');
+      const verified = await verifyCanonical(prepared);
+      // Retire the fixed carrier but keep the same bounded installation
+      // authority in memory. This is not a Console/Admin login or a redirect.
+      canonicalBase = verified;
+      return verified;
+    },
+    async executeStrategy(body: Record<string, unknown>): Promise<FreshOperation> {
+      if (!operation?.adminInitialized) {
+        throw new BootstrapTransportError('Installation authority unavailable', 'authority');
       }
-      if (!response.ok)
-        throw new BootstrapTransportError(
-          'Routing verification unavailable',
-          classifyStatus(response.status),
-          response.status
-        );
-      let state: {
-        installationId: string;
-        generation: string;
-        operationId: string;
-        revision: number;
-        target: string;
-        committed: boolean;
-      };
-      try {
-        state = await response.json();
-      } catch {
-        throw new BootstrapTransportError('Routing verification unavailable', 'response');
-      }
+      const next = await request<FreshOperation>('strategy', {
+        ...body,
+        identity: operation.identity,
+        expectedRevision: operation.revision,
+      });
       if (
-        !state ||
-        response.headers.get('X-CPAMP-Route-Owner') !== 'manager' ||
-        state.installationId !== prepared.identity.installationId ||
-        state.generation !== prepared.identity.generation ||
-        state.operationId !== prepared.identity.operationId ||
-        state.revision !== prepared.routing.revision ||
-        state.target !== prepared.routing.target
+        !sameIdentity(next?.identity, operation.identity) ||
+        !validOperationState(next, operation)
       ) {
-        throw new BootstrapTransportError('Routing verification incomplete', 'mismatch');
+        throw new BootstrapTransportError('Installation response unavailable', 'mismatch');
       }
-      if (state.committed !== true)
-        throw (
-          activationError ??
-          new BootstrapTransportError('Routing verification incomplete', 'mismatch')
-        );
-      return state.target;
+      operation = next;
+      return next;
+    },
+    async complete(): Promise<FreshOperation> {
+      if (!canonicalBase || !operation?.adminInitialized) {
+        throw new BootstrapTransportError('Installation authority unavailable', 'authority');
+      }
+      const next = await request<FreshOperation>('complete', {});
+      if (
+        !sameIdentity(next?.identity, operation.identity) ||
+        !validOperationState(next, operation) ||
+        next.productComplete !== true
+      ) {
+        throw new BootstrapTransportError('Installation response unavailable', 'mismatch');
+      }
+      operation = next;
+      return next;
     },
     request,
     clear() {
       token = undefined;
       operation = undefined;
+      canonicalBase = undefined;
     },
   };
 }
