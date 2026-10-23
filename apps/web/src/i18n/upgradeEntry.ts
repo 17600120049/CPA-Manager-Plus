@@ -42,5 +42,5 @@ const zh: typeof en = {
   loginHint:
     '检测到现有安装。请验证原 CPAMP 管理员密钥，进入升级起始页；认证不会启动迁移或连接 CPA。',
 };
-export const upgradeEntryText = (key: keyof typeof en) =>
-  (fullWebLanguage().startsWith('zh') ? zh : en)[key];
+export const upgradeEntryText = (key: keyof typeof en, language = fullWebLanguage()) =>
+  (language.startsWith('zh') ? zh : en)[key];

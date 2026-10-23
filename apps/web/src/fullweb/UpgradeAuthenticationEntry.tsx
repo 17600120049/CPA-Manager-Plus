@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FullWebLoginPage } from './FullWebLoginPage';
 import { upgradeEntryText as text } from '../i18n/upgradeEntry';
 import {
@@ -9,6 +10,8 @@ import {
 } from './upgradeSession';
 
 export function UpgradeAuthenticationEntry() {
+  const { i18n } = useTranslation();
+  const language = i18n.resolvedLanguage || i18n.language;
   const [revision, setRevision] = useState('');
   const [error, setError] = useState('');
   const [checking, setChecking] = useState(false);
@@ -70,12 +73,12 @@ export function UpgradeAuthenticationEntry() {
     () => ({
       address: window.location.origin,
       error,
-      connectionHint: text('loginHint'),
-      credentialPlaceholder: text('placeholder'),
+      connectionHint: text('loginHint', language),
+      credentialPlaceholder: text('placeholder', language),
       restore,
       authenticate: (key: string, remember: boolean) => authenticate(key, remember),
     }),
-    [authenticate, error, restore]
+    [authenticate, error, language, restore]
   );
 
   useEffect(

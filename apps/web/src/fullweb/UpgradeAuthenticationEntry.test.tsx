@@ -4,6 +4,7 @@ import { UpgradeAuthenticationEntry } from './UpgradeAuthenticationEntry';
 import { FullWebLoginPage } from './FullWebLoginPage';
 import type { ConsoleLoginAdapter } from '../features/login/LoginPage';
 import { setFullWebLanguage } from '../i18n/fullweb';
+import loginI18n from '../i18n';
 
 const mocks = vi.hoisted(() => ({ candidate: vi.fn(), verify: vi.fn(), remember: vi.fn() }));
 vi.mock('./upgradeSession', async (original) => ({
@@ -22,10 +23,11 @@ describe('upgrade authentication lifecycle', () => {
   let renderer: ReactTestRenderer;
   const adapter = () =>
     renderer.root.findByType(FullWebLoginPage).props.adapter as ConsoleLoginAdapter;
-  beforeEach(() => {
+  beforeEach(async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.useFakeTimers();
     setFullWebLanguage('en');
+    await loginI18n.changeLanguage('en');
     mocks.candidate.mockReset().mockReturnValue('');
     mocks.verify.mockReset().mockResolvedValue('a'.repeat(64));
     mocks.remember.mockReset();
@@ -42,6 +44,29 @@ describe('upgrade authentication lifecycle', () => {
     if (renderer) await act(async () => renderer.unmount());
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('updates upgrade login text when the original login language changes without authenticating', async () => {
+    await act(async () => {
+      renderer = create(<UpgradeAuthenticationEntry />);
+    });
+    expect(adapter().connectionHint).toContain('Existing installation detected.');
+    expect(adapter().credentialPlaceholder).toBe('Existing CPAMP administrator key');
+    const restore = adapter().restore;
+
+    await act(async () => {
+      await loginI18n.changeLanguage('zh-CN');
+    });
+    expect(adapter().connectionHint).toContain('检测到现有安装。');
+    expect(adapter().credentialPlaceholder).toBe('原 CPAMP 管理员密钥');
+
+    await act(async () => {
+      await loginI18n.changeLanguage('en');
+    });
+    expect(adapter().connectionHint).toContain('Existing installation detected.');
+    expect(adapter().credentialPlaceholder).toBe('Existing CPAMP administrator key');
+    expect(adapter().restore).toBe(restore);
+    expect(mocks.verify).not.toHaveBeenCalled();
   });
 
   it('restores only a candidate verified by the server and never completes migration', async () => {
