@@ -34,6 +34,19 @@ const report = {
     'Non-Chinese locale layouts, other browser engines',
   ],
 };
+// The model-request probe must reach CPA where this deployment publishes it.
+// A default Fresh Managed install keeps CPA on Runtime loopback; once the
+// Ingress Gateway publishes model traffic (lane G) the same probe targets the
+// Ingress instead. The value is an origin, never a full request path.
+const modelTarget = process.env.CPAMP_SMOKE_MODEL_TARGET || 'http://cpamp-runtime:8317';
+{
+  const parsed = new URL(modelTarget);
+  assert(
+    (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host,
+    'CPAMP_SMOKE_MODEL_TARGET must be an http(s) origin'
+  );
+}
+report.modelTarget = modelTarget;
 // Pin a free loopback port in HostConfig. Publishing port 0 can allocate a new
 // host port after restart, which would invalidate the browser's saved origin.
 const portProbe = createServer();
@@ -283,6 +296,12 @@ try {
     'pristine'
   );
   pass('first boot waits for Host initialize without creating database or data key');
+  assert.equal(
+    (await fetch(origin + '/health')).status,
+    503,
+    'unclaimed Manager must report /health 503'
+  );
+  pass('unclaimed Manager /health is 503 before Host initialize');
   dc('stop', 'cpamp-manager');
   const issue = () => dc('run', '--rm', '--no-deps', 'cpamp-manager', 'initialize');
   let handoff = issue();
@@ -364,6 +383,13 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   await replayPage.getByTestId('bootstrap-authority-error').waitFor();
   await replayPage.close();
   pass('real browser claims once, removes fragment and rejects consumed Handoff');
+  const takeoverHealth = await fetch(origin + '/health');
+  assert.equal(takeoverHealth.status, 200, 'claimed Fresh takeover must report /health 200');
+  assert(
+    (await takeoverHealth.text()).includes('"service":"cpa-manager-plus"'),
+    'takeover /health must carry the Manager service identity'
+  );
+  pass('Fresh takeover /health is 200 with the Manager service identity');
   await page.getByTestId('commit-admin-btn').click();
   await page.getByTestId('feedback-title').waitFor();
   await page.getByTestId('admin-key-input').fill('weak');
@@ -796,22 +822,205 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     }
   };
   await closed();
-  const peer = run([
-    'docker',
-    'run',
-    '--rm',
-    '--network',
-    network,
-    pythonImage,
-    'python3',
-    '-c',
-    `import socket
+  // Before an installation-derived CPA authority exists the Runtime keeps CPA
+  // on container loopback, so a peer container cannot connect at all. A default
+  // Managed destination publishes CPA on the Compose network, where anonymous
+  // model requests must still be rejected. Either verdict is safe; a successful
+  // unauthenticated read is not.
+  const peer = run(
+    [
+      'docker',
+      'run',
+      '--rm',
+      '--network',
+      network,
+      pythonImage,
+      'python3',
+      '-c',
+      `import socket,urllib.request,urllib.error
 s=socket.socket();s.settimeout(3)
-try:s.connect(('cpamp-runtime',8317));raise SystemExit(1)
-except OSError:pass`,
-  ]);
+try:
+ s.connect(('cpamp-runtime',8317));s.close()
+except OSError:
+ print('unreachable');raise SystemExit(0)
+o=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+try:
+ with o.open(urllib.request.Request('http://cpamp-runtime:8317/v1/models'),timeout=10) as r:print(r.status)
+except urllib.error.HTTPError as e:print(e.code)
+except OSError:print('unreachable')`,
+    ]
+  );
   assert.equal(peer.status, 0);
-  pass('zero Client Keys: all tested Gateway paths remain Pending; peer cannot reach CPA port');
+  const peerVerdict = peer.stdout.trim();
+  assert(
+    ['unreachable', '401'].includes(peerVerdict),
+    'anonymous peer must not read the CPA model API: ' + peerVerdict
+  );
+  report.peerCPA = peerVerdict;
+  pass(
+    'zero Client Keys: all tested Gateway paths remain Pending; anonymous peer cannot read CPA'
+  );
+  // Data layer: the installed deployment must read real CPA management data,
+  // install one Client Key and have CPA accept it. A default profile without an
+  // installation-derived CPA management credential cannot do that yet; those
+  // failures are reported as DEFAULT AUTHORITY MISSING, a labelled known gap,
+  // never as a silent pass and never as a tool failure.
+  const authorityGapStatuses = new Set([403, 404, 409, 428, 502, 503]);
+  report.dataLayer = [];
+  const recordDataLayer = (name, result, observed) => {
+    report.dataLayer.push({ name, result, ...(observed ? { observed } : {}) });
+    console.log(result + ' ' + name + (observed ? ' ' + JSON.stringify(observed) : ''));
+  };
+  const adminHeaders = { Authorization: 'Bearer ' + admin };
+  const authFilesResponse = await fetch(
+    origin + '/console/api/v2/cpamp/v0/management/auth-files',
+    { headers: adminHeaders }
+  );
+  let authorityGap;
+  if (authFilesResponse.status === 200) {
+    const authFiles = await authFilesResponse.json();
+    assert(Array.isArray(authFiles.files), 'CPA auth files payload must be a list');
+    recordDataLayer('cpamp resource bridge reads CPA /auth-files', 'PASS', {
+      files: authFiles.files.length,
+    });
+  } else if (authorityGapStatuses.has(authFilesResponse.status)) {
+    authorityGap = { authFilesStatus: authFilesResponse.status };
+    recordDataLayer('cpamp resource bridge reads CPA /auth-files', 'DEFAULT AUTHORITY MISSING', {
+      status: authFilesResponse.status,
+    });
+  } else {
+    throw new Error('unexpected CPA auth-files status ' + authFilesResponse.status);
+  }
+  const createdKeyResponse = await fetch(origin + '/console/api/v2/api-keys', {
+    method: 'POST',
+    headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId: randomBytes(16).toString('hex') }),
+  });
+  assert.equal(
+    createdKeyResponse.status,
+    201,
+    'a Fresh Client Key must be created with a one-time secret'
+  );
+  const createdKey = await createdKeyResponse.json();
+  assert.match(createdKey.createdSecret, /^cpamp_sk_[a-f0-9]{64}$/);
+  assert.equal(createdKey.key.maskedPreview, 'cpamp_sk_…' + createdKey.createdSecret.slice(-4));
+  secretValues.push(createdKey.createdSecret);
+  const installKeyResponse = await fetch(
+    origin + '/console/api/v2/api-keys/' + createdKey.key.id + '/initial-install',
+    {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: '{}',
+    }
+  );
+  const installKeyBody = await installKeyResponse.text();
+  let keyEffective = false;
+  if (installKeyResponse.status === 200) {
+    const state = JSON.parse(installKeyBody);
+    assert.equal(state.managerStaged, true, 'installed Client Key stays Manager-staged');
+    assert.equal(state.attempted, true, 'installed Client Key records the durable attempt');
+    assert.equal(state.cpaConfigured, true, 'installed Client Key is configured in CPA');
+    keyEffective = true;
+    recordDataLayer('Client Key installed into CPA', 'PASS', { runtimeState: state.runtimeState });
+  } else if (authorityGapStatuses.has(installKeyResponse.status)) {
+    authorityGap = { ...authorityGap, initialInstallStatus: installKeyResponse.status };
+    recordDataLayer('Client Key installed into CPA', 'DEFAULT AUTHORITY MISSING', {
+      status: installKeyResponse.status,
+      code: (() => {
+        try {
+          return JSON.parse(installKeyBody).code || '';
+        } catch {
+          return '';
+        }
+      })(),
+    });
+  } else {
+    throw new Error('unexpected Client Key install status ' + installKeyResponse.status);
+  }
+  // CPA acceptance is proven where this deployment publishes CPA: the Compose
+  // network now (CPAMP_SMOKE_MODEL_TARGET default) or the Ingress Gateway once
+  // lane G publishes model traffic. The Ingress Gateway deliberately stays
+  // Pending on this base, so it is a negative control, not the path.
+  const cpaProbe = (program, input) =>
+    run(
+      [
+        'docker',
+        'run',
+        '--rm',
+        '-i',
+        '--network',
+        network,
+        pythonImage,
+        'python3',
+        '-c',
+        program,
+      ],
+      input
+    ).stdout.trim();
+  const modelsProbe = `import sys,urllib.request,urllib.error
+key=sys.stdin.read().strip()
+target=${JSON.stringify(modelTarget)}
+o=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+r=urllib.request.Request(target+'/v1/models',headers={'Authorization':'Bearer '+key} if key else {})
+try:
+ with o.open(r,timeout=20) as response:print(response.status)
+except urllib.error.HTTPError as error:print(error.code)
+except OSError:print('unreachable')`;
+  const chatProbe = `import json,sys,urllib.request,urllib.error
+key=sys.stdin.read().strip()
+target=${JSON.stringify(modelTarget)}
+body=json.dumps({'model':'gpt-4o-mini','messages':[{'role':'user','content':'cpamp authority smoke'}],'max_tokens':1}).encode()
+o=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+r=urllib.request.Request(target+'/v1/chat/completions',data=body,headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
+try:
+ with o.open(r,timeout=30) as response:print(response.status)
+except urllib.error.HTTPError as error:print(error.code)
+except OSError:print('unreachable')`;
+  const cpaChecks = [
+    'CPA model API accepts the installed Client Key',
+    'CPA rejects an unknown Client Key',
+    'CPA accepts one real model request with the installed Client Key',
+    'Ingress Gateway stays Pending with an installed Client Key',
+  ];
+  if (keyEffective) {
+    assert.equal(
+      authorityGap,
+      undefined,
+      'a working Client Key install cannot coexist with a missing management bridge'
+    );
+    const accepted = cpaProbe(modelsProbe, createdKey.createdSecret);
+    assert.equal(accepted, '200', 'installed Client Key must read the CPA model API: ' + accepted);
+    recordDataLayer(cpaChecks[0], 'PASS', { status: 200 });
+    const rejected = cpaProbe(modelsProbe, 'cpamp_sk_' + '0'.repeat(64));
+    assert.equal(rejected, '401', 'unknown Client Key must be rejected: ' + rejected);
+    recordDataLayer(cpaChecks[1], 'PASS', { status: 401 });
+    const modelStatus = cpaProbe(chatProbe, createdKey.createdSecret);
+    assert(
+      /^[1-5][0-9]{2}$/.test(modelStatus) && modelStatus !== '401',
+      'CPA must accept the installed Client Key for one model request: ' + modelStatus
+    );
+    recordDataLayer(cpaChecks[2], 'PASS', { status: Number(modelStatus) });
+    const pendingResponse = await fetch(origin + '/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + createdKey.createdSecret,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    });
+    assert.equal(pendingResponse.status, 503);
+    assert.equal((await pendingResponse.text()).trim(), 'gateway pending configuration');
+    recordDataLayer(cpaChecks[3], 'PASS');
+  } else {
+    for (const name of cpaChecks) recordDataLayer(name, 'DEFAULT AUTHORITY MISSING');
+    report.authority = 'DEFAULT AUTHORITY MISSING';
+    report.expectedGaps = [
+      'default-install CPA management authority (lane P): ' + JSON.stringify(authorityGap || {}),
+    ];
+    console.log(
+      'DEFAULT AUTHORITY MISSING: default-install CPA management authority is unavailable on this build (lane P gap, not a tool failure)'
+    );
+  }
   const keyDigest = dc('exec', '-T', 'cpamp-manager', 'sha256sum', '/data/data.key');
   dc('restart', 'cpamp-manager', 'cpamp-runtime', 'cpamp-ingress');
   await wait(

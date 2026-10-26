@@ -123,3 +123,45 @@ describe('R1-1 candidate local load contracts', () => {
   });
 });
 
+describe('Fresh New automated smoke contracts', () => {
+  const smoke = readFileSync(
+    new URL('../bin/ci/fresh-new-installation.mjs', import.meta.url),
+    'utf8'
+  );
+
+  it('stays syntactically valid', () => {
+    execFileSync('node', ['--check', 'bin/ci/fresh-new-installation.mjs'], {
+      cwd: new URL('..', import.meta.url),
+      stdio: 'pipe',
+    });
+  });
+
+  it('asserts the Fresh liveness transition from 503 to 200', () => {
+    expect(smoke).toMatch(
+      /fetch\(origin \+ '\/health'\)\)\.status,\s*503,\s*'unclaimed Manager must report \/health 503'/
+    );
+    expect(smoke).toMatch(/takeoverHealth[\s\S]{0,400}status,\s*200,\s*'claimed Fresh takeover/);
+    expect(smoke).toContain('"service":"cpa-manager-plus"');
+  });
+
+  it('asserts the CPA data layer and labels the pre-authority gap instead of failing the tool', () => {
+    expect(smoke).toContain("'/console/api/v2/cpamp/v0/management/auth-files'");
+    expect(smoke).toMatch(/api-keys\/' \+ createdKey\.key\.id \+ '\/initial-install'/);
+    expect(smoke).toContain(
+      "process.env.CPAMP_SMOKE_MODEL_TARGET || 'http://cpamp-runtime:8317'"
+    );
+    expect(smoke).toContain("target+'/v1/models'");
+    expect(smoke).toContain("target+'/v1/chat/completions'");
+    expect(smoke).toContain('report.modelTarget = modelTarget');
+    expect(smoke).toContain('CPAMP_SMOKE_MODEL_TARGET must be an http(s) origin');
+    expect(smoke).toContain('new Set([403, 404, 409, 428, 502, 503])');
+    expect(smoke).toContain("'DEFAULT AUTHORITY MISSING'");
+    expect(smoke).toContain("report.authority = 'DEFAULT AUTHORITY MISSING'");
+    // Unexpected statuses remain hard failures.
+    expect(smoke).toContain("throw new Error('unexpected CPA auth-files status '");
+    expect(smoke).toContain("throw new Error('unexpected Client Key install status '");
+    // The Ingress Gateway stays pending by design; CPA acceptance is proven on
+    // the Compose network, and the anonymous peer may only be closed or 401.
+    expect(smoke).toContain("['unreachable', '401'].includes(peerVerdict)");
+  });
+});
