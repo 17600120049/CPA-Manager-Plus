@@ -146,3 +146,30 @@ No further confirmed issue remains in the tested slice after these passes.
 ![Completed Console, desktop dark](evidence/fresh-new-installation/desktop-dark.png)
 
 ![Completed Console, mobile light](evidence/fresh-new-installation/mobile-light.png)
+
+## Candidate refresh — 2026-10-27
+
+The embedded candidate lane re-ran this journey on three locally built
+`linux/amd64` candidate images from `v2@49579583` plus the tooling commits on
+`build/v2-candidate-smoke-refresh` (tested HEAD
+`4eee135cb23579f15a22b8d9ab15e1e2f4ccdaa9`). Build, structural verification,
+`docker load` identity check and the disposable smoke all passed on exactly those
+images; see
+[candidate-smoke-20261027.md](evidence/fresh-new-installation/candidate-smoke-20261027.md)
+for digests, per-check results and re-run commands. That record is local-only
+evidence, not a Beta/Release qualification.
+
+Differences from the 2026-10-20 record:
+
+- The Fresh setup now finishes in the Bootstrap wizard before Console login, so
+  the automated journey drives that wizard instead of the retired claim page and
+  Console-side installation wizard.
+- `/health` is asserted `503` before Host initialize and `200` with the Manager
+  service identity after the Fresh store takeover.
+- A CPA data-layer step (one management read through the `cpamp/` bridge, one
+  Client Key creation plus initial install, one real model request) is present
+  and currently reported `DEFAULT AUTHORITY MISSING`: the default installation
+  carries no CPA management authority until lane P lands, so those rows are a
+  labelled gap rather than a pass or a tool failure.
+- The managed retry configuration layout check is `NOT RUN` while the gateway
+  allowlist exposes no retry field.
