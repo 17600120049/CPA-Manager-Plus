@@ -25,6 +25,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	keyrepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/setting"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/bootstrapdiscovery"
@@ -83,6 +84,9 @@ type freshApplication struct {
 	routing         *freshrouting.Service
 	strategy        *freshstrategy.Service
 	runtime         runtimeservice.RuntimeClient
+	runtimeExternal *runtimeservice.ExternalClient
+	runtimeSettings setting.Repository
+	runtimeJournal  *freshRuntimeJournal
 	externalPermit  func(bootstrap.FreshOperation, uint64, string, string, string) bool
 	protector       *security.Protector
 	fixed           http.Handler
@@ -98,7 +102,12 @@ type freshApplication struct {
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
-	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector, pahS0: cfg.PAHS0Enabled}
+	settings := setting.New(opened.DB, opened.Protector)
+	a := &freshApplication{
+		store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver),
+		protector: opened.Protector, pahS0: cfg.PAHS0Enabled,
+		runtimeSettings: settings, runtimeJournal: newFreshRuntimeJournal(opened.DB),
+	}
 	// Fresh owns the SQLite admission and keeps the old app bootstrap bypassed,
 	// but the already-built CPAMP services remain the source of truth for
 	// Full Web's shared Dashboard/Config/System resources. This context reuses
@@ -120,6 +129,22 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	var runtime runtimeservice.RuntimeClient
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtime = runtimeservice.NewEmbeddedClientWithTokenSource(cfg.RuntimeURL, runtimeservice.NewFileRuntimeTokenSource(cfg.RuntimeTokenFile))
+	} else {
+		a.runtimeExternal = runtimeservice.NewExternalClientWithConnectionSource(func(ctx context.Context) (string, string, error) {
+			managerCfg, found, err := settings.LoadManagerConfig(ctx)
+			if err != nil {
+				return "", "", err
+			}
+			if !found {
+				return "", "", errors.New("CPA connection is not configured")
+			}
+			return managerCfg.CPAConnection.CPABaseURL, managerCfg.CPAConnection.ManagementKey, nil
+		})
+		// External status is available after ProductComplete, but must not be
+		// passed to Fresh strategy execution while setup is still in progress.
+		if opened.Record.Operation.ProductComplete {
+			runtime = a.runtimeExternal
+		}
 	}
 	// Attach the same durable mutation services as the normal Embedded app
 	// before publishing its routes. An incomplete graph must never fall back to
@@ -296,6 +321,10 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):
 		a.clientKeys(w, r, op, resource)
+	case resource == "runtime/status":
+		a.runtimeStatus(w, r, op)
+	case resource == "runtime/operations" || strings.HasPrefix(resource, "runtime/operations/"):
+		a.runtimeOperations(w, r, op, resource)
 	case resource == "operation" && r.Method == http.MethodGet:
 		writeFreshJSON(w, op)
 	case strings.HasPrefix(resource, "cpamp/"):
@@ -587,6 +616,10 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 	}
 	app := newFreshApplication(opened, cfg, freshDriver(cfg))
 	h.SetFreshHandler(app)
+	if app.runtimeExternal == nil && app.runtime != nil && app.runtimeSettings != nil {
+		reconciler := runtimeservice.NewReconciler(app.runtime, app.runtimeSettings, runtimeservice.DefaultReconcileInterval, log.Printf)
+		go reconciler.Run(ctx)
+	}
 	if opened.Record.Operation.ProductComplete && app.collectorWorker != nil {
 		app.collectorWorker.Start(ctx)
 	}

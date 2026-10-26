@@ -32,6 +32,12 @@ export interface FullWebCredential {
   readonly value: string;
 }
 
+export interface PublicApiClient {
+  get: <T = unknown>(resource: string, credential?: FullWebCredential) => Promise<T>;
+  post: <T = unknown>(resource: string, body: unknown, credential: FullWebCredential) => Promise<T>;
+  put: <T = unknown>(resource: string, body: unknown, credential: FullWebCredential) => Promise<T>;
+}
+
 export function createPublicApiClient(
   readContext: () => RoutingContext | null = () => readRoutingContext(document),
   transport: typeof fetch = globalThis.fetch
@@ -75,6 +81,9 @@ export function createPublicApiClient(
       body !== undefined ||
       resource === 'operation' ||
       resource === 'installation/runtime' ||
+      resource === 'runtime/status' ||
+      resource === 'runtime/operations' ||
+      resource.startsWith('runtime/operations/') ||
       resource.startsWith('api-keys/') ||
       resource === 'settings/update-channel' ||
       resource.startsWith('gateway/retry/')
@@ -154,7 +163,7 @@ export function createPublicApiClient(
       if (timer !== undefined) clearTimeout(timer);
     }
   }
-  return {
+  const client: PublicApiClient = {
     get: <T = unknown>(resource: string, credential?: FullWebCredential) =>
       request<T>(resource, credential),
     post: <T = unknown>(resource: string, body: unknown, credential: FullWebCredential) =>
@@ -162,4 +171,5 @@ export function createPublicApiClient(
     put: <T = unknown>(resource: string, body: unknown, credential: FullWebCredential) =>
       request<T>(resource, credential, body, 'PUT'),
   };
+  return client;
 }

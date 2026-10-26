@@ -22,6 +22,7 @@ import { ConfirmationModal } from '../components/common/ConfirmationModal';
 import { NotificationContainer } from '../components/common/NotificationContainer';
 import { ManagerUpdates } from '../features/system/ManagerUpdates';
 import { SystemPage } from '../features/system/SystemPage';
+import { RuntimeStatusPage } from '@/features/system/RuntimeStatusPage';
 import { FreshSystemWorkspace } from './FreshSystemWorkspace';
 import { useAuthStore } from '../stores';
 import { FreshManagedResources } from './FreshManagedResources';
@@ -162,6 +163,15 @@ export function LegacyConsolePage({
                   logoutDisabled={freshPending}
                   hasUnsavedChanges={freshDirty}
                   workspace={<FreshSystemWorkspace basePath={context.basePath} />}
+                />
+              );
+            }
+            if (route === '/system/runtime') {
+              return (
+                <RuntimeStatusPage
+                  client={client}
+                  credential={credential}
+                  onUnauthorized={onUnauthorized}
                 />
               );
             }

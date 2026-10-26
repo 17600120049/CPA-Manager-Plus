@@ -28,6 +28,7 @@ import { LogsPage } from '@/pages/LogsPage';
 import { PluginResourcePage } from '@/pages/PluginResourcePage';
 import { PluginsPage } from '@/pages/PluginsPage';
 import { SystemPage } from '@/pages/SystemPage';
+import { RuntimeStatusPage } from '@/pages/RuntimeStatusPage';
 import { ManagerUpdatePage } from '@/pages/ManagerUpdatePage';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { usePanelFeatureAvailability } from '@/hooks/usePanelFeatureAvailability';
@@ -242,6 +243,7 @@ const mainRoutes: RouteObject[] = [
     ),
   },
   { path: '/system', element: <SystemPage /> },
+  { path: '/system/runtime', element: <RuntimeStatusPage /> },
   { path: '/system/updates', element: <ManagerUpdatePage /> },
   { path: '*', element: <Navigate to="/" replace /> },
 ];

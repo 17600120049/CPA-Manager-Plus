@@ -187,6 +187,7 @@ describe('original MainLayout console navigation', () => {
     expect(navLinks().map((node) => node.props.href)).toEqual([
       '/',
       '/system',
+      '/system/runtime',
       '/config',
       '/logs',
       '/system/updates',
