@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { generateReleaseInfo } from '../bin/release/generate-release-info.mjs';
 import { verifyCandidate, verifyImage } from '../bin/release/publish-update-index.mjs';
@@ -142,6 +144,43 @@ describe('Fresh New automated smoke contracts', () => {
     );
     expect(smoke).toMatch(/takeoverHealth[\s\S]{0,400}status,\s*200,\s*'claimed Fresh takeover/);
     expect(smoke).toContain('"service":"cpa-manager-plus"');
+  });
+
+  it('drives the current Fresh setup wizard instead of a retired claim flow', () => {
+    expect(smoke).toContain("getByTestId('fresh-setup-wizard')");
+    expect(smoke).toContain("getByTestId('choose-new_managed')");
+    expect(smoke).toContain("getByTestId('setup-execute')");
+    expect(smoke).toContain("getByTestId('setup-refresh')");
+    expect(smoke).toContain("getByTestId('enter-console')");
+    for (const retired of [
+      'bootstrap-operation-ready',
+      'commit-admin-btn',
+      'enable-console',
+      'continue-console',
+    ])
+      expect(smoke).not.toContain(`getByTestId('${retired}')`);
+  });
+
+  // A smoke that drives a test id the shipped Full Web no longer renders fails
+  // only against real images. Keep that drift an offline contract failure.
+  it('only drives test ids the Full Web source actually renders', () => {
+    const ids = [...smoke.matchAll(/getByTestId\('([a-z0-9-]+)'\)/g)].map((match) => match[1]);
+    expect(ids.length).toBeGreaterThan(10);
+    const files = [];
+    const walk = (directory) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name))
+          files.push(readFileSync(path, 'utf8'));
+      }
+    };
+    walk(fileURLToPath(new URL('../apps/web/src', import.meta.url)));
+    const source = files.join('\n');
+    const missing = ids.filter(
+      (id) => !source.includes(`'${id}'`) && !source.includes(`"${id}"`)
+    );
+    expect(missing).toEqual([]);
   });
 
   it('asserts the CPA data layer and labels the pre-authority gap instead of failing the tool', () => {
