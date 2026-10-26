@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -17,9 +18,10 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/runtime-supervisor/internal/journal"
 )
 
-// Optional real-executable check. CI verifies the exact official archive/binary
-// before setting this input. A native source build is only a local smoke test.
-func TestDestinationRealCPAV8(t *testing.T) {
+// startRealDestination stages r on an explicitly supplied disposable CPA v8
+// executable and returns its loopback address once management answers.
+func startRealDestination(t *testing.T, mutate func(*DestinationRequest)) (DestinationRequest, string, []byte) {
+	t.Helper()
 	executable := os.Getenv("CPAMP_TEST_CPA_V8")
 	if executable == "" {
 		t.Skip("requires an explicitly supplied disposable CPA v8 executable")
@@ -45,19 +47,20 @@ func TestDestinationRealCPAV8(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer e.Close()
+	t.Cleanup(func() { _ = e.Close() })
 	e.artifact = observer
-	if err = e.EnableDestination(filepath.Join(root, "destination"), address, nil); err != nil {
+	if err = e.EnableDestination(filepath.Join(root, "destination"), filepath.Join(root, "gateway", "auth"), address, nil); err != nil {
 		t.Fatal(err)
 	}
 	r := DestinationRequest{OperationID: "real-native:adopt-destination", ExpectedRuntimeIdentity: "real-v8-target", ExpectedRuntimeGeneration: 1, ExpectedActiveArtifactID: observer.Observation().ArtifactID, SourceIdentity: "external:sha256:" + strings.Repeat("a", 64), SourceClass: "network_existing", APIKeys: []string{"disposable-client-one", "disposable-client-two"}, ManagementKey: strings.Repeat("b", 64)}
+	mutate(&r)
 	if _, err = e.StageDestination(t.Context(), r); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = e.Start(t.Context(), StartRequest{OperationID: r.OperationID + ":start", ExpectedRuntimeIdentity: r.ExpectedRuntimeIdentity, ExpectedRuntimeGeneration: 1, ExpectedActiveArtifactID: r.ExpectedActiveArtifactID}); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		target, err := child.PrepareStop()
 		if err == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -65,7 +68,7 @@ func TestDestinationRealCPAV8(t *testing.T) {
 			_, _ = target.Terminate(ctx)
 			target.Release()
 		}
-	}()
+	})
 	client := &http.Client{Timeout: time.Second}
 	var body []byte
 	deadline := time.Now().Add(15 * time.Second)
@@ -82,6 +85,31 @@ func TestDestinationRealCPAV8(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	return r, address, body
+}
+
+func realStatus(t *testing.T, method, url, key string, payload []byte) int {
+	t.Helper()
+	req, _ := http.NewRequest(method, url, bytes.NewReader(payload))
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	response, err := (&http.Client{Timeout: time.Second}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+	_ = response.Body.Close()
+	return response.StatusCode
+}
+
+// Optional real-executable check. CI verifies the exact official archive/binary
+// before setting this input. A native source build is only a local smoke test.
+func TestDestinationRealCPAV8(t *testing.T) {
+	r, address, body := startRealDestination(t, func(*DestinationRequest) {})
 	var config struct {
 		Access struct {
 			Keys []string `json:"api-keys"`
@@ -91,22 +119,57 @@ func TestDestinationRealCPAV8(t *testing.T) {
 		t.Fatal("real destination did not expose replayed native keys")
 	}
 	for _, key := range append([]string{"", r.ManagementKey}, r.APIKeys...) {
-		req, _ := http.NewRequest(http.MethodGet, "http://"+address+"/v1/models", nil)
-		if key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		response, err := client.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
-		_ = response.Body.Close()
 		want := http.StatusUnauthorized
 		if key == r.APIKeys[0] || key == r.APIKeys[1] {
 			want = 200
 		}
-		if response.StatusCode != want {
-			t.Fatalf("real destination auth status=%d want=%d", response.StatusCode, want)
+		if status := realStatus(t, http.MethodGet, "http://"+address+"/v1/models", key, nil); status != want {
+			t.Fatalf("real destination auth status=%d want=%d", status, want)
 		}
+	}
+}
+
+// The default New Managed destination starts without client keys, rewrites its
+// own management secret as bcrypt and enables client auth on the first key.
+func TestDestinationRealCPAV8NewManaged(t *testing.T) {
+	r, address, body := startRealDestination(t, func(r *DestinationRequest) {
+		r.OperationID, r.SourceClass, r.SourceIdentity, r.APIKeys = "real-native:managed-destination", SourceClassNewManaged, "managed:sha256:"+strings.Repeat("c", 64), []string{}
+	})
+	var config struct {
+		Access struct {
+			Keys []string `json:"api-keys"`
+		} `json:"access"`
+		Management struct {
+			AllowRemote         bool   `json:"allow-remote"`
+			SecretKey           string `json:"secret-key"`
+			DisableControlPanel bool   `json:"disable-control-panel"`
+		} `json:"management"`
+		Observability struct {
+			Usage struct {
+				Enabled bool `json:"usage-statistics-enabled"`
+			} `json:"usage"`
+		} `json:"observability"`
+	}
+	if json.Unmarshal(body, &config) != nil || config.Access.Keys == nil || len(config.Access.Keys) != 0 || !config.Management.AllowRemote ||
+		!config.Management.DisableControlPanel || !config.Observability.Usage.Enabled || !strings.HasPrefix(config.Management.SecretKey, "$2") || strings.Contains(string(body), r.ManagementKey) {
+		t.Fatalf("real New Managed destination posture: %s", body)
+	}
+	base := "http://" + address
+	if status := realStatus(t, http.MethodGet, base+"/v8/management/config", strings.Repeat("d", 64), nil); status != http.StatusUnauthorized {
+		t.Fatalf("foreign management key status=%d", status)
+	}
+	client := "cpamp_sk_" + strings.Repeat("e", 64)
+	if status := realStatus(t, http.MethodPut, base+"/v8/management/config/access/api-keys", r.ManagementKey, []byte(`["`+client+`"]`)); status != 200 {
+		t.Fatalf("install status=%d", status)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for realStatus(t, http.MethodGet, base+"/v1/models", "", nil) != http.StatusUnauthorized {
+		if time.Now().After(deadline) {
+			t.Fatal("client auth stayed open after the first key")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if realStatus(t, http.MethodGet, base+"/v1/models", client, nil) != 200 || realStatus(t, http.MethodGet, base+"/v1/models", r.ManagementKey, nil) != http.StatusUnauthorized {
+		t.Fatal("real New Managed client auth")
 	}
 }

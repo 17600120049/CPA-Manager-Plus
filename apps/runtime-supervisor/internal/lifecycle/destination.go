@@ -34,16 +34,36 @@ type DestinationRequest struct {
 	ManagementKey             string      `json:"managementKey"`
 }
 
+// SourceClassNewManaged is the default Fresh New Managed installation. It has
+// no external source: its identity is the hashed Fresh operation and it never
+// carries client keys. Keys are installed later through the management API.
+const SourceClassNewManaged = "new_managed"
+
+// ErrGatewayAuthPresent refuses to replace a bootstrap Gateway whose auth
+// directory still holds provider logins the new destination would orphan.
+var ErrGatewayAuthPresent = errors.New("bootstrap Gateway auth directory is not empty")
+
 func (r DestinationRequest) Validate() error {
+	prefix := "external:sha256:"
+	switch r.SourceClass {
+	case "network_existing", "legacy_managed":
+	case SourceClassNewManaged:
+		prefix = "managed:sha256:"
+		if len(r.APIKeys) != 0 {
+			return ErrInvalidRequest
+		}
+	default:
+		return ErrInvalidRequest
+	}
 	if validateRequest(r.OperationID, r.ExpectedRuntimeIdentity, r.ExpectedRuntimeGeneration) != nil || !r.ExpectedActiveArtifactID.IsValid() ||
-		!strings.HasPrefix(r.SourceIdentity, "external:sha256:") || len(r.SourceIdentity) != len("external:sha256:")+64 ||
-		(r.SourceClass != "network_existing" && r.SourceClass != "legacy_managed") || len(r.ManagementKey) != 64 || r.APIKeys == nil || len(r.APIKeys) > 128 {
+		!strings.HasPrefix(r.SourceIdentity, prefix) || len(r.SourceIdentity) != len(prefix)+64 ||
+		len(r.ManagementKey) != 64 || r.APIKeys == nil || len(r.APIKeys) > 128 {
 		return ErrInvalidRequest
 	}
 	if _, err := hex.DecodeString(r.ManagementKey); err != nil {
 		return ErrInvalidRequest
 	}
-	if _, err := hex.DecodeString(strings.TrimPrefix(r.SourceIdentity, "external:sha256:")); err != nil {
+	if _, err := hex.DecodeString(strings.TrimPrefix(r.SourceIdentity, prefix)); err != nil {
 		return ErrInvalidRequest
 	}
 	seen := map[string]bool{}
@@ -62,14 +82,17 @@ func (r DestinationRequest) Validate() error {
 }
 
 type destination struct {
-	root  string
-	port  string
-	child *cpaprocess.ChildIdentity
+	root        string
+	port        string
+	child       *cpaprocess.ChildIdentity
+	gatewayAuth string
 }
 
 // EnableDestination uses the existing Supervisor-private root and incarnation.
 // The stage snapshot is immutable resource input, not a second operation ledger.
-func (e *Executor) EnableDestination(root, address string, child *cpaprocess.ChildIdentity) error {
+// gatewayAuth is the bootstrap Gateway auth directory a new_managed destination
+// replaces; staging refuses to orphan provider logins stored there.
+func (e *Executor) EnableDestination(root, gatewayAuth, address string, child *cpaprocess.ChildIdentity) error {
 	_, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return ErrInvalidRequest
@@ -78,11 +101,35 @@ func (e *Executor) EnableDestination(root, address string, child *cpaprocess.Chi
 	if err != nil {
 		return err
 	}
+	auth, err := filepath.Abs(gatewayAuth)
+	if err != nil || gatewayAuth == "" {
+		return ErrInvalidRequest
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.destination = &destination{root: abs, port: port, child: child}
+	e.destination = &destination{root: abs, port: port, child: child, gatewayAuth: auth}
 	_, err = e.destination.load()
 	return err
+}
+
+// gatewayAuthEmpty reports whether the bootstrap Gateway holds no auth files.
+// A missing directory is empty; anything but a real directory is untrusted.
+func (d *destination) gatewayAuthEmpty() error {
+	info, err := os.Lstat(d.gatewayAuth)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil || !info.IsDir() {
+		return ErrPersistenceUnavailable
+	}
+	entries, err := os.ReadDir(d.gatewayAuth)
+	if err != nil {
+		return ErrPersistenceUnavailable
+	}
+	if len(entries) != 0 {
+		return ErrGatewayAuthPresent
+	}
+	return nil
 }
 
 func (d *destination) load() (*DestinationRequest, error) {
@@ -147,6 +194,11 @@ func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (
 	}
 	if state := e.process.Observe().State; state != cpaprocess.StateNotStarted && state != cpaprocess.StateExited {
 		return journal.Operation{}, journal.ErrOperationStateConflict
+	}
+	if r.SourceClass == SourceClassNewManaged {
+		if err := e.destination.gatewayAuthEmpty(); err != nil {
+			return journal.Operation{}, err
+		}
 	}
 	if e.artifact == nil {
 		return journal.Operation{}, ErrActiveArtifactUnavailable
@@ -217,7 +269,7 @@ func (d *destination) publish(r DestinationRequest) error {
 	config := map[string]any{"config-version": 8, "server": map[string]any{"host": "0.0.0.0", "port": json.Number(d.port)},
 		"management": map[string]any{"allow-remote": true, "secret-key": r.ManagementKey, "disable-control-panel": true, "disable-auto-update-panel": true},
 		"access":     map[string]any{"api-keys": r.APIKeys}, "oauth": map[string]any{"auth-dir": filepath.Join(d.root, "auth")},
-		"plugins": map[string]any{"enabled": false}, "observability": map[string]any{"logs": map[string]any{"logging-to-file": false}, "usage": map[string]any{"usage-statistics-enabled": false}}}
+		"plugins": map[string]any{"enabled": false}, "observability": map[string]any{"logs": map[string]any{"logging-to-file": false}, "usage": map[string]any{"usage-statistics-enabled": true}}}
 	if d.child == nil {
 		config["server"].(map[string]any)["host"] = "127.0.0.1"
 	}

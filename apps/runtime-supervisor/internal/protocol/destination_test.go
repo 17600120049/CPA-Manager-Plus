@@ -12,11 +12,34 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/runtime-supervisor/internal/lifecycle"
 )
 
-type destinationFake struct{ calls int }
+type destinationFake struct {
+	calls int
+	err   error
+}
 
 func (f *destinationFake) StageDestination(_ context.Context, r lifecycle.DestinationRequest) (journal.Operation, error) {
 	f.calls++
+	if f.err != nil {
+		return journal.Operation{}, f.err
+	}
 	return journal.Operation{OperationID: r.OperationID, OperationType: "stage_destination", RuntimeIdentity: r.ExpectedRuntimeIdentity, RuntimeGeneration: r.ExpectedRuntimeGeneration, State: journal.StateSucceeded}, nil
+}
+
+func TestDestinationProtocolReportsGatewayAuthRefusalForNewManaged(t *testing.T) {
+	fake := &destinationFake{err: lifecycle.ErrGatewayAuthPresent}
+	h, err := NewHandler(Config{RuntimeIdentity: "runtime-01", RuntimeGeneration: 1, Token: "test-runtime-token", Destination: fake})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := lifecycle.DestinationRequest{OperationID: "fresh:managed-destination", ExpectedRuntimeIdentity: "runtime-01", ExpectedRuntimeGeneration: 1, ExpectedActiveArtifactID: artifact.ID("sha256:" + strings.Repeat("a", 64)), SourceIdentity: "managed:sha256:" + strings.Repeat("b", 64), SourceClass: lifecycle.SourceClassNewManaged, APIKeys: []string{}, ManagementKey: strings.Repeat("c", 64)}
+	body, _ := json.Marshal(r)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest("POST", destinationPath, strings.NewReader(string(body)))
+	request.Header.Set("Authorization", "Bearer test-runtime-token")
+	h.ServeHTTP(recorder, request)
+	if recorder.Code != 409 || !strings.Contains(recorder.Body.String(), `"gateway_auth_present"`) || strings.Contains(recorder.Body.String(), r.ManagementKey) || fake.calls != 1 {
+		t.Fatalf("gateway auth refusal status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
 }
 
 func TestDestinationProtocolIsPrivateBoundedTypedAndSecretFree(t *testing.T) {
