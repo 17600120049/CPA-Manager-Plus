@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { fullWebText as t } from '../i18n/fullweb';
+import { useTranslation } from 'react-i18next';
+import '../i18n';
+import { fullWebLanguage, fullWebText as t, setFullWebLanguage } from '../i18n/fullweb';
 import { FreshManagedKeysPage } from './FreshManagedKeysPage';
 import { FreshGatewayWorkspace } from './FreshGatewayWorkspace';
 import type { createPublicApiClient } from './publicApi';
@@ -12,17 +14,19 @@ import type { createPublicApiClient } from './publicApi';
 function RetainedRoutePanel({
   active,
   name,
+  language,
   children,
 }: {
   active: boolean;
   name: string;
+  language: string;
   children: ReactNode;
 }) {
   const [visited, setVisited] = useState(active);
   if (active && !visited) setVisited(true);
   if (!active && !visited) return null;
   return (
-    <div data-testid={`fresh-route-${name}`} hidden={!active}>
+    <div data-testid={`fresh-route-${name}`} hidden={!active} lang={language}>
       {children}
     </div>
   );
@@ -43,6 +47,15 @@ export function FreshManagedResources({
   onPending: (pending: boolean) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const { i18n } = useTranslation();
+  const consoleLanguage = i18n.resolvedLanguage || i18n.language;
+  const [language, setLanguage] = useState(fullWebLanguage);
+  useEffect(() => {
+    // Bridge the original Console's locale into retained Fresh editors without
+    // remounting them or losing a draft, request identity or one-time secret.
+    setFullWebLanguage(consoleLanguage);
+    setLanguage(consoleLanguage);
+  }, [consoleLanguage]);
   const { pathname: locationPath } = useLocation();
   const pathname = locationPath.replace(/\/+$/, '') || '/';
   const route =
@@ -74,8 +87,9 @@ export function FreshManagedResources({
   return (
     <>
       {/* 客户端 API 密钥保留面板 */}
-      <RetainedRoutePanel name="keys" active={route === '/api-keys'}>
+      <RetainedRoutePanel name="keys" active={route === '/api-keys'} language={language}>
         <FreshManagedKeysPage
+          visible={route === '/api-keys'}
           client={client}
           credential={credential}
           onUnauthorized={onUnauthorized}
@@ -87,6 +101,7 @@ export function FreshManagedResources({
       <RetainedRoutePanel
         name="retry"
         active={route === '/config' || route === '/gateway'}
+        language={language}
       >
         <FreshGatewayWorkspace
           onDirtyChange={onDirtyChange}
