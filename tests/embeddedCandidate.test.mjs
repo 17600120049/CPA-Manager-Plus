@@ -63,3 +63,63 @@ describe('R1-1 local-only OCI candidate contracts', () => {
     }, info)).toThrow();
   });
 });
+
+describe('R1-1 candidate local load contracts', () => {
+  const builder = readFileSync(
+    new URL('../bin/release/build-embedded-candidate.sh', import.meta.url),
+    'utf8'
+  );
+
+  it('names every role and exports the engine-loadable transport in the same build invocation', () => {
+    expect(builder).toContain(
+      '--output "type=oci,name=cpamp-r1-$role:candidate,dest=$output/$role.oci.tar"'
+    );
+    expect(builder).toContain('--output "type=docker,dest=$output/$role.docker.tar"');
+    expect(builder).toContain('--tag "cpamp-r1-$role:candidate"');
+    // One role block holds both outputs, so the transport cannot be a rebuild.
+    const argsBlock = builder.slice(
+      builder.indexOf('  args=('),
+      builder.indexOf('  if [[ -n "$target" ]]')
+    );
+    expect(argsBlock).toContain('type=oci,name=cpamp-r1-$role:candidate');
+    expect(argsBlock).toContain('type=docker,dest=$output/$role.docker.tar');
+    expect(builder.indexOf('type=docker,dest')).toBeLessThan(
+      builder.indexOf('docker buildx build ${builder_args[@]+')
+    );
+  });
+
+  it('refuses the docker driver and forwards the explicitly selected container builder', () => {
+    expect(builder).toContain('builder_args=(--builder "$CPAMP_CANDIDATE_BUILDER")');
+    expect(builder).toContain('docker buildx inspect "$CPAMP_CANDIDATE_BUILDER"');
+    expect(builder).toContain("awk '/^Driver:/ {print $2; exit}'");
+    expect(builder).toContain('cannot export an OCI layout');
+    expect(builder).toContain('select a container builder with CPAMP_CANDIDATE_BUILDER=<name>');
+    // Every role build carries the selection; the driver guard runs before it.
+    expect(builder.indexOf('cannot export an OCI layout')).toBeLessThan(
+      builder.indexOf('docker buildx build ${builder_args[@]+')
+    );
+  });
+
+  it('keeps the load opt-in and verifies the loaded id against the verified evidence', () => {
+    expect(builder).toContain('if [[ "${CPAMP_CANDIDATE_LOAD:-0}" == "1" ]]; then');
+    expect(builder).toContain('docker load --input "$output/$role.docker.tar"');
+    // The OCI archive is evidence only: the engine never loads it directly.
+    expect(builder).not.toContain('docker load --input "$output/$role.oci.tar"');
+    expect(builder).toContain(
+      'actual_id="$(docker image inspect --format \'{{.Id}}\' "$reference" 2>/dev/null || true)"'
+    );
+    expect(builder).toContain('the build transport did not carry the reference');
+    expect(builder).toContain('"$actual_id" != "$expected_id"');
+    expect(builder).toContain('"images"][sys.argv[2]]["imageConfigDigest"]');
+    expect(builder).toContain('load-evidence.json');
+  });
+
+  it('never rebuilds, pushes or tags a substitute candidate', () => {
+    expect(builder).not.toContain('--load');
+    expect(builder).not.toContain('--push');
+    expect(builder).not.toContain('docker push');
+    expect(builder).not.toContain('skopeo');
+    expect(builder).not.toMatch(/^\s*docker tag /m);
+  });
+});
+
