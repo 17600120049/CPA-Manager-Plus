@@ -454,7 +454,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		// it: a failed read is safe to retry. Only the final CAS may select the
 		// connection. Also recover old validated-only checkpoints in place.
 	}
-	if request.Strategy == bootstrap.AdoptExisting {
+	if request.Strategy == bootstrap.AdoptExisting || request.Strategy == bootstrap.NewManaged {
 		record, err := a.store.Load(r.Context())
 		if err != nil || record.Operation.Identity != op.Identity || record.Operation.Revision != op.Revision {
 			w.WriteHeader(http.StatusConflict)

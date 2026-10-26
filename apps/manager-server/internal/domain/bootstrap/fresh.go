@@ -86,7 +86,14 @@ func (c FreshStrategyCheckpoint) validate() error {
 		}
 		return nil
 	}
-	if c.Strategy != AdoptExisting && (c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0) {
+	if c.Strategy == NewManaged {
+		if c.SourceIdentity != "" || c.SourceClass != "" || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0 {
+			return errors.New("foreign managed checkpoint source")
+		}
+		if c.DestinationConnectionIdentity != "" && (!strings.HasPrefix(c.DestinationConnectionIdentity, "managed:") || !validContentDigest(ContentDigest(strings.TrimPrefix(c.DestinationConnectionIdentity, "managed:")))) {
+			return errors.New("invalid managed destination identity")
+		}
+	} else if c.Strategy != AdoptExisting && (c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0) {
 		return errors.New("foreign adoption checkpoint")
 	}
 	if strings.TrimSpace(c.TargetIdentity) == "" || c.TargetGeneration == 0 || len(c.Unsupported) != 0 {

@@ -188,7 +188,17 @@ func valid(r Record) error {
 			return ErrNotFresh
 		}
 	}
-	if r.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
+	if r.Operation.Strategy.Strategy == bootstrap.NewManaged {
+		if r.AdoptionCiphertext != "" && !security.IsValidProtectedEnvelope(r.AdoptionCiphertext) {
+			return ErrNotFresh
+		}
+		if r.Connection != nil && r.Operation.Strategy.DestinationConnectionIdentity != "" {
+			digest := sha256.Sum256([]byte(r.Connection.CPABaseURL))
+			if r.Operation.Strategy.DestinationConnectionIdentity != "managed:sha256:"+hex.EncodeToString(digest[:]) {
+				return ErrNotFresh
+			}
+		}
+	} else if r.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
 		if !security.IsValidProtectedEnvelope(r.AdoptionCiphertext) {
 			return ErrNotFresh
 		}
