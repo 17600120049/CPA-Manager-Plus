@@ -40,6 +40,11 @@ var (
 	// ErrStaleSnapshot means source bindings changed while an inventory was read.
 	ErrStaleSnapshot = errors.New("canonical source bindings changed during inventory capture")
 
+	// ErrStagedSourceTerminal means an observed source hash still belongs to a
+	// terminal Fresh staged key. Manager fails closed instead of minting a second
+	// canonical identity that would split the key's recorded history.
+	ErrStagedSourceTerminal = errors.New("staged canonical key source is terminal")
+
 	ErrPendingAPIKeyMutation   = errors.New("API-key mutation already pending for runtime")
 	ErrPendingCredentialDelete = errors.New("credential delete already pending for physical file")
 )

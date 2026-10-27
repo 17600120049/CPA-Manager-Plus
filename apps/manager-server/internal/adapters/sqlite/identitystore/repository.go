@@ -703,25 +703,27 @@ func isConstraintConflict(err error) bool {
 }
 
 // stagedAPIKeyForSource returns the Canonical Key a staged Fresh client key
-// already owns for this secret hash. Only an active identity qualifies: a
-// superseded key is terminal history, so a re-appearing hash is a new source.
-// fresh_client_api_keys.secret_hash is unique, so the answer is unambiguous.
-func stagedAPIKeyForSource(ctx context.Context, tx *sql.Tx, hash string) (identity.APIKeyID, bool, error) {
-	var rawID string
-	err := tx.QueryRowContext(ctx, `select k.api_key_id
+// already owns for this secret hash, including terminal (superseded) keys. A
+// hash that belongs to any staged record must never mint a second identity: the
+// staged key owns whatever history was recorded for it, even after its window
+// closed. fresh_client_api_keys.secret_hash is unique, so the answer is
+// unambiguous.
+func stagedAPIKeyForSource(ctx context.Context, tx *sql.Tx, hash string) (identity.APIKeyID, identity.Lifecycle, bool, error) {
+	var rawID, lifecycle string
+	err := tx.QueryRowContext(ctx, `select k.api_key_id, i.lifecycle
 		from fresh_client_api_keys k
 		join `+sqliterepo.GatewayAPIKeyIdentitiesTable+` i on i.id = k.api_key_id
-		where k.secret_hash = ? and i.lifecycle = 'active'`, hash).Scan(&rawID)
+		where k.secret_hash = ?`, hash).Scan(&rawID, &lifecycle)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
+		return "", "", false, nil
 	}
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
 	if identity.APIKeyID(rawID).Validate() != nil {
-		return "", false, errors.New("invalid staged client key identity")
+		return "", "", false, errors.New("invalid staged client key identity")
 	}
-	return identity.APIKeyID(rawID), true, nil
+	return identity.APIKeyID(rawID), identity.Lifecycle(lifecycle), true, nil
 }
 
 func (r *repository) SourceBindingRevision(ctx context.Context) (int64, error) {
@@ -944,9 +946,15 @@ func (r *repository) ApplyPassiveSnapshot(ctx context.Context, params ports.Reco
 			// Canonical Key: passive synchronization must never mint a second
 			// identity for one secret, or the Key workspace would attribute one
 			// key's traffic to two canonical IDs.
-			freshID, staged, err := stagedAPIKeyForSource(ctx, tx, hash)
+			freshID, lifecycle, staged, err := stagedAPIKeyForSource(ctx, tx, hash)
 			if err != nil {
 				return ports.ReconcileSnapshotResult{}, fmt.Errorf("resolve staged api key source: %w", err)
+			}
+			if staged && lifecycle != identity.LifecycleActive {
+				// A terminal staged key already owns this hash and its recorded
+				// history. Refuse the snapshot rather than minting a second
+				// canonical ID that would split that history.
+				return ports.ReconcileSnapshotResult{}, fmt.Errorf("%w: %s", ports.ErrStagedSourceTerminal, freshID)
 			}
 			newID := freshID
 			if !staged {
