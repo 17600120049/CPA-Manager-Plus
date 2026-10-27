@@ -27,6 +27,48 @@ var legacyJournalPaths = []struct {
 	{legacyIntervalKey, "routing.retry.max-retry-interval"},
 }
 
+// LegacyConfigJournalKey is one read-only pre-allowlist journal row and the
+// allowlisted field it records.
+type LegacyConfigJournalKey struct {
+	Key  string
+	Path string
+}
+
+// LegacyConfigJournalKeys exposes the pre-allowlist rows to the shared admission
+// checkpoint, which must verify them as well as the current container.
+func LegacyConfigJournalKeys() []LegacyConfigJournalKey {
+	out := make([]LegacyConfigJournalKey, 0, len(legacyJournalPaths))
+	for _, row := range legacyJournalPaths {
+		out = append(out, LegacyConfigJournalKey{Key: row.key, Path: row.path})
+	}
+	return out
+}
+
+// ValidateLegacyConfigJournal applies the per-field contract to one read-only
+// pre-allowlist row and refuses a non-terminal original operation: an unknown or
+// damaged legacy write still blocks a new claim, even though it is never
+// rewritten.
+func ValidateLegacyConfigJournal(path string, data []byte) error {
+	var journal FieldJournal
+	if json.Unmarshal(data, &journal) != nil {
+		return ErrConflict
+	}
+	for id, operation := range journal.Operations {
+		operation.Field = path
+		journal.Operations[id] = operation
+	}
+	normalizeFieldJournal(&journal)
+	if !validFieldJournal(path, &journal) {
+		return ErrConflict
+	}
+	for _, operation := range journal.Operations {
+		if operation.State == "unknown" {
+			return ErrConflict
+		}
+	}
+	return nil
+}
+
 // ConfigJournalSettingKey is the settings row an admission checkpoint reads.
 func ConfigJournalSettingKey() string { return configJournalKey }
 

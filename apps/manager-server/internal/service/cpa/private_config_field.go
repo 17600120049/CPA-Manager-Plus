@@ -341,7 +341,13 @@ func (t *Transport) ReconcileConfigField(ctx context.Context, source ConfigField
 		Value:            value,
 	})
 	if err != nil || result.State != "persisted" || result.Operation.ID != v.OperationID ||
-		result.Operation.Scope != path || result.Operation.State != "persisted" {
+		result.Operation.State != "persisted" {
+		return v, ErrApplyUnknown
+	}
+	// The Runtime reports the original operation, which may carry a pre-allowlist
+	// scope: bind it to the field it wrote, never to the raw scope string.
+	observedPath, observedValue, ok := operationField(result.Operation)
+	if !ok || observedPath != path || !reflect.DeepEqual(observedValue, value) {
 		return v, ErrApplyUnknown
 	}
 	return configFieldSource(result), nil

@@ -190,3 +190,54 @@ func TestConfigFieldBeginRequiresMatchingReservation(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+// TestConfigFieldReconcileAcceptsPreAllowlistScope covers an operation the
+// Runtime reserved before the allowlist cutover: it reports the legacy scope, so
+// the Manager must bind the original operation by field, never by raw scope.
+func TestConfigFieldReconcileAcceptsPreAllowlistScope(t *testing.T) {
+	requestID := strings.Repeat("cd", 16)
+	for _, tc := range []struct {
+		scope string
+		path  string
+		value any
+		op    configOperation
+	}{
+		{"request-retry", "routing.retry.request-retry", 3, configOperation{Retry: 3}},
+		{"max-retry-interval", "routing.retry.max-retry-interval", 30, configOperation{MaxRetryInterval: 30, MaxRetryIntervalSet: true}},
+	} {
+		t.Run(tc.scope, func(t *testing.T) {
+			source := ConfigFieldSource{SourceID: "isolated-source-1234", Generation: "7", Revision: 2, SHA256: strings.Repeat("a", 64)}
+			operation := tc.op
+			operation.ID, operation.Scope, operation.Generation, operation.State = requestID, tc.scope, "7", "unknown"
+			v := configObservation{SourceID: source.SourceID, Generation: source.Generation, Revision: 3, SHA256: source.SHA256, State: "unknown", Installed: true, Operation: operation}
+			commits := 0
+			tr := &Transport{configurationAuthority: &privateConfigClient{
+				grant: func() (configGrant, error) {
+					return configGrant{SourceID: source.SourceID, Generation: source.Generation}, nil
+				},
+				call: func(_ context.Context, q configRequest) (configObservation, error) {
+					switch q.Action {
+					case "observe":
+						return v, nil
+					case "commit":
+						if q.OperationID != requestID || q.ExpectedRevision != v.Revision {
+							return configObservation{}, ErrSourceConflict
+						}
+						commits++
+						v.State, v.Operation.State = "persisted", "persisted"
+						return v, nil
+					default:
+						return configObservation{}, ErrSourceConflict
+					}
+				},
+			}}
+			got, err := tr.ReconcileConfigField(t.Context(), source, requestID, tc.path, tc.value)
+			if err != nil {
+				t.Fatalf("legacy %s operation was not reconciled: %v", tc.scope, err)
+			}
+			if got.OperationState != "persisted" || got.OperationPath != tc.path || commits != 1 {
+				t.Fatalf("reconciled to %+v after %d commits", got, commits)
+			}
+		})
+	}
+}

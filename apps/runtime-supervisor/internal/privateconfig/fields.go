@@ -114,18 +114,23 @@ func validOperation(r *record) bool {
 		return true
 	case "key-add", "key-revoke":
 		return r.Version == 2
+	case "request-retry":
+		// Pre-allowlist record: the value lives in exactly that legacy scalar and
+		// nowhere else, so a mixed shape is still refused.
+		return op.Path == "" && op.Value == nil && op.MaxRetryInterval == 0 && !op.MaxRetryIntervalSet &&
+			validFieldValue("routing.retry.request-retry", op.Retry)
+	case "max-retry-interval":
+		return op.Path == "" && op.Value == nil && op.Retry == 0 && op.MaxRetryIntervalSet &&
+			validFieldValue("routing.retry.max-retry-interval", op.MaxRetryInterval)
 	}
-	if op.Path != "" {
-		return op.Path == op.Scope && validFieldValue(op.Path, op.Value)
-	}
-	// Pre-allowlist record: the value lives in the legacy scalars.
-	path, value, ok := operationPath(op)
-	return ok && validFieldValue(path, value) && op.Retry == 0 && op.MaxRetryInterval == 0 && !op.MaxRetryIntervalSet
+	return op.Path == op.Scope && validFieldValue(op.Path, op.Value)
 }
 
 func operationScopeValid(scope string) bool {
 	switch scope {
-	case "initial-key", "key-add", "key-revoke":
+	case "initial-key", "key-add", "key-revoke", "request-retry", "max-retry-interval":
+		// The last two are the pre-allowlist scopes: an upgraded record must keep
+		// loading and reconciling, and the allowlist still owns their bounds.
 		return true
 	}
 	_, ok := configFields[scope]

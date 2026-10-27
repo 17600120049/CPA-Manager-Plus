@@ -81,11 +81,26 @@ func (r *Repository) H1Idle(ctx context.Context) error {
 	// damaged field entry is skipped because the store already locks that field.
 	var raw string
 	e = r.db.QueryRowContext(ctx, "select value from settings where key=?", freshstore.ConfigJournalSettingKey()).Scan(&raw)
-	if errors.Is(e, sql.ErrNoRows) {
-		return nil
-	}
-	if e != nil {
+	if e == nil {
+		if err := freshstore.ValidateConfigJournals([]byte(raw)); err != nil {
+			return err
+		}
+	} else if !errors.Is(e, sql.ErrNoRows) {
 		return e
 	}
-	return freshstore.ValidateConfigJournals([]byte(raw))
+	// The pre-allowlist rows are read-only but still owned: an interrupted legacy
+	// write must block a new claim exactly like a current one.
+	for _, legacy := range freshstore.LegacyConfigJournalKeys() {
+		e = r.db.QueryRowContext(ctx, "select value from settings where key=?", legacy.Key).Scan(&raw)
+		if errors.Is(e, sql.ErrNoRows) {
+			continue
+		}
+		if e != nil {
+			return e
+		}
+		if freshstore.ValidateLegacyConfigJournal(legacy.Path, []byte(raw)) != nil {
+			return ErrConflict
+		}
+	}
+	return nil
 }
