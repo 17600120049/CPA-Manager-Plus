@@ -54,7 +54,11 @@ export function FreshGatewayWorkspace({
   const tabRefs = useRef<Partial<Record<GatewayTabKey, HTMLButtonElement | null>>>({});
   const dirtyDiffs = useMemo(() => draftDiffs.filter((d) => d.dirty), [draftDiffs]);
   const dirtyCount = dirtyDiffs.length;
+  // The catalog resolves every label through the active language at call time,
+  // so the language itself is the only dependency that can change its strings.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const sections = useMemo(() => gatewaySections(), [language]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const owners = useMemo(() => gatewayOwners(), [language]);
   const activeOwner = owners.find((owner) => owner.path === activeOwnerPath);
 
@@ -102,7 +106,10 @@ export function FreshGatewayWorkspace({
   );
   const countVisible = visiblePaths.has(RETRY_COUNT_PATH);
   const intervalVisible = visiblePaths.has(RETRY_INTERVAL_PATH);
-  const requestsFields = sections.find((section) => section.id === 'requests')?.fields ?? [];
+  const requestsFields = useMemo(
+    () => sections.find((section) => section.id === 'requests')?.fields ?? [],
+    [sections]
+  );
   const requestsVisible = requestsFields.some((field) => visiblePaths.has(field.path));
   // Field metadata and the draft hook are memoized so the requests group reads
   // them once per real change; an unstable prop would re-run its loaders and
