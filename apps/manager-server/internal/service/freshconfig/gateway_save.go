@@ -92,7 +92,7 @@ func validateEdits(group cpa.ConfigGroup, edits []Edit) ([]freshstore.ConfigGrou
 					// fix from the field, so it names that field instead of the
 					// whole group. Every other refusal stays a shape error.
 					if errors.Is(err, cpa.ErrProxyURLCredentials) {
-						return nil, Rejection{Code: "proxy_url_credentials", Field: edit.Path}
+						return nil, Rejection{Code: CodeProxyURLCredentials, Field: edit.Path}
 					}
 					return nil, ErrInvalid
 				}
@@ -399,7 +399,9 @@ func (s *Service) failGroupOperation(ctx context.Context, group string, operatio
 	if field == "" && operation.Target == "group" && len(operation.Edits) == 1 {
 		field = operation.Edits[0].Path
 	}
-	return next, Rejection{Code: rejection.Code, Field: field, Message: rejection.Message}
+	// CPA's own code stays in the journal as evidence, but it is not a page code:
+	// the wire reply is the bounded cpa_rejected_config plus this field.
+	return next, CPARejection{Code: rejection.Code, Field: field, Message: rejection.Message}
 }
 
 // reconcileGroup resolves an unknown group operation that was never acknowledged.

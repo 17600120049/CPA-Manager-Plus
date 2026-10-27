@@ -32,8 +32,32 @@ var (
 	ErrReadOnly = errors.New("gateway config is read-only")
 )
 
-// Rejection is CPA's own verdict on a write: it parsed, validated and refused,
-// so the stored document is unchanged and the draft is still the user's.
+// The bounded page codes this Manager owns. A page code is product knowledge
+// the browser branches on, so the set is closed: a string CPA chose is journaled
+// as evidence but is NEVER a page code.
+const (
+	// CodeCPARejected reports a write CPA parsed, validated and refused. The
+	// page shows CPA's redacted diagnostic instead of guessing from a status.
+	CodeCPARejected = "cpa_rejected_config"
+	// CodeProxyURLCredentials names a proxy URL carrying inline credentials.
+	CodeProxyURLCredentials = "proxy_url_credentials"
+	// CodeInvalidConfig names a value outside the private profile's range.
+	CodeInvalidConfig = "invalid_config"
+)
+
+// ManagerCode reports whether code is one of this Manager's own page codes. An
+// unknown code is never passed through: the reply falls back to a bounded one.
+func ManagerCode(code string) bool {
+	switch code {
+	case CodeProxyURLCredentials, CodeInvalidConfig:
+		return true
+	}
+	return false
+}
+
+// Rejection is a refusal this Manager decided before CPA was asked: the request
+// shape, a proxy URL with credentials, a private value outside its range. Its
+// Code is one of the Manager's own bounded page codes.
 type Rejection struct {
 	Code    string
 	Field   string
@@ -41,6 +65,23 @@ type Rejection struct {
 }
 
 func (r Rejection) Error() string {
+	if r.Field != "" {
+		return r.Code + ":" + r.Field
+	}
+	return r.Code
+}
+
+// CPARejection is CPA's own verdict on a write: it parsed, validated and
+// refused, so the stored document is unchanged and the draft is still the
+// user's. Code is CPA's string and stays in the journal as evidence; the page
+// receives it as CodeCPARejected with the field and the redacted diagnostic.
+type CPARejection struct {
+	Code    string
+	Field   string
+	Message string
+}
+
+func (r CPARejection) Error() string {
 	if r.Field != "" {
 		return r.Code + ":" + r.Field
 	}

@@ -16,13 +16,20 @@ const GATEWAY_CONFIG_ERROR_CODES: Record<string, true> = {
   gateway_config_read_only: true,
   payload_rules_read_only: true,
   invalid_config_request: true,
+  // A CPA refusal. The code is bounded, and the field and redacted diagnostic
+  // travel with it so the failure lands on the leaf the user must fix.
   cpa_rejected_config: true,
   // The browser read a different CPA target than the one it saves into.
   generation_mismatch: true,
   // A pre-cutover field operation still holds this group.
   legacy_operation_unresolved: true,
+  // The remaining two are the Manager's own pre-CPA refusals. Neither is ever
+  // CPA's string: the Manager maps its refusals onto these codes.
+  //
   // A proxy URL with inline credentials is rejected on requests.proxy-url.
   proxy_url_credentials: true,
+  // A value outside the private profile's field range.
+  invalid_config: true,
 };
 
 // The gateway configuration surface is `gateway/config` plus its sub-resources.

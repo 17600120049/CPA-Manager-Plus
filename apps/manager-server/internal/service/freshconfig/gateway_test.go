@@ -512,9 +512,11 @@ func TestDefiniteRejectionIsTerminalAndWritableAgain(t *testing.T) {
 		Edits:     []Edit{{Path: "multimedia.gpt-image-2-base-model", Action: "set", Value: json.RawMessage(`"gpt-5"`)}},
 	}
 	_, err := service.SaveGroup(context.Background(), "media", request)
-	var rejection Rejection
-	if !errors.As(err, &rejection) || rejection.Code != "invalid_config" {
-		t.Fatalf("rejection not reported: %v", err)
+	// CPA's own string is journaled as evidence; the page receives the bounded
+	// code this Manager owns.
+	var refusal CPARejection
+	if !errors.As(err, &refusal) || refusal.Code != "invalid_config" {
+		t.Fatalf("refusal not reported: %v", err)
 	}
 	stored := store.record.ConfigGroups["media"].Operations[request.RequestID]
 	if stored.State != "failed" || stored.Code != "invalid_config" {
@@ -690,7 +692,7 @@ func TestDefiniteRejectionOfOneEditLandsOnThatField(t *testing.T) {
 		Edits:     []Edit{{Path: "routing.retry.max-retry-interval", Action: "set", Value: json.RawMessage("45")}},
 	}
 	_, err := service.SaveGroup(context.Background(), "retry", request)
-	var rejection Rejection
+	var rejection CPARejection
 	if !errors.As(err, &rejection) {
 		t.Fatalf("err = %v, want a rejection", err)
 	}

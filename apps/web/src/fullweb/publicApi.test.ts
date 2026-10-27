@@ -127,6 +127,51 @@ describe('canonical Full Web Public API transport', () => {
     expect(JSON.stringify(error)).not.toContain('hidden');
   });
 
+  it('retains the Manager private-range refusal on its field', async () => {
+    browserOrigin();
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          code: 'invalid_config',
+          field: 'requests.streaming.keepalive-seconds',
+          message: 'value outside the private profile range',
+        },
+        { status: 422 }
+      )
+    );
+    const error = (await createPublicApiClient(() => context, transport)
+      .post('gateway/config/groups/streaming', {}, credential)
+      .catch((value) => value)) as Error & { code?: string; field?: string; detail?: string };
+    expect(error).toMatchObject({
+      kind: 'http',
+      status: 422,
+      code: 'invalid_config',
+      field: 'requests.streaming.keepalive-seconds',
+      detail: 'value outside the private profile range',
+    });
+  });
+
+  it('keeps a zero leaf a number in the gateway projection', async () => {
+    browserOrigin();
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        capability: { mode: 'managed', readable: true, writable: true, rulesWritable: true },
+        generation: '7',
+        groups: [{ id: 'retry', prefix: 'routing.retry', paths: [], baseline: 'a'.repeat(64), writable: true, persisted: 'x', effective: 'unknown' }],
+        fields: [
+          { path: 'routing.retry.request-retry', type: 'int', kind: 'number', group: 'retry', presence: 'present', value: 0, editable: true },
+        ],
+        families: [],
+        groupsInvalid: false,
+      })
+    );
+    const view = await createPublicApiClient(() => context, transport).get<{
+      fields: { path: string; value: unknown }[];
+    }>('gateway/config', credential);
+    expect(view.fields[0].value).toBe(0);
+    expect(typeof view.fields[0].value).toBe('number');
+  });
+
   it.each(['GET', 'PUT', 'operation'])('bounds setting/operation %s without retries', async (method) => {
     browserOrigin();
     vi.useFakeTimers();

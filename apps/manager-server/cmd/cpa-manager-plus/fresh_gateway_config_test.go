@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
 )
 
@@ -76,7 +80,7 @@ func TestGatewayConfigSurfaceRejectsAnythingOutsideTheContract(t *testing.T) {
 		{"unknown expectation", http.MethodPost, "gateway/config/groups/retry", `{"requestId":"` + requestID + `","expected":{"generation":"7","baseline":"` + strings.Repeat("a", 64) + `","sha256":"x"},"edits":[]}`, "application/json", http.StatusBadRequest, "invalid_config_request", ""},
 		{"unknown group", http.MethodPost, "gateway/config/groups/nope", `{"requestId":"` + requestID + `","expected":` + expected + `,"edits":[{"path":"routing.retry.request-retry","action":"set","value":3}]}`, "application/json", http.StatusBadRequest, "invalid_config_request", ""},
 		{"foreign leaf", http.MethodPost, "gateway/config/groups/retry", `{"requestId":"` + requestID + `","expected":` + expected + `,"edits":[{"path":"server.port","action":"set","value":9000}]}`, "application/json", http.StatusBadRequest, "invalid_config_request", ""},
-		{"proxy credentials", http.MethodPost, "gateway/config/groups/request", `{"requestId":"` + requestID + `","expected":` + expected + `,"edits":[{"path":"requests.proxy-url","action":"set","value":"http://u:p@proxy.test:8080"}]}`, "application/json", http.StatusBadRequest, "invalid_config_request", ""},
+		{"proxy credentials", http.MethodPost, "gateway/config/groups/request", `{"requestId":"` + requestID + `","expected":` + expected + `,"edits":[{"path":"requests.proxy-url","action":"set","value":"http://u:p@proxy.test:8080"}]}`, "application/json", http.StatusUnprocessableEntity, "proxy_url_credentials", ""},
 		{"duplicate rule path", http.MethodPost, "gateway/config/rules/filter", `{"requestId":"` + requestID + `","expected":` + expected + `,"rules":[{"models":[{"name":"*"}],"params":["a","a"]}]}`, "application/json", http.StatusBadRequest, "invalid_config_request", ""},
 		{"wrong group method", http.MethodGet, "gateway/config/groups/retry", "", "", http.StatusMethodNotAllowed, "", http.MethodPost},
 		{"wrong family method", http.MethodPut, "gateway/config/rules/filter", `{}`, "application/json", http.StatusMethodNotAllowed, "", http.MethodPost},
@@ -123,41 +127,168 @@ func TestGatewayConfigOperationReadsNeedAnAuthority(t *testing.T) {
 	}
 }
 
-// TestGatewayConfigReplyPassesCPARejectionCodeThrough is the round-2 #7
-// regression: every CPA refusal was flattened into one generic
-// "cpa_rejected_config" code, so the browser's per-field branches — the proxy-URL
-// credential warning and the private profile's own "invalid_config" range — could
-// never fire against the real server. The wire code is now CPA's own.
-func TestGatewayConfigReplyPassesCPARejectionCodeThrough(t *testing.T) {
-	cases := []struct {
-		name      string
-		rejection freshconfig.Rejection
-		status    int
-		field     string
-	}{
-		{"proxy credentials", freshconfig.Rejection{Code: "proxy_url_credentials", Field: "requests.proxy-url"}, http.StatusUnprocessableEntity, "requests.proxy-url"},
-		{"private out of range", freshconfig.Rejection{Code: "invalid_config", Field: "requests.streaming.keepalive-seconds", Message: "value outside the private profile range"}, http.StatusUnprocessableEntity, "requests.streaming.keepalive-seconds"},
+// gatewayConfigFixture points one installation at a fake CPA and returns the
+// page contract of that installation. The page is read once through the real
+// handler so a save echoes the baseline the page itself published.
+type gatewayConfigFixture struct {
+	app      *freshApplication
+	server   *httptest.Server
+	document string
+}
+
+func newGatewayConfigFixture(t *testing.T, document string, write func(w http.ResponseWriter, r *http.Request) bool) *gatewayConfigFixture {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v8/management/config":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(document))
+		case write != nil && write(w, r):
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	app := newInstallationTestApplication(t)
+	markFreshProductComplete(t, app)
+	// A managed installation commits the CPA destination and generation it
+	// writes, so the page reads exactly this fake through the real transport.
+	record, err := app.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			response := httptest.NewRecorder()
-			gatewayConfigReply(response, nil, tc.rejection)
-			if response.Code != tc.status {
-				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
-			}
-			if code := errorCode(t, response); code != tc.rejection.Code {
-				t.Fatalf("wire code = %q, want %q", code, tc.rejection.Code)
-			}
-			var payload struct {
-				Field   string `json:"field"`
-				Message string `json:"message"`
-			}
-			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
-				t.Fatal(err)
-			}
-			if payload.Field != tc.field || payload.Message != tc.rejection.Message {
-				t.Fatalf("payload %+v", payload)
-			}
-		})
+	if _, err = app.store.Update(t.Context(), record.Operation.Identity, record.Operation.Revision, func(r *freshstore.Record) error {
+		r.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+			Strategy: bootstrap.NewManaged, Stage: "committed",
+			TargetIdentity: "managed-target", TargetGeneration: 7,
+			TargetArtifactID:              "sha256:" + strings.Repeat("b", 64),
+			DestinationConnectionIdentity: "managed:sha256:" + strings.Repeat("c", 64),
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	app.gatewayConfig = freshconfig.New(app.store, func(context.Context, uint64) (string, error) {
+		return "management-key", nil
+	})
+	app.gatewayConfig.EnableManaged(server.URL)
+	return &gatewayConfigFixture{app: app, server: server, document: document}
+}
+
+// pageTarget reads the page once and returns the generation and the baseline of
+// one group, so a save echoes what the page published instead of a guess.
+func (f *gatewayConfigFixture) pageTarget(t *testing.T, group string) (string, string) {
+	t.Helper()
+	response := gatewayRequest(t, f.app, http.MethodGet, "gateway/config", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("read status=%d body=%s", response.Code, response.Body.String())
+	}
+	var view struct {
+		Generation string `json:"generation"`
+		Groups     []struct {
+			ID       string `json:"id"`
+			Baseline string `json:"baseline"`
+		} `json:"groups"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range view.Groups {
+		if entry.ID == group {
+			return view.Generation, entry.Baseline
+		}
+	}
+	t.Fatalf("group %q is not on the page", group)
+	return "", ""
+}
+
+const gatewayTestDocument = `{
+  "routing": {"retry": {"request-retry": 2}},
+  "requests": {"streaming": {"keepalive-seconds": 15}}
+}`
+
+// TestGatewayConfigReplySendsTheBoundedCPARejection proves a real CPA 422 is
+// answered with the code this Manager owns plus the field CPA named. CPA's own
+// string is evidence in the journal; a page code the Manager does not own would
+// be CPA's vocabulary driving browser behaviour.
+func TestGatewayConfigReplySendsTheBoundedCPARejection(t *testing.T) {
+	fixture := newGatewayConfigFixture(t, gatewayTestDocument, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method != http.MethodPatch || r.URL.Path != "/v8/management/config/routing/retry" {
+			return false
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":"invalid_config","field":"routing.retry.request-retry","message":"cannot unmarshal \"2\" into int"}`))
+		return true
+	})
+	generation, baseline := fixture.pageTarget(t, "retry")
+	body := `{"requestId":"` + strings.Repeat("ab", 16) + `","expected":{"generation":"` + generation + `","baseline":"` + baseline + `"},` +
+		`"edits":[{"path":"routing.retry.request-retry","action":"set","value":3}]}`
+	response := gatewayRequest(t, fixture.app, http.MethodPost, "gateway/config/groups/retry", body, "application/json")
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Code    string `json:"code"`
+		Field   string `json:"field"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != freshconfig.CodeCPARejected {
+		t.Fatalf("wire code = %q, want %q", payload.Code, freshconfig.CodeCPARejected)
+	}
+	if payload.Code == "invalid_config" {
+		t.Fatal("CPA's own code reached the wire")
+	}
+	if payload.Field != "routing.retry.request-retry" {
+		t.Fatalf("field = %q", payload.Field)
+	}
+	if payload.Message == "" || strings.Contains(payload.Message, `"`) {
+		t.Fatalf("message was not the redacted diagnostic: %q", payload.Message)
+	}
+}
+
+// TestGatewayConfigReplyKeepsTheManagerPrivateRangeCode proves the private
+// profile's own range refusal keeps its code. It is a code this Manager decided
+// before CPA was asked, so the page must be able to show it on the field.
+func TestGatewayConfigReplyKeepsTheManagerPrivateRangeCode(t *testing.T) {
+	app := newInstallationTestApplication(t)
+	markFreshProductComplete(t, app)
+	record, err := app.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = app.store.Update(t.Context(), record.Operation.Identity, record.Operation.Revision, func(r *freshstore.Record) error {
+		r.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+			Strategy: bootstrap.NewManaged, Stage: "committed",
+			TargetIdentity: cpa.PrivateKeyRuntime, TargetGeneration: 7, TargetArtifactID: cpa.PrivateKeyArtifact,
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	app.gatewayConfig = freshconfig.New(app.store, func(context.Context, uint64) (string, error) {
+		return "management-key", nil
+	})
+	body := `{"requestId":"` + strings.Repeat("ab", 16) + `","expected":{"generation":"7","baseline":"` + strings.Repeat("a", 64) + `"},` +
+		`"edits":[{"path":"requests.streaming.keepalive-seconds","action":"set","value":301}]}`
+	response := gatewayRequest(t, app, http.MethodPost, "gateway/config/groups/streaming", body, "application/json")
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Code  string `json:"code"`
+		Field string `json:"field"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != freshconfig.CodeInvalidConfig {
+		t.Fatalf("wire code = %q, want %q", payload.Code, freshconfig.CodeInvalidConfig)
+	}
+	if payload.Field != "requests.streaming.keepalive-seconds" {
+		t.Fatalf("field = %q", payload.Field)
 	}
 }

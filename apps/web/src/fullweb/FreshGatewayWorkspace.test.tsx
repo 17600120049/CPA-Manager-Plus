@@ -288,6 +288,37 @@ describe('FreshGatewayWorkspace', () => {
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 
+  it('shows a zero leaf as a clean number and saves it unchanged', async () => {
+    const view = buildView();
+    view.fields = view.fields.map((field) =>
+      field.path === 'routing.retry.request-retry' ? { ...field, value: 0 } : field
+    );
+    const { client, calls } = fakeClient(view);
+    const { onDirtyChange } = await mount(client);
+    await openTab('retry');
+    const row = testId('gateway-field-routing.retry.request-retry');
+    // A zero that crossed the JSON boundary is still the number the guest
+    // configured: it renders as "0" and is not a draft of its own.
+    expect((row.findByType('input').props as { value?: unknown }).value).toBe('0');
+    expect(row.props['data-dirty']).toBe('false');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    const input = row.findByType('input');
+    await act(async () => input.props.onChange({ target: { value: '4' } }));
+    expect(testId('gateway-field-routing.retry.request-retry').props['data-dirty']).toBe('true');
+    const save = testId('gateway-group-retry').findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupSave')
+    )[0];
+    await act(async () => save.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const writes = calls.filter((call) => call.method === 'post');
+    expect(writes).toHaveLength(1);
+    const body = writes[0].body as { edits: { path: string; action: string; value?: unknown }[] };
+    expect(body.edits).toEqual([{ path: 'routing.retry.request-retry', action: 'set', value: 4 }]);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
   it('keeps the draft when the baseline moved and shows the conflict', async () => {
     const { client, calls } = fakeClient(buildView());
     const { state } = { state: { saveError: null as unknown } };

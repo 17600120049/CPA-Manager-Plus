@@ -48,6 +48,33 @@ describe('lossless gateway rule JSON', () => {
     );
   });
 
+  it('leaves zero and every safe integer a plain number', () => {
+    // A leaf whose value is 0 is ordinary data, not a wide integer: tagging it
+    // would render "[object Object]" as both value and placeholder.
+    const parsed = parseGatewayJSON('{"request-retry":0,"sixteen":9007199254740991}');
+    expect(parsed).toEqual({ 'request-retry': 0, sixteen: 9007199254740991 });
+    expect(isWideInteger((parsed as Record<string, unknown>)['request-retry'])).toBe(false);
+    // A rule parameter 0 stays a number through the round trip too.
+    expect(stringifyGatewayJSON(parseGatewayJSON('{"params":{"temperature":0}}'))).toBe(
+      '{"params":{"temperature":0}}'
+    );
+    expect(parseGatewayJSON('{"a":0}')).toEqual({ a: 0 });
+    // 2^53 - 1 is the widest safe integer; 2^53 is not.
+    expect(isWideInteger((parseGatewayJSON('{"a":9007199254740991}') as Record<string, unknown>).a)).toBe(false);
+    expect(isWideInteger((parseGatewayJSON('{"a":9007199254740992}') as Record<string, unknown>).a)).toBe(true);
+    expect(isWideInteger((parseGatewayJSON('{"a":-9007199254740993}') as Record<string, unknown>).a)).toBe(true);
+  });
+
+  it('parses bracket digits inside a string as a string, not as numbers', () => {
+    // A regex that only requires a structural character before a number can see
+    // "[0,1]" inside a string as two numbers, corrupting the text it rewrites.
+    const source = '{"h":"[0,1]","q":"a\\"1\\"b","n":1}';
+    expect(parseGatewayJSON(source)).toEqual({ h: '[0,1]', q: 'a"1"b', n: 1 });
+    expect(stringifyGatewayJSON(parseGatewayJSON(source))).toBe(source);
+    expect(stringifyGatewayJSON(parseGatewayJSON('{"h":"[9007199254740993,2]"}')))
+      .toBe('{"h":"[9007199254740993,2]"}');
+  });
+
   it('carries the wide integer through the rule editor round trip', () => {
     const family = gatewayFamilies().find((entry) => entry.family === 'filter')!;
     const rule = `{"models":[{"name":"gpt-*"}],"params":["metadata.${WIDE}"]}`;

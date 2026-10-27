@@ -315,6 +315,18 @@ describe('Fresh resources within the original Console', () => {
     // the exit lock stays held until it settles.
     expect(pending).toHaveBeenLastCalledWith(true);
     expect(transport.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    // The unresolved original is product state, not route state: leaving the
+    // page and coming back must show the same reconcile action for the same
+    // request, and still must not resend the write.
+    await navigate('/console/api-keys');
+    expect(panel('retry').props.hidden).toBe(true);
+    expect(pending).toHaveBeenLastCalledWith(true);
+    await navigate('/console/config');
+    expect(node('gateway-group-error-retry').props.children).toBe(c('groupSaveUnknown'));
+    expect(node('gateway-group-reconcile-retry')).toBeDefined();
+    expect(field().findByType('input').props.value).toBe('3');
+    expect(pending).toHaveBeenLastCalledWith(true);
+    expect(transport.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 
   it('mounts gateway workspace on /console/gateway with preserved retained state', async () => {

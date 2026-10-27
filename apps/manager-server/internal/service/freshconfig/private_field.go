@@ -232,7 +232,7 @@ func (s *Service) savePrivateGroup(ctx context.Context, r freshstore.Record, aut
 		if errors.Is(err, cpa.ErrPrivateConfigOutOfRange) {
 			// The Host would refuse this after the reservation; the page shows it
 			// on the field instead.
-			return freshstore.ConfigGroupOperation{}, Rejection{Code: "invalid_config", Field: edit.Path, Message: "value outside the private profile range"}
+			return freshstore.ConfigGroupOperation{}, Rejection{Code: CodeInvalidConfig, Field: edit.Path, Message: "value outside the private profile range"}
 		}
 		return freshstore.ConfigGroupOperation{}, ErrInvalid
 	}

@@ -80,25 +80,51 @@ func gatewayConfigReply(w http.ResponseWriter, v any, e error) {
 		return
 	}
 	var rejection freshconfig.Rejection
+	var refusal freshconfig.CPARejection
 	var writeError cpa.ConfigWriteError
 	code, status := "configuration_unavailable", http.StatusServiceUnavailable
-	switch {
-	case errors.As(e, &rejection):
-		// CPA parsed, validated and refused: the file is unchanged and this names
-		// the group or field the user must fix. The code is CPA-facing product
-		// knowledge the page branches on (proxy_url_credentials, the private
-		// profile's invalid_config), so it is passed through instead of being
-		// flattened into one generic refusal the browser cannot act on.
+	// A CPA refusal carries a field and a redacted diagnostic; both branches
+	// answer the same bounded cpa_rejected_config shape.
+	replyRefusal := func(field, message string) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		writeFreshJSON(w, struct {
 			Code    string `json:"code"`
 			Field   string `json:"field,omitempty"`
 			Message string `json:"message,omitempty"`
-		}{rejection.Code, rejection.Field, rejection.Message})
+		}{freshconfig.CodeCPARejected, field, message})
+	}
+	switch {
+	case errors.As(e, &rejection):
+		// A refusal this Manager decided before CPA was asked: the proxy-URL
+		// credential rule, or a value outside the private profile's range. Only
+		// a bounded Manager code reaches the wire; anything else would turn a
+		// string the Manager does not own into page behaviour.
+		pageCode := rejection.Code
+		if !freshconfig.ManagerCode(pageCode) {
+			pageCode = "invalid_config_request"
+			status = http.StatusBadRequest
+		} else {
+			status = http.StatusUnprocessableEntity
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		writeFreshJSON(w, struct {
+			Code    string `json:"code"`
+			Field   string `json:"field,omitempty"`
+			Message string `json:"message,omitempty"`
+		}{pageCode, rejection.Field, rejection.Message})
+		return
+	case errors.As(e, &refusal):
+		// CPA parsed, validated and refused: the file is unchanged. CPA's own
+		// code is evidence, not page behaviour, so the wire code is the bounded
+		// cpa_rejected_config and the field and redacted diagnostic travel with
+		// it: that is what puts the refusal on the leaf the user must fix.
+		replyRefusal(refusal.Field, refusal.Message)
 		return
 	case errors.As(e, &writeError):
-		code, status = "cpa_rejected_config", http.StatusUnprocessableEntity
+		replyRefusal(writeError.Field, writeError.Message)
+		return
 	case errors.Is(e, freshconfig.ErrInvalid):
 		code, status = "invalid_config_request", http.StatusBadRequest
 	case errors.Is(e, freshconfig.ErrNotFound):
@@ -175,8 +201,15 @@ func (a *freshApplication) gatewayConfiguration(w http.ResponseWriter, r *http.R
 			return
 		}
 		var q freshconfig.GroupRequest
-		if json.Unmarshal(body, &q) != nil || freshconfig.ValidateGroupRequest(parts[1], q) != nil {
+		if json.Unmarshal(body, &q) != nil {
 			gatewayConfigReply(w, nil, freshconfig.ErrInvalid)
+			return
+		}
+		if err := freshconfig.ValidateGroupRequest(parts[1], q); err != nil {
+			// The one rule this Manager decides while validating the shape is a
+			// proxy URL carrying credentials: it names the field the user must
+			// fix, so it is a refusal, not a malformed request.
+			gatewayConfigReply(w, nil, err)
 			return
 		}
 		service := a.gatewayService(w)
