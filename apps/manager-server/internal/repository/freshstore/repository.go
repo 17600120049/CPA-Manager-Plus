@@ -490,6 +490,15 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		cfg := model.ManagerConfig{CPAConnection: *v.Connection, Collector: model.ManagerCollectorConfig{Enabled: &disabled}, UpdatedAtMS: time.Now().UnixMilli()}
 		err = write(ctx, tx, "manager_config_v1", cfg)
 	}
+	if err == nil && !before.Operation.ProductComplete && v.Operation.ProductComplete && v.Connection != nil {
+		// Fresh keeps pending installs free of the legacy setup row so an
+		// incomplete browser operation cannot activate the historical Config
+		// readers. Once the same CAS completes the product, mirror the already
+		// protected Manager connection for collector, identity and resource
+		// bridge consumers that resolve the compatibility setup path.
+		setup := model.Setup{CPAUpstreamURL: v.Connection.CPABaseURL, ManagementKey: v.Connection.ManagementKey}
+		err = write(ctx, tx, "setup", setup)
+	}
 	if err == nil && !reflect.DeepEqual(before.Retry, v.Retry) {
 		err = write(ctx, tx, retryKey, v.Retry)
 	}
