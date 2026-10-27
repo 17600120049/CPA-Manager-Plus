@@ -161,6 +161,7 @@ type managedDestinationRuntime struct {
 	starts     []model.RuntimeMutationRequest
 	stages     []model.RuntimeDestinationRequest
 	startState model.RuntimeOperationState
+	stageState model.RuntimeOperationState
 	stageErr   error
 }
 
@@ -182,7 +183,11 @@ func (r *managedDestinationRuntime) StageDestination(_ context.Context, request 
 	if r.stageErr != nil {
 		return model.RuntimeOperationResult{}, r.stageErr
 	}
-	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStageDestination, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: model.RuntimeOperationSucceeded}, nil
+	state := r.stageState
+	if state == "" {
+		state = model.RuntimeOperationSucceeded
+	}
+	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStageDestination, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: state}, nil
 }
 
 // stagedManagementKey is the credential the Supervisor wrote to the destination.

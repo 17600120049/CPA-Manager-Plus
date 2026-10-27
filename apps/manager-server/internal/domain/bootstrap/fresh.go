@@ -66,22 +66,29 @@ type FreshRoutingCheckpoint struct {
 }
 
 type FreshStrategyCheckpoint struct {
-	Strategy                      CPAStrategy                `json:"strategy,omitempty"`
-	TargetIdentity                string                     `json:"targetIdentity,omitempty"`
-	TargetArtifactID              string                     `json:"targetArtifactId,omitempty"`
-	TargetGeneration              uint64                     `json:"targetGeneration"`
-	Stage                         string                     `json:"stage,omitempty"`
-	Unsupported                   []string                   `json:"unsupported,omitempty"`
-	SourceIdentity                string                     `json:"sourceIdentity,omitempty"`
-	SourceClass                   AdoptSourceClass           `json:"sourceClass,omitempty"`
-	DestinationConnectionIdentity string                     `json:"destinationConnectionIdentity,omitempty"`
-	AdoptionDecisions             []AdoptionResourceDecision `json:"adoptionDecisions,omitempty"`
-	AdoptionResources             []ResourceRef              `json:"adoptionResources,omitempty"`
+	Strategy                      CPAStrategy      `json:"strategy,omitempty"`
+	TargetIdentity                string           `json:"targetIdentity,omitempty"`
+	TargetArtifactID              string           `json:"targetArtifactId,omitempty"`
+	TargetGeneration              uint64           `json:"targetGeneration"`
+	Stage                         string           `json:"stage,omitempty"`
+	Unsupported                   []string         `json:"unsupported,omitempty"`
+	SourceIdentity                string           `json:"sourceIdentity,omitempty"`
+	SourceClass                   AdoptSourceClass `json:"sourceClass,omitempty"`
+	DestinationConnectionIdentity string           `json:"destinationConnectionIdentity,omitempty"`
+	// DestinationAttempt is the durable index of the current Supervisor
+	// destination operation for a managed install. The Supervisor journal never
+	// resumes a terminal operation, so a terminally failed stage or start must
+	// advance this counter and re-issue the same destination under a new
+	// operation ID. Attempt zero is the original operation ID, which keeps every
+	// checkpoint written before this counter existed exactly idempotent.
+	DestinationAttempt uint64                     `json:"destinationAttempt,omitempty"`
+	AdoptionDecisions  []AdoptionResourceDecision `json:"adoptionDecisions,omitempty"`
+	AdoptionResources  []ResourceRef              `json:"adoptionResources,omitempty"`
 }
 
 func (c FreshStrategyCheckpoint) validate() error {
 	if c.Strategy == "" {
-		if c.TargetIdentity != "" || c.TargetArtifactID != "" || c.TargetGeneration != 0 || c.Stage != "" || len(c.Unsupported) != 0 || c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0 {
+		if c.TargetIdentity != "" || c.TargetArtifactID != "" || c.TargetGeneration != 0 || c.Stage != "" || len(c.Unsupported) != 0 || c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || c.DestinationAttempt != 0 || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0 {
 			return errors.New("unowned Fresh strategy checkpoint")
 		}
 		return nil
@@ -93,7 +100,7 @@ func (c FreshStrategyCheckpoint) validate() error {
 		if c.DestinationConnectionIdentity != "" && (!strings.HasPrefix(c.DestinationConnectionIdentity, "managed:") || !validContentDigest(ContentDigest(strings.TrimPrefix(c.DestinationConnectionIdentity, "managed:")))) {
 			return errors.New("invalid managed destination identity")
 		}
-	} else if c.Strategy != AdoptExisting && (c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0) {
+	} else if c.Strategy != AdoptExisting && (c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || c.DestinationAttempt != 0 || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0) {
 		return errors.New("foreign adoption checkpoint")
 	}
 	if strings.TrimSpace(c.TargetIdentity) == "" || c.TargetGeneration == 0 || len(c.Unsupported) != 0 {
@@ -109,7 +116,7 @@ func (c FreshStrategyCheckpoint) validate() error {
 			return errors.New("invalid external Fresh strategy checkpoint")
 		}
 	case AdoptExisting:
-		if !validContentDigest(ContentDigest(c.TargetArtifactID)) || (c.Stage != "staged" && c.Stage != "committed") ||
+		if c.DestinationAttempt != 0 || !validContentDigest(ContentDigest(c.TargetArtifactID)) || (c.Stage != "staged" && c.Stage != "committed") ||
 			(c.SourceClass != AdoptNetworkExisting && c.SourceClass != AdoptLegacyManaged) || !validExternalIdentity(c.SourceIdentity) || !validExternalIdentity(c.DestinationConnectionIdentity) || c.SourceIdentity == c.DestinationConnectionIdentity ||
 			!validFreshAdoptionInventory(c.AdoptionResources, c.AdoptionDecisions) {
 			return errors.New("invalid adoption checkpoint")

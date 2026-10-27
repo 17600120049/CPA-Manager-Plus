@@ -61,6 +61,7 @@ func validateRequest(operationID, expectedIdentity string, expectedGeneration ui
 
 type operationJournal interface {
 	Resolve(context.Context, journal.Authority, journal.Intent) (journal.Operation, bool, error)
+	Get(context.Context, string, string) (journal.Operation, error)
 	Begin(context.Context, journal.Authority, journal.Intent) (journal.Operation, bool, error)
 	MarkRunning(context.Context, string, string) (journal.Operation, error)
 	Complete(context.Context, string, string, journal.State, string) (journal.Operation, error)

@@ -474,6 +474,23 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 	}
 	result, err := a.strategy.Execute(r.Context(), executionOp, request.Request)
 	if err != nil {
+		// A terminally failed Supervisor stage or start is the only evidence that
+		// permits the next destination attempt. Retire it under the same revision
+		// CAS before reporting the blocker, so a browser retry derives a new
+		// operation ID instead of replaying the recorded failure forever.
+		var retry *freshstrategy.DestinationRetry
+		if errors.As(err, &retry) {
+			guard := func(record freshstore.Record) error {
+				if token, freshAuth := freshbootstrap.SessionToken(r); freshAuth {
+					return a.validateInstallationSession(record, token)
+				}
+				return nil
+			}
+			if retireErr := a.retireDestinationAttempt(r.Context(), op, retry.Checkpoint, guard); retireErr != nil {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+		}
 		writeFreshStrategyError(w, err)
 		return
 	}
@@ -530,6 +547,31 @@ func (a *freshApplication) validateInstallationSession(record freshstore.Record,
 		return a.authority.ValidateContinuation(record, token)
 	}
 	return a.authority.ValidateSession(record, token)
+}
+
+// retireDestinationAttempt commits the next managed destination attempt in the
+// same Fresh CAS as the terminal failure that made it necessary. It advances the
+// attempt by exactly one against the current revision, keeps every other
+// checkpoint field, and never rewrites a checkpoint that already published its
+// destination; a committed destination is not retryable by construction.
+func (a *freshApplication) retireDestinationAttempt(ctx context.Context, op bootstrap.FreshOperation, checkpoint bootstrap.FreshStrategyCheckpoint, guard func(freshstore.Record) error) error {
+	if checkpoint.Strategy != bootstrap.NewManaged || checkpoint.DestinationAttempt == 0 || checkpoint.DestinationConnectionIdentity != "" && checkpoint.Stage == "committed" {
+		return freshstore.ErrConflict
+	}
+	_, err := a.store.Update(ctx, op.Identity, op.Revision, func(record *freshstore.Record) error {
+		current := record.Operation.Strategy
+		if current.Strategy != bootstrap.NewManaged || current.DestinationConnectionIdentity != "" && current.Stage == "committed" || current.DestinationAttempt+1 != checkpoint.DestinationAttempt {
+			return freshstore.ErrConflict
+		}
+		if guard != nil {
+			if err := guard(*record); err != nil {
+				return err
+			}
+		}
+		record.Operation.Strategy = checkpoint
+		return nil
+	})
+	return err
 }
 
 func writeFreshJSON(w http.ResponseWriter, v any) {

@@ -180,8 +180,16 @@ func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (
 	if err != nil {
 		return journal.Operation{}, err
 	}
+	// A retried attempt stages the identical destination under a fresh operation
+	// ID, because the journal never resumes a terminal operation. Only terminal
+	// failure of the superseded attempt makes that safe; the replaced directory
+	// is retired, never deleted.
+	supersedes := ""
 	if stored != nil && !reflect.DeepEqual(*stored, r) {
-		return journal.Operation{}, journal.ErrOperationIDConflict
+		if err := e.supersedeDestination(ctx, *stored, r); err != nil {
+			return journal.Operation{}, err
+		}
+		supersedes = stored.OperationID
 	}
 	if found {
 		if op.State == journal.StateSucceeded && stored == nil {
@@ -189,7 +197,7 @@ func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (
 		}
 		return op, nil
 	}
-	if stored != nil || e.activeSelectionAmbiguous {
+	if (stored != nil && supersedes == "") || e.activeSelectionAmbiguous {
 		return journal.Operation{}, journal.ErrOperationStateConflict
 	}
 	if state := e.process.Observe().State; state != cpaprocess.StateNotStarted && state != cpaprocess.StateExited {
@@ -223,7 +231,7 @@ func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (
 		e.disableRecovery(RecoveryStateManualIntervention)
 		return op, ErrPersistenceUnavailable
 	}
-	if err = e.destination.publish(r); err != nil {
+	if err = e.destination.publish(r, supersedes); err != nil {
 		failed, completeErr := e.journal.Complete(execution, e.authority.RuntimeIdentity, r.OperationID, journal.StateFailed, "destination_stage_failed")
 		return failed, errors.Join(ErrExecutionFailed, completeErr)
 	}
@@ -234,7 +242,60 @@ func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (
 	return op, err
 }
 
-func (d *destination) publish(r DestinationRequest) error {
+// supersedeDestination admits a stage that replaces the destination a previous
+// attempt published. The journal never resumes a terminal operation, so a
+// Manager that observed a terminal failure must retry under a new operation ID;
+// refusing that here would make the install uncompletable, while admitting it
+// unconditionally would let any caller displace a live destination.
+//
+// Admission therefore requires the identical destination under a different
+// operation ID and terminal failure evidence for the whole superseded attempt:
+// a failed stage published nothing usable, and a successful stage whose Start
+// is terminally failed never owned a running child. A missing, accepted,
+// running or successful Start is an operator decision, not a silent retry.
+// The Start operation ID of a destination attempt is that attempt's stage ID
+// followed by ":start", the same derivation the Manager submits.
+func (e *Executor) supersedeDestination(ctx context.Context, stored, r DestinationRequest) error {
+	previous := stored
+	previous.OperationID = r.OperationID
+	if stored.OperationID == r.OperationID || !reflect.DeepEqual(previous, r) {
+		return journal.ErrOperationIDConflict
+	}
+	stage, err := e.journal.Get(ctx, e.authority.RuntimeIdentity, stored.OperationID)
+	if err != nil {
+		return ErrPersistenceUnavailable
+	}
+	if stage.State == journal.StateFailed {
+		return nil
+	}
+	if stage.State != journal.StateSucceeded {
+		return journal.ErrOperationStateConflict
+	}
+	start, err := e.journal.Get(ctx, e.authority.RuntimeIdentity, stored.OperationID+":start")
+	if errors.Is(err, journal.ErrOperationNotFound) {
+		return journal.ErrOperationStateConflict
+	}
+	if err != nil {
+		return ErrPersistenceUnavailable
+	}
+	if start.OperationType != "start" || start.State != journal.StateFailed {
+		return journal.ErrOperationStateConflict
+	}
+	return nil
+}
+
+// retiredDestination is the durable resting place of a superseded attempt. It
+// is content-addressed by the superseded operation ID so a replay cannot
+// overwrite the evidence of the attempt it replaced.
+func (d *destination) retiredDestination(operationID string) string {
+	digest := sha256.Sum256([]byte(operationID))
+	return filepath.Join(filepath.Dir(d.root), ".destination-retired-"+hex.EncodeToString(digest[:16]))
+}
+
+// publish writes a complete destination beside the live one and swaps it in.
+// A superseded attempt's directory is renamed aside, never deleted and never
+// left as the live destination, so a failed retry cannot orphan it.
+func (d *destination) publish(r DestinationRequest, supersedes string) error {
 	parent := filepath.Dir(d.root)
 	info, err := os.Lstat(parent)
 	if err != nil || !info.IsDir() || filetrust.RequireCurrentProcessOwner(info) != nil || filetrust.RequirePrivateDirectoryPermissions(info) != nil {
@@ -305,8 +366,23 @@ func (d *destination) publish(r DestinationRequest) error {
 	if err = syncDestinationDirectory(tmp); err != nil {
 		return err
 	}
+	retired := ""
+	if supersedes != "" {
+		retired = d.retiredDestination(supersedes)
+		if _, err = os.Lstat(retired); !errors.Is(err, os.ErrNotExist) {
+			return ErrPersistenceUnavailable
+		}
+		if err = os.Rename(d.root, retired); err != nil {
+			return err
+		}
+	}
 	if err = os.Rename(tmp, d.root); err != nil {
-		return err
+		if retired == "" {
+			return err
+		}
+		// A failed retry must not leave the Supervisor without a destination;
+		// restore the superseded one before reporting the failure.
+		return errors.Join(err, os.Rename(retired, d.root))
 	}
 	return syncDestinationDirectory(parent)
 }

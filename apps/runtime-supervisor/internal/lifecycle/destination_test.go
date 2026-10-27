@@ -270,12 +270,23 @@ func TestDestinationRejectsConflictsBeforeSourceOrChildEffects(t *testing.T) {
 	if _, err := f.starter.StageDestination(t.Context(), r); err != nil {
 		t.Fatal(err)
 	}
-	for _, change := range []func(*DestinationRequest){func(r *DestinationRequest) { r.SourceIdentity = "external:sha256:" + strings.Repeat("d", 64) }, func(r *DestinationRequest) { r.SourceClass = "legacy_managed" }, func(r *DestinationRequest) { r.APIKeys = []string{"different-secret"} }, func(r *DestinationRequest) { r.ManagementKey = strings.Repeat("e", 64) }, func(r *DestinationRequest) { r.OperationID = "other-operation" }} {
+	for _, change := range []func(*DestinationRequest){func(r *DestinationRequest) { r.SourceIdentity = "external:sha256:" + strings.Repeat("d", 64) }, func(r *DestinationRequest) { r.SourceClass = "legacy_managed" }, func(r *DestinationRequest) { r.APIKeys = []string{"different-secret"} }, func(r *DestinationRequest) { r.ManagementKey = strings.Repeat("e", 64) }} {
 		request := r
 		change(&request)
 		if _, err := f.starter.StageDestination(t.Context(), request); !errors.Is(err, journal.ErrOperationIDConflict) {
 			t.Fatal("conflicting durable stage replay", err)
 		}
+	}
+	// A new operation ID for the identical destination is no longer a different
+	// destination; it is a retry that this attempt has no terminal failure
+	// evidence for, so it is rejected as a state conflict instead.
+	retried := r
+	retried.OperationID = "other-operation"
+	if _, err := f.starter.StageDestination(t.Context(), retried); !errors.Is(err, journal.ErrOperationStateConflict) {
+		t.Fatal("retry without terminal failure evidence", err)
+	}
+	if staged, err := f.starter.destination.load(); err != nil || staged == nil || staged.OperationID != r.OperationID {
+		t.Fatal("rejected retry replaced the live destination", err)
 	}
 	start := startRequest("different-artifact-start")
 	start.ExpectedActiveArtifactID = activeArtifactB

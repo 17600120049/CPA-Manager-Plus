@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"reflect"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -67,6 +68,15 @@ func (a *freshApplication) migrateManagedDestination(ctx context.Context) error 
 	request.AdoptionCiphertext = record.AdoptionCiphertext
 	result, executeErr := a.strategy.Execute(ctx, record.Operation, request)
 	if executeErr != nil {
+		// The Supervisor only replays a terminal stage/start failure, so the
+		// retired attempt must be durable before the next startup retries; the
+		// migration itself stays blocked until then.
+		var retry *freshstrategy.DestinationRetry
+		if errors.As(executeErr, &retry) {
+			if err := a.retireDestinationAttempt(ctx, record.Operation, retry.Checkpoint, nil); err != nil {
+				return err
+			}
+		}
 		return executeErr
 	}
 	_, err = a.store.Update(ctx, record.Operation.Identity, record.Operation.Revision, func(current *freshstore.Record) error {

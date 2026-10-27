@@ -18,11 +18,13 @@ import (
 )
 
 type migrationRuntime struct {
-	status    model.RuntimeObservedStatus
-	stages    []model.RuntimeDestinationRequest
-	starts    []model.RuntimeMutationRequest
-	stageErr  error
-	stagedKey string
+	status     model.RuntimeObservedStatus
+	stages     []model.RuntimeDestinationRequest
+	starts     []model.RuntimeMutationRequest
+	stageErr   error
+	stageState model.RuntimeOperationState
+	startState model.RuntimeOperationState
+	stagedKey  string
 }
 
 func (r *migrationRuntime) Status(context.Context) (model.RuntimeObservedStatus, error) {
@@ -30,7 +32,11 @@ func (r *migrationRuntime) Status(context.Context) (model.RuntimeObservedStatus,
 }
 func (r *migrationRuntime) Start(_ context.Context, request model.RuntimeMutationRequest) (model.RuntimeOperationResult, error) {
 	r.starts = append(r.starts, request)
-	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStart, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: model.RuntimeOperationSucceeded}, nil
+	state := r.startState
+	if state == "" {
+		state = model.RuntimeOperationSucceeded
+	}
+	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStart, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: state}, nil
 }
 func (r *migrationRuntime) Stop(context.Context, model.RuntimeMutationRequest) (model.RuntimeOperationResult, error) {
 	return model.RuntimeOperationResult{}, context.Canceled
@@ -53,7 +59,11 @@ func (r *migrationRuntime) StageDestination(_ context.Context, request model.Run
 	if r.stageErr != nil {
 		return model.RuntimeOperationResult{}, r.stageErr
 	}
-	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStageDestination, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: model.RuntimeOperationSucceeded}, nil
+	state := r.stageState
+	if state == "" {
+		state = model.RuntimeOperationSucceeded
+	}
+	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStageDestination, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: state}, nil
 }
 
 func migrationFixture(t *testing.T, generation model.RuntimeGeneration, stageErr error) (*freshApplication, *migrationRuntime, freshstore.Store) {
@@ -137,5 +147,39 @@ func TestManagedDestinationMigrationRefusesGenerationAndGatewayAuthDrift(t *test
 	}
 	if len(runtime.starts) != 0 {
 		t.Fatal("auth refusal started Runtime")
+	}
+}
+
+// The one-time migration retries through the same durable attempt: a terminal
+// Supervisor failure is persisted before the startup retries with a new
+// operation ID, instead of replaying the recorded failure forever.
+func TestManagedDestinationMigrationRetiresTerminalStageFailure(t *testing.T) {
+	app, runtime, fresh := migrationFixture(t, 7, nil)
+	runtime.stageState = model.RuntimeOperationFailed
+	if err := app.migrateManagedDestination(t.Context()); err == nil {
+		t.Fatal("terminal stage failure was reported as a completed migration")
+	}
+	record, err := fresh.Load(t.Context())
+	if err != nil || record.Operation.Strategy.DestinationAttempt != 1 || record.Connection != nil ||
+		record.Operation.Strategy.Stage != "committed" || record.Operation.Strategy.DestinationConnectionIdentity != "" || record.AdoptionCiphertext == "" {
+		t.Fatalf("retired migration attempt: %+v %v", record.Operation.Strategy, err)
+	}
+	runtime.stageState = ""
+	if err := app.migrateManagedDestination(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	base := string(record.Operation.Identity.OperationID) + ":managed-migration-destination"
+	if len(runtime.stages) != 2 || runtime.stages[0].OperationID != base || runtime.stages[1].OperationID != base+":attempt-1" {
+		t.Fatalf("migration stage IDs = %+v", runtime.stages)
+	}
+	if len(runtime.starts) != 1 || runtime.starts[0].OperationID != base+":attempt-1:start" {
+		t.Fatalf("migration start IDs = %+v", runtime.starts)
+	}
+	record, err = fresh.Load(t.Context())
+	if err != nil || record.Connection == nil || record.Operation.Strategy.Stage != "committed" || record.Operation.Strategy.DestinationConnectionIdentity == "" {
+		t.Fatalf("migration retry did not commit: %+v %v", record, err)
+	}
+	if err := app.migrateManagedDestination(t.Context()); err != nil || len(runtime.stages) != 2 {
+		t.Fatalf("completed migration was not idempotent: %v", err)
 	}
 }

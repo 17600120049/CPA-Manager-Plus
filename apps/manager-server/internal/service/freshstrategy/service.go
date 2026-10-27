@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
@@ -23,6 +24,53 @@ type Blocker struct {
 }
 
 func (e *Blocker) Error() string { return e.Code }
+
+// maxRuntimeOperationIDBytes is the Runtime Protocol v1 operation ID limit. Both
+// Supervisor and Manager validate it, so an attempt suffix must fit inside it.
+const maxRuntimeOperationIDBytes = 128
+
+// destinationOperationID derives the Supervisor operation ID of one durable
+// destination attempt. Attempt zero keeps the historical ID, so a checkpoint
+// written before attempts existed stays exactly idempotent. Every later attempt
+// is a distinct Supervisor operation for the very same destination: the journal
+// never resumes a terminal operation, and replaying one can only replay its
+// failure.
+func destinationOperationID(base string, attempt uint64) (string, error) {
+	operationID := base
+	if attempt != 0 {
+		operationID = base + ":attempt-" + strconv.FormatUint(attempt, 10)
+	}
+	if len([]byte(operationID)) > maxRuntimeOperationIDBytes {
+		return "", errors.New("destination operation ID exceeds the Runtime limit")
+	}
+	return operationID, nil
+}
+
+// DestinationRetry reports a destination stage or start the Supervisor recorded
+// as terminally failed. The Supervisor will only ever replay that terminal
+// evidence, so the attempt must be retired before the caller reports the
+// blocker. Blocker carries the response code; Checkpoint is the checkpoint the
+// caller must commit in the same Fresh CAS as this observation, and its
+// advanced DestinationAttempt is the only durable transition it authorizes.
+type DestinationRetry struct {
+	Blocker    *Blocker
+	Checkpoint bootstrap.FreshStrategyCheckpoint
+}
+
+func (e *DestinationRetry) Error() string { return e.Blocker.Error() }
+
+// Unwrap keeps the typed response code visible to the existing blocker mapping.
+func (e *DestinationRetry) Unwrap() error { return e.Blocker }
+
+// destinationRetry retires the attempt whose operation terminally failed. The
+// checkpoint keeps its target, stage and destination identity exactly as
+// persisted; only the attempt index advances, so the next Execute re-issues the
+// identical destination under the next operation ID instead of replaying a known
+// failure forever.
+func destinationRetry(checkpoint bootstrap.FreshStrategyCheckpoint, code string) error {
+	checkpoint.DestinationAttempt++
+	return &DestinationRetry{Blocker: &Blocker{Code: code}, Checkpoint: checkpoint}
+}
 
 // Qualification is exclusively server-owned accepted evidence, never a browser
 // assertion. In particular, a successful config read cannot set these facts.
@@ -246,14 +294,34 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 	if !ok || !status.Capabilities.Supports(model.RuntimeCapabilityStageDestination) || !status.Capabilities.Supports(model.RuntimeCapabilityStart) {
 		return result, &Blocker{Code: "managed_target_staging_required"}
 	}
-	staged, err := runtime.StageDestination(ctx, snapshot.Destination)
-	if err != nil || staged.Validate() != nil || staged.State != model.RuntimeOperationSucceeded {
+	// The staged snapshot is immutable for the lifetime of the Fresh operation,
+	// so the attempt index is the only thing that may distinguish one Supervisor
+	// operation from the next.
+	stageOperationID, err := destinationOperationID(snapshot.Destination.OperationID, checkpoint.DestinationAttempt)
+	if err != nil {
+		return result, &Blocker{Code: "managed_destination_connection_invalid"}
+	}
+	destination := snapshot.Destination
+	destination.OperationID = stageOperationID
+	staged, err := runtime.StageDestination(ctx, destination)
+	if err != nil || staged.Validate() != nil {
 		if code, ok := runtimeservice.ErrorCode(err); ok && string(code) == "gateway_auth_present" {
 			return result, &Blocker{Code: "managed_gateway_auth_present"}
 		}
 		return result, &Blocker{Code: "managed_destination_stage_unresolved"}
 	}
-	started, err := s.options.Runtime.Start(ctx, model.RuntimeMutationRequest{OperationID: snapshot.Destination.OperationID + ":start", ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: snapshot.Destination.ExpectedActiveArtifactID})
+	switch staged.State {
+	case model.RuntimeOperationSucceeded:
+	case model.RuntimeOperationFailed:
+		// A terminal failure is never resumed by the Supervisor, so the attempt
+		// is retired here and re-issued under the next operation ID.
+		return result, destinationRetry(op.Strategy, "managed_destination_stage_failed")
+	default:
+		// Accepted or running work stays unresolved under the same attempt: the
+		// retry replays exactly that operation instead of racing a second one.
+		return result, &Blocker{Code: "managed_destination_stage_unresolved"}
+	}
+	started, err := s.options.Runtime.Start(ctx, model.RuntimeMutationRequest{OperationID: stageOperationID + ":start", ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: snapshot.Destination.ExpectedActiveArtifactID})
 	if err != nil || started.Validate() != nil {
 		return result, &Blocker{Code: "managed_target_start_unresolved"}
 	}
@@ -261,8 +329,11 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 		result.Checkpoint.Stage = "starting"
 		return result, nil
 	}
+	if started.State == model.RuntimeOperationFailed {
+		return result, destinationRetry(op.Strategy, "managed_target_start_failed")
+	}
 	if started.State != model.RuntimeOperationSucceeded {
-		return result, &Blocker{Code: "managed_target_start_failed"}
+		return result, &Blocker{Code: "managed_target_start_unresolved"}
 	}
 	if _, err := cpa.ReadV8Config(ctx, snapshot.BaseURL, snapshot.Destination.ManagementKey); err != nil {
 		return result, &Blocker{Code: "managed_destination_verification_required"}
