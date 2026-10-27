@@ -155,14 +155,23 @@ The script asserts `/health` is `503` before Host initialize and `200` with the
 Manager service identity after the Fresh store takeover, then drives the whole
 setup wizard (administrator key, one installation submission, public route) and
 checks the CPA data layer through the `cpamp/` resource bridge: one CPA
-management read, one Client Key creation plus initial install, and one real model
-request accepted by CPA. `CPAMP_SMOKE_MODEL_TARGET` selects where that request is
-sent: the default `http://cpamp-runtime:8317` reaches CPA on the Compose network,
-and the published Ingress Gateway is used once model traffic is admitted there.
+management read, one Client Key creation plus initial install, and one model
+request that must authenticate the installed Client Key (non-401 — it proves
+authentication, not a real Provider response; real Provider model success is
+reported NOT RUN because no Provider fixture exists in the disposable install).
+`CPAMP_SMOKE_MODEL_TARGET` selects where that request is sent: the default
+`http://cpamp-runtime:8317` reaches CPA on the Compose network, and
+`http://cpamp-ingress:18317` is used once lane G admits model traffic there, at
+which point the Gateway row expects admission instead of the Pending `503`.
+
 Until the default installation carries a CPA management authority, the data-layer
 checks are reported as `DEFAULT AUTHORITY MISSING` — a labelled known gap, never a
-silent pass and never a tool failure. The managed retry layout check is reported
-`NOT RUN` while the gateway allowlist exposes no retry field.
+silent pass and never a tool failure. That tolerance is opt-in
+(`CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1`) and pinned to the exact statuses this base
+returns (`auth-files → 428`, `initial-install → 409` with an empty code); without
+the flag, or with any other status such as a `502` bridge failure, the smoke
+fails. The managed retry layout check is reported `NOT RUN` while the gateway
+allowlist exposes no retry field.
 
 The expiry case explicitly edits only the claim expiry timestamp in this
 disposable, stopped Manager fixture; natural ten-minute wall-clock expiry is

@@ -167,9 +167,14 @@ Differences from the 2026-10-20 record:
 - `/health` is asserted `503` before Host initialize and `200` with the Manager
   service identity after the Fresh store takeover.
 - A CPA data-layer step (one management read through the `cpamp/` bridge, one
-  Client Key creation plus initial install, one real model request) is present
-  and currently reported `DEFAULT AUTHORITY MISSING`: the default installation
-  carries no CPA management authority until lane P lands, so those rows are a
-  labelled gap rather than a pass or a tool failure.
+  Client Key creation plus initial install, one model request that must
+  authenticate the installed Client Key) is present. It currently reports
+  `DEFAULT AUTHORITY MISSING` because the default installation carries no CPA
+  management authority until lane P lands. That gap is opt-in
+  (`CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1`) and pinned to the exact
+  `auth-files → 428` / `initial-install → 409` pair this base returns; without
+  the flag, or with any other status, the smoke fails. The model-request check
+  proves Client Key authentication only (non-401) — real Provider model success
+  is NOT RUN, since no Provider fixture exists in the disposable installation.
 - The managed retry configuration layout check is `NOT RUN` while the gateway
   allowlist exposes no retry field.

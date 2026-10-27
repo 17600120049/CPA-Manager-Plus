@@ -10,6 +10,22 @@ This is local-only evidence. It is **not** a signed production receipt, not a
 registry readback, and not a Beta/Release or public-Gateway qualification. No
 push, tag, GitHub Release, channel or `update-index` write happened.
 
+**Revision note (coordinator review, 2026-10-27).** Three data-layer defects were
+corrected in the smoke after the run recorded below; no Docker re-run was made, so
+the observed statuses and digests still stand while the wording and the gap gate
+changed:
+
+- `CPA accepts one real model request with the installed Client Key` is now
+  `CPA authenticates the installed Client Key on a model request (non-401)`, and
+  real Provider model success is listed as NOT RUN instead of implied.
+- The broad `403/404/409/428/502/503` tolerance is gone. The lane P gap is
+  opt-in (`CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1`) and pinned to exactly
+  `auth-files → 428` and `initial-install → 409` (empty code); every other status
+  fails, with or without the flag.
+- `Ingress Gateway stays Pending with an installed Client Key` flips to
+  `Ingress Gateway admits the installed Client Key (lane G)` when
+  `CPAMP_SMOKE_MODEL_TARGET` points at the Ingress.
+
 ## Source identity
 
 | Item | Value |
@@ -123,25 +139,42 @@ completion, routing, `data.key` and the saved setting intact.
 | Check | Result | Observed |
 | --- | --- | --- |
 | `cpamp/` resource bridge reads CPA `/auth-files` | DEFAULT AUTHORITY MISSING | HTTP 428 |
-| Client Key installed into CPA | DEFAULT AUTHORITY MISSING | HTTP 409 |
+| Client Key installed into CPA | DEFAULT AUTHORITY MISSING | HTTP 409 (empty code) |
 | CPA model API accepts the installed Client Key | DEFAULT AUTHORITY MISSING | not attempted |
 | CPA rejects an unknown Client Key | DEFAULT AUTHORITY MISSING | not attempted |
-| CPA accepts one real model request with the installed Client Key | DEFAULT AUTHORITY MISSING | not attempted |
+| CPA authenticates the installed Client Key on a model request (non-401) | DEFAULT AUTHORITY MISSING | not attempted |
 | Ingress Gateway stays Pending with an installed Client Key | DEFAULT AUTHORITY MISSING | not attempted |
 
 The default Fresh New Managed installation still has no installation-derived CPA
 management authority (lane P), so the bridge answers `428` and the Client Key
-install answers `409`. These rows must become PASS after P merges; they are
-labelled, recorded in `report.authority` / `report.expectedGaps`, and never
-counted as a pass. The model request target is configurable
-(`CPAMP_SMOKE_MODEL_TARGET`); this run used the default
+install answers `409` with an empty code. These rows must become PASS after P
+merges; they are labelled, recorded in `report.authority` / `report.expectedGaps`,
+and never counted as a pass.
+
+The gap is **opt-in and pinned**. The smoke only accepts those two exact
+`status`/`code` pairs when `CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1` is set; without
+the flag any non-200 is a FAIL, and with the flag any other status — a `502`
+bridge failure for example — is also a FAIL instead of being absorbed as a known
+gap. The recorded run above predates that pinning and used the earlier broad
+tolerance; the observed `428` / `409` pair is exactly what the pin now encodes.
+
+The model-request check proves **Client Key authentication only**: CPA without a
+Provider fixture answers a non-401 status (often `500`/`503`), so this row must
+never be read as a real model success. Real Provider model success stays NOT RUN.
+The target is configurable (`CPAMP_SMOKE_MODEL_TARGET`); this run used the default
 `http://cpamp-runtime:8317` on the Compose network, where CPA stays on Runtime
-loopback, so an anonymous peer is `unreachable` rather than readable.
+loopback, so an anonymous peer is `unreachable` rather than readable. When the
+target is the Ingress Gateway (`cpamp-ingress` or port `18317`), lane G flips the
+last row to expect admission instead of the Pending `503`.
 
 ## NOT VERIFIED
 
 - **NOTICE NOT VERIFIED** — the candidate third-party inventory is still
   `NOT_VERIFIED`; LICENSE/NOTICE legal sufficiency is out of scope.
+- **Real Provider model success** — no Provider fixture or credential exists in
+  this disposable installation. The model-request check proves that CPA
+  authenticates the installed Client Key (non-401); it does not prove a completed
+  model response.
 - Real Provider/model traffic, public Gateway admission, arm64, Native/External/
   Adopt/Upgrade journeys, power-loss and production rollback.
 - Natural ten-minute claim expiry (the fixture injects an expired server
@@ -165,10 +198,18 @@ CPAMP_CANDIDATE_LOAD=1 bash bin/release/build-embedded-candidate.sh /tmp/cpamp-r
 PLAYWRIGHT_MODULE=/absolute/path/to/node_modules/playwright \
 PLAYWRIGHT_CHANNEL=chrome \
 CPAMP_SMOKE_MODEL_TARGET=http://cpamp-runtime:8317 \
+CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1 \
 node bin/ci/fresh-new-installation.mjs \
   cpamp-r1-runtime:candidate cpamp-r1-manager:candidate cpamp-r1-ingress:candidate \
   /tmp/cpamp-fresh-new-$(date +%s)
 ```
+
+`CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1` is required only while the v2 base still has
+no installation-derived CPA management authority. It pins exactly
+`auth-files → 428` and `initial-install → 409` (empty code); drop it after lane P
+merges, when any non-200 must fail. Once lane G admits model traffic at the
+Ingress, point `CPAMP_SMOKE_MODEL_TARGET` at `http://cpamp-ingress:18317` and the
+last data-layer row expects admission instead of the Pending `503`.
 
 Expect `PASS` with the three `LOAD PASS` lines and the same three digests in
 `candidate-evidence.json`, `load-evidence.json` and `report.json`. After P
