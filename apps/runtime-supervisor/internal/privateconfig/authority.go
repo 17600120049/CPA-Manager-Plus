@@ -166,20 +166,10 @@ func (a *Authority) load(g Grant) (*record, error) {
 	if (r.Version == 2 && !validH1Record(&r)) || (r.Version == 1 && r.H1 != nil) {
 		return nil, ErrStop
 	}
-	if r.CommittedMaxRetryInterval != nil {
-		n, _ := tree(r.LastGood)
-		v := leaf(n, "routing", "retry", "max-retry-interval")
-		if !r.Installed || *r.CommittedMaxRetryInterval < 0 || *r.CommittedMaxRetryInterval > 300 || v == nil || v.Tag != "!!int" || v.Value != strconv.Itoa(*r.CommittedMaxRetryInterval) {
-			return nil, ErrStop
-		}
-	}
-	if r.CommittedRetry != nil {
-		n, _ := tree(r.LastGood)
-		v := leaf(n, "routing", "retry", "request-retry")
-		if !r.Installed || *r.CommittedRetry < 0 || *r.CommittedRetry > 10 || v == nil || v.Tag != "!!int" || v.Value != strconv.Itoa(*r.CommittedRetry) {
-			return nil, ErrStop
-		}
-	}
+	// A pre-allowlist committed scalar becomes an ordinary committed field before
+	// any check runs, so LastGood validation and the result surface never see a
+	// stale legacy copy next to the field that replaced it.
+	migrateCommittedFields(&r)
 	if len(r.CommittedFields) > 0 {
 		node, e := tree(r.LastGood)
 		if e != nil {

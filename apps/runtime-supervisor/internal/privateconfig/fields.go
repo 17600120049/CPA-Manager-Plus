@@ -137,20 +137,43 @@ func operationScopeValid(scope string) bool {
 	return ok
 }
 
+// migrateCommittedFields moves a pre-allowlist committed scalar into the generic
+// committed map and clears the legacy copy. A committed value is therefore
+// verified, reported and compared in exactly one place, and a later write of the
+// same field can never leave a stale legacy value behind.
+func migrateCommittedFields(r *record) {
+	for _, legacy := range []struct {
+		path  string
+		value *int
+	}{
+		{"routing.retry.request-retry", r.CommittedRetry},
+		{"routing.retry.max-retry-interval", r.CommittedMaxRetryInterval},
+	} {
+		if legacy.value == nil {
+			continue
+		}
+		raw, err := json.Marshal(*legacy.value)
+		if err != nil {
+			continue
+		}
+		if r.CommittedFields == nil {
+			r.CommittedFields = map[string]json.RawMessage{}
+		}
+		// A generic value is always newer than the legacy scalar it replaced.
+		if _, migrated := r.CommittedFields[legacy.path]; !migrated {
+			r.CommittedFields[legacy.path] = raw
+		}
+	}
+	r.CommittedRetry = nil
+	r.CommittedMaxRetryInterval = nil
+}
+
 // committedFieldValues merges the generic committed map with the pre-allowlist
 // committed scalars into one path -> JSON scalar map.
 func committedFieldValues(r *record) map[string]json.RawMessage {
-	out := map[string]json.RawMessage{}
+	out := make(map[string]json.RawMessage, len(r.CommittedFields))
 	for path, raw := range r.CommittedFields {
 		out[path] = raw
-	}
-	if r.CommittedRetry != nil {
-		raw, _ := json.Marshal(*r.CommittedRetry)
-		out["routing.retry.request-retry"] = raw
-	}
-	if r.CommittedMaxRetryInterval != nil {
-		raw, _ := json.Marshal(*r.CommittedMaxRetryInterval)
-		out["routing.retry.max-retry-interval"] = raw
 	}
 	return out
 }
