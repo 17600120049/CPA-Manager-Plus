@@ -60,6 +60,32 @@ host authority in a controlled experiment, not cryptographic attestation or an
 automatic qualification of arbitrary Docker installations. Never hand-author a
 permit for an existing or shared environment.
 
+### Profile discriminator: private S1 versus default New Managed
+
+This document describes only the `private` profile. Manager keeps that profile
+separate from the default Compose `new_managed` profile with a server-owned
+discriminator carried in memory on the CPA transport and permit. The private
+profile is admitted only when the fixed loopback URLs and root-owned permit
+are present; it expects the loopback seed, `/runtime/gateway/auth`, disabled
+remote management and the short-lived host lease described above.
+
+The default profile has no host permit and never treats a caller-provided
+`Profile` value as authority. It is selected only from a committed Fresh
+`new_managed` checkpoint plus the protected `manager_config_v1` connection and
+authenticated Runtime identity/generation/artifact. The Supervisor-owned
+destination binds CPA to `0.0.0.0`, uses its destination auth directory,
+enables remote management and usage statistics, and starts with an empty
+Client Key list. Its protected management secret is not this document's S1
+seed and is never rendered by the private S1 UI.
+
+Key/retry operations on a default install derive their short-lived operation
+grant from the real Fresh operation ID and step and re-read the destination
+before the single CPA write. A missing connection, stale generation/artifact,
+non-ready Runtime, changed destination posture or missing client
+authentication fails closed. The managed admission predicate is documented in
+[fresh-new-installation.md](fresh-new-installation.md); it does not widen this
+private S1 proof or turn a private permit into default-install authority.
+
 Before any CPA network mutation, Manager commits one durable
 `fresh_s1_initial_key_install_v1` attempt in the existing SQLite settings store.
 It contains only Canonical APIKeyID, run ID, generation and time. A unique insert
