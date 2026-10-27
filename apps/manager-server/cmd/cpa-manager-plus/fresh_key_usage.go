@@ -57,28 +57,49 @@ func (a *freshApplication) collectionPhase() usageapp.CollectionPhase {
 }
 
 // startUsageCollection arms the real usage chain of a completed installation:
-// staged-key bindings, the canonical identity projection, the Collector reading
-// the install-derived CPA authority, and the durable collection start instant.
+// staged-key bindings (including keys created before completion), the canonical
+// identity projection, the Collector reading the install-derived CPA authority,
+// and the durable collection start instant. It is idempotent: the boot path and
+// an in-process ProductComplete may both reach it, and exactly one of them runs.
 // Nothing is claimed when the authority is unavailable: coverage then reports
 // that collection was never proven.
 func (a *freshApplication) startUsageCollection(ctx context.Context, op bootstrap.FreshOperation) {
 	if a == nil || a.usageProjection == nil || a.usage == nil {
 		return
 	}
-	// Bind staged keys before the first event arrives so it is attributable.
-	checkpoint := op.Strategy
-	if checkpoint.Strategy == bootstrap.NewManaged && checkpoint.Stage == "committed" && checkpoint.TargetIdentity != "" {
-		if _, err := a.keyRepo.BindFreshKeySources(ctx, checkpoint.TargetIdentity, time.Now().UnixMilli()); err != nil {
-			log.Printf("Fresh key usage bindings unavailable: %v", err)
+	a.usageStartOnce.Do(func() {
+		// Bind staged keys before the first event arrives so it is attributable,
+		// and backfill keys that were staged before a committed target existed.
+		// This is a one-shot durable write, so it does not need a worker lifetime.
+		checkpoint := op.Strategy
+		if checkpoint.Strategy == bootstrap.NewManaged && checkpoint.Stage == "committed" && checkpoint.TargetIdentity != "" {
+			if _, err := a.keyRepo.BindFreshKeySources(ctx, checkpoint.TargetIdentity, time.Now().UnixMilli()); err != nil {
+				log.Printf("Fresh key usage bindings unavailable: %v", err)
+			}
 		}
-	}
-	started := false
-	if a.managedSource != nil && a.legacyCollector != nil {
-		install, err := a.managedSource(ctx)
-		if err != nil {
-			log.Printf("Fresh usage collection unavailable: %v", err)
-		} else {
-			if err := a.legacyCollector.StartRuntime(ctx, collector.RuntimeConfig{
+		// Long-running workers must outlive the request that triggered them and
+		// stop with the host. The host installs that lifetime before serving this
+		// application; without one, hosting them would leak past the database.
+		runCtx := a.runCtx
+		if runCtx == nil {
+			log.Printf("Fresh usage workers not started: no host lifetime")
+			return
+		}
+		started := false
+		switch {
+		case a.privateCollector != nil:
+			// Only the explicit private profile owns a host-supplied Collector
+			// authority.
+			started = a.privateCollector(runCtx)
+		case a.managedSource != nil && a.legacyCollector != nil:
+			install, err := a.managedSource(ctx)
+			if err != nil {
+				// Managed and External installs have no other authority. Usage
+				// stays unavailable instead of collecting from an unverified CPA.
+				log.Printf("Fresh usage collection unavailable: %v", err)
+				break
+			}
+			if err := a.legacyCollector.StartRuntime(runCtx, collector.RuntimeConfig{
 				CPAUpstreamURL: install.BaseURL,
 				ManagementKey:  install.ManagementKey,
 				CollectorMode:  a.cfg.CollectorMode,
@@ -89,22 +110,20 @@ func (a *freshApplication) startUsageCollection(ctx context.Context, op bootstra
 				TLSSkipVerify:  a.cfg.TLSSkipVerify,
 			}); err != nil {
 				log.Printf("Fresh usage collection unavailable: %v", err)
-			} else {
-				started = a.collectionPhase() != usageapp.PhaseStopped
+				break
+			}
+			started = a.collectionPhase() != usageapp.PhaseStopped
+		}
+		if a.startIdentityWorker != nil {
+			a.startIdentityWorker(runCtx)
+		}
+		a.usageProjection.Start(runCtx)
+		if started {
+			if err := a.usage.MarkCollectionStart(ctx); err != nil {
+				log.Printf("Fresh usage collection start unavailable: %v", err)
 			}
 		}
-	}
-	if !started && a.collectorWorker != nil {
-		// Private profiles keep their own host-supplied Collector authority.
-		a.collectorWorker.Start(ctx)
-		started = a.collectionPhase() != usageapp.PhaseStopped
-	}
-	a.usageProjection.Start(ctx)
-	if started {
-		if err := a.usage.MarkCollectionStart(ctx); err != nil {
-			log.Printf("Fresh usage collection start unavailable: %v", err)
-		}
-	}
+	})
 }
 
 // usageWindow parses the optional bounded window of one key's usage read. The

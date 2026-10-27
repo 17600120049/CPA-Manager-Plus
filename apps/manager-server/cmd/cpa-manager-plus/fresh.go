@@ -42,6 +42,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -104,7 +105,20 @@ type freshApplication struct {
 	managedSource   freshkeyapply.ManagedSource
 	usageProjection *identityprojection.Worker
 	usage           *usageapp.Service
-	pahS0           bool
+	// usageStartOnce makes the post-completion startup path idempotent: the
+	// boot path and an in-process completion may both reach it.
+	usageStartOnce sync.Once
+	// runCtx is the host lifetime of this application. Workers started after an
+	// in-process ProductComplete must outlive the request that triggered them.
+	runCtx context.Context
+	// privateCollector is the host-supplied Collector authority of the explicit
+	// private profile. It stays nil for Managed and External installs, which may
+	// never fall back to the legacy manager/setup authority.
+	privateCollector func(context.Context) bool
+	// startIdentityWorker starts the Embedded identity reconciliation loop; a
+	// field so the completion path can be proven to start it once.
+	startIdentityWorker func(context.Context)
+	pahS0               bool
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
@@ -148,6 +162,8 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		a.identityWorker, err = newFreshIdentityReconcileWorker(legacyContext, identityWiring)
 		if err != nil {
 			log.Printf("Fresh identity reconciliation unavailable: %v", err)
+		} else if worker := a.identityWorker; worker != nil {
+			a.startIdentityWorker = func(ctx context.Context) { go worker.Run(ctx) }
 		}
 	}
 	// An unavailable Embedded writer must not remove unrelated Console reads,
@@ -161,6 +177,16 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	if h1Valid && os.Getenv("CPAMP_PRIVATE_S1_PERMIT") == freshkeyapply.PermitPath && cfg.RuntimeURL == "http://127.0.0.1:9081" && cfg.CPAUpstreamURL == "http://127.0.0.1:8317" {
 		a.keyApply = freshkeyapply.New(a.keyRepo, a.keys, runtime)
 		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
+		// The explicit private profile keeps its own host-supplied Collector
+		// authority. Managed and External installs never reach this branch and
+		// therefore never fall back to it.
+		a.privateCollector = func(ctx context.Context) bool {
+			if a.collectorWorker == nil {
+				return false
+			}
+			a.collectorWorker.Start(ctx)
+			return a.collectionPhase() != usageapp.PhaseStopped
+		}
 		if os.Getenv("CPAMP_PRIVATE_H1") == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1" {
 			h := cpa.NewH1Coordinator(opened.DB)
 			a.keyApply.EnableH1(h)
@@ -369,6 +395,11 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
+		// Completion is the moment the install-derived CPA authority exists, so
+		// the same idempotent startup path as a resumed install runs now: it
+		// backfills keys staged before completion and starts collection,
+		// projection and identity reconciliation exactly once.
+		a.startUsageCollection(r.Context(), next.Operation)
 		writeFreshJSON(w, next.Operation)
 	default:
 		http.NotFound(w, r)
@@ -652,6 +683,9 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 		}
 	}
 	app := newFreshApplication(opened, cfg, freshDriver(cfg))
+	// Workers started by an in-process completion must use the host lifetime,
+	// not the request that triggered them.
+	app.runCtx = ctx
 	h.SetFreshHandler(app)
 	if opened.Record.Operation.ProductComplete {
 		if err := app.migrateManagedDestination(ctx); err != nil {
@@ -660,9 +694,6 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 			log.Printf("Fresh managed destination migration unavailable: %v", err)
 		}
 		app.startUsageCollection(ctx, opened.Record.Operation)
-	}
-	if opened.Record.Operation.ProductComplete && app.identityWorker != nil {
-		go app.identityWorker.Run(ctx)
 	}
 	go restoreFreshRouting(ctx, app.routing)
 	go app.runFreshUpdateChecks(ctx)

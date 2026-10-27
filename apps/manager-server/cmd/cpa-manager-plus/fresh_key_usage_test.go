@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -20,6 +21,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 )
@@ -98,8 +100,20 @@ func newFreshUsageHarness(t *testing.T) *freshUsageHarness {
 	sum := sha256.Sum256([]byte(result.CreatedSecret))
 	harness.hash = hex.EncodeToString(sum[:])
 	harness.nowMS = result.Key.CreatedAtMS + 3_600_000
+	harness.markCollectionStartAt(t, result.Key.CreatedAtMS)
 	harness.useCollection(t, usageapp.PhaseStopped)
 	return harness
+}
+
+// markCollectionStartAt records a durable collection instant with its own
+// clock, so the harness can prove collection from before the read window.
+func (h *freshUsageHarness) markCollectionStartAt(t *testing.T, atMS int64) {
+	t.Helper()
+	service := usageapp.New(usageadapter.New(h.db), func() usageapp.CollectionPhase { return usageapp.PhaseStopped })
+	service.SetClock(func() int64 { return atMS })
+	if err := service.MarkCollectionStart(t.Context()); err != nil {
+		t.Fatalf("mark collection start: %v", err)
+	}
 }
 
 // useCollection keeps the real adapter and swaps only the live Collector phase.
@@ -108,6 +122,19 @@ func (h *freshUsageHarness) useCollection(t *testing.T, phase usageapp.Collectio
 	service := usageapp.New(usageadapter.New(h.db), func() usageapp.CollectionPhase { return phase })
 	service.SetClock(func() int64 { return h.nowMS })
 	h.app.usage = service
+}
+
+// markProjectionReady simulates the projection worker finishing a run after a
+// binding change: the G1 revision trigger re-opens the checkpoint as pending.
+func (h *freshUsageHarness) markProjectionReady(t *testing.T) {
+	t.Helper()
+	if _, err := h.db.Exec(`update gateway_usage_identity_projection_state
+		set status = 'ready',
+			last_processed_event_id = (select coalesce(max(id), 0) from usage_events),
+			target_event_id = (select coalesce(max(id), 0) from usage_events)
+		where state_name = 'canonical_identity_v1'`); err != nil {
+		t.Fatalf("mark projection ready: %v", err)
+	}
 }
 
 func (h *freshUsageHarness) bindingCount(t *testing.T) int {
@@ -231,9 +258,6 @@ func TestFreshKeyUsageReportsRealNumbersAndHonestCoverage(t *testing.T) {
 	}
 
 	harness.insertUsage(t, 6)
-	if err := harness.app.usage.MarkCollectionStart(t.Context()); err != nil {
-		t.Fatal(err)
-	}
 
 	// The Collector is not running in this harness: Manager must not present a
 	// quiet window it cannot prove.
@@ -246,11 +270,13 @@ func TestFreshKeyUsageReportsRealNumbersAndHonestCoverage(t *testing.T) {
 	}
 
 	harness.useCollection(t, usageapp.PhaseRunning)
+	// The default 24h window starts before the key was created, so its numbers
+	// are a lower bound and the reported window opens at the key's own start.
 	detail = decodeUsage[usageapp.DetailResponse](t, harness.call("GET", detailPath, ""))
-	if detail.Coverage.State != "complete" || detail.Coverage.Reason != "observed" {
-		t.Fatalf("complete coverage = %+v", detail.Coverage)
+	if detail.Coverage.State != "partial" || detail.Coverage.Reason != "window_partial" {
+		t.Fatalf("default window coverage = %+v", detail.Coverage)
 	}
-	if detail.Coverage.CollectingSinceMS != harness.nowMS || detail.FromMS != harness.key.CreatedAtMS {
+	if detail.Coverage.CollectingSinceMS != harness.key.CreatedAtMS || detail.FromMS != harness.key.CreatedAtMS {
 		t.Fatalf("coverage window = %+v from = %d", detail.Coverage, detail.FromMS)
 	}
 	if detail.Totals == nil || detail.Totals.Calls != 6 || detail.Totals.Failure != 2 || detail.Totals.Success != 4 ||
@@ -261,9 +287,20 @@ func TestFreshKeyUsageReportsRealNumbersAndHonestCoverage(t *testing.T) {
 		t.Fatalf("detail series = %+v", detail.Series)
 	}
 
+	// A window that starts where attribution started is fully provable.
+	exactPath := fmt.Sprintf("%s?from_ms=%d&to_ms=%d", detailPath, harness.key.CreatedAtMS, harness.nowMS)
+	exact := decodeUsage[usageapp.DetailResponse](t, harness.call("GET", exactPath, ""))
+	if exact.Coverage.State != "complete" || exact.Coverage.Reason != "observed" {
+		t.Fatalf("exact coverage = %+v", exact.Coverage)
+	}
+	if exact.FromMS != harness.key.CreatedAtMS || exact.Totals == nil || exact.Totals.Calls != 6 {
+		t.Fatalf("exact window = %+v totals = %+v", exact, exact.Totals)
+	}
+
 	summary := decodeUsage[usageapp.SummaryResponse](t, harness.call("GET", summaryPath, ""))
-	if summary.Coverage.State != "complete" || summary.Items[0].Calls != 6 ||
-		summary.Items[0].Coverage.State != "complete" || summary.Items[0].LastUsedAtMS == nil {
+	if summary.Coverage.State != "partial" || summary.Coverage.Reason != "window_partial" ||
+		summary.Items[0].Calls != 6 || summary.Items[0].Coverage.Reason != "window_partial" ||
+		summary.Items[0].LastUsedAtMS == nil {
 		t.Fatalf("summary = %+v", summary)
 	}
 
@@ -287,8 +324,12 @@ func TestFreshKeyUsageReportsRealNumbersAndHonestCoverage(t *testing.T) {
 	if again, err := harness.app.keyRepo.BindFreshKeySources(t.Context(), harness.runtimeIdentity, harness.nowMS); err != nil || again != 0 {
 		t.Fatalf("repeat backfill = %d err = %v", again, err)
 	}
+	// The new binding invalidates the ready checkpoint; the projection worker
+	// re-runs and proves the window again.
+	harness.markProjectionReady(t)
 	summary = decodeUsage[usageapp.SummaryResponse](t, harness.call("GET", summaryPath, ""))
-	if summary.Items[0].Coverage.State != "complete" || summary.Items[0].Calls != 6 {
+	if summary.Items[0].Coverage.State != "partial" || summary.Items[0].Calls != 6 ||
+		summary.Coverage.State != "partial" {
 		t.Fatalf("backfilled summary = %+v", summary)
 	}
 
@@ -300,7 +341,8 @@ func TestFreshKeyUsageReportsRealNumbersAndHonestCoverage(t *testing.T) {
 	if _, err := harness.db.Exec(`update gateway_api_key_source_bindings set retired_at_ms = ? where api_key_id = ?`, harness.nowMS, string(harness.key.ID)); err != nil {
 		t.Fatal(err)
 	}
-	retained := decodeUsage[usageapp.DetailResponse](t, harness.call("GET", detailPath, ""))
+	harness.markProjectionReady(t)
+	retained := decodeUsage[usageapp.DetailResponse](t, harness.call("GET", exactPath, ""))
 	if retained.Totals == nil || retained.Totals.Calls != 6 || retained.Coverage.State != "complete" {
 		t.Fatalf("revoked history = %+v", retained)
 	}
@@ -317,5 +359,151 @@ func TestFreshKeyUsageReportsRealNumbersAndHonestCoverage(t *testing.T) {
 	}
 	if got := harness.call("GET", "api-keys/usage-summary", ""); got.Code != http.StatusOK {
 		t.Fatalf("summary after revocation = %d", got.Code)
+	}
+}
+
+// A ProductComplete reached inside the running process must arm the same usage
+// chain as a resumed install: it backfills keys staged before completion and
+// starts the Collector, projection and identity worker exactly once.
+func TestFreshCompleteStartsUsageOnceAndBackfillsStagedKeys(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	dir := t.TempDir()
+	paths := legacypreflight.DefaultPaths(filepath.Join(dir, "manager.sqlite"))
+	paths.Config = filepath.Join(dir, "config.json")
+	opened, err := fresh.Open(ctx, paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = opened.Close() }()
+	app := newFreshApplication(opened, config.Config{}, nil)
+	app.runCtx = ctx
+	if _, err := app.store.Update(ctx, opened.Record.Operation.Identity, opened.Record.Operation.Revision, func(r *freshstore.Record) error {
+		r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: r.Operation.Identity.OperationID, Revision: 1, Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stage the key before the installation commits: it has no attribution yet.
+	installManagedCheckpoint(t, app, "staged")
+	created := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/control/api/v2/api-keys", strings.NewReader(`{"requestId":"`+strings.Repeat("c", 32)+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+	app.canonicalAPI(created, request)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create staged key = %d %s", created.Code, created.Body.String())
+	}
+	var result freshkeys.Result
+	if err := json.Unmarshal(created.Body.Bytes(), &result); err != nil || result.CreatedSecret == "" {
+		t.Fatalf("creation result: %v", err)
+	}
+	var bindings int
+	if err := opened.DB.QueryRow(`select count(*) from gateway_api_key_source_bindings where api_key_id = ?`, string(result.Key.ID)).Scan(&bindings); err != nil {
+		t.Fatal(err)
+	}
+	if bindings != 0 {
+		t.Fatalf("pre-completion key has %d bindings, want none before the install commits", bindings)
+	}
+
+	installManagedCheckpoint(t, app, "committed")
+	app.runtime = &installationTestRuntime{status: validInstallationRuntime()}
+	sourceCalls, workerStarts := 0, 0
+	app.managedSource = func(context.Context) (freshkeyapply.ManagedInstall, error) {
+		sourceCalls++
+		return freshkeyapply.ManagedInstall{BaseURL: "http://127.0.0.1:1", ManagementKey: "test-management-key"}, nil
+	}
+	app.startIdentityWorker = func(context.Context) { workerStarts++ }
+
+	if complete := installationAPI(t, app, http.MethodPost, "complete", strategyTestAdmin); complete.Code != http.StatusOK {
+		t.Fatalf("complete = %d %s", complete.Code, complete.Body.String())
+	}
+	if sourceCalls != 1 || workerStarts != 1 {
+		t.Fatalf("completion started the managed source %d times and the worker %d times, want once each", sourceCalls, workerStarts)
+	}
+	var firstSeen int64
+	if err := opened.DB.QueryRow(`select count(*), coalesce(min(first_seen_at_ms), 0) from gateway_api_key_source_bindings where api_key_id = ?`,
+		string(result.Key.ID)).Scan(&bindings, &firstSeen); err != nil {
+		t.Fatal(err)
+	}
+	if bindings != 1 || firstSeen != result.Key.CreatedAtMS {
+		t.Fatalf("backfill = %d bindings first seen %d, want one at the key creation %d", bindings, firstSeen, result.Key.CreatedAtMS)
+	}
+	var startedValue string
+	if err := opened.DB.QueryRow(`select value from settings where key = 'fresh_usage_collection_started_at_ms'`).Scan(&startedValue); err != nil {
+		t.Fatalf("collection start was not recorded: %v", err)
+	}
+	if startedValue == "" || app.collectionPhase() == usageapp.PhaseStopped {
+		t.Fatalf("managed authority did not start collection (phase %s)", app.collectionPhase())
+	}
+
+	// The resumed-install path and a replayed completion must not start a second
+	// Collector, projection or identity worker.
+	record, err := app.store.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.startUsageCollection(ctx, record.Operation)
+	if replay := installationAPI(t, app, http.MethodPost, "complete", strategyTestAdmin); replay.Code != http.StatusOK {
+		t.Fatalf("completion replay = %d", replay.Code)
+	}
+	if sourceCalls != 1 || workerStarts != 1 {
+		t.Fatalf("repeat startup source %d worker %d, want once each", sourceCalls, workerStarts)
+	}
+}
+
+// Managed and External installs have no Collector authority of their own. When
+// the managed source is unavailable, usage stays stopped instead of falling back
+// to the legacy cfg/manager/setup Collector. Only the explicit private profile
+// keeps its host-supplied authority.
+func TestUsageCollectionNeverFallsBackToLegacyAuthority(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	open := func(cfg config.Config) (*fresh.Opened, *freshApplication) {
+		t.Helper()
+		dir := t.TempDir()
+		paths := legacypreflight.DefaultPaths(filepath.Join(dir, "manager.sqlite"))
+		paths.Config = filepath.Join(dir, "config.json")
+		opened, err := fresh.Open(ctx, paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = opened.Close() })
+		app := newFreshApplication(opened, cfg, nil)
+		app.runCtx = ctx
+		return opened, app
+	}
+
+	// The legacy cfg authority is present: the removed fallback would have
+	// started it.
+	opened, app := open(config.Config{CPAUpstreamURL: "http://127.0.0.1:1", ManagementKey: "legacy-management-key"})
+	if app.privateCollector != nil {
+		t.Fatal("a default install acquired the private Collector authority")
+	}
+	app.managedSource = func(context.Context) (freshkeyapply.ManagedInstall, error) {
+		return freshkeyapply.ManagedInstall{}, freshkeyapply.ErrUnavailable
+	}
+	app.startUsageCollection(ctx, bootstrap.FreshOperation{ProductComplete: true,
+		Strategy: bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.ConnectExternal, Stage: "committed"}})
+	if phase := app.collectionPhase(); phase != usageapp.PhaseStopped {
+		t.Fatalf("unavailable managed authority left collection %s, want stopped", phase)
+	}
+	var started int
+	if err := opened.DB.QueryRow(`select count(*) from settings where key = 'fresh_usage_collection_started_at_ms'`).Scan(&started); err != nil {
+		t.Fatal(err)
+	}
+	if started != 0 {
+		t.Fatal("unavailable managed authority claimed a proven collection start")
+	}
+
+	// The explicit private profile still owns its Collector authority.
+	t.Setenv("CPAMP_PRIVATE_S1_PERMIT", freshkeyapply.PermitPath)
+	_, privateApp := open(config.Config{RuntimeURL: "http://127.0.0.1:9081", CPAUpstreamURL: "http://127.0.0.1:8317"})
+	if privateApp.privateCollector == nil {
+		t.Fatal("the private profile lost its host-supplied Collector authority")
+	}
+	if privateApp.managedSource != nil {
+		t.Fatal("the private profile acquired the managed install authority")
 	}
 }
