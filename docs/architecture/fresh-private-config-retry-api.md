@@ -53,9 +53,14 @@ Read preserves `presence: missing | null | present | unknown`; `value: 0`
 remains distinct from missing/null. It does not materialize a default.
 `expected` contains `sourceId`, `generation`, `revision`, `sha256` from Runtime's
 actual owned file. The revision is a Runtime reservation fence, not upstream CAS.
+A Manager-managed source has no Runtime fence: there `revision` is that field's own
+journal revision, so writing another field, or any other Fresh record update, never
+invalidates the expectation, while a repeated save of the same field still collides.
 An unknown operation or missing journal locks further saves.
-Malformed Config journal bytes remain untouched and lock Config; they do not
-remove the existing Administrator or unrelated Fresh domain access.
+Malformed bytes of one field's journal entry remain untouched, lock only that field
+and are written back verbatim by a later save of another field; unreadable
+container bytes lock Config as a whole. Neither removes the existing Administrator
+or unrelated Fresh domain access.
 
 PUT body (substitute the complete `expected` object from a fresh GET):
 
@@ -80,8 +85,12 @@ There is no clear/inherit, field-path, Provider override, YAML, secret or
 client-supplied authority input.
 
 Write/operation responses contain `operation` plus `effective: "unknown"`.
-Operation `state` is `unknown`, `persisted` or `recovered`; recovered means
-the requested value may **not** be the current value. Reload the field.
+Operation `state` is `unknown`, `persisted`, `recovered` or `failed`; recovered
+means the requested value may **not** be the current value. Reload the field.
+`failed` is terminal and carries a `code`: `write_rejected` when CPA answers a
+definite 4xx, `write_not_applied` when the scalar read back after an unknown
+managed write differs from the intent. A failed original is never resent and the
+field is writable again under a new request ID.
 Replaying an identical request returns its original durable record, even
 when unknown; it does not reconcile automatically. Changing value or original
 expected metadata under the same ID conflicts. Historical IDs remain consumed.
@@ -91,8 +100,11 @@ Errors are bounded codes, without upstream messages or raw response bodies:
 404 `operation_not_found`, 405 wrong method, 415 unsupported content type or
 encoding, 409 `source_or_operation_conflict`, `private_source_not_authorized`,
 `config_key_writer_not_isolated`, `original_operation_unknown`, or
-503 `configuration_unavailable`. An unknown result retains the original
-operation ID; query/reconcile it, never submit a replacement to retry.
+503 `configuration_unavailable`. A definite upstream refusal, or a readback that
+disagrees with the intent, is reported as 422 `config_field_write_failed`: the
+original never landed, so it is a known failure rather than an unknown result.
+An unknown result retains the original operation ID; query/reconcile it, never
+submit a replacement to retry.
 
 ## Durable operation and recovery
 

@@ -8,6 +8,7 @@ import './freshKeys.css';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { FreshKeyDetails } from './FreshKeyDetails';
 import { FreshKeyRevocation } from './FreshKeyRevocation';
+import { parseUsageSummary, usageCountText, usageCoveragePill, usageReasonText, usageStateText, usageTimeText, type UsageSummary } from './freshKeyUsage';
 import { validKey, type Key } from './freshKeyMetadata';
 
 export function FreshApiKeys({
@@ -28,6 +29,7 @@ export function FreshApiKeys({
   visible?: boolean;
 }) {
   const [keys, setKeys] = useState<Key[] | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pending, setPending] = useState('');
@@ -91,6 +93,7 @@ export function FreshApiKeys({
     inFlight.current = true;
     setBusy(true);
     setError('');
+    setUsage(null);
     try {
       const result = await client.get<{
         keys: Key[];
@@ -108,6 +111,15 @@ export function FreshApiKeys({
         throw new Error();
       setKeys(result.keys);
       setRevocationAvailable(result.revocationAvailable);
+      try {
+        const parsed = parseUsageSummary(await client.get<unknown>('api-keys/usage-summary', auth));
+        if (!parsed) throw new Error('Invalid usage summary response');
+        if (alive.current) setUsage(parsed);
+      } catch (usageErr) {
+        if (usageErr instanceof PublicApiError && usageErr.kind === 'authentication') onUnauthorized();
+        if (alive.current) setUsage(null);
+      }
+      // Usage is intentionally best-effort; a failed read leaves the key list usable.
     } catch (err) {
       if (alive.current) failure(err);
     } finally {
@@ -386,6 +398,33 @@ export function FreshApiKeys({
   );
   const savedCount = (keys || []).filter((key) => key.lifecycle !== 'superseded').length;
   const replacedCount = (keys || []).length - savedCount;
+  const usageCalls = usage?.items
+    .filter((item) => item.coverage.state === 'complete' || item.coverage.state === 'partial')
+    .reduce((total, item) => total + item.calls, 0) ?? null;
+  const usageUnavailable = usage === null || usage.coverage.reason === 'usage_read_failed';
+  const usageCallsValue = usageUnavailable ? k('summaryUsageValue') : usageCountText(usageCalls, usage.coverage.state);
+  const usageCoverageValue = usageUnavailable ? k('summaryUsageValue') : usageStateText(usage.coverage.state);
+  const usageById = new Map(usage?.items.map((item) => [item.keyId, item] as const) ?? []);
+  // One cell = the provable count, its coverage and when the key was last used.
+  // Unknown coverage prints an em dash instead of a zero.
+  const usageCell = (id: string) => {
+    const item = usageById.get(id);
+    const state = item?.coverage.state ?? 'unknown';
+    return (
+      <div
+        className="key-usage-cell"
+        title={usageReasonText(item?.coverage.reason ?? 'usage_read_failed')}
+      >
+        <strong>{usageCountText(item?.calls, state)}</strong>
+        <span className={'key-state-pill ' + usageCoveragePill(state)}>
+          {usageStateText(state)}
+        </span>
+        <small>
+          {k('usageLastUsed')}: {usageTimeText(item?.lastUsedAtMs) ?? '—'}
+        </small>
+      </div>
+    );
+  };
   const locked =
     busy ||
     createOpen ||
@@ -694,7 +733,7 @@ export function FreshApiKeys({
                 'summaryReplacedHelp',
                 keys === null ? '—' : replacedCount,
               ],
-              ['usage', 'info', 'summaryUsageTitle', 'summaryUsageHelp', k('summaryUsageValue')],
+              ['usage', 'info', 'summaryUsageTitle', 'summaryUsageHelp', usageCallsValue],
             ] as const
           ).map(([id, icon, label, help, value]) => (
             <div className="card key-summary-card" key={id} data-testid={'key-summary-' + id}>
@@ -708,14 +747,17 @@ export function FreshApiKeys({
               <strong
                 className={
                   'key-summary-value' +
-                  (typeof value === 'string' && value !== '—' ? ' is-unavailable' : '')
+                  (id === 'runtime' || (id === 'usage' && usageUnavailable) ? ' is-unavailable' : '')
                 }
               >
-                {id === 'runtime' || id === 'usage' ? (
-                  <span
-                    className={'key-state-pill ' + (id === 'runtime' ? 'is-pending' : 'is-muted')}
-                  >
-                    {value}
+                {id === 'runtime' ? (
+                  <span className="key-state-pill is-pending">{value}</span>
+                ) : id === 'usage' ? (
+                  <span className="key-usage-value">
+                    <span>{value}</span>
+                    <span className={'key-state-pill ' + usageCoveragePill(usage?.coverage.state)}>
+                      {usageCoverageValue}
+                    </span>
                   </span>
                 ) : (
                   value
@@ -786,7 +828,7 @@ export function FreshApiKeys({
               <table className={`key-table ${viewMode === 'cards' ? 'is-cards-view' : ''}`}>
                 <thead>
                   <tr>
-                    {(['credential', 'lifecycle', 'actions'] as const).map((label) => (
+                    {(['credential', 'lifecycle', 'usageColumn', 'actions'] as const).map((label) => (
                       <th key={label} scope="col">
                         {k(label)}
                       </th>
@@ -831,6 +873,9 @@ export function FreshApiKeys({
                             key.runtimeState === 'effect_unknown' ? 'effectUnknown' : 'notApplied'
                           )}
                         </span>
+                      </td>
+                      <td data-label={k('usageColumn')} data-testid={'key-usage-' + key.id}>
+                        {usageCell(key.id)}
                       </td>
                       <td data-label={k('actions')}>
                         <div className="key-row-actions">

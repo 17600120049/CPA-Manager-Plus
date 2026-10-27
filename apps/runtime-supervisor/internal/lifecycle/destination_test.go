@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -32,11 +33,134 @@ func destinationFixture(t *testing.T) (*prepareFixture, DestinationRequest, stri
 	}
 	f.starter.executable = executable
 	root := filepath.Join(filepath.Dir(f.path), "destination")
-	if err := f.starter.EnableDestination(root, "127.0.0.1:8317", nil); err != nil {
+	if err := f.starter.EnableDestination(root, gatewayAuthFixture(f), "127.0.0.1:8317", nil); err != nil {
 		t.Fatal(err)
 	}
 	r := DestinationRequest{OperationID: "fresh-operation:adopt-destination", ExpectedRuntimeIdentity: "runtime-01", ExpectedRuntimeGeneration: 41, ExpectedActiveArtifactID: id, SourceIdentity: "external:sha256:" + strings.Repeat("b", 64), SourceClass: "network_existing", APIKeys: []string{"test-client-secret"}, ManagementKey: strings.Repeat("c", 64)}
 	return f, r, root
+}
+
+func gatewayAuthFixture(f *prepareFixture) string {
+	return filepath.Join(filepath.Dir(f.path), "gateway", "auth")
+}
+
+func newManagedRequest(r DestinationRequest) DestinationRequest {
+	r.OperationID = "fresh-operation:managed-destination"
+	r.SourceClass = SourceClassNewManaged
+	r.SourceIdentity = "managed:sha256:" + strings.Repeat("a", 64)
+	r.APIKeys = []string{}
+	return r
+}
+
+func TestDestinationNewManagedValidationIsClassBound(t *testing.T) {
+	_, r, _ := destinationFixture(t)
+	managed := newManagedRequest(r)
+	if managed.Validate() != nil {
+		t.Fatal("new_managed destination rejected")
+	}
+	for name, change := range map[string]func(*DestinationRequest){
+		"client keys":       func(r *DestinationRequest) { r.APIKeys = []string{"client"} },
+		"nil keys":          func(r *DestinationRequest) { r.APIKeys = nil },
+		"external identity": func(r *DestinationRequest) { r.SourceIdentity = "external:sha256:" + strings.Repeat("a", 64) },
+		"short identity":    func(r *DestinationRequest) { r.SourceIdentity = "managed:sha256:" + strings.Repeat("a", 63) },
+		"non-hex identity":  func(r *DestinationRequest) { r.SourceIdentity = "managed:sha256:" + strings.Repeat("z", 64) },
+		"unknown class":     func(r *DestinationRequest) { r.SourceClass = "new_external" },
+	} {
+		request := managed
+		change(&request)
+		if request.Validate() == nil {
+			t.Fatal("accepted", name)
+		}
+	}
+	adopt := r
+	adopt.SourceIdentity = managed.SourceIdentity
+	if adopt.Validate() == nil {
+		t.Fatal("adoption accepted a managed identity")
+	}
+}
+
+func TestDestinationNewManagedStagesProductizedTemplateOnlyOverEmptyGatewayAuth(t *testing.T) {
+	f, r, root := destinationFixture(t)
+	r = newManagedRequest(r)
+	auth := gatewayAuthFixture(f)
+	if err := os.MkdirAll(auth, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	login := filepath.Join(auth, "provider.json")
+	if err := os.WriteFile(login, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.starter.StageDestination(t.Context(), r); !errors.Is(err, ErrGatewayAuthPresent) {
+		t.Fatal("orphaned bootstrap provider logins", err)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) || f.child.starts != 0 {
+		t.Fatal("refused stage had effects")
+	}
+	if err := os.Remove(login); err != nil {
+		t.Fatal(err)
+	}
+	staged, err := f.starter.StageDestination(t.Context(), r)
+	if err != nil || staged.State != journal.StateSucceeded {
+		t.Fatal("empty bootstrap auth refused", err)
+	}
+	// A provider login appearing later never invalidates the durable stage.
+	if err = os.WriteFile(login, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if replay, err := f.starter.StageDestination(t.Context(), r); err != nil || !reflect.DeepEqual(replay, staged) {
+		t.Fatal("stage replay", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Server struct {
+			Host string `json:"host"`
+			Port int    `json:"port"`
+		} `json:"server"`
+		Management struct {
+			AllowRemote         bool   `json:"allow-remote"`
+			SecretKey           string `json:"secret-key"`
+			DisableControlPanel bool   `json:"disable-control-panel"`
+		} `json:"management"`
+		Access struct {
+			Keys []string `json:"api-keys"`
+		} `json:"access"`
+		OAuth struct {
+			AuthDir string `json:"auth-dir"`
+		} `json:"oauth"`
+		Observability struct {
+			Usage struct {
+				Enabled bool `json:"usage-statistics-enabled"`
+			} `json:"usage"`
+		} `json:"observability"`
+	}
+	if json.Unmarshal(data, &config) != nil || config.Server.Port != 8317 || !config.Management.AllowRemote || config.Management.SecretKey != r.ManagementKey ||
+		!config.Management.DisableControlPanel || config.Access.Keys == nil || len(config.Access.Keys) != 0 || config.OAuth.AuthDir != filepath.Join(root, "auth") || !config.Observability.Usage.Enabled {
+		t.Fatalf("New Managed template: %s", data)
+	}
+}
+
+func TestDestinationNewManagedRejectsUntrustedGatewayAuth(t *testing.T) {
+	f, r, root := destinationFixture(t)
+	auth := gatewayAuthFixture(f)
+	if err := os.MkdirAll(filepath.Dir(auth), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(auth, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.starter.StageDestination(t.Context(), newManagedRequest(r)); !errors.Is(err, ErrPersistenceUnavailable) {
+		t.Fatal("untrusted bootstrap auth accepted", err)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatal("refused stage created destination")
+	}
+	// Adoption destinations keep their existing contract.
+	if _, err := f.starter.StageDestination(t.Context(), r); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestDestinationStageReplayReopenAndEverySpawnRetainOwnedConfiguration(t *testing.T) {
@@ -52,6 +176,18 @@ func TestDestinationStageReplayReopenAndEverySpawnRetainOwnedConfiguration(t *te
 	configBefore, err := os.ReadFile(filepath.Join(root, "config.yaml"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Adoption keeps the base template: only the default Fresh New Managed
+	// installation productizes usage statistics.
+	var adopted struct {
+		Observability struct {
+			Usage struct {
+				Enabled bool `json:"usage-statistics-enabled"`
+			} `json:"usage"`
+		} `json:"observability"`
+	}
+	if json.Unmarshal(configBefore, &adopted) != nil || adopted.Observability.Usage.Enabled {
+		t.Fatal("adoption destination changed the CPA usage statistics posture")
 	}
 	// A lost successful reply replays without replacing files or spawning.
 	if op, err := f.starter.StageDestination(t.Context(), r); err != nil || !reflect.DeepEqual(op, staged) {
@@ -77,7 +213,7 @@ func TestDestinationStageReplayReopenAndEverySpawnRetainOwnedConfiguration(t *te
 	}
 	defer e.Close()
 	e.artifact = f.observer
-	if err = e.EnableDestination(root, "127.0.0.1:8317", nil); err != nil {
+	if err = e.EnableDestination(root, gatewayAuthFixture(f), "127.0.0.1:8317", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = e.StageDestination(t.Context(), r); err != nil {
@@ -134,12 +270,23 @@ func TestDestinationRejectsConflictsBeforeSourceOrChildEffects(t *testing.T) {
 	if _, err := f.starter.StageDestination(t.Context(), r); err != nil {
 		t.Fatal(err)
 	}
-	for _, change := range []func(*DestinationRequest){func(r *DestinationRequest) { r.SourceIdentity = "external:sha256:" + strings.Repeat("d", 64) }, func(r *DestinationRequest) { r.SourceClass = "legacy_managed" }, func(r *DestinationRequest) { r.APIKeys = []string{"different-secret"} }, func(r *DestinationRequest) { r.ManagementKey = strings.Repeat("e", 64) }, func(r *DestinationRequest) { r.OperationID = "other-operation" }} {
+	for _, change := range []func(*DestinationRequest){func(r *DestinationRequest) { r.SourceIdentity = "external:sha256:" + strings.Repeat("d", 64) }, func(r *DestinationRequest) { r.SourceClass = "legacy_managed" }, func(r *DestinationRequest) { r.APIKeys = []string{"different-secret"} }, func(r *DestinationRequest) { r.ManagementKey = strings.Repeat("e", 64) }} {
 		request := r
 		change(&request)
 		if _, err := f.starter.StageDestination(t.Context(), request); !errors.Is(err, journal.ErrOperationIDConflict) {
 			t.Fatal("conflicting durable stage replay", err)
 		}
+	}
+	// A new operation ID for the identical destination is no longer a different
+	// destination; it is a retry that this attempt has no terminal failure
+	// evidence for, so it is rejected as a state conflict instead.
+	retried := r
+	retried.OperationID = "other-operation"
+	if _, err := f.starter.StageDestination(t.Context(), retried); !errors.Is(err, journal.ErrOperationStateConflict) {
+		t.Fatal("retry without terminal failure evidence", err)
+	}
+	if staged, err := f.starter.destination.load(); err != nil || staged == nil || staged.OperationID != r.OperationID {
+		t.Fatal("rejected retry replaced the live destination", err)
 	}
 	start := startRequest("different-artifact-start")
 	start.ExpectedActiveArtifactID = activeArtifactB

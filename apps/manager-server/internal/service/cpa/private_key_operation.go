@@ -56,7 +56,7 @@ func (t *Transport) KeySnapshot(ctx context.Context, management string) (KeySnap
 			return result, e
 		}
 	}
-	valid := emptyProofConfig(empty)
+	valid := t.posture.matches(empty)
 	if t.providerSeed != nil {
 		seed, e := t.providerSeed()
 		valid = e == nil && privateProviderConfig(empty, seed, "")

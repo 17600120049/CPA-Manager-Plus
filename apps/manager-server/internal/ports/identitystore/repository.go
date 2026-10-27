@@ -205,12 +205,19 @@ type ReconcileSnapshotParams struct {
 
 // ReconcileSnapshotResult summarizes the mutations performed during snapshot reconciliation.
 type ReconcileSnapshotResult struct {
-	APIKeysCreated       int
-	APIKeysRefreshed     int
-	APIKeysRecovered     int
-	APIKeysMissing       int
-	CredentialsCreated   int
-	CredentialsRefreshed int
-	CredentialsRecovered int
-	CredentialsMissing   int
+	APIKeysCreated int
+	// APIKeysBound counts observed sources attached to a Canonical Key that a
+	// staged Fresh Key already owns, instead of a newly created identity.
+	APIKeysBound int
+	// APIKeysTerminalSkipped counts observed sources whose hash belongs to a
+	// revoked or replaced Fresh staged key. They are skipped individually: no
+	// second identity is minted and the rest of the batch still applies.
+	APIKeysTerminalSkipped int
+	APIKeysRefreshed       int
+	APIKeysRecovered       int
+	APIKeysMissing         int
+	CredentialsCreated     int
+	CredentialsRefreshed   int
+	CredentialsRecovered   int
+	CredentialsMissing     int
 }

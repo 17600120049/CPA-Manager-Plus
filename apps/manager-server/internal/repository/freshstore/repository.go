@@ -23,8 +23,6 @@ const OperationKey = "fresh_operation_v1"
 const AuthorityKey = "fresh_authority_v1"
 const adoptionKey = "fresh_adoption_v1"
 const adminKey = "admin_credential_v1"
-const retryKey = "fresh_config_retry_v1"
-const intervalKey = "fresh_config_retry_interval_v1"
 
 type repository struct{ db *sql.DB }
 
@@ -45,7 +43,7 @@ func load(ctx context.Context, q queryer) (Record, error) {
 		k        string
 		v        any
 		optional bool
-	}{{OperationKey, &r.Operation, false}, {AuthorityKey, &r.Authority, false}, {adminKey, &r.Admin, true}, {adoptionKey, &r.AdoptionCiphertext, true}, {retryKey, &r.Retry, true}, {intervalKey, &r.Interval, true}} {
+	}{{OperationKey, &r.Operation, false}, {AuthorityKey, &r.Authority, false}, {adminKey, &r.Admin, true}, {adoptionKey, &r.AdoptionCiphertext, true}} {
 		var data string
 		err := q.QueryRowContext(ctx, "select value from settings where key=?", item.k).Scan(&data)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -57,21 +55,15 @@ func load(ctx context.Context, q queryer) (Record, error) {
 		if err != nil {
 			return Record{}, err
 		}
-		err = json.Unmarshal([]byte(data), item.v)
-		if item.k == retryKey {
-			if err != nil || r.Retry == nil || !validRetry(r.Retry) {
-				r.RetryInvalid = true
-				r.Retry = nil
-			}
-		} else if item.k == intervalKey {
-			if err != nil || r.Interval == nil || !validInterval(r.Interval) {
-				r.IntervalInvalid = true
-				r.Interval = nil
-			}
-		} else if err != nil {
+		if err = json.Unmarshal([]byte(data), item.v); err != nil {
 			return Record{}, ErrNotFresh
 		}
 	}
+	config, configInvalid, configDamaged, err := loadConfigJournals(ctx, q)
+	if err != nil {
+		return Record{}, err
+	}
+	r.Config, r.ConfigInvalid, r.ConfigDamaged = config, configInvalid, configDamaged
 	// After installation, the existing Config service persists a compatibility
 	// setup row together with manager_config_v1. It does not replace the Fresh
 	// operation's ownership. Pending installations still reject that state.
@@ -97,73 +89,14 @@ func load(ctx context.Context, q queryer) (Record, error) {
 	}
 	return r, nil
 }
-func validRetry(r *RetryJournal) bool {
-	if r != nil {
-		if _, ok := r.Operations[r.Latest]; !ok {
-			return false
-		}
-		for id, o := range r.Operations {
-			if len(id) != 32 || o.RequestID != id || o.Value < 0 || o.Value > 10 || o.Field != "" || len(o.SourceID) < 16 || o.Generation == "" || o.Revision == 0 || len(o.SHA256) != 64 || (o.State != "unknown" && o.State != "persisted" && o.State != "recovered") {
-				return false
-			}
-			if b, e := hex.DecodeString(id); e != nil || hex.EncodeToString(b) != id {
-				return false
-			}
-			if b, e := hex.DecodeString(o.SHA256); e != nil || hex.EncodeToString(b) != o.SHA256 {
-				return false
-			}
-			if o.ParentID != "" {
-				if o.ParentID != "c:"+id || !o.Attempted || o.ClaimRevision <= o.Revision || !retryHash(o.IntentDigest) || (o.HTTP200 && o.BeginRevision <= o.ClaimRevision) || (!o.HTTP200 && (o.BeginRevision != 0 || o.Receipt != "")) || (o.State != "unknown" && (o.State != "persisted" || !o.HTTP200 || !retryHash(o.Receipt))) || (o.State == "unknown" && o.Receipt != "") {
-					return false
-				}
-			} else if o.ClaimRevision != 0 || o.IntentDigest != "" || o.Attempted || o.BeginRevision != 0 || o.HTTP200 || o.Receipt != "" {
-				return false
-			}
-		}
-	}
-	return true
-}
-func validInterval(r *RetryJournal) bool {
-	if r != nil {
-		if _, ok := r.Operations[r.Latest]; !ok {
-			return false
-		}
-		for id, o := range r.Operations {
-			if len(id) != 32 || o.RequestID != id || o.Value < 0 || o.Value > 300 || o.Field != "max-retry-interval" || len(o.SourceID) < 16 || o.Generation == "" || o.Revision == 0 || len(o.SHA256) != 64 || (o.State != "unknown" && o.State != "persisted" && o.State != "recovered") {
-				return false
-			}
-			if b, e := hex.DecodeString(id); e != nil || hex.EncodeToString(b) != id {
-				return false
-			}
-			if b, e := hex.DecodeString(o.SHA256); e != nil || hex.EncodeToString(b) != o.SHA256 {
-				return false
-			}
-			if o.ParentID == "" {
-				return false
-			}
-			if o.ParentID != "" {
-				if o.ParentID != "c:"+id || !o.Attempted || o.ClaimRevision <= o.Revision || !retryHash(o.IntentDigest) || (o.HTTP200 && o.BeginRevision <= o.ClaimRevision) || (!o.HTTP200 && (o.BeginRevision != 0 || o.Receipt != "")) || (o.State != "unknown" && (o.State != "persisted" || !o.HTTP200 || !retryHash(o.Receipt))) || (o.State == "unknown" && o.Receipt != "") {
-					return false
-				}
-			} else if o.ClaimRevision != 0 || o.IntentDigest != "" || o.Attempted || o.BeginRevision != 0 || o.HTTP200 || o.Receipt != "" {
-				return false
-			}
-		}
-	}
-	return true
-}
-func retryHash(s string) bool {
-	b, e := hex.DecodeString(s)
-	return e == nil && len(b) == 32 && hex.EncodeToString(b) == s
-}
-
-// ValidateRetryJournal lets the shared admission checkpoint reject a damaged
-// Config journal with exactly the same rules as its owning repository.
-func ValidateRetryJournal(r *RetryJournal) bool    { return r != nil && validRetry(r) }
-func ValidateIntervalJournal(r *RetryJournal) bool { return r != nil && validInterval(r) }
 func valid(r Record) error {
-	if !validRetry(r.Retry) || r.RetryInvalid && r.Retry != nil || !validInterval(r.Interval) || r.IntervalInvalid && r.Interval != nil {
+	if r.Config == nil || r.ConfigInvalid == nil {
 		return ErrNotFresh
+	}
+	for path, journal := range r.Config {
+		if r.ConfigInvalid[path] || !validFieldJournal(path, journal) {
+			return ErrNotFresh
+		}
 	}
 	if r.Operation.Validate() != nil || r.Operation.AdminInitialized != (r.Admin != nil) || r.Operation.AdminInitialized != r.Authority.ClaimClosed {
 		return ErrNotFresh
@@ -188,7 +121,30 @@ func valid(r Record) error {
 			return ErrNotFresh
 		}
 	}
-	if r.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
+	if r.Operation.Strategy.Strategy == bootstrap.NewManaged {
+		strategy := r.Operation.Strategy
+		if r.AdoptionCiphertext != "" && !security.IsValidProtectedEnvelope(r.AdoptionCiphertext) {
+			return ErrNotFresh
+		}
+		// Only a committed checkpoint may own the CPA connection staged for it.
+		if r.Connection != nil && strategy.Stage != "committed" {
+			return ErrNotFresh
+		}
+		if strategy.DestinationConnectionIdentity != "" {
+			// An installation that recorded its destination snapshot and then
+			// committed must also carry the verified connection; a half commit
+			// would leave the Manager without the authority it derives.
+			if strategy.Stage == "committed" && r.AdoptionCiphertext != "" && r.Connection == nil {
+				return ErrNotFresh
+			}
+			if r.Connection != nil {
+				digest := sha256.Sum256([]byte(r.Connection.CPABaseURL))
+				if strategy.DestinationConnectionIdentity != "managed:sha256:"+hex.EncodeToString(digest[:]) {
+					return ErrNotFresh
+				}
+			}
+		}
+	} else if r.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
 		if !security.IsValidProtectedEnvelope(r.AdoptionCiphertext) {
 			return ErrNotFresh
 		}
@@ -335,20 +291,8 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		return Record{}, ErrConflict
 	}
 	before := v
-	if v.Retry != nil {
-		copy := &RetryJournal{Latest: v.Retry.Latest, Operations: make(map[string]RetryOperation, len(v.Retry.Operations))}
-		for k, o := range v.Retry.Operations {
-			copy.Operations[k] = o
-		}
-		before.Retry = copy
-	}
-	if v.Interval != nil {
-		copy := &RetryJournal{Latest: v.Interval.Latest, Operations: make(map[string]RetryOperation, len(v.Interval.Operations))}
-		for k, o := range v.Interval.Operations {
-			copy.Operations[k] = o
-		}
-		before.Interval = copy
-	}
+	before.Config = cloneConfigJournals(v.Config)
+	before.ConfigDamaged = cloneRawMessages(v.ConfigDamaged)
 	before.Operation.Strategy.AdoptionDecisions = slices.Clone(v.Operation.Strategy.AdoptionDecisions)
 	before.Operation.Strategy.AdoptionResources = slices.Clone(v.Operation.Strategy.AdoptionResources)
 	if v.Admin != nil {
@@ -362,76 +306,19 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	if err = fn(&v); err != nil {
 		return Record{}, err
 	}
-	if v.IntervalInvalid != before.IntervalInvalid || before.IntervalInvalid && v.Interval != nil || v.RetryInvalid != before.RetryInvalid || before.RetryInvalid && v.Retry != nil {
+	if err = validateConfigJournalUpdate(before.Config, v.Config); err != nil {
+		return Record{}, err
+	}
+	// A corrupt field remains isolated: callbacks may not erase or repair it, and
+	// an original operation can never be discarded or made replayable.
+	for path, invalid := range before.ConfigInvalid {
+		if invalid != v.ConfigInvalid[path] || invalid && v.Config[path] != nil {
+			return Record{}, ErrConflict
+		}
+	}
+	// Damaged bytes are owned by the store: a callback may never rewrite them.
+	if !reflect.DeepEqual(before.ConfigDamaged, v.ConfigDamaged) {
 		return Record{}, ErrConflict
-	}
-	// Retry identities and terminal tombstones are immutable. A CAS callback
-	// cannot discard an uncertain intent or make an old request replayable.
-	if before.Retry != nil {
-		if v.Retry == nil {
-			return Record{}, ErrConflict
-		}
-		for id, old := range before.Retry.Operations {
-			next, ok := v.Retry.Operations[id]
-			if !ok {
-				return Record{}, ErrConflict
-			}
-			state := next.State
-			next.State = old.State
-			if old.ParentID != "" && old.State == "unknown" {
-				if !next.Attempted || (old.HTTP200 && (!next.HTTP200 || old.BeginRevision != next.BeginRevision)) || (!old.HTTP200 && next.HTTP200 && (next.BeginRevision <= old.ClaimRevision || next.Receipt != "" || state != "unknown")) {
-					return Record{}, ErrConflict
-				}
-				if next.Receipt != old.Receipt && (old.Receipt != "" || !old.HTTP200 || state != "persisted" || len(next.Receipt) != 64) {
-					return Record{}, ErrConflict
-				}
-				if state != "unknown" && (state != "persisted" || !next.HTTP200 || len(next.Receipt) != 64) {
-					return Record{}, ErrConflict
-				}
-				next.HTTP200 = old.HTTP200
-				next.BeginRevision = old.BeginRevision
-				next.Receipt = old.Receipt
-			}
-			if next != old || old.State != "unknown" && state != old.State {
-				return Record{}, ErrConflict
-			}
-		}
-		if before.Retry.Operations[before.Retry.Latest].State == "unknown" && v.Retry.Latest != before.Retry.Latest {
-			return Record{}, ErrConflict
-		}
-	}
-	if before.Interval != nil {
-		if v.Interval == nil {
-			return Record{}, ErrConflict
-		}
-		for id, old := range before.Interval.Operations {
-			next, ok := v.Interval.Operations[id]
-			if !ok {
-				return Record{}, ErrConflict
-			}
-			state := next.State
-			next.State = old.State
-			if old.ParentID != "" && old.State == "unknown" {
-				if !next.Attempted || (old.HTTP200 && (!next.HTTP200 || old.BeginRevision != next.BeginRevision)) || (!old.HTTP200 && next.HTTP200 && (next.BeginRevision <= old.ClaimRevision || next.Receipt != "" || state != "unknown")) {
-					return Record{}, ErrConflict
-				}
-				if next.Receipt != old.Receipt && (old.Receipt != "" || !old.HTTP200 || state != "persisted" || len(next.Receipt) != 64) {
-					return Record{}, ErrConflict
-				}
-				if state != "unknown" && (state != "persisted" || !next.HTTP200 || len(next.Receipt) != 64) {
-					return Record{}, ErrConflict
-				}
-				next.HTTP200 = old.HTTP200
-				next.BeginRevision = old.BeginRevision
-				next.Receipt = old.Receipt
-			}
-			if next != old || old.State != "unknown" && state != old.State {
-				return Record{}, ErrConflict
-			}
-		}
-		if before.Interval.Operations[before.Interval.Latest].State == "unknown" && v.Interval.Latest != before.Interval.Latest {
-			return Record{}, ErrConflict
-		}
 	}
 	if v.Operation.Identity != id || v.Operation.Revision != revision || before.Admin != nil && !reflect.DeepEqual(before.Admin, v.Admin) || before.Operation.AdminInitialized && !v.Operation.AdminInitialized || before.Authority.ClaimClosed && !v.Authority.ClaimClosed || before.Operation.Routing.Committed && !v.Operation.Routing.Committed {
 		return Record{}, ErrConflict
@@ -467,11 +354,17 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		cfg := model.ManagerConfig{CPAConnection: *v.Connection, Collector: model.ManagerCollectorConfig{Enabled: &disabled}, UpdatedAtMS: time.Now().UnixMilli()}
 		err = write(ctx, tx, "manager_config_v1", cfg)
 	}
-	if err == nil && !reflect.DeepEqual(before.Retry, v.Retry) {
-		err = write(ctx, tx, retryKey, v.Retry)
+	if err == nil && v.Connection != nil && v.Operation.ProductComplete && (!before.Operation.ProductComplete || before.Connection == nil) {
+		// Fresh keeps pending installs free of the legacy setup row so an
+		// incomplete browser operation cannot activate historical Config
+		// readers. Once completion or a legacy-install migration commits the
+		// connection, mirror the protected authority for all compatibility
+		// consumers in the same transaction.
+		setup := model.Setup{CPAUpstreamURL: v.Connection.CPABaseURL, ManagementKey: v.Connection.ManagementKey}
+		err = write(ctx, tx, "setup", setup)
 	}
-	if err == nil && !reflect.DeepEqual(before.Interval, v.Interval) {
-		err = write(ctx, tx, intervalKey, v.Interval)
+	if err == nil {
+		err = writeConfigJournals(ctx, tx, before.Config, v.Config, v.ConfigDamaged)
 	}
 	if err != nil {
 		return Record{}, err

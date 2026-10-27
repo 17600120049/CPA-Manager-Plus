@@ -61,6 +61,7 @@ func validateRequest(operationID, expectedIdentity string, expectedGeneration ui
 
 type operationJournal interface {
 	Resolve(context.Context, journal.Authority, journal.Intent) (journal.Operation, bool, error)
+	Get(context.Context, string, string) (journal.Operation, error)
 	Begin(context.Context, journal.Authority, journal.Intent) (journal.Operation, bool, error)
 	MarkRunning(context.Context, string, string) (journal.Operation, error)
 	Complete(context.Context, string, string, journal.State, string) (journal.Operation, error)
@@ -177,6 +178,14 @@ func (e *Executor) Start(ctx context.Context, request StartRequest) (journal.Ope
 	}
 	if e.activeSelectionAmbiguous {
 		return journal.Operation{}, journal.ErrOperationStateConflict
+	}
+	// A destination is only startable from a stage the journal recorded as
+	// succeeded. A stage can publish its live root and still be recorded as
+	// failed, because its final directory sync runs after the rename; without
+	// this fence a Start could launch a child into a destination the stage never
+	// admitted, and the next retry would replant that child's configuration.
+	if err := e.requireStagedDestination(ctx); err != nil {
+		return journal.Operation{}, err
 	}
 	// This check shares the lifecycle lock with activation and the eventual
 	// spawn. A same-generation A -> B selection change must not turn a Fresh

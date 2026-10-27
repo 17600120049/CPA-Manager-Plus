@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -46,6 +47,11 @@ func (h *handler) submitDestination(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	op, err := h.destination.StageDestination(r.Context(), request)
+	if errors.Is(err, lifecycle.ErrGatewayAuthPresent) {
+		// No journal entry exists: the Operator must first move provider logins.
+		writeError(w, http.StatusConflict, "gateway_auth_present", "bootstrap Gateway auth directory is not empty")
+		return
+	}
 	if err != nil {
 		writeMutationError(w, err, "stage-destination")
 		return

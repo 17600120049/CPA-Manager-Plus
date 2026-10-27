@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -36,40 +37,6 @@ func (r *managedRuntime) Status(context.Context) (model.RuntimeObservedStatus, e
 func (r *managedRuntime) Start(_ context.Context, request model.RuntimeMutationRequest) (model.RuntimeOperationResult, error) {
 	r.starts = append(r.starts, request)
 	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStart, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: model.RuntimeOperationSucceeded}, nil
-}
-
-func TestManagedRequiresDurableExactIntentAndReusesTypedRuntime(t *testing.T) {
-	artifact := model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))
-	runtime := &managedRuntime{status: model.RuntimeObservedStatus{Identity: "target-one", Generation: 3, ProtocolVersion: "v1", State: model.RuntimeStateOffline, Capabilities: model.RuntimeCapabilities{model.RuntimeCapabilityStart}, ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact}}}
-	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "target-one", ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact}
-	service := New(Options{Runtime: runtime, Qualification: qualified(), QualifiedArtifactID: artifact})
-	op := operation()
-	if _, err := New(Options{Runtime: runtime, Qualification: qualified(), QualifiedArtifactID: model.RuntimeArtifactID("sha256:" + strings.Repeat("b", 64))}).Execute(context.Background(), op, request); err == nil || len(runtime.starts) != 0 {
-		t.Fatal("generic qualification promoted a different exact artifact")
-	}
-	staged, err := service.Execute(context.Background(), op, request)
-	if err != nil || staged.Checkpoint.Stage != "staged" || len(runtime.starts) != 0 || !staged.GatewayPending {
-		t.Fatalf("stage: %+v %v", staged, err)
-	}
-	op.Strategy = staged.Checkpoint // simulates the caller's durable CAS checkpoint
-	committed, err := New(Options{Runtime: runtime, Qualification: qualified(), QualifiedArtifactID: artifact}).Execute(context.Background(), op, request)
-	if err != nil || committed.Checkpoint.Stage != "committed" || len(runtime.starts) != 1 || runtime.starts[0].ExpectedRuntimeGeneration != 3 || runtime.starts[0].ExpectedActiveArtifactID != artifact || runtime.starts[0].OperationID != "fresh-operation-123:managed-start" || !committed.GatewayPending {
-		t.Fatalf("start: %+v %v", committed, err)
-	}
-	// Lost response retries the exact Supervisor operation; no second owner.
-	_, err = service.Execute(context.Background(), op, request)
-	if err != nil || len(runtime.starts) != 2 || runtime.starts[0] != runtime.starts[1] {
-		t.Fatal("retry changed durable operation ownership")
-	}
-	op.Strategy = committed.Checkpoint
-	_, err = service.Execute(context.Background(), op, request)
-	if err != nil || len(runtime.starts) != 2 {
-		t.Fatal("committed retry restarted target")
-	}
-	runtime.status.Generation++
-	if _, err = service.Execute(context.Background(), op, request); err == nil {
-		t.Fatal("accepted foreign runtime generation")
-	}
 }
 
 func TestManagedUnqualifiedOrForeignTargetCannotStart(t *testing.T) {
@@ -183,4 +150,206 @@ func TestAdoptionPreservesSourceAndExplicitlyBlocksUnsupportedReplay(t *testing.
 		t.Fatal("source unavailable after failed adoption")
 	}
 	_ = response.Body.Close()
+}
+
+// managedDestinationRuntime is a Runtime that owns one default destination: the
+// stage request carries the destination snapshot and Start adopts it. It also
+// records every request so a replay can be proven side-effect free.
+type managedDestinationRuntime struct {
+	runtimeservice.RuntimeClient
+	status     model.RuntimeObservedStatus
+	starts     []model.RuntimeMutationRequest
+	stages     []model.RuntimeDestinationRequest
+	startState model.RuntimeOperationState
+	stageState model.RuntimeOperationState
+	stageErr   error
+}
+
+func (r *managedDestinationRuntime) Status(context.Context) (model.RuntimeObservedStatus, error) {
+	return r.status, nil
+}
+
+func (r *managedDestinationRuntime) Start(_ context.Context, request model.RuntimeMutationRequest) (model.RuntimeOperationResult, error) {
+	r.starts = append(r.starts, request)
+	state := r.startState
+	if state == "" {
+		state = model.RuntimeOperationSucceeded
+	}
+	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStart, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: state}, nil
+}
+
+func (r *managedDestinationRuntime) StageDestination(_ context.Context, request model.RuntimeDestinationRequest) (model.RuntimeOperationResult, error) {
+	r.stages = append(r.stages, request)
+	if r.stageErr != nil {
+		return model.RuntimeOperationResult{}, r.stageErr
+	}
+	state := r.stageState
+	if state == "" {
+		state = model.RuntimeOperationSucceeded
+	}
+	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStageDestination, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: state}, nil
+}
+
+// stagedManagementKey is the credential the Supervisor wrote to the destination.
+func (r *managedDestinationRuntime) stagedManagementKey() string {
+	if len(r.stages) == 0 {
+		return ""
+	}
+	return r.stages[0].ManagementKey
+}
+
+// managedDestinationFixture stages one synthetic destination CPA which only
+// answers authenticated reads of its staged management credential.
+func managedDestinationFixture(t *testing.T) (*managedDestinationRuntime, string, *security.Protector, model.RuntimeArtifactID) {
+	t.Helper()
+	artifact := model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))
+	runtime := &managedDestinationRuntime{status: model.RuntimeObservedStatus{Identity: "target-one", Generation: 3, ProtocolVersion: "v1", State: model.RuntimeStateReady,
+		Capabilities:          model.RuntimeCapabilities{model.RuntimeCapabilityStart, model.RuntimeCapabilityStageDestination},
+		ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact}}}
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		key := runtime.stagedManagementKey()
+		mu.Unlock()
+		if r.URL.Path != "/v8/management/config" || key == "" || r.Header.Get("Authorization") != "Bearer "+key {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"auth"},"access":{"api-keys":[]}}`))
+	}))
+	t.Cleanup(server.Close)
+	protector, err := security.NewProtector([]byte("fresh-managed-destination-test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return runtime, server.URL, protector, artifact
+}
+
+func blockedWith(err error, code string) bool {
+	var blocker *Blocker
+	return errors.As(err, &blocker) && blocker.Code == code
+}
+
+// A default install must never persist a start-only checkpoint: it would have no
+// credential and no destination, so every later write and the Gateway stay shut.
+func TestManagedNeverFallsBackToAStartOnlyCheckpoint(t *testing.T) {
+	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
+	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "target-one", ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact}
+	for name, options := range map[string]Options{
+		"no destination": {Runtime: runtime, Protector: protector, Qualification: qualified(), QualifiedArtifactID: artifact},
+		"no storage":     {Runtime: runtime, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact},
+	} {
+		result, err := New(options).Execute(t.Context(), operation(), request)
+		if !blockedWith(err, "managed_destination_connection_unavailable") || result.Checkpoint.Strategy != "" || result.AdoptionCiphertext != "" || len(runtime.stages) != 0 || len(runtime.starts) != 0 {
+			t.Fatalf("%s: %+v %v", name, result, err)
+		}
+	}
+	// A resumed checkpoint without its protected snapshot cannot start either.
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	staged, err := service.Execute(t.Context(), operation(), request)
+	if err != nil || staged.AdoptionCiphertext == "" {
+		t.Fatalf("stage: %+v %v", staged, err)
+	}
+	op := operation()
+	op.Strategy = staged.Checkpoint
+	if result, err := service.Execute(t.Context(), op, request); !blockedWith(err, "managed_destination_snapshot_unavailable") || len(runtime.stages) != 0 || len(runtime.starts) != 0 {
+		t.Fatalf("resume without snapshot: %+v %v", result, err)
+	}
+}
+
+// The complete default destination loop through the durable checkpoint: stage,
+// start, authenticated read-back, commit, replay and generation fence.
+func TestManagedRequiresDurableExactIntentAndReusesTypedRuntime(t *testing.T) {
+	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
+	other := model.RuntimeArtifactID("sha256:" + strings.Repeat("b", 64))
+	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "target-one", ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact}
+	op := operation()
+	if _, err := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: other}).Execute(t.Context(), op, request); err == nil || len(runtime.stages) != 0 {
+		t.Fatal("generic qualification promoted a different exact artifact")
+	}
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	staged, err := service.Execute(t.Context(), op, request)
+	if err != nil || staged.Checkpoint.Stage != "staged" || len(runtime.stages) != 0 || len(runtime.starts) != 0 || !staged.GatewayPending || staged.Connection != nil {
+		t.Fatalf("stage: %+v %v", staged, err)
+	}
+	op.Strategy = staged.Checkpoint // simulates the caller's durable CAS checkpoint
+	request.AdoptionCiphertext = staged.AdoptionCiphertext
+	committed, err := service.Execute(t.Context(), op, request)
+	if err != nil || committed.Checkpoint.Stage != "committed" || len(runtime.stages) != 1 || len(runtime.starts) != 1 ||
+		runtime.starts[0].OperationID != runtime.stages[0].OperationID+":start" || !committed.GatewayPending || committed.Connection == nil {
+		t.Fatalf("commit: %+v %v", committed, err)
+	}
+	if secret, err := protector.UnprotectString(committed.Connection.ManagementKeyCiphertext); err != nil || secret != runtime.stagedManagementKey() {
+		t.Fatal("committed connection is not the staged credential")
+	}
+	if runtime.stages[0].SourceClass != "new_managed" || runtime.stages[0].SourceIdentity != ManagedDestinationIdentity(string(op.Identity.OperationID)) || len(runtime.stages[0].APIKeys) != 0 {
+		t.Fatalf("destination request: %+v", runtime.stages[0])
+	}
+	if committed.Checkpoint.DestinationConnectionIdentity != ManagedDestinationIdentity(baseURL) {
+		t.Fatal("checkpoint is not bound to the destination")
+	}
+	// Lost reply replays the same durable destination operation; no second owner.
+	op.Strategy = committed.Checkpoint
+	if _, err = service.Execute(t.Context(), op, request); err != nil || len(runtime.stages) != 1 || len(runtime.starts) != 1 {
+		t.Fatal("committed retry restarted the destination", err)
+	}
+	runtime.status.Generation++
+	if _, err = service.Execute(t.Context(), op, request); !blockedWith(err, "managed_target_identity_mismatch") {
+		t.Fatal("accepted foreign runtime generation", err)
+	}
+}
+func TestManagedMigrationRequiresStoppedRuntimeAndIsJournaled(t *testing.T) {
+	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	op := operation()
+	op.ProductComplete = true
+	op.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}
+	op.Strategy = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: "committed", TargetIdentity: string(runtime.status.Identity), TargetGeneration: uint64(runtime.status.Generation), TargetArtifactID: string(artifact)}
+	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: runtime.status.Generation, ExpectedArtifactID: artifact}
+	if _, err := service.PrepareManagedMigration(t.Context(), op, request); !blockedWith(err, "managed_migration_requires_stopped") || len(runtime.stages) != 0 {
+		t.Fatalf("running legacy destination was not refused: %v", err)
+	}
+	runtime.status.State = model.RuntimeStateOffline
+	prepared, err := service.PrepareManagedMigration(t.Context(), op, request)
+	if err != nil || prepared.AdoptionCiphertext == "" || prepared.Checkpoint.Stage != "committed" || prepared.Checkpoint.DestinationConnectionIdentity != "" || len(runtime.stages) != 0 {
+		t.Fatalf("prepare migration: %+v %v", prepared, err)
+	}
+	op.Strategy = prepared.Checkpoint
+	request.AdoptionCiphertext = prepared.AdoptionCiphertext
+	committed, err := service.Execute(t.Context(), op, request)
+	if err != nil || committed.Checkpoint.Stage != "committed" || committed.Checkpoint.DestinationConnectionIdentity == "" || committed.Connection == nil || len(runtime.stages) != 1 || len(runtime.starts) != 1 {
+		t.Fatalf("execute migration: %+v %v", committed, err)
+	}
+	op.Strategy = committed.Checkpoint
+	if _, err = service.Execute(t.Context(), op, request); err != nil || len(runtime.stages) != 1 || len(runtime.starts) != 1 {
+		t.Fatalf("migration replay was not idempotent: %v", err)
+	}
+	if runtime.stages[0].OperationID != string(op.Identity.OperationID)+":managed-migration-destination" {
+		t.Fatalf("migration used the install operation id: %q", runtime.stages[0].OperationID)
+	}
+}
+
+func TestManagedMigrationRefusesGatewayAuthPresence(t *testing.T) {
+	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
+	runtime.status.State = model.RuntimeStateOffline
+	runtime.stageErr = &runtimeservice.ProtocolError{Code: runtimeservice.ProtocolErrorCode("gateway_auth_present"), HTTPStatus: 409}
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	op := operation()
+	op.ProductComplete = true
+	op.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}
+	op.Strategy = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: "committed", TargetIdentity: string(runtime.status.Identity), TargetGeneration: uint64(runtime.status.Generation), TargetArtifactID: string(artifact)}
+	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: runtime.status.Generation, ExpectedArtifactID: artifact}
+	prepared, err := service.PrepareManagedMigration(t.Context(), op, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op.Strategy = prepared.Checkpoint
+	request.AdoptionCiphertext = prepared.AdoptionCiphertext
+	if _, err = service.Execute(t.Context(), op, request); !blockedWith(err, "managed_gateway_auth_present") {
+		t.Fatalf("non-empty Gateway auth directory was not refused: %v", err)
+	}
+	if len(runtime.starts) != 0 {
+		t.Fatal("migration started Runtime after auth refusal")
+	}
 }

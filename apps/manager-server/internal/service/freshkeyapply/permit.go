@@ -15,9 +15,9 @@ import (
 
 const PermitPath = "/run/cpamp-s1/permit.json"
 
-// Permit is issued only by the serial disposable Docker launcher, mounted
-// read-only into Manager after host verification. Host root/Docker remain trusted.
-// Its management secret is ephemeral host provisioning, never a Client Key store.
+// Permit is the short-lived, per-request authority derived from a committed
+// Fresh NewManaged destination. Private profile fields remain populated only
+// by the attested launcher.
 type Permit struct {
 	RunID         string                  `json:"runId"`
 	Generation    string                  `json:"generation"`
@@ -25,6 +25,9 @@ type Permit struct {
 	IssuedAtMS    int64                   `json:"issuedAtMs"`
 	ExpiresAtMS   int64                   `json:"expiresAtMs"`
 	S2B           cpa.PrivateProviderSeed `json:"s2b,omitempty"`
+	Profile       string                  `json:"-"`
+	Identity      string                  `json:"-"`
+	ArtifactID    string                  `json:"-"`
 }
 
 func loadPermit() (Permit, error) {

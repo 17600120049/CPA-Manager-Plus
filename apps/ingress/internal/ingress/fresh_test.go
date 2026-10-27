@@ -59,7 +59,7 @@ func TestFreshPrivateProjectionRequiresCurrentManagerAuthorityAndRetainsFence(t 
 	if put(s) != http.StatusConflict {
 		t.Fatal("retired state reopened")
 	}
-	for _, target := range []string{"/", "/v1", "/.well-known/cpamp-bootstrap/nested", "/health", "/internal", "/internal/routing", FreshRoutingControlPath, FreshRoutingAuthorityPath, "/other/../control", "/control%2falias"} {
+	for _, target := range []string{"/", "/v1", "/.well-known/cpamp-bootstrap/nested", "/health", "/internal", "/internal/routing", FreshRoutingControlPath, FreshRoutingAuthorityPath, "/other/../control", "/control%2falias", "/v8/management", "/v8/management/control"} {
 		empty := &FreshRoutes{}
 		bad := s
 		bad.Target = target

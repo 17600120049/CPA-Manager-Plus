@@ -4,9 +4,12 @@ package freshstrategy
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"strconv"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
@@ -21,6 +24,53 @@ type Blocker struct {
 }
 
 func (e *Blocker) Error() string { return e.Code }
+
+// maxRuntimeOperationIDBytes is the Runtime Protocol v1 operation ID limit. Both
+// Supervisor and Manager validate it, so an attempt suffix must fit inside it.
+const maxRuntimeOperationIDBytes = 128
+
+// destinationOperationID derives the Supervisor operation ID of one durable
+// destination attempt. Attempt zero keeps the historical ID, so a checkpoint
+// written before attempts existed stays exactly idempotent. Every later attempt
+// is a distinct Supervisor operation for the very same destination: the journal
+// never resumes a terminal operation, and replaying one can only replay its
+// failure.
+func destinationOperationID(base string, attempt uint64) (string, error) {
+	operationID := base
+	if attempt != 0 {
+		operationID = base + ":attempt-" + strconv.FormatUint(attempt, 10)
+	}
+	if len([]byte(operationID)) > maxRuntimeOperationIDBytes {
+		return "", errors.New("destination operation ID exceeds the Runtime limit")
+	}
+	return operationID, nil
+}
+
+// DestinationRetry reports a destination stage or start the Supervisor recorded
+// as terminally failed. The Supervisor will only ever replay that terminal
+// evidence, so the attempt must be retired before the caller reports the
+// blocker. Blocker carries the response code; Checkpoint is the checkpoint the
+// caller must commit in the same Fresh CAS as this observation, and its
+// advanced DestinationAttempt is the only durable transition it authorizes.
+type DestinationRetry struct {
+	Blocker    *Blocker
+	Checkpoint bootstrap.FreshStrategyCheckpoint
+}
+
+func (e *DestinationRetry) Error() string { return e.Blocker.Error() }
+
+// Unwrap keeps the typed response code visible to the existing blocker mapping.
+func (e *DestinationRetry) Unwrap() error { return e.Blocker }
+
+// destinationRetry retires the attempt whose operation terminally failed. The
+// checkpoint keeps its target, stage and destination identity exactly as
+// persisted; only the attempt index advances, so the next Execute re-issues the
+// identical destination under the next operation ID instead of replaying a known
+// failure forever.
+func destinationRetry(checkpoint bootstrap.FreshStrategyCheckpoint, code string) error {
+	checkpoint.DestinationAttempt++
+	return &DestinationRetry{Blocker: &Blocker{Code: code}, Checkpoint: checkpoint}
+}
 
 // Qualification is exclusively server-owned accepted evidence, never a browser
 // assertion. In particular, a successful config read cannot set these facts.
@@ -105,6 +155,89 @@ func (s *Service) Execute(ctx context.Context, op bootstrap.FreshOperation, requ
 	}
 }
 
+type managedDestinationSnapshot struct {
+	Destination model.RuntimeDestinationRequest `json:"destination"`
+	BaseURL     string                          `json:"baseUrl"`
+}
+
+// ManagedDestinationIdentity hashes the exact destination value an identity
+// binds: the normalized Manager connection for a checkpoint, or the Fresh
+// operation for a destination source.
+func ManagedDestinationIdentity(baseURL string) string {
+	digest := sha256.Sum256([]byte(baseURL))
+	return "managed:sha256:" + hex.EncodeToString(digest[:])
+}
+
+// managedDestinationSnapshot creates the protected, durable destination intent
+// without touching Runtime. The caller must CAS the returned ciphertext before
+// invoking Execute; operationIDSuffix is stable across retries and therefore
+// also names the Supervisor journal entry.
+func (s *Service) managedDestinationSnapshot(op bootstrap.FreshOperation, status model.RuntimeObservedStatus, stage string, bindIdentity bool, operationIDSuffix string) (bootstrap.FreshStrategyCheckpoint, string, error) {
+	if s.options.Protector == nil || s.options.DestinationBaseURL == "" {
+		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "managed_destination_connection_unavailable"}
+	}
+	baseURL, err := cpa.NormalizeV8BaseURL(s.options.DestinationBaseURL)
+	if err != nil {
+		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "managed_destination_connection_invalid"}
+	}
+	keyBytes := make([]byte, 32)
+	if _, err := rand.Read(keyBytes); err != nil {
+		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "management_secret_storage_unavailable"}
+	}
+	managementKey := hex.EncodeToString(keyBytes)
+	destination := model.RuntimeDestinationRequest{OperationID: string(op.Identity.OperationID) + ":" + operationIDSuffix, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: status.ActiveGatewayArtifact.ArtifactID, SourceIdentity: ManagedDestinationIdentity(string(op.Identity.OperationID)), SourceClass: "new_managed", APIKeys: []string{}, ManagementKey: managementKey}
+	data, err := json.Marshal(managedDestinationSnapshot{Destination: destination, BaseURL: baseURL})
+	if err != nil {
+		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "management_secret_storage_unavailable"}
+	}
+	ciphertext, err := s.options.Protector.ProtectString(string(data))
+	if err != nil {
+		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "management_secret_storage_unavailable"}
+	}
+	checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, TargetIdentity: string(status.Identity), TargetGeneration: uint64(status.Generation), TargetArtifactID: string(status.ActiveGatewayArtifact.ArtifactID), Stage: stage}
+	if bindIdentity {
+		checkpoint.DestinationConnectionIdentity = ManagedDestinationIdentity(baseURL)
+	}
+	return checkpoint, ciphertext, nil
+}
+
+// PrepareManagedMigration creates the first durable step for a legacy
+// start-only New Managed install. It refuses to generate or stage a credential
+// while CPA is running: the Supervisor's destination auth directory must be
+// empty, and an already-running process would make that ownership ambiguous.
+func (s *Service) PrepareManagedMigration(ctx context.Context, op bootstrap.FreshOperation, request Request) (Result, error) {
+	result := Result{RuntimeMode: model.RuntimeModeEmbedded, GatewayPending: true}
+	if request.Strategy != bootstrap.NewManaged || op.Strategy.Strategy != bootstrap.NewManaged || op.Strategy.Stage != "committed" || op.Strategy.DestinationConnectionIdentity != "" {
+		return result, &Blocker{Code: "managed_migration_shape_conflict"}
+	}
+	if s.options.Qualification.ValidateForStrategy(bootstrap.NewManaged, bootstrap.AdoptSourceNone) != nil {
+		return result, &Blocker{Code: "exact_v8_artifact_qualification_required"}
+	}
+	if s.options.Runtime == nil {
+		return result, &Blocker{Code: "managed_target_staging_required"}
+	}
+	status, err := s.options.Runtime.Status(ctx)
+	if err != nil || status.Validate() != nil || status.ProtocolVersion != "v1" || status.ActiveGatewayArtifact == nil {
+		return result, &Blocker{Code: "managed_target_observation_unavailable"}
+	}
+	if request.ExpectedRuntimeIdentity != status.Identity || request.ExpectedRuntimeGeneration != status.Generation || request.ExpectedArtifactID != status.ActiveGatewayArtifact.ArtifactID || op.Strategy.TargetIdentity != string(status.Identity) || op.Strategy.TargetGeneration != uint64(status.Generation) || op.Strategy.TargetArtifactID != string(status.ActiveGatewayArtifact.ArtifactID) {
+		return result, &Blocker{Code: "managed_target_identity_mismatch"}
+	}
+	if status.State != model.RuntimeStateOffline {
+		return result, &Blocker{Code: "managed_migration_requires_stopped"}
+	}
+	if !status.Capabilities.Supports(model.RuntimeCapabilityStageDestination) || !status.Capabilities.Supports(model.RuntimeCapabilityStart) {
+		return result, &Blocker{Code: "managed_target_staging_required"}
+	}
+	checkpoint, ciphertext, err := s.managedDestinationSnapshot(op, status, "committed", false, "managed-migration-destination")
+	if err != nil {
+		return result, err
+	}
+	result.Checkpoint = checkpoint
+	result.AdoptionCiphertext = ciphertext
+	return result, nil
+}
+
 func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, request Request) (Result, error) {
 	result := Result{RuntimeMode: model.RuntimeModeEmbedded, GatewayPending: true}
 	if s.options.Qualification.ValidateForStrategy(bootstrap.NewManaged, bootstrap.AdoptSourceNone) != nil {
@@ -120,49 +253,97 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 	if !s.options.QualifiedArtifactID.IsValid() || status.ActiveGatewayArtifact.ArtifactID != s.options.QualifiedArtifactID {
 		return result, &Blocker{Code: "exact_v8_artifact_qualification_required"}
 	}
-	checkpoint := op.Strategy
 	if request.ExpectedRuntimeIdentity != status.Identity || request.ExpectedRuntimeGeneration != status.Generation || request.ExpectedArtifactID != status.ActiveGatewayArtifact.ArtifactID {
 		return result, &Blocker{Code: "managed_target_identity_mismatch"}
 	}
+	checkpoint := op.Strategy
 	if checkpoint.Strategy == "" {
-		result.Checkpoint = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged,
-			TargetIdentity: string(status.Identity), TargetGeneration: uint64(status.Generation),
-			TargetArtifactID: string(status.ActiveGatewayArtifact.ArtifactID), Stage: "staged"}
+		var snapshotCiphertext string
+		checkpoint, snapshotCiphertext, err = s.managedDestinationSnapshot(op, status, "staged", true, "managed-destination")
+		if err != nil {
+			return result, err
+		}
+		result.AdoptionCiphertext = snapshotCiphertext
+		result.Checkpoint = checkpoint
 		return result, nil
 	}
 	result.Checkpoint = checkpoint
 	if checkpoint.TargetIdentity != string(status.Identity) || checkpoint.TargetGeneration != uint64(status.Generation) || checkpoint.TargetArtifactID != string(status.ActiveGatewayArtifact.ArtifactID) {
 		return result, &Blocker{Code: "managed_target_identity_mismatch"}
 	}
-	switch checkpoint.Stage {
-	case "committed":
+	if checkpoint.Stage == "committed" && !(checkpoint.DestinationConnectionIdentity == "" && request.AdoptionCiphertext != "") {
 		return result, nil
-	case "staged", "starting":
-	default:
-		return result, &Blocker{Code: "managed_target_checkpoint_invalid"}
 	}
-	if !status.Capabilities.Supports(model.RuntimeCapabilityStart) {
-		return result, &Blocker{Code: "managed_target_start_unsupported"}
+	if !security.IsValidProtectedEnvelope(request.AdoptionCiphertext) || s.options.Protector == nil {
+		return result, &Blocker{Code: "managed_destination_snapshot_unavailable"}
 	}
-	response, err := s.options.Runtime.Start(ctx, model.RuntimeMutationRequest{
-		OperationID:             string(op.Identity.OperationID) + ":managed-start",
-		ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation,
-		ExpectedActiveArtifactID: model.RuntimeArtifactID(checkpoint.TargetArtifactID),
-	})
+	plain, err := s.options.Protector.UnprotectString(request.AdoptionCiphertext)
 	if err != nil {
-		return result, &Blocker{Code: "managed_target_start_unresolved"}
+		return result, &Blocker{Code: "managed_destination_snapshot_unavailable"}
 	}
-	if response.Validate() != nil || response.OperationID != string(op.Identity.OperationID)+":managed-start" || response.OperationType != model.RuntimeOperationStart || response.RuntimeIdentity != status.Identity || response.RuntimeGeneration != status.Generation {
-		return result, &Blocker{Code: "managed_target_start_unresolved"}
+	var snapshot managedDestinationSnapshot
+	if json.Unmarshal([]byte(plain), &snapshot) != nil || snapshot.Destination.Validate() != nil || snapshot.Destination.ExpectedRuntimeIdentity != status.Identity || snapshot.Destination.ExpectedRuntimeGeneration != status.Generation || snapshot.Destination.SourceIdentity != ManagedDestinationIdentity(string(op.Identity.OperationID)) || snapshot.Destination.SourceClass != "new_managed" {
+		return result, &Blocker{Code: "managed_destination_snapshot_unavailable"}
 	}
-	switch response.State {
+	if checkpoint.DestinationConnectionIdentity != "" && checkpoint.DestinationConnectionIdentity != ManagedDestinationIdentity(snapshot.BaseURL) {
+		return result, &Blocker{Code: "managed_destination_snapshot_unavailable"}
+	}
+	checkpoint.DestinationConnectionIdentity = ManagedDestinationIdentity(snapshot.BaseURL)
+	result.Checkpoint = checkpoint
+	runtime, ok := s.options.Runtime.(runtimeservice.DestinationClient)
+	if !ok || !status.Capabilities.Supports(model.RuntimeCapabilityStageDestination) || !status.Capabilities.Supports(model.RuntimeCapabilityStart) {
+		return result, &Blocker{Code: "managed_target_staging_required"}
+	}
+	// The staged snapshot is immutable for the lifetime of the Fresh operation,
+	// so the attempt index is the only thing that may distinguish one Supervisor
+	// operation from the next.
+	stageOperationID, err := destinationOperationID(snapshot.Destination.OperationID, checkpoint.DestinationAttempt)
+	if err != nil {
+		return result, &Blocker{Code: "managed_destination_connection_invalid"}
+	}
+	destination := snapshot.Destination
+	destination.OperationID = stageOperationID
+	staged, err := runtime.StageDestination(ctx, destination)
+	if err != nil || staged.Validate() != nil {
+		if code, ok := runtimeservice.ErrorCode(err); ok && string(code) == "gateway_auth_present" {
+			return result, &Blocker{Code: "managed_gateway_auth_present"}
+		}
+		return result, &Blocker{Code: "managed_destination_stage_unresolved"}
+	}
+	switch staged.State {
 	case model.RuntimeOperationSucceeded:
-		result.Checkpoint.Stage = "committed"
-	case model.RuntimeOperationAccepted, model.RuntimeOperationRunning:
-		result.Checkpoint.Stage = "starting"
+	case model.RuntimeOperationFailed:
+		// A terminal failure is never resumed by the Supervisor, so the attempt
+		// is retired here and re-issued under the next operation ID.
+		return result, destinationRetry(op.Strategy, "managed_destination_stage_failed")
 	default:
-		return result, &Blocker{Code: "managed_target_start_failed"}
+		// Accepted or running work stays unresolved under the same attempt: the
+		// retry replays exactly that operation instead of racing a second one.
+		return result, &Blocker{Code: "managed_destination_stage_unresolved"}
 	}
+	started, err := s.options.Runtime.Start(ctx, model.RuntimeMutationRequest{OperationID: stageOperationID + ":start", ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: snapshot.Destination.ExpectedActiveArtifactID})
+	if err != nil || started.Validate() != nil {
+		return result, &Blocker{Code: "managed_target_start_unresolved"}
+	}
+	if started.State == model.RuntimeOperationAccepted || started.State == model.RuntimeOperationRunning {
+		result.Checkpoint.Stage = "starting"
+		return result, nil
+	}
+	if started.State == model.RuntimeOperationFailed {
+		return result, destinationRetry(op.Strategy, "managed_target_start_failed")
+	}
+	if started.State != model.RuntimeOperationSucceeded {
+		return result, &Blocker{Code: "managed_target_start_unresolved"}
+	}
+	if _, err := cpa.ReadV8Config(ctx, snapshot.BaseURL, snapshot.Destination.ManagementKey); err != nil {
+		return result, &Blocker{Code: "managed_destination_verification_required"}
+	}
+	ciphertext, err := s.options.Protector.ProtectString(snapshot.Destination.ManagementKey)
+	if err != nil {
+		return result, &Blocker{Code: "management_secret_storage_unavailable"}
+	}
+	result.Connection = &ProtectedConnection{BaseURL: snapshot.BaseURL, ManagementKeyCiphertext: ciphertext}
+	result.Checkpoint.Stage = "committed"
 	return result, nil
 }
 
