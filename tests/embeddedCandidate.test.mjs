@@ -183,7 +183,7 @@ describe('Fresh New automated smoke contracts', () => {
     expect(missing).toEqual([]);
   });
 
-  it('asserts the CPA data layer and labels the pre-authority gap instead of failing the tool', () => {
+  it('asserts the CPA data layer with an opt-in, pinned pre-authority gap', () => {
     expect(smoke).toContain("'/console/api/v2/cpamp/v0/management/auth-files'");
     expect(smoke).toMatch(/api-keys\/' \+ createdKey\.key\.id \+ '\/initial-install'/);
     expect(smoke).toContain(
@@ -210,9 +210,12 @@ describe('Fresh New automated smoke contracts', () => {
       "'CPA authenticates the installed Client Key on a model request (non-401)'"
     );
     expect(smoke).toContain('Real Provider model success');
-    expect(smoke).not.toContain("'CPA accepts one real model request with the installed Client Key'");
-    // The Ingress Gateway stays pending by design; CPA acceptance is proven on
-    // the Compose network, and the anonymous peer may only be closed or 401.
+    // Lane G flips the Ingress expectation instead of inverting the assertion.
+    expect(smoke).toContain("parsed.port === '18317'");
+    expect(smoke).toContain("'Ingress Gateway admits the installed Client Key (lane G)'");
+    expect(smoke).toContain("'Ingress Gateway stays Pending with an installed Client Key'");
+    expect(smoke).toContain("'gateway pending configuration'");
+    // The anonymous peer may only be closed or 401.
     expect(smoke).toContain("['unreachable', '401'].includes(peerVerdict)");
   });
 });

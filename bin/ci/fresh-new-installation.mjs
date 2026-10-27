@@ -40,14 +40,19 @@ const report = {
 // Ingress Gateway publishes model traffic (lane G) the same probe targets the
 // Ingress instead. The value is an origin, never a full request path.
 const modelTarget = process.env.CPAMP_SMOKE_MODEL_TARGET || 'http://cpamp-runtime:8317';
+let modelTargetIsIngress = false;
 {
   const parsed = new URL(modelTarget);
   assert(
     (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host,
     'CPAMP_SMOKE_MODEL_TARGET must be an http(s) origin'
   );
+  // Lane G owns Ingress model admission: with the Ingress as the target the
+  // Gateway must admit an installed Client Key instead of answering Pending.
+  modelTargetIsIngress = parsed.hostname === 'cpamp-ingress' || parsed.port === '18317';
 }
 report.modelTarget = modelTarget;
+report.modelTargetIsIngress = modelTargetIsIngress;
 // Pin a free loopback port in HostConfig. Publishing port 0 can allocate a new
 // host port after restart, which would invalidate the browser's saved origin.
 const portProbe = createServer();
@@ -844,11 +849,11 @@ except OSError:print('unreachable')`,
     'zero Client Keys: all tested Gateway paths remain Pending; anonymous peer cannot read CPA'
   );
   // Data layer: the installed deployment must read real CPA management data,
-  // install one Client Key and have CPA accept it. A default profile without an
-  // installation-derived CPA management credential cannot do that yet. That gap
-  // is opt-in and pinned to the exact statuses this base returns, so a later
-  // regression (for example a 502 bridge failure) fails the run instead of being
-  // absorbed as a known gap.
+  // install one Client Key and have CPA authenticate it. A default profile
+  // without an installation-derived CPA management credential cannot do that
+  // yet. That gap is opt-in and pinned to the exact statuses this base returns,
+  // so a later regression (for example a 502 bridge failure) fails the run
+  // instead of being absorbed as a known gap.
   const expectAuthorityGap = process.env.CPAMP_SMOKE_EXPECT_AUTHORITY_GAP === '1';
   const pinnedGap = {
     authFiles: { status: 428 },
@@ -991,7 +996,12 @@ except OSError:print('unreachable')`;
     // Proves Client Key authentication only: without a Provider fixture CPA may
     // answer 500/503, so this must never be reported as a real model success.
     'CPA authenticates the installed Client Key on a model request (non-401)',
-    'Ingress Gateway stays Pending with an installed Client Key',
+    // Lane G owns Ingress model admission: with the Ingress as the model target
+    // an installed key must be admitted; on the current base the Gateway stays
+    // Pending by design.
+    modelTargetIsIngress
+      ? 'Ingress Gateway admits the installed Client Key (lane G)'
+      : 'Ingress Gateway stays Pending with an installed Client Key',
   ];
   if (keyEffective) {
     assert.equal(
@@ -1011,7 +1021,7 @@ except OSError:print('unreachable')`;
       'CPA must authenticate the installed Client Key on one model request: ' + modelStatus
     );
     recordDataLayer(cpaChecks[2], 'PASS', { status: Number(modelStatus) });
-    const pendingResponse = await fetch(origin + '/v1/chat/completions', {
+    const gatewayResponse = await fetch(origin + '/v1/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: 'Bearer ' + createdKey.createdSecret,
@@ -1019,9 +1029,26 @@ except OSError:print('unreachable')`;
       },
       body: '{}',
     });
-    assert.equal(pendingResponse.status, 503);
-    assert.equal((await pendingResponse.text()).trim(), 'gateway pending configuration');
-    recordDataLayer(cpaChecks[3], 'PASS');
+    const gatewayBody = (await gatewayResponse.text()).trim();
+    if (modelTargetIsIngress) {
+      // Lane G flips this branch: the published Ingress must admit the installed
+      // key instead of answering with the Pending placeholder.
+      assert.notEqual(
+        gatewayResponse.status,
+        401,
+        'Ingress must authenticate the installed Client Key'
+      );
+      assert.notEqual(
+        gatewayBody,
+        'gateway pending configuration',
+        'Ingress must admit model traffic once lane G publishes it'
+      );
+      recordDataLayer(cpaChecks[3], 'PASS', { status: gatewayResponse.status });
+    } else {
+      assert.equal(gatewayResponse.status, 503);
+      assert.equal(gatewayBody, 'gateway pending configuration');
+      recordDataLayer(cpaChecks[3], 'PASS', { status: 503, body: gatewayBody });
+    }
   } else {
     for (const name of cpaChecks) recordDataLayer(name, 'DEFAULT AUTHORITY MISSING');
     report.authority = 'DEFAULT AUTHORITY MISSING';
