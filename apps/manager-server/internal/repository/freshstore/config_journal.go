@@ -330,6 +330,10 @@ func validateConfigOperationUpdate(old, next ConfigOperation) error {
 	if old.State != "unknown" || (next.State != "persisted" && next.State != "recovered" && next.State != "failed") {
 		return ErrConflict
 	}
+	if next.State == "failed" && next.Code == "" {
+		// A failure always names its reason.
+		return ErrConflict
+	}
 	if old.ParentID != "" {
 		if !next.HTTP200 || !hashHex(next.Receipt, 32) {
 			return ErrConflict

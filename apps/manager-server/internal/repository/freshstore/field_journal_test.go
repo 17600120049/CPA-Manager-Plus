@@ -340,3 +340,55 @@ func TestDamagedFieldBytesSurviveAnotherFieldWrite(t *testing.T) {
 		t.Fatal("isolation lost after the save", r.ConfigInvalid)
 	}
 }
+
+// TestFailedOperationIsTerminalAndNamed covers the definite-failure journal state:
+// it can only arrive from unknown, it always names a code, and it is immutable.
+func TestFailedOperationIsTerminalAndNamed(t *testing.T) {
+	store, db, id := testStore(t)
+	// A managed write has no H1 parent: the Manager owns its journal entry.
+	operation := h1FieldOperation("requests.streaming.keepalive-seconds", 30)
+	operation.ParentID, operation.Attempted, operation.ClaimRevision, operation.IntentDigest = "", false, 0, ""
+	saveJournal(t, store, id, "requests.streaming.keepalive-seconds", operation)
+	update := func(next ConfigOperation) error {
+		t.Helper()
+		current, err := store.Load(t.Context())
+		if err != nil {
+			return err
+		}
+		_, err = store.Update(t.Context(), id, current.Operation.Revision, func(r *Record) error {
+			r.Config["requests.streaming.keepalive-seconds"].Operations[next.RequestID] = next
+			return nil
+		})
+		return err
+	}
+	unnamed := operation
+	unnamed.State = "failed"
+	if update(unnamed) == nil {
+		t.Fatal("a failure without a code was accepted")
+	}
+	failed := unnamed
+	failed.Code = "write_not_applied"
+	if err := update(failed); err != nil {
+		t.Fatal("a named failure was refused:", err)
+	}
+	for _, change := range []func(*ConfigOperation){
+		func(v *ConfigOperation) { v.State = "persisted" },
+		func(v *ConfigOperation) { v.State = "unknown" },
+		func(v *ConfigOperation) { v.Code = "write_rejected" },
+		func(v *ConfigOperation) { v.Code = "" },
+	} {
+		bad := failed
+		change(&bad)
+		if update(bad) == nil {
+			t.Fatal("a terminal failure was rewritten")
+		}
+	}
+	// A terminal failure does not block a new claim; only an unknown does.
+	var raw string
+	if err := db.QueryRow("select value from settings where key=?", configJournalKey).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateConfigJournals([]byte(raw)); err != nil {
+		t.Fatal("a terminal failure blocked the admission checkpoint:", err)
+	}
+}
