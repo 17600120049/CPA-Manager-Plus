@@ -193,12 +193,18 @@ describe('Fresh New automated smoke contracts', () => {
     expect(smoke).toContain("target+'/v1/chat/completions'");
     expect(smoke).toContain('report.modelTarget = modelTarget');
     expect(smoke).toContain('CPAMP_SMOKE_MODEL_TARGET must be an http(s) origin');
-    expect(smoke).toContain('new Set([403, 404, 409, 428, 502, 503])');
+    // The lane P gap is opt-in and pinned to the exact statuses this base
+    // returns; a broad status set would absorb a real regression as a gap.
+    expect(smoke).toContain("process.env.CPAMP_SMOKE_EXPECT_AUTHORITY_GAP === '1'");
+    expect(smoke).toContain('authFiles: { status: 428 }');
+    expect(smoke).toContain("initialInstall: { status: 409, code: '' }");
+    expect(smoke).toContain('expectAuthorityGap && expected.status === status');
+    expect(smoke).not.toContain('new Set([403, 404, 409, 428, 502, 503])');
     expect(smoke).toContain("'DEFAULT AUTHORITY MISSING'");
     expect(smoke).toContain("report.authority = 'DEFAULT AUTHORITY MISSING'");
-    // Unexpected statuses remain hard failures.
-    expect(smoke).toContain("throw new Error('unexpected CPA auth-files status '");
-    expect(smoke).toContain("throw new Error('unexpected Client Key install status '");
+    // Any other status is a hard failure, with or without the opt-in.
+    expect(smoke).toContain('throw unexpectedStatus(');
+    expect(smoke).toContain('set CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1 only on a base without');
     // The Ingress Gateway stays pending by design; CPA acceptance is proven on
     // the Compose network, and the anonymous peer may only be closed or 401.
     expect(smoke).toContain("['unreachable', '401'].includes(peerVerdict)");

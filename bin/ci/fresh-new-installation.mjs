@@ -844,10 +844,29 @@ except OSError:print('unreachable')`,
   );
   // Data layer: the installed deployment must read real CPA management data,
   // install one Client Key and have CPA accept it. A default profile without an
-  // installation-derived CPA management credential cannot do that yet; those
-  // failures are reported as DEFAULT AUTHORITY MISSING, a labelled known gap,
-  // never as a silent pass and never as a tool failure.
-  const authorityGapStatuses = new Set([403, 404, 409, 428, 502, 503]);
+  // installation-derived CPA management credential cannot do that yet. That gap
+  // is opt-in and pinned to the exact statuses this base returns, so a later
+  // regression (for example a 502 bridge failure) fails the run instead of being
+  // absorbed as a known gap.
+  const expectAuthorityGap = process.env.CPAMP_SMOKE_EXPECT_AUTHORITY_GAP === '1';
+  const pinnedGap = {
+    authFiles: { status: 428 },
+    initialInstall: { status: 409, code: '' },
+  };
+  report.authorityGapExpected = expectAuthorityGap;
+  report.pinnedAuthorityGap = pinnedGap;
+  const isPinnedGap = (expected, status, code = '') =>
+    expectAuthorityGap && expected.status === status && expected.code === code;
+  const unexpectedStatus = (label, status, code = '') =>
+    new Error(
+      label +
+        ' returned ' +
+        status +
+        (code ? ' (' + code + ')' : '') +
+        (expectAuthorityGap
+          ? ' — not the pinned lane P gap ' + JSON.stringify(pinnedGap)
+          : ' — set CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1 only on a base without CPA management authority')
+    );
   report.dataLayer = [];
   const recordDataLayer = (name, result, observed) => {
     report.dataLayer.push({ name, result, ...(observed ? { observed } : {}) });
@@ -865,13 +884,17 @@ except OSError:print('unreachable')`,
     recordDataLayer('cpamp resource bridge reads CPA /auth-files', 'PASS', {
       files: authFiles.files.length,
     });
-  } else if (authorityGapStatuses.has(authFilesResponse.status)) {
+  } else if (isPinnedGap(pinnedGap.authFiles, authFilesResponse.status)) {
     authorityGap = { authFilesStatus: authFilesResponse.status };
     recordDataLayer('cpamp resource bridge reads CPA /auth-files', 'DEFAULT AUTHORITY MISSING', {
       status: authFilesResponse.status,
     });
   } else {
-    throw new Error('unexpected CPA auth-files status ' + authFilesResponse.status);
+    throw unexpectedStatus(
+      'CPA auth-files',
+      authFilesResponse.status,
+      await authFilesResponse.text().catch(() => '')
+    );
   }
   const createdKeyResponse = await fetch(origin + '/console/api/v2/api-keys', {
     method: 'POST',
@@ -904,20 +927,23 @@ except OSError:print('unreachable')`,
     assert.equal(state.cpaConfigured, true, 'installed Client Key is configured in CPA');
     keyEffective = true;
     recordDataLayer('Client Key installed into CPA', 'PASS', { runtimeState: state.runtimeState });
-  } else if (authorityGapStatuses.has(installKeyResponse.status)) {
-    authorityGap = { ...authorityGap, initialInstallStatus: installKeyResponse.status };
-    recordDataLayer('Client Key installed into CPA', 'DEFAULT AUTHORITY MISSING', {
-      status: installKeyResponse.status,
-      code: (() => {
-        try {
-          return JSON.parse(installKeyBody).code || '';
-        } catch {
-          return '';
-        }
-      })(),
-    });
   } else {
-    throw new Error('unexpected Client Key install status ' + installKeyResponse.status);
+    const installCode = (() => {
+      try {
+        return JSON.parse(installKeyBody).code || '';
+      } catch {
+        return '';
+      }
+    })();
+    if (isPinnedGap(pinnedGap.initialInstall, installKeyResponse.status, installCode)) {
+      authorityGap = { ...authorityGap, initialInstallStatus: installKeyResponse.status };
+      recordDataLayer('Client Key installed into CPA', 'DEFAULT AUTHORITY MISSING', {
+        status: installKeyResponse.status,
+        code: installCode,
+      });
+    } else {
+      throw unexpectedStatus('Client Key install', installKeyResponse.status, installCode);
+    }
   }
   // CPA acceptance is proven where this deployment publishes CPA: the Compose
   // network now (CPAMP_SMOKE_MODEL_TARGET default) or the Ingress Gateway once
@@ -997,7 +1023,9 @@ except OSError:print('unreachable')`;
     for (const name of cpaChecks) recordDataLayer(name, 'DEFAULT AUTHORITY MISSING');
     report.authority = 'DEFAULT AUTHORITY MISSING';
     report.expectedGaps = [
-      'default-install CPA management authority (lane P): ' + JSON.stringify(authorityGap || {}),
+      'default-install CPA management authority (lane P): ' +
+        JSON.stringify(authorityGap || {}) +
+        ' — accepted only because CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1 pins exactly these statuses',
     ];
     console.log(
       'DEFAULT AUTHORITY MISSING: default-install CPA management authority is unavailable on this build (lane P gap, not a tool failure)'
