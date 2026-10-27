@@ -1,0 +1,263 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
+)
+
+// maxGatewayConfigBody bounds one page write. A whole payload rule family is the
+// largest legal body; YAML, raw configuration and recovery bytes are never
+// accepted here.
+const maxGatewayConfigBody = 256 << 10
+
+// exactObject rejects duplicate/case-folded/unknown keys, null, trailing data and
+// wrong container types. It is the strict shape of every gateway write body.
+func exactObject(b []byte, keys ...string) bool {
+	d := json.NewDecoder(bytes.NewReader(b))
+	t, e := d.Token()
+	if e != nil || t != json.Delim('{') {
+		return false
+	}
+	seen := map[string]bool{}
+	for d.More() {
+		t, e = d.Token()
+		k, ok := t.(string)
+		if e != nil || !ok || seen[k] {
+			return false
+		}
+		allowed := false
+		for _, name := range keys {
+			if name == k {
+				allowed = true
+			}
+		}
+		if !allowed {
+			return false
+		}
+		seen[k] = true
+		var raw json.RawMessage
+		if d.Decode(&raw) != nil {
+			return false
+		}
+	}
+	t, e = d.Token()
+	return e == nil && t == json.Delim('}') && len(seen) == len(keys) && d.Decode(new(any)) == io.EOF
+}
+
+func gatewayConfigBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	if r.Header.Get("Content-Type") != "application/json" || r.Header.Get("Content-Encoding") != "" {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return nil, false
+	}
+	b, e := io.ReadAll(http.MaxBytesReader(w, r.Body, maxGatewayConfigBody))
+	if e != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return nil, false
+	}
+	return b, true
+}
+
+// gatewayConfigReply writes the page contract: a journaled operation with its
+// separate effectiveness. HTTP success is persisted evidence only; CPA reloads
+// asynchronously, so effectiveness is never claimed here.
+func gatewayConfigReply(w http.ResponseWriter, v any, e error) {
+	if o, ok := v.(freshstore.ConfigGroupOperation); ok {
+		v = struct {
+			Operation freshstore.ConfigGroupOperation `json:"operation"`
+			Effective string                          `json:"effective"`
+		}{o, "unknown"}
+	}
+	if e == nil {
+		writeFreshJSON(w, v)
+		return
+	}
+	var rejection freshconfig.Rejection
+	var writeError cpa.ConfigWriteError
+	code, status := "configuration_unavailable", http.StatusServiceUnavailable
+	switch {
+	case errors.As(e, &rejection):
+		// CPA parsed, validated and refused: the file is unchanged and this names
+		// the group or field the user must fix.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		writeFreshJSON(w, struct {
+			Code    string `json:"code"`
+			Field   string `json:"field,omitempty"`
+			Message string `json:"message,omitempty"`
+		}{"cpa_rejected_config", rejection.Field, rejection.Message})
+		return
+	case errors.As(e, &writeError):
+		code, status = "cpa_rejected_config", http.StatusUnprocessableEntity
+	case errors.Is(e, freshconfig.ErrInvalid):
+		code, status = "invalid_config_request", http.StatusBadRequest
+	case errors.Is(e, freshconfig.ErrNotFound):
+		code, status = "operation_not_found", http.StatusNotFound
+	case errors.Is(e, freshconfig.ErrRulesReadOnly):
+		code, status = "payload_rules_read_only", http.StatusConflict
+	case errors.Is(e, freshconfig.ErrReadOnly):
+		code, status = "gateway_config_read_only", http.StatusConflict
+	case errors.Is(e, cpa.ErrSourceConflict), errors.Is(e, freshstore.ErrConflict):
+		code, status = "source_or_operation_conflict", http.StatusConflict
+	case errors.Is(e, cpa.ErrProofUnavailable):
+		code, status = "config_authority_unavailable", http.StatusConflict
+	case errors.Is(e, cpa.ErrWriterIsolation):
+		code, status = "config_key_writer_not_isolated", http.StatusConflict
+	case errors.Is(e, cpa.ErrApplyUnknown):
+		code, status = "original_operation_unknown", http.StatusConflict
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	writeFreshJSON(w, struct {
+		Code   string `json:"code"`
+		Result any    `json:"result,omitempty"`
+	}{code, v})
+}
+
+// gatewayConfiguration serves the gateway configuration page:
+//
+//	GET  gateway/config
+//	POST gateway/config/groups/{groupId}
+//	POST gateway/config/rules/{family}
+//	GET  gateway/config/operations/{requestId}
+//	POST gateway/config/operations/{requestId}/reconcile
+//
+// The canonical Public API has already verified the persisted Administrator
+// credential. No supplied URL, key, proof flag, YAML or recovery bytes exist, and
+// a resource outside this surface is a 404 that never reaches CPA.
+func (a *freshApplication) gatewayConfiguration(w http.ResponseWriter, r *http.Request, resource string) {
+	if r.URL.RawQuery != "" || r.URL.EscapedPath() != r.URL.Path {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	// Request shape is validated before any profile question: an invalid body is
+	// a 400 whether or not this installation holds a configuration authority.
+	parts := strings.Split(resource, "/")
+	switch {
+	case resource == "":
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		service := a.gatewayService(w)
+		if service == nil {
+			return
+		}
+		view, err := service.Read(r.Context())
+		gatewayConfigReply(w, view, err)
+	case parts[0] == "groups" && len(parts) == 2:
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		body, ok := gatewayConfigBody(w, r)
+		if !ok {
+			return
+		}
+		if !exactObject(body, "requestId", "expected", "edits") || !exactExpected(body) {
+			gatewayConfigReply(w, nil, freshconfig.ErrInvalid)
+			return
+		}
+		var q freshconfig.GroupRequest
+		if json.Unmarshal(body, &q) != nil || freshconfig.ValidateGroupRequest(parts[1], q) != nil {
+			gatewayConfigReply(w, nil, freshconfig.ErrInvalid)
+			return
+		}
+		service := a.gatewayService(w)
+		if service == nil {
+			return
+		}
+		operation, err := service.SaveGroup(r.Context(), parts[1], q)
+		gatewayConfigReply(w, operation, err)
+	case parts[0] == "rules" && len(parts) == 2:
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		body, ok := gatewayConfigBody(w, r)
+		if !ok {
+			return
+		}
+		if !exactObject(body, "requestId", "expected", "rules") || !exactExpected(body) {
+			gatewayConfigReply(w, nil, freshconfig.ErrInvalid)
+			return
+		}
+		var q freshconfig.FamilyRequest
+		if json.Unmarshal(body, &q) != nil || freshconfig.ValidateFamilyRequest(parts[1], q) != nil {
+			gatewayConfigReply(w, nil, freshconfig.ErrInvalid)
+			return
+		}
+		service := a.gatewayService(w)
+		if service == nil {
+			return
+		}
+		operation, err := service.SaveFamily(r.Context(), parts[1], q)
+		gatewayConfigReply(w, operation, err)
+	case parts[0] == "operations" && (len(parts) == 2 || len(parts) == 3 && parts[2] == "reconcile"):
+		a.gatewayConfigOperation(w, r, parts)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// gatewayConfigOperation inspects the ORIGINAL operation only. Reconcile asks the
+// source for its record and never repeats the write.
+func (a *freshApplication) gatewayConfigOperation(w http.ResponseWriter, r *http.Request, parts []string) {
+	reconcile := len(parts) == 3
+	method := http.MethodGet
+	if reconcile {
+		method = http.MethodPost
+	}
+	if r.Method != method {
+		methodNotAllowed(w, method)
+		return
+	}
+	if reconcile {
+		b, ok := gatewayConfigBody(w, r)
+		if !ok {
+			return
+		}
+		if !exactObject(b) {
+			gatewayConfigReply(w, nil, freshconfig.ErrInvalid)
+			return
+		}
+	}
+	service := a.gatewayService(w)
+	if service == nil {
+		return
+	}
+	operation, err := service.Operation(r.Context(), parts[1], reconcile)
+	gatewayConfigReply(w, operation, err)
+}
+
+// gatewayService reports this installation's page service, or writes the closed
+// refusal once.
+func (a *freshApplication) gatewayService(w http.ResponseWriter) *freshconfig.Service {
+	if a.gatewayConfig == nil {
+		gatewayConfigReply(w, nil, cpa.ErrProofUnavailable)
+		return nil
+	}
+	return a.gatewayConfig
+}
+
+func methodNotAllowed(w http.ResponseWriter, allowed string) {
+	w.Header().Set("Allow", allowed)
+	w.WriteHeader(http.StatusMethodNotAllowed)
+}
+
+// exactExpected proves the nested expectation object is closed as well: a group
+// save may not smuggle a source hash or a revision CPA does not accept.
+func exactExpected(body []byte) bool {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(body, &raw) != nil {
+		return false
+	}
+	return exactObject(raw["expected"], "generation", "baseline")
+}
