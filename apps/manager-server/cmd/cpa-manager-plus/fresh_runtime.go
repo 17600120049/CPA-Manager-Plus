@@ -29,6 +29,14 @@ const (
 	// deadline. An entry younger than this window is treated as still in flight
 	// and is never resolved behind the submitter's back.
 	freshRuntimeOperationSettleWindow = 45 * time.Second
+	// A submitted mutation and both of its durable follow-ups (desired lifecycle
+	// and terminal journal entry) must survive a browser disconnect. The budget
+	// stays above the Manager's own Runtime call timeout
+	// (internal/service/runtime/embedded.go:30, 30s) and the Supervisor's drain
+	// window on shutdown (apps/runtime-supervisor/cmd/cpamp-runtime-supervisor/
+	// main.go:27, 10s), and below the settle window above so a concurrent poll
+	// never resolves a mutation that is still running.
+	freshRuntimeMutationBudget = 40 * time.Second
 	// Runtime Protocol v1 exposes no lifecycle operation lookup and this resource
 	// must never resend a mutation, so an entry that is still non-terminal after
 	// this window can no longer be confirmed. The bounded rule makes it terminal
@@ -573,9 +581,14 @@ func (a *freshApplication) submitRuntimeOperation(w http.ResponseWriter, r *http
 	if operationType == model.RuntimeOperationStart && observed.ActiveGatewayArtifact != nil {
 		expectedArtifact = observed.ActiveGatewayArtifact.ArtifactID
 	}
-	// The mutation runs without the journal mutex: operation polling must stay
-	// responsive while a lifecycle call (a restart included) is in flight.
-	result, mutationErr := a.submitRuntimeMutation(r.Context(), operationType, model.RuntimeMutationRequest{
+	// Detach the mutation and its durable follow-up from HTTP cancellation. The
+	// explicit budget leaves accepted Supervisor work bounded while giving the
+	// desired lifecycle and terminal journal writes time to complete.
+	mutationContext, cancelMutation := context.WithTimeout(
+		context.WithoutCancel(r.Context()), freshRuntimeMutationBudget,
+	)
+	defer cancelMutation()
+	result, mutationErr := a.submitRuntimeMutation(mutationContext, operationType, model.RuntimeMutationRequest{
 		OperationID: reserved.OperationID, ExpectedRuntimeIdentity: observed.Identity,
 		ExpectedRuntimeGeneration: observed.Generation, ExpectedActiveArtifactID: expectedArtifact,
 	})
@@ -608,7 +621,7 @@ func (a *freshApplication) submitRuntimeOperation(w http.ResponseWriter, r *http
 	// operation did not reach that lifecycle, so leave the reconciler's desired
 	// state unchanged.
 	if conflictCode == "" && outcome.State != freshRuntimeStateFailed {
-		if err := a.applyRuntimeDesiredLifecycle(r.Context(), operationType); err != nil {
+		if err := a.applyRuntimeDesiredLifecycle(mutationContext, operationType); err != nil {
 			// The Runtime side effect may already have happened, but without the
 			// durable desired lifecycle the reconciler cannot converge on it.
 			desiredWriteFailed = true
@@ -616,7 +629,7 @@ func (a *freshApplication) submitRuntimeOperation(w http.ResponseWriter, r *http
 			outcome.FailureCode = "desired_lifecycle_unavailable"
 		}
 	}
-	if err := a.finalizeRuntimeOperation(r.Context(), outcome); err != nil {
+	if err := a.finalizeRuntimeOperation(mutationContext, outcome); err != nil {
 		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "operation_journal_unavailable")
 		return
 	}

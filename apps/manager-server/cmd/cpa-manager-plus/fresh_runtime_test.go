@@ -429,6 +429,77 @@ func (c *freshRuntimeBlockingClient) Start(_ context.Context, request model.Runt
 	return freshRuntimeResult(request, model.RuntimeOperationStart, model.RuntimeOperationSucceeded), nil
 }
 
+type freshRuntimeContextAwareClient struct {
+	*freshRuntimeTestClient
+	started chan struct{}
+	release chan struct{}
+}
+
+func (c *freshRuntimeContextAwareClient) Restart(ctx context.Context, request model.RuntimeMutationRequest) (model.RuntimeOperationResult, error) {
+	close(c.started)
+	select {
+	case <-c.release:
+		return freshRuntimeResult(request, model.RuntimeOperationRestart, model.RuntimeOperationSucceeded), nil
+	case <-ctx.Done():
+		return model.RuntimeOperationResult{}, ctx.Err()
+	}
+}
+
+// A disconnected browser must not cancel the mutation's durable follow-up:
+// the desired lifecycle and terminal journal result still need to be written.
+func TestFreshRuntimeMutationPersistsAfterRequestCancellation(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	client := &freshRuntimeContextAwareClient{
+		freshRuntimeTestClient: &freshRuntimeTestClient{
+			status: freshRuntimeReadyStatus(model.RuntimeCapabilityRestart),
+		},
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	app.runtime = client
+	app.runtimeExternal = nil
+	op := freshRuntimeProductCompleteOperation(t, app)
+	if _, err := app.runtimeSettings.SetEmbeddedRuntimeDesiredLifecycle(t.Context(), model.EmbeddedRuntimeDesiredStopped); err != nil {
+		t.Fatal(err)
+	}
+
+	requestContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	submitRequest := freshRuntimeRequest(t, "restart", "restart-cancelled")
+	submitRequest = submitRequest.WithContext(requestContext)
+	submitted := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		app.runtimeOperations(response, submitRequest, op, "runtime/operations")
+		submitted <- response
+	}()
+	select {
+	case <-client.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("restart mutation never reached the Runtime client")
+	}
+	cancel()
+	close(client.release)
+
+	select {
+	case response := <-submitted:
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"state":"succeeded"`) {
+			t.Fatalf("cancelled restart = %d body=%s", response.Code, response.Body.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelled restart never completed")
+	}
+	entry := freshRuntimeJournalOperation(t, app, "restart-cancelled")
+	if entry.State != freshRuntimeStateSucceeded {
+		t.Fatalf("cancelled restart entry = %+v", entry)
+	}
+	desired, found, err := app.runtimeSettings.LoadEmbeddedRuntimeDesiredState(t.Context())
+	if err != nil || !found || desired.DesiredLifecycle != model.EmbeddedRuntimeDesiredRunning {
+		t.Fatalf("cancelled restart desired lifecycle = %+v found=%v err=%v", desired, found, err)
+	}
+}
+
 // Operation polling must answer while a lifecycle mutation is in flight: the
 // journal mutex is never held across the Runtime network call.
 func TestFreshRuntimePollAnswersWhileMutationIsInFlight(t *testing.T) {
