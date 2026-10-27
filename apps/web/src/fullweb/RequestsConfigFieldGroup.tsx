@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { configurationText as c } from '../i18n/configurationWorkspace';
 import type { GatewayFieldMeta } from './gatewayCatalog';
 import type { RetryDraftDiff } from './FreshRetryConfiguration';
 import { PublicApiError, type PublicApiClient } from './publicApi';
@@ -8,6 +9,14 @@ type Expected = { sourceId: string; generation: string; revision: number; sha256
 type FieldView = { value?: unknown; presence: string; editable: boolean; expected?: Expected; operation?: { requestId?: string; state: string }; reason?: string };
 
 function resource(path: string) { return `gateway/config/${path.split('.').join('/')}`; }
+
+// Every field-level message is a translated workspace string, never a server
+// code or an English literal.
+const fieldErrorText: Record<string, Parameters<typeof c>[0]> = {
+  invalid: 'fieldInvalid',
+  read_failed: 'fieldReadFailed',
+  write_failed: 'fieldWriteFailed',
+};
 // 16 random bytes: the Manager journal key and Runtime operation ID must be
 // 32 lowercase hex characters, and a request ID is never reused.
 function requestId() {
@@ -56,13 +65,20 @@ export function RequestsConfigFieldGroup({
     return () => { cancelled = true; };
   }, [client, credential, editable, onUnauthorized]);
 
+  const emitted = useRef('');
   useEffect(() => {
-    onDraftChange(editable.map((field) => {
+    const diffs = editable.map((field) => {
       const view = views[field.path];
       const draft = drafts[field.path];
       const invalid = field.type === 'integer' && (draft === '' || !Number.isInteger(Number(draft)) || Number(draft) < (field.min ?? 0) || Number(draft) > (field.max ?? Number.MAX_SAFE_INTEGER));
       return { path: field.path, label: field.label, oldVal: String(view?.value ?? ''), newVal: String(draft ?? ''), dirty: view?.value !== draft, invalid };
-    }));
+    });
+    // The same draft state is reported once: the workspace re-derives its
+    // catalog from these diffs, so a repeated report would re-render this group.
+    const signature = JSON.stringify(diffs);
+    if (signature === emitted.current) return;
+    emitted.current = signature;
+    onDraftChange(diffs);
   }, [drafts, editable, onDraftChange, views]);
 
   const read = async (field: GatewayFieldMeta) => {
@@ -123,18 +139,18 @@ export function RequestsConfigFieldGroup({
   };
 
   return <section className="card gateway-requests-group" data-testid="gateway-requests-group">
-    <div className="card-head"><div><h2>Requests streaming</h2><p className="muted">CPA-owned request timing and passthrough controls.</p></div></div>
+    <div className="card-head"><div><h2>{c('requestsStreamingTitle')}</h2><p className="muted">{c('requestsStreamingHelp')}</p></div></div>
     {editable.map((field) => {
       const view = views[field.path];
       const draft = drafts[field.path] ?? (field.type === 'boolean' ? false : '');
       const invalid = field.type === 'integer' && (draft === '' || !Number.isInteger(Number(draft)) || Number(draft) < (field.min ?? 0) || Number(draft) > (field.max ?? Number.MAX_SAFE_INTEGER));
       return <div className="config-field" key={field.path} data-testid={`config-field-${field.path}`}>
-        <div><label htmlFor={`config-input-${field.path}`}>{field.label}</label><code>{field.path}</code><small>{view?.operation?.state === 'unknown' ? 'UNKNOWN: reconcile original operation before retrying.' : view?.presence === 'unknown' ? 'UNKNOWN' : view?.reason || ''}</small></div>
+        <div><label htmlFor={`config-input-${field.path}`}>{field.label}</label><code>{field.path}</code><small>{view?.operation?.state === 'unknown' ? c('fieldOperationUnknown') : view?.presence === 'unknown' ? c('fieldValueUnknown') : view?.reason || ''}</small></div>
         <div className="field-control">
           {field.type === 'boolean' ? <input id={`config-input-${field.path}`} data-testid={`config-input-${field.path}`} type="checkbox" checked={Boolean(draft)} disabled={busy[field.path] || view?.operation?.state === 'unknown'} onChange={(event) => setDrafts((current) => ({ ...current, [field.path]: event.target.checked }))} /> : <input id={`config-input-${field.path}`} data-testid={`config-input-${field.path}`} type="number" min={field.min} max={field.max} value={String(draft)} disabled={busy[field.path] || view?.operation?.state === 'unknown'} onChange={(event) => setDrafts((current) => ({ ...current, [field.path]: event.target.value }))} />}
-          <button className="btn btn-primary btn-sm" data-testid={`config-save-${field.path}`} disabled={busy[field.path] || invalid || !view?.expected || view?.operation?.state === 'unknown'} onClick={() => void save(field)}>Save</button>
-          {view?.operation?.state === 'unknown' && view.operation.requestId && <button className="btn btn-sm" data-testid={`config-reconcile-${field.path}`} disabled={busy[field.path]} onClick={() => void reconcile(field)}>Reconcile</button>}
-          {errors[field.path] && <span role="alert">{errors[field.path]}</span>}
+          <button className="btn btn-primary btn-sm" data-testid={`config-save-${field.path}`} disabled={busy[field.path] || invalid || !view?.expected || view?.operation?.state === 'unknown'} onClick={() => void save(field)}>{c('fieldSave')}</button>
+          {view?.operation?.state === 'unknown' && view.operation.requestId && <button className="btn btn-sm" data-testid={`config-reconcile-${field.path}`} disabled={busy[field.path]} onClick={() => void reconcile(field)}>{c('fieldReconcile')}</button>}
+          {errors[field.path] && <span role="alert">{c(fieldErrorText[errors[field.path]] || 'fieldWriteFailed')}</span>}
         </div>
       </div>;
     })}

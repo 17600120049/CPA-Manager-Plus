@@ -281,8 +281,10 @@ describe('FreshGatewayWorkspace component', () => {
     await mount();
     await click('gateway-tab-' + tab);
     await change('gateway-search-input', 'bootstrap');
+    // The field is editable, so the grouped editor is where a global search
+    // surfaces it; the reference row only carries non-editable paths.
     expect(
-      renderer.root.findAllByProps({ id: 'field-requests.streaming.bootstrap-retries' })
+      renderer.root.findAllByProps({ id: 'config-input-requests.streaming.bootstrap-retries' })
     ).toHaveLength(1);
     expect(node('fresh-managed-retry').props.hidden).toBe(true);
   });
