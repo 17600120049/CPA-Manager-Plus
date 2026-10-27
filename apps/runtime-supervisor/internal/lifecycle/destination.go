@@ -157,6 +157,13 @@ func (d *destination) load() (*DestinationRequest, error) {
 	return &r, nil
 }
 
+// destinationIntent is the secret-free journal identity of one destination
+// request. Not even a hash of keys enters the journal.
+func destinationIntent(authority journal.Authority, r DestinationRequest) journal.Intent {
+	public, _ := json.Marshal([]string{string(r.ExpectedActiveArtifactID), r.SourceIdentity, r.SourceClass})
+	return journal.Intent{OperationID: r.OperationID, OperationType: "stage_destination", ExpectedRuntimeIdentity: r.ExpectedRuntimeIdentity, ExpectedRuntimeGeneration: r.ExpectedRuntimeGeneration, RequestFingerprint: sha256.Sum256(public)}
+}
+
 func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (journal.Operation, error) {
 	if err := r.Validate(); err != nil {
 		return journal.Operation{}, err
@@ -169,10 +176,7 @@ func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (
 	if e.closed.Load() || e.destination == nil {
 		return journal.Operation{}, ErrPersistenceUnavailable
 	}
-	// Fingerprint public identity only. Not even a hash of keys enters journal.
-	public, _ := json.Marshal([]string{string(r.ExpectedActiveArtifactID), r.SourceIdentity, r.SourceClass})
-	intent := journal.Intent{OperationID: r.OperationID, OperationType: "stage_destination", ExpectedRuntimeIdentity: r.ExpectedRuntimeIdentity, ExpectedRuntimeGeneration: r.ExpectedRuntimeGeneration, RequestFingerprint: sha256.Sum256(public)}
-	op, found, err := e.journal.Resolve(ctx, e.authority, intent)
+	op, found, err := e.journal.Resolve(ctx, e.authority, destinationIntent(e.authority, r))
 	if err != nil {
 		return journal.Operation{}, submissionError(err)
 	}
@@ -182,8 +186,8 @@ func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (
 	}
 	// A retried attempt stages the identical destination under a fresh operation
 	// ID, because the journal never resumes a terminal operation. Only terminal
-	// failure of the superseded attempt makes that safe; the replaced directory
-	// is retired, never deleted.
+	// failure of the superseded attempt, with no child it could have launched,
+	// makes that safe; the replaced directory is retired, never deleted.
 	supersedes := ""
 	if stored != nil && !reflect.DeepEqual(*stored, r) {
 		if err := e.supersedeDestination(ctx, *stored, r); err != nil {
@@ -214,7 +218,7 @@ func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (
 	if err := refreshExpectedActiveArtifact(e.artifact, e.currentDescriptorLocked(), r.ExpectedActiveArtifactID); err != nil {
 		return journal.Operation{}, err
 	}
-	op, created, err := e.journal.Begin(ctx, e.authority, intent)
+	op, created, err := e.journal.Begin(ctx, e.authority, destinationIntent(e.authority, r))
 	if err != nil {
 		e.failRecoveryForAmbiguousBegin(err)
 		return journal.Operation{}, submissionError(err)
@@ -248,11 +252,18 @@ func (e *Executor) StageDestination(ctx context.Context, r DestinationRequest) (
 // refusing that here would make the install uncompletable, while admitting it
 // unconditionally would let any caller displace a live destination.
 //
-// Admission therefore requires the identical destination under a different
-// operation ID and terminal failure evidence for the whole superseded attempt:
-// a failed stage published nothing usable, and a successful stage whose Start
-// is terminally failed never owned a running child. A missing, accepted,
-// running or successful Start is an operator decision, not a silent retry.
+// Admission requires the identical destination under a different operation ID
+// and terminal evidence that the superseded attempt never owned a child:
+// - its stage operation must be terminal, and
+// - its Start operation must be absent or terminally failed.
+// A stage may publish its live root and still be recorded as failed, because the
+// final directory sync can fail after the rename. Absent Start evidence is only
+// safe for such a stage, and only because the caller's process gate runs before
+// any publish: a Start that is accepted, running or succeeded, or a live owned
+// child, is an operator decision rather than a silent retry. A successful stage
+// always needs its Start to be terminally failed, because that attempt may own
+// the child the retry would replant.
+//
 // The Start operation ID of a destination attempt is that attempt's stage ID
 // followed by ":start", the same derivation the Manager submits.
 func (e *Executor) supersedeDestination(ctx context.Context, stored, r DestinationRequest) error {
@@ -262,23 +273,58 @@ func (e *Executor) supersedeDestination(ctx context.Context, stored, r Destinati
 		return journal.ErrOperationIDConflict
 	}
 	stage, err := e.journal.Get(ctx, e.authority.RuntimeIdentity, stored.OperationID)
-	if err != nil {
-		return ErrPersistenceUnavailable
-	}
-	if stage.State == journal.StateFailed {
-		return nil
-	}
-	if stage.State != journal.StateSucceeded {
-		return journal.ErrOperationStateConflict
-	}
-	start, err := e.journal.Get(ctx, e.authority.RuntimeIdentity, stored.OperationID+":start")
 	if errors.Is(err, journal.ErrOperationNotFound) {
 		return journal.ErrOperationStateConflict
 	}
 	if err != nil {
 		return ErrPersistenceUnavailable
 	}
-	if start.OperationType != "start" || start.State != journal.StateFailed {
+	if stage.OperationType != "stage_destination" || (stage.State != journal.StateFailed && stage.State != journal.StateSucceeded) {
+		return journal.ErrOperationStateConflict
+	}
+	start, err := e.journal.Get(ctx, e.authority.RuntimeIdentity, stored.OperationID+":start")
+	startFailed := false
+	switch {
+	case errors.Is(err, journal.ErrOperationNotFound):
+		// No Start was ever submitted for this attempt.
+	case err != nil:
+		return ErrPersistenceUnavailable
+	case start.OperationType != "start":
+		return journal.ErrOperationStateConflict
+	case start.State == journal.StateFailed:
+		startFailed = true
+	default:
+		return journal.ErrOperationStateConflict
+	}
+	if stage.State == journal.StateSucceeded && !startFailed {
+		return journal.ErrOperationStateConflict
+	}
+	return nil
+}
+
+// requireStagedDestination refuses to spawn from a destination whose stage
+// operation is not durably succeeded. The private profile enables no destination
+// and is unaffected. Combined with the process gate it also covers a live owned
+// child, so nothing is replanted under a running process.
+func (e *Executor) requireStagedDestination(ctx context.Context) error {
+	if e.destination == nil {
+		return nil
+	}
+	staged, err := e.destination.load()
+	if err != nil {
+		return err
+	}
+	if staged == nil {
+		return nil
+	}
+	stage, err := e.journal.Get(ctx, e.authority.RuntimeIdentity, staged.OperationID)
+	if errors.Is(err, journal.ErrOperationNotFound) {
+		return journal.ErrOperationStateConflict
+	}
+	if err != nil {
+		return ErrPersistenceUnavailable
+	}
+	if stage.OperationType != "stage_destination" || stage.State != journal.StateSucceeded {
 		return journal.ErrOperationStateConflict
 	}
 	return nil

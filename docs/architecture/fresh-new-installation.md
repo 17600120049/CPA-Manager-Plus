@@ -221,14 +221,19 @@ browser retries at the same revision cannot fork attempts. The legacy
 migration uses the same counter.
 
 The Runtime admits a replacement stage only under a new operation ID, only for
-the identical destination, and only with terminal failure evidence for the
-whole previous attempt: a failed stage published nothing usable, and a stage
-whose Start is terminally failed never owned a running child. A missing,
-accepted, running or successful Start, a content change, or a running CPA child
-stays a conflict. The superseded directory is renamed to a content-addressed
-`.destination-retired-<digest>` sibling, never deleted and never left as the
-live destination; a retry that fails to publish restores it, so a retry can
-neither orphan nor displace the previous attempt.
+the identical destination, and only with terminal evidence that the superseded
+attempt never owned a child. Its stage operation must be terminal, and its Start
+operation must be absent or terminally failed; an accepted, running or
+successful Start, a content change, or a live owned child stays a conflict. A
+stage that succeeded always needs its Start terminally failed, because that
+attempt may own the child the retry would replant. A stage may publish its live
+root and still be recorded as failed, because the final directory sync runs
+after the rename; that is why `Start` refuses any destination whose stage
+operation is not `succeeded`, and why absence of Start evidence is the only
+proof that such a root is free. The superseded directory is renamed to a
+content-addressed `.destination-retired-<digest>` sibling, never deleted and
+never left as the live destination; a retry that fails to publish restores it,
+so a retry can neither orphan nor displace the previous attempt.
 
 ### Existing-install migration
 
