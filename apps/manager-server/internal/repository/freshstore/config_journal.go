@@ -199,10 +199,19 @@ func validFieldJournal(path string, journal *FieldJournal) bool {
 		}
 		switch operation.State {
 		case "unknown":
-			if operation.Receipt != "" {
+			if operation.Receipt != "" || operation.Code != "" {
 				return false
 			}
 		case "persisted", "recovered":
+			if operation.Code != "" {
+				return false
+			}
+		case "failed":
+			// A definite failure: the original never landed, so it carries a
+			// reason and no H1 receipt, and it is never replayed.
+			if operation.Code == "" || operation.Receipt != "" || operation.ParentID != "" {
+				return false
+			}
 		default:
 			return false
 		}
@@ -309,10 +318,16 @@ func validateConfigOperationUpdate(old, next ConfigOperation) error {
 			return ErrConflict
 		}
 	}
+	if next.Code != old.Code {
+		// A code is only ever attached by the transition to a definite failure.
+		if old.State != "unknown" || next.State != "failed" || next.Code == "" {
+			return ErrConflict
+		}
+	}
 	if next.State == old.State {
 		return nil
 	}
-	if old.State != "unknown" || (next.State != "persisted" && next.State != "recovered") {
+	if old.State != "unknown" || (next.State != "persisted" && next.State != "recovered" && next.State != "failed") {
 		return ErrConflict
 	}
 	if old.ParentID != "" {

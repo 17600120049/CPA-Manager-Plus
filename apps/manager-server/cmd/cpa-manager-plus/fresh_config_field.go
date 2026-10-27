@@ -85,6 +85,10 @@ func configReply(w http.ResponseWriter, v any, e error) {
 		code, status = "config_key_writer_not_isolated", http.StatusConflict
 	case errors.Is(e, cpa.ErrApplyUnknown):
 		code, status = "original_operation_unknown", http.StatusConflict
+	case errors.Is(e, freshconfig.ErrWriteFailed):
+		// A definite terminal failure: the original never landed and the field is
+		// writable again, so this is not an unknown-result conflict.
+		code, status = "config_field_write_failed", http.StatusUnprocessableEntity
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

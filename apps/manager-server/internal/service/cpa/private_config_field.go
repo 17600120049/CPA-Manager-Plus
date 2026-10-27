@@ -159,10 +159,30 @@ func (t *Transport) WriteConfigFieldValue(ctx context.Context, management, path 
 		return ErrProofUnavailable
 	}
 	code, _, err := t.request(ctx, http.MethodPut, endpoint, management, payload)
-	if err != nil || (code != http.StatusOK && code != http.StatusNoContent) {
+	if err != nil {
 		return ErrApplyUnknown
 	}
-	return nil
+	if code == http.StatusOK || code == http.StatusNoContent {
+		return nil
+	}
+	if definiteRejection(code) {
+		return ErrWriteRejected
+	}
+	return ErrApplyUnknown
+}
+
+// definiteRejection reports a 4xx the upstream would answer identically again:
+// the request never landed, so its result is a known failure, not an unknown one.
+// Timeouts and rate limits stay unknown because the write may still be in flight.
+func definiteRejection(code int) bool {
+	if code < 400 || code >= 500 {
+		return false
+	}
+	switch code {
+	case http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests:
+		return false
+	}
+	return true
 }
 
 // HasRuntimeJournal reports whether this Transport reserves through the private

@@ -2,6 +2,7 @@ package freshconfig
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strconv"
 	"time"
@@ -167,13 +168,30 @@ func (s *Service) saveManaged(ctx context.Context, path string, q FieldRequest, 
 		return operation, err
 	}
 	if err = s.wire.WriteConfigFieldValue(ctx, management, path, value); err != nil {
+		if errors.Is(err, cpa.ErrWriteRejected) {
+			// A definite refusal: nothing landed, so the original is terminal and
+			// the field is writable again without a replay.
+			return s.failManagedOperation(ctx, path, operation, "write_rejected")
+		}
 		return operation, cpa.ErrApplyUnknown
 	}
 	return s.reconcileManaged(ctx, path, operation)
 }
 
-// reconcileManaged verifies the written scalar by readback and only then records
-// the operation persisted. It never repeats the PUT.
+// failManagedOperation records a definite terminal failure of the ORIGINAL
+// operation. It never repeats the PUT: a failure is evidence, not a retry.
+func (s *Service) failManagedOperation(ctx context.Context, path string, operation freshstore.ConfigOperation, code string) (freshstore.ConfigOperation, error) {
+	next := operation
+	next.State, next.Code = "failed", code
+	if err := s.updateOperation(ctx, path, operation, next); err != nil {
+		return operation, err
+	}
+	return next, ErrWriteFailed
+}
+
+// reconcileManaged resolves an unknown managed write by reading the scalar back:
+// an identical value is the persisted original, and a different value proves the
+// write never landed, which is a terminal failure. It never repeats the PUT.
 func (s *Service) reconcileManaged(ctx context.Context, path string, operation freshstore.ConfigOperation) (freshstore.ConfigOperation, error) {
 	if operation.State != "unknown" {
 		return operation, nil
@@ -187,7 +205,7 @@ func (s *Service) reconcileManaged(ctx context.Context, path string, operation f
 		return operation, cpa.ErrApplyUnknown
 	}
 	if presence != "present" || !reflect.DeepEqual(value, operation.Value) {
-		return operation, cpa.ErrApplyUnknown
+		return s.failManagedOperation(ctx, path, operation, "write_not_applied")
 	}
 	next := operation
 	next.State = "persisted"

@@ -21,6 +21,11 @@ import (
 var ErrInvalid = errors.New("invalid config field request")
 var ErrNotFound = errors.New("config field operation not found")
 
+// ErrWriteFailed is a definite, terminal failure: the original operation is known
+// not to have landed, its journal entry names why, and the field is writable
+// again without ever resending that operation.
+var ErrWriteFailed = errors.New("config field write did not land")
+
 // Expected is the exact private source the caller observed. A write is refused
 // unless the same source is still current, so no field is written twice.
 type Expected struct {

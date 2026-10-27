@@ -54,7 +54,9 @@ type FieldJournal struct {
 }
 
 // ConfigOperation is one single-field write attempt. RequestID is the Public API
-// request ID and the journal key; Field is the canonical path it writes.
+// request ID and the journal key; Field is the canonical path it writes. State
+// "failed" is terminal: the original write is known not to have landed, its Code
+// names why, and the field is writable again without ever resending it.
 type ConfigOperation struct {
 	ParentID      string `json:"parentId,omitempty"`
 	ClaimRevision uint64 `json:"claimRevision,omitempty"`
@@ -64,6 +66,7 @@ type ConfigOperation struct {
 	HTTP200       bool   `json:"http200,omitempty"`
 	Receipt       string `json:"receipt,omitempty"`
 	Field         string `json:"field,omitempty"`
+	Code          string `json:"code,omitempty"`
 	RequestID     string `json:"requestId"`
 	Value         any    `json:"value"`
 	SourceID      string `json:"sourceId"`

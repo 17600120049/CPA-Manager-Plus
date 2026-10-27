@@ -47,6 +47,10 @@ type managedFieldCPA struct {
 	gets       map[string]int
 	unauthed   int
 	putStatus  int
+	// rejectStatus answers with a definite refusal and stores nothing.
+	rejectStatus int
+	// failStatus answers with a 5xx and stores nothing: the write never landed.
+	failStatus int
 }
 
 func newManagedFieldCPA(management string) *managedFieldCPA {
@@ -99,10 +103,20 @@ func (m *managedFieldCPA) serve(t *testing.T) *httptest.Server {
 				return
 			}
 			m.mu.Lock()
-			m.values[path] = value
 			m.puts[path]++
-			status := m.putStatus
+			status, reject, fail := m.putStatus, m.rejectStatus, m.failStatus
+			if reject == 0 && fail == 0 {
+				m.values[path] = value
+			}
 			m.mu.Unlock()
+			if reject != 0 {
+				w.WriteHeader(reject)
+				return
+			}
+			if fail != 0 {
+				w.WriteHeader(fail)
+				return
+			}
 			if status != 0 && status != http.StatusOK {
 				// The write landed; only the reply was lost.
 				w.WriteHeader(status)
@@ -660,4 +674,98 @@ func bareManagedFieldStore(t *testing.T, mutate func(*bootstrap.FreshStrategyChe
 		t.Fatal(err)
 	}
 	return st
+}
+
+// TestManagedConfigFieldRejectionIsTerminal proves a definite upstream refusal:
+// CPA rejects the write with a 4xx, nothing lands, the original operation becomes
+// a terminal failure with a code, and the field is writable again.
+func TestManagedConfigFieldRejectionIsTerminal(t *testing.T) {
+	s, destination, st, _, _, _, _ := managedFieldFixture(t)
+	path := "requests.streaming.keepalive-seconds"
+	destination.mu.Lock()
+	destination.rejectStatus = http.StatusUnprocessableEntity
+	destination.mu.Unlock()
+	id := strings.Repeat("e1", 16)
+	operation, err := managedFieldRequest(t, s, path, id, "20")
+	if !errors.Is(err, ErrWriteFailed) {
+		t.Fatalf("definite rejection returned %v, want a terminal failure", err)
+	}
+	if operation.State != "failed" || operation.Code != "write_rejected" || operation.RequestID != id {
+		t.Fatalf("rejected operation %+v, want failed/write_rejected", operation)
+	}
+	if n := destination.writes(path); n != 1 {
+		t.Fatalf("%d attempts after a definite rejection, want one", n)
+	}
+	if value, ok := destination.written(path); ok {
+		t.Fatalf("a rejected write stored %v", value)
+	}
+	journal := fieldJournalOf(t, st, path)
+	if journal == nil || journal.Operations[id].State != "failed" || journal.Operations[id].Code != "write_rejected" {
+		t.Fatalf("journal %+v, want a terminal failed original", journal)
+	}
+	view, err := s.ReadField(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !view.Editable || view.Reason != "" {
+		t.Fatalf("a definite failure locked the field: %+v", view)
+	}
+	// The failure is terminal evidence, not a lock: a new request ID may write.
+	destination.mu.Lock()
+	destination.rejectStatus = 0
+	destination.mu.Unlock()
+	next, err := managedFieldRequest(t, s, path, strings.Repeat("e2", 16), "21")
+	if err != nil || next.State != "persisted" {
+		t.Fatalf("write after a definite failure: %+v %v", next, err)
+	}
+	if n := destination.writes(path); n != 2 {
+		t.Fatalf("%d attempts after the retry, want two", n)
+	}
+}
+
+// TestManagedConfigFieldLostRequestResolvesAsNotApplied proves an unknown write
+// that never landed is resolved by readback into a terminal failure, without a
+// second PUT, and that the field is writable again afterwards.
+func TestManagedConfigFieldLostRequestResolvesAsNotApplied(t *testing.T) {
+	s, destination, st, restarted, _, endpoint, _ := managedFieldFixture(t)
+	path := "requests.nonstream-keepalive-interval"
+	destination.mu.Lock()
+	destination.failStatus = http.StatusBadGateway
+	destination.mu.Unlock()
+	id := strings.Repeat("e3", 16)
+	operation, err := managedFieldRequest(t, s, path, id, "45")
+	if !errors.Is(err, cpa.ErrApplyUnknown) || operation.State != "unknown" {
+		t.Fatalf("a write that never landed returned %+v %v", operation, err)
+	}
+	if value, ok := destination.written(path); ok {
+		t.Fatalf("the failed write stored %v", value)
+	}
+	destination.mu.Lock()
+	destination.failStatus = 0
+	destination.mu.Unlock()
+	// The unknown original is resolved by reading the scalar back, never resent.
+	restartService := New(restarted, s.target)
+	restartService.EnableManaged(endpoint)
+	resolved, err := restartService.OperationField(t.Context(), path, id, true)
+	if !errors.Is(err, ErrWriteFailed) {
+		t.Fatalf("resolve returned %v, want a terminal failure", err)
+	}
+	if resolved.State != "failed" || resolved.Code != "write_not_applied" || resolved.RequestID != id {
+		t.Fatalf("resolved to %+v, want failed/write_not_applied", resolved)
+	}
+	if n := destination.writes(path); n != 1 {
+		t.Fatalf("%d attempts after the resolve, want one", n)
+	}
+	journal := fieldJournalOf(t, st, path)
+	if journal == nil || journal.Operations[id].State != "failed" || journal.Operations[id].Code != "write_not_applied" {
+		t.Fatalf("journal %+v, want a terminal failed original", journal)
+	}
+	// A resolved failure releases the field for a new, independent write.
+	next, err := managedFieldRequest(t, restartService, path, strings.Repeat("e4", 16), "45")
+	if err != nil || next.State != "persisted" {
+		t.Fatalf("write after a resolved failure: %+v %v", next, err)
+	}
+	if n := destination.writes(path); n != 2 {
+		t.Fatalf("%d attempts after the new write, want two", n)
+	}
 }
