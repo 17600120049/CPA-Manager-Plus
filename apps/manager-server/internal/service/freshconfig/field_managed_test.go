@@ -769,3 +769,58 @@ func TestManagedConfigFieldLostRequestResolvesAsNotApplied(t *testing.T) {
 		t.Fatalf("%d attempts after the new write, want two", n)
 	}
 }
+
+// TestManagedConfigFieldCrossFieldExpectedStaysValid proves the managed expected
+// revision belongs to ONE field: saving a field, or any other Fresh record update,
+// must not turn another field's page-load expectation into a conflict.
+func TestManagedConfigFieldCrossFieldExpectedStaysValid(t *testing.T) {
+	s, destination, st, _, _, _, _ := managedFieldFixture(t)
+	first, second := "requests.streaming.keepalive-seconds", "requests.streaming.bootstrap-retries"
+	// One page load observes both fields before either is written.
+	firstView, err := s.ReadField(t.Context(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondView, err := s.ReadField(t.Context(), second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstView.Expected == nil || secondView.Expected == nil {
+		t.Fatal("a field was not editable on the managed profile")
+	}
+	// Another owner's write moves the Fresh record revision, not a field journal.
+	record, err := st.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Update(t.Context(), record.Operation.Identity, record.Operation.Revision, func(*freshstore.Record) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SaveField(t.Context(), first, FieldRequest{RequestID: strings.Repeat("f1", 16), Value: []byte("20"), Expected: *firstView.Expected}); err != nil {
+		t.Fatalf("the first field's own expectation was refused: %v", err)
+	}
+	operation, err := s.SaveField(t.Context(), second, FieldRequest{RequestID: strings.Repeat("f2", 16), Value: []byte("3"), Expected: *secondView.Expected})
+	if err != nil {
+		t.Fatalf("saving another field conflicted: %v", err)
+	}
+	if operation.State != "persisted" {
+		t.Fatalf("second field operation %+v", operation)
+	}
+	if written, ok := destination.written(second); !ok || written != 3 {
+		t.Fatalf("second field destination %v (present=%v)", written, ok)
+	}
+	// The same field's expectation is still a real CAS: the save moved it.
+	next, err := s.ReadField(t.Context(), second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Expected == nil || next.Expected.Revision != secondView.Expected.Revision+1 {
+		t.Fatalf("expected revision %+v, want one step past the save", next.Expected)
+	}
+	if _, err = s.SaveField(t.Context(), second, FieldRequest{RequestID: strings.Repeat("f3", 16), Value: []byte("4"), Expected: *secondView.Expected}); !errors.Is(err, cpa.ErrSourceConflict) {
+		t.Fatalf("a stale expectation for the same field was accepted: %v", err)
+	}
+	if n := destination.writes(second); n != 1 {
+		t.Fatalf("%d writes for the second field, want one", n)
+	}
+}

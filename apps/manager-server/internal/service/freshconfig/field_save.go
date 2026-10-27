@@ -151,7 +151,7 @@ func (s *Service) saveH1(ctx context.Context, path string, q FieldRequest, value
 // Manager intent, exactly one authenticated CPA PUT, then readback. There is no
 // host reservation, so the readback is the only effectiveness evidence.
 func (s *Service) saveManaged(ctx context.Context, path string, q FieldRequest, value any, r freshstore.Record, management string) (freshstore.ConfigOperation, error) {
-	source := managedSource(r)
+	source := managedSource(r, path)
 	presence, current, err := s.wire.ReadConfigFieldValue(ctx, management, path)
 	if err != nil {
 		return freshstore.ConfigOperation{}, err

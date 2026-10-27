@@ -253,15 +253,28 @@ func (s *Service) readOwner(ctx context.Context, path string) (freshstore.Record
 }
 
 // managedSource is the Manager-owned journal view. It carries an installation
-// identity and the committed target generation, never a runtime reservation.
-func managedSource(r freshstore.Record) cpa.ConfigFieldSource {
+// identity, the committed target generation and the CAS revision of THIS field's
+// journal, never a runtime reservation. A per-field revision keeps a save valid
+// across another field's write or any other Fresh record update, which the global
+// record revision would invalidate.
+func managedSource(r freshstore.Record, path string) cpa.ConfigFieldSource {
 	return cpa.ConfigFieldSource{
 		SourceID:   r.Operation.Identity.InstallationID,
 		Generation: strconv.FormatUint(r.Operation.Strategy.TargetGeneration, 10),
-		Revision:   r.Operation.Revision,
+		Revision:   managedFieldRevision(r, path),
 		State:      "persisted",
 		Installed:  true,
 	}
+}
+
+// managedFieldRevision advances only when this field gains an operation, so the
+// expected revision of one field never depends on another field's journal.
+func managedFieldRevision(r freshstore.Record, path string) uint64 {
+	journal := r.Config[path]
+	if journal == nil {
+		return 1
+	}
+	return uint64(len(journal.Operations)) + 1
 }
 
 // ReadField reports presence, value and editability for one allowlisted field.
@@ -295,7 +308,7 @@ func (s *Service) ReadField(ctx context.Context, path string) (FieldView, error)
 		}
 	} else {
 		// Managed profile: the Manager journal is the source, CPA is only read.
-		source = managedSource(r)
+		source = managedSource(r, path)
 		presence, value, err = s.wire.ReadConfigFieldValue(ctx, management, path)
 		if err != nil {
 			return v, err
