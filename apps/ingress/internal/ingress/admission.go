@@ -16,6 +16,10 @@ const (
 	// retries into a stream of authenticated Destination reads while still
 	// recovering quickly once the installation becomes admissible.
 	DefaultGatewayAdmissionDeniedTTL = time.Second
+	// DefaultGatewayAdmissionQueryTimeout bounds one Manager admission read. It
+	// runs detached from the triggering client request so one client leaving or
+	// timing out can never truncate a read that other queued clients depend on.
+	DefaultGatewayAdmissionQueryTimeout = 2 * time.Second
 )
 
 // GatewayAdmission is the private Manager answer for one Fresh installation
@@ -58,11 +62,12 @@ func (f FreshAuthority) AdmittedFor(state FreshRouteState) (GatewayAdmission, bo
 // a closed Gateway produces at most one Manager read per denial window instead
 // of one per queued client request.
 type GatewayAdmitter struct {
-	routes    *FreshRoutes
-	query     func(context.Context) (FreshAuthority, error)
-	ttl       time.Duration
-	deniedTTL time.Duration
-	now       func() time.Time
+	routes       *FreshRoutes
+	query        func(context.Context) (FreshAuthority, error)
+	ttl          time.Duration
+	deniedTTL    time.Duration
+	queryTimeout time.Duration
+	now          func() time.Time
 
 	mu        sync.Mutex
 	confirmed *GatewayAdmission
@@ -72,11 +77,12 @@ type GatewayAdmitter struct {
 
 func NewGatewayAdmitter(routes *FreshRoutes, query func(context.Context) (FreshAuthority, error), ttl time.Duration) *GatewayAdmitter {
 	return &GatewayAdmitter{
-		routes:    routes,
-		query:     query,
-		ttl:       ttl,
-		deniedTTL: DefaultGatewayAdmissionDeniedTTL,
-		now:       time.Now,
+		routes:       routes,
+		query:        query,
+		ttl:          ttl,
+		deniedTTL:    DefaultGatewayAdmissionDeniedTTL,
+		queryTimeout: DefaultGatewayAdmissionQueryTimeout,
+		now:          time.Now,
 	}
 }
 
@@ -101,7 +107,13 @@ func (a *GatewayAdmitter) Admitted(ctx context.Context) bool {
 	if now.Before(a.denied) {
 		return false
 	}
-	reply, err := a.query(ctx)
+	// One refresh serves every queued client, so it must not inherit the
+	// lifetime of whichever request happened to trigger it: a client that
+	// disconnects or times out would otherwise fail the shared read and deny
+	// all Gateway traffic for the next denial window.
+	queryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.queryTimeout)
+	reply, err := a.query(queryCtx)
+	cancel()
 	if err == nil {
 		if admission, ok := reply.AdmittedFor(state); ok {
 			a.confirmed = &admission
@@ -109,6 +121,12 @@ func (a *GatewayAdmitter) Admitted(ctx context.Context) bool {
 			a.denied = time.Time{}
 			return true
 		}
+	}
+	if err != nil && ctx.Err() != nil {
+		// The caller is already gone, so a failure observed on its behalf is not
+		// evidence about Manager: leave the next caller a fresh attempt instead
+		// of a cached denial.
+		return false
 	}
 	a.denied = now.Add(a.deniedTTL)
 	return false

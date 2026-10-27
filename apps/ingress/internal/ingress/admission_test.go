@@ -155,6 +155,66 @@ func TestGatewayAdmitterNeverAdmitsWithoutLiveInputs(t *testing.T) {
 	if NewGatewayAdmitter(routes, query, 0).Admitted(t.Context()) {
 		t.Fatal("admitter without a bounded TTL admitted")
 	}
+	if got := NewGatewayAdmitter(routes, query, time.Minute).queryTimeout; got != DefaultGatewayAdmissionQueryTimeout {
+		t.Fatalf("Manager read bound = %s, want %s", got, DefaultGatewayAdmissionQueryTimeout)
+	}
+}
+
+func TestCancelledCallerNeverDeniesTheNextCaller(t *testing.T) {
+	routes := &FreshRoutes{}
+	routes.state = committedProjection()
+	callerCtx, cancelCaller := context.WithCancel(t.Context())
+	var attempts atomic.Int32
+	var queryCtxCancelled atomic.Bool
+	query := func(ctx context.Context) (FreshAuthority, error) {
+		if attempts.Add(1) == 1 {
+			// The triggering client leaves while the shared refresh is running.
+			cancelCaller()
+			time.Sleep(10 * time.Millisecond)
+			queryCtxCancelled.Store(ctx.Err() != nil)
+			return FreshAuthority{}, errors.New("Manager unavailable")
+		}
+		return admittedReply(routes.State()), nil
+	}
+	admitter := NewGatewayAdmitter(routes, query, time.Minute)
+	admitter.queryTimeout = 200 * time.Millisecond
+	if admitter.Admitted(callerCtx) {
+		t.Fatal("failed Manager read admitted Gateway traffic")
+	}
+	if queryCtxCancelled.Load() {
+		t.Fatal("the shared refresh inherited the departed caller's context")
+	}
+	// The abandoned attempt must not have cached a denial: the next caller
+	// re-reads Manager immediately and is admitted.
+	if !admitter.Admitted(t.Context()) || attempts.Load() != 2 {
+		t.Fatalf("departed caller closed the Gateway for the next caller: attempts=%d", attempts.Load())
+	}
+}
+
+func TestSlowManagerRefreshStaysBounded(t *testing.T) {
+	routes := &FreshRoutes{}
+	routes.state = committedProjection()
+	var attempts atomic.Int32
+	query := func(ctx context.Context) (FreshAuthority, error) {
+		attempts.Add(1)
+		<-ctx.Done()
+		return FreshAuthority{}, ctx.Err()
+	}
+	admitter := NewGatewayAdmitter(routes, query, time.Minute)
+	admitter.queryTimeout = 30 * time.Millisecond
+	if admitter.queryTimeout != 30*time.Millisecond {
+		t.Fatal("test did not bound the Manager read")
+	}
+	started := time.Now()
+	if admitter.Admitted(t.Context()) {
+		t.Fatal("hung Manager read admitted Gateway traffic")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("hung Manager read was not bounded: %s", elapsed)
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("hung Manager read attempted %d times", attempts.Load())
+	}
 }
 
 func TestHandlerAdmitsFreshGatewayTrafficOnlyWhileManagerAdmits(t *testing.T) {
