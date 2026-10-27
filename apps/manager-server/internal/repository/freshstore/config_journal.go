@@ -225,7 +225,10 @@ func validFieldJournal(path string, journal *FieldJournal) bool {
 			return false
 		}
 		if operation.ParentID == "" {
-			if operation.Attempted || operation.ClaimRevision != 0 || operation.IntentDigest != "" || operation.HTTP200 {
+			// No H1 evidence: only the managed profile records that CPA accepted
+			// the PUT, which is exactly what HTTP200 keeps on a parentless
+			// operation.
+			if operation.Attempted || operation.ClaimRevision != 0 || operation.IntentDigest != "" {
 				return false
 			}
 			continue
@@ -365,7 +368,9 @@ func validateConfigOperationUpdate(old, next ConfigOperation) error {
 		}
 		return nil
 	}
-	if next.HTTP200 || next.Receipt != "" {
+	// A parentless operation keeps only the managed acknowledgement evidence;
+	// an H1 receipt always belongs to a parent.
+	if next.Receipt != "" {
 		return ErrConflict
 	}
 	return nil

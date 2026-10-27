@@ -174,9 +174,15 @@ func (s *Service) saveManaged(ctx context.Context, path string, q FieldRequest, 
 		}
 		return operation, cpa.ErrApplyUnknown
 	}
-	// CPA acknowledged the write above, so a different scalar now means another
-	// writer moved it afterwards, not that the original failed.
-	return s.resolveManagedOperation(ctx, path, operation, true)
+	// CPA acknowledged the write: record that evidence durably before the readback,
+	// so a later reconcile cannot call an accepted write missing.
+	acknowledged := operation
+	acknowledged.HTTP200 = true
+	if err = s.updateOperation(ctx, path, operation, acknowledged); err != nil {
+		return operation, err
+	}
+	// The scalar may already belong to another writer, which is not a failure.
+	return s.resolveManagedOperation(ctx, path, acknowledged, true)
 }
 
 // failManagedOperation records a definite terminal failure of the ORIGINAL
@@ -193,7 +199,9 @@ func (s *Service) failManagedOperation(ctx context.Context, path string, operati
 // reconcileManaged resolves an unknown managed write that was never acknowledged.
 // It never repeats the PUT.
 func (s *Service) reconcileManaged(ctx context.Context, path string, operation freshstore.ConfigOperation) (freshstore.ConfigOperation, error) {
-	return s.resolveManagedOperation(ctx, path, operation, false)
+	// An unknown original that already carries CPA's acknowledgement was accepted,
+	// whatever the scalar says now; only one without it may be a failure.
+	return s.resolveManagedOperation(ctx, path, operation, operation.HTTP200)
 }
 
 // resolveManagedOperation records what a readback proves. An identical scalar is

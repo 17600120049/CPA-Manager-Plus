@@ -51,6 +51,8 @@ type managedFieldCPA struct {
 	rejectStatus int
 	// failStatus answers with a 5xx and stores nothing: the write never landed.
 	failStatus int
+	// readFail answers the config read with a 5xx, so the readback proves nothing.
+	readFail int
 	// stored holds the value a 200 actually left behind, modelling another writer
 	// that changed the scalar between the write and the readback.
 	stored    any
@@ -89,7 +91,14 @@ func (m *managedFieldCPA) serve(t *testing.T) *httptest.Server {
 			m.mu.Lock()
 			value, present := m.values[path]
 			m.gets[path]++
+			readFail := m.readFail
+			writes := m.puts[path]
 			m.mu.Unlock()
+			// Only the readback after a PUT fails: the expectation read succeeds.
+			if readFail != 0 && writes > 0 {
+				w.WriteHeader(readFail)
+				return
+			}
 			if !present {
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -876,5 +885,46 @@ func TestManagedConfigFieldAcknowledgedWriteIsSuperseded(t *testing.T) {
 	}
 	if n := destination.writes(path); n != 2 {
 		t.Fatalf("%d attempts, want two", n)
+	}
+}
+
+// TestManagedConfigFieldAcknowledgedWriteSurvivesAnUnreadableReadback proves the
+// acknowledgement is durable evidence: after a 200 whose readback fails, a later
+// reconcile must treat the ORIGINAL as accepted, so another writer's value is
+// `superseded` and never `write_not_applied`.
+func TestManagedConfigFieldAcknowledgedWriteSurvivesAnUnreadableReadback(t *testing.T) {
+	s, destination, st, restarted, _, endpoint, _ := managedFieldFixture(t)
+	path := "requests.nonstream-keepalive-interval"
+	destination.mu.Lock()
+	destination.readFail = http.StatusBadGateway
+	destination.mu.Unlock()
+	id := strings.Repeat("e8", 16)
+	operation, err := managedFieldRequest(t, s, path, id, "30")
+	if !errors.Is(err, cpa.ErrApplyUnknown) || operation.State != "unknown" {
+		t.Fatalf("an unreadable readback returned %+v %v", operation, err)
+	}
+	journal := fieldJournalOf(t, st, path)
+	if journal == nil || !journal.Operations[id].HTTP200 {
+		t.Fatalf("journal %+v, want the acknowledgement recorded", journal)
+	}
+	if n := destination.writes(path); n != 1 {
+		t.Fatalf("%d attempts, want one", n)
+	}
+	// Another writer moves the scalar after the accepted write.
+	destination.mu.Lock()
+	destination.readFail = 0
+	destination.values[path] = 45
+	destination.mu.Unlock()
+	resolver := New(restarted, s.target)
+	resolver.EnableManaged(endpoint)
+	resolved, err := resolver.OperationField(t.Context(), path, id, true)
+	if err != nil {
+		t.Fatalf("resolving an acknowledged write returned %v", err)
+	}
+	if resolved.State != "persisted" || resolved.Code != "superseded" {
+		t.Fatalf("resolved to %+v, want persisted/superseded", resolved)
+	}
+	if n := destination.writes(path); n != 1 {
+		t.Fatalf("%d attempts after the resolve, want one", n)
 	}
 }
