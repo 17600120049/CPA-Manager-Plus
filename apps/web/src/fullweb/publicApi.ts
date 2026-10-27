@@ -5,18 +5,24 @@ export type PublicApiErrorKind = 'routing_unavailable' | 'network' | 'http' | 'a
 
 // Stable codes the gateway configuration page can act on. Every other failure
 // stays a bare HTTP error: the page never guesses a cause from a status alone.
-const gatewayConfigErrorCodes = new Set([
-  'operation_not_found',
-  'source_or_operation_conflict',
-  'config_key_writer_not_isolated',
-  'original_operation_unknown',
-  'configuration_unavailable',
-  'config_authority_unavailable',
-  'gateway_config_read_only',
-  'payload_rules_read_only',
-  'invalid_config_request',
-  'cpa_rejected_config',
-]);
+const GATEWAY_CONFIG_ERROR_CODES: Record<string, true> = {
+  operation_not_found: true,
+  source_or_operation_conflict: true,
+  config_key_writer_not_isolated: true,
+  original_operation_unknown: true,
+  configuration_unavailable: true,
+  config_authority_unavailable: true,
+  gateway_config_read_only: true,
+  payload_rules_read_only: true,
+  invalid_config_request: true,
+  cpa_rejected_config: true,
+  // The browser read a different CPA target than the one it saves into.
+  generation_mismatch: true,
+  // A pre-cutover field operation still holds this group.
+  legacy_operation_unresolved: true,
+  // A proxy URL with inline credentials is rejected on requests.proxy-url.
+  proxy_url_credentials: true,
+};
 
 // The gateway configuration surface is `gateway/config` plus its sub-resources.
 const isGatewayConfigResource = (resource: string) =>
@@ -141,7 +147,7 @@ export function createPublicApiClient(
             if (retryResource) {
               // Only a recognised code unlocks the diagnostic: an unrecognised
               // upstream payload must not smuggle its message into the UI.
-              if (typeof payload.code === 'string' && gatewayConfigErrorCodes.has(payload.code))
+              if (typeof payload.code === 'string' && GATEWAY_CONFIG_ERROR_CODES[payload.code] === true)
                 code = payload.code;
               if (code) {
                 if (typeof payload.field === 'string') field = payload.field;

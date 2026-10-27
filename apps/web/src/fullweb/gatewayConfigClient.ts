@@ -26,7 +26,20 @@ export interface GatewayFieldView {
   presence: GatewayPresence;
   value: unknown;
   editable: boolean;
+  /**
+   * The CPA default this leaf resolves to while it is unset. Only a `*bool` leaf
+   * whose nil and false differ carries it, because there a missing key is a third
+   * state: the control offers inherit / on / off instead of inventing an off.
+   * Presence of the key is the signal; its value is the label, never a truth test.
+   */
+  inherit?: boolean;
   reason?: string;
+}
+
+/** What one profile accepts in a single group save. */
+export interface GatewayProfileLimits {
+  singleEdit: boolean;
+  useDefault: boolean;
 }
 
 export interface GatewayOperation {
@@ -58,6 +71,8 @@ export interface GatewayFamilyView {
   writable: boolean;
   readOnly: boolean;
   reason?: string;
+  /** The family's journaled operation: what a reload reconciles from. */
+  operation?: GatewayOperation;
 }
 
 export interface GatewayView {
@@ -67,6 +82,8 @@ export interface GatewayView {
   fields: GatewayFieldView[];
   families: GatewayFamilyView[];
   groupsInvalid: boolean;
+  /** Emitted for the private profile only; absence really means no limits. */
+  profileLimits?: GatewayProfileLimits;
 }
 
 export type GatewayEditAction = 'set' | 'default';
@@ -121,6 +138,18 @@ function parseOperation(value: unknown): GatewayOperation | undefined {
     ...(typeof value.code === 'string' && value.code ? { code: value.code } : {}),
     ...(value.http200 === true ? { http200: true } : {}),
   };
+}
+
+/**
+ * The save shape one profile accepts. Absent means "no limits stated", which
+ * keeps an older Manager working; only an explicit flag restricts the page.
+ */
+function parseProfileLimits(value: unknown): GatewayProfileLimits | undefined {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.single_edit !== 'boolean' || typeof value.use_default !== 'boolean') {
+    return undefined;
+  }
+  return { singleEdit: value.single_edit, useDefault: value.use_default };
 }
 
 export function parseGatewayView(value: unknown): GatewayView {
@@ -179,6 +208,9 @@ export function parseGatewayView(value: unknown): GatewayView {
         presence: presence as GatewayPresence,
         value: entry.value ?? null,
         editable: entry.editable === true,
+        // A *bool leaf: the key's presence marks the third state, so only an
+        // actual boolean is accepted as the default it resolves to.
+        ...(typeof entry.inherit === 'boolean' ? { inherit: entry.inherit } : {}),
         ...(typeof entry.reason === 'string' && entry.reason ? { reason: entry.reason } : {}),
       };
     }),
@@ -192,9 +224,11 @@ export function parseGatewayView(value: unknown): GatewayView {
         writable: entry.writable === true,
         readOnly: entry.readOnly !== false,
         ...(typeof entry.reason === 'string' && entry.reason ? { reason: entry.reason } : {}),
+        ...(parseOperation(entry.operation) ? { operation: parseOperation(entry.operation) } : {}),
       };
     }),
     groupsInvalid: value.groupsInvalid === true,
+    ...(parseProfileLimits(value.profile_limits) ? { profileLimits: parseProfileLimits(value.profile_limits) } : {}),
   };
   return view;
 }
@@ -270,17 +304,65 @@ export function readGatewayOperation(
 /** The value a control shows for a server observation or a draft. */
 export function draftFor(view: GatewayFieldView): GatewayDraft {
   if (view.presence === 'present') return { action: 'set', value: view.value };
+  // A `*bool` leaf that is unset inherits CPA's own default; showing "off"
+  // would invent a value the installation never chose.
+  if (isInheritable(view)) return { action: 'default', value: '' };
   return { action: 'set', value: view.type === 'bool' ? false : '' };
 }
 
+/** A `*bool` leaf: an absent key and an explicit false are different states. */
+export function isInheritable(view: GatewayFieldView): boolean {
+  return view.type === 'bool' && typeof view.inherit === 'boolean';
+}
+
+/**
+ * Whether the leaf currently holds no value of its own. An explicit null on a
+ * `*bool` leaf resolves to the same CPA default as an absent key, so a draft
+ * that inherits is not a change there.
+ */
+export function isUnset(view: GatewayFieldView): boolean {
+  return view.presence === 'missing' || (isInheritable(view) && view.presence === 'null');
+}
+
+export type GatewayBoolState = 'inherit' | 'on' | 'off';
+
+export function boolState(draft: GatewayDraft): GatewayBoolState {
+  if (draft.action === 'default') return 'inherit';
+  return draft.value === true ? 'on' : 'off';
+}
+
+export function boolDraft(state: GatewayBoolState): GatewayDraft {
+  if (state === 'inherit') return { action: 'default', value: '' };
+  return { action: 'set', value: state === 'on' };
+}
+
 export function draftEquals(view: GatewayFieldView, draft: GatewayDraft): boolean {
-  if (draft.action === 'default') return view.presence === 'missing';
+  if (draft.action === 'default') return isUnset(view);
+  // An unset inheritable leaf has no value of its own, so any explicit value —
+  // including false — is the change the user asked for.
+  if (isInheritable(view) && isUnset(view)) return false;
   if (view.presence !== 'present') {
-    return view.type === 'bool' ? draft.value === Boolean(draft.value ?? false) && draft.value === false : draft.value === '';
+    return view.type === 'bool' ? draft.value === false : draft.value === '';
   }
   if (view.type === 'int') return Number(draft.value) === Number(view.value) && draft.value !== '';
   if (view.type === 'bool') return draft.value === view.value;
   return draft.value === view.value;
+}
+
+/**
+ * Whether this profile accepts the draft as one save. The private H1 profile
+ * writes one field per operation and cannot delete a leaf, so "use default" and
+ * multi-edit saves are refused by the Manager; the page must not offer them.
+ */
+export function limitIssue(
+  limits: GatewayProfileLimits | undefined,
+  editCount: number
+): 'single_edit' | null {
+  return limits?.singleEdit === true && editCount > 1 ? 'single_edit' : null;
+}
+
+export function allowsDefaultEdit(limits: GatewayProfileLimits | undefined): boolean {
+  return limits?.useDefault !== false;
 }
 
 /** The edit a dirty draft contributes to its group save. */

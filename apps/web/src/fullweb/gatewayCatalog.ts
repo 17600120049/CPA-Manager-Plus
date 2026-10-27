@@ -36,8 +36,12 @@ export interface GatewayFieldMeta {
   risk?: boolean;
   /** A dependent leaf is edited only while its switch is on. */
   depends?: string;
-  /** Select options; `numbered` marks the boolean-or-string image mode leaf. */
-  options?: { value: string; labelKey: ReferenceTextKey }[];
+  /**
+   * Select options. `readOnly` marks a value CPA may already persist but which
+   * must never be offered as a new draft: `passthrough` postdates the accepted
+   * inventory, so it is shown as the current value and never as a choice.
+   */
+  options?: { value: string; labelKey: ReferenceTextKey; readOnly?: boolean }[];
 }
 
 export interface GatewayGroupMeta {
@@ -171,7 +175,7 @@ export function gatewayGroups(): GatewayGroupMeta[] {
             { value: 'false', labelKey: 'imagesOff' },
             { value: 'true', labelKey: 'imagesAll' },
             { value: 'chat', labelKey: 'imagesChat' },
-            { value: 'passthrough', labelKey: 'imagesPassthrough' },
+            { value: 'passthrough', labelKey: 'imagesPassthrough', readOnly: true },
           ],
         }),
         field('multimedia.gpt-image-2-base-model', 'imageModel', 'imageModelHelp'),

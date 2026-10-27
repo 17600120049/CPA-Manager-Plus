@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link, useInRouterContext } from 'react-router-dom';
 import { Modal } from '../components/ui/Modal';
 import { configurationText as c } from '../i18n/configurationWorkspace';
 import { referenceText as r } from '../i18n/configurationReference';
+import { prefixRouteBase } from '../features/demo/demoMode';
+import { readRoutingContext } from './routingContext';
 import type { PublicApiClient } from './publicApi';
 import { PublicApiError } from './publicApi';
 import {
@@ -14,14 +17,18 @@ import {
   type GatewayFamilyMeta,
   type GatewayFieldMeta,
   type GatewayGroupMeta,
-  type GatewayOwnerMeta,
   type GatewayTabKey,
 } from './gatewayCatalog';
 import {
+  allowsDefaultEdit,
+  boolDraft,
+  boolState,
   draftEquals,
   draftFor,
   draftIssue,
   editFor,
+  isInheritable,
+  limitIssue,
   newGatewayRequestId,
   readGatewayOperation,
   readGatewayView,
@@ -32,6 +39,8 @@ import {
   type GatewayFamilyView,
   type GatewayFieldView,
   type GatewayGroupView,
+  type GatewayOperation,
+  type GatewayPresence,
   type GatewayView,
 } from './gatewayConfigClient';
 import { GatewayRuleEditor } from './GatewayRuleEditor';
@@ -42,11 +51,30 @@ import { ruleSummary } from './gatewayRuleForm';
 // default with one DELETE, writes a rule family with one PUT, and never sends a
 // second write for an unresolved one.
 
+// A named code that only says "the outcome is not known". A network failure, the
+// client abort and a code-less 5xx are treated the same way by classification
+// below, because none of them can prove the write did not land.
 const GATEWAY_SAVE_UNKNOWN_CODES: Record<string, true> = {
   original_operation_unknown: true,
   configuration_unavailable: true,
   config_authority_unavailable: true,
 };
+
+// The journal key of one payload rule family. Every family shares CPA's `rules`
+// group journal, but a page error belongs to the family card the user saved.
+const familyScope = (family: string) => `rules:${family}`;
+
+/**
+ * Whether a failed save may still have reached CPA. A network failure, the 15 s
+ * client abort (publicApi.ts:104) and a 5xx without a recognised code all land
+ * here: the page must neither claim the document is unchanged nor resend.
+ */
+function isUnknownResult(error: unknown): boolean {
+  if (!(error instanceof PublicApiError)) return true;
+  if (error.kind === 'network') return true;
+  if (error.code && GATEWAY_SAVE_UNKNOWN_CODES[error.code]) return true;
+  return error.kind === 'http' && !error.code && (error.status ?? 0) >= 500;
+}
 
 export function FreshGatewayWorkspace({
   client,
@@ -64,6 +92,10 @@ export function FreshGatewayWorkspace({
   // Subscribe to language changes just like the original Console pages.
   const { i18n } = useTranslation();
   const language = i18n.resolvedLanguage;
+  // An ownership link leaves this page for another Full Web route. It must go
+  // through the mounted router so the router base path is kept; a raw href would
+  // resolve below the document root and leave the Console.
+  const inRouter = useInRouterContext();
 
   const [view, setView] = useState<GatewayView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,11 +110,16 @@ export function FreshGatewayWorkspace({
   const [saving, setSaving] = useState('');
   const [reconciling, setReconciling] = useState('');
   const [conflictGroup, setConflictGroup] = useState('');
+  // The baseline the user was editing against, captured before a conflict
+  // re-read replaces it. Without it the page can only show new → draft.
+  const [conflictSnapshot, setConflictSnapshot] = useState<{
+    scope: string;
+    fields: Record<string, { presence: GatewayPresence; value: unknown }>;
+  } | null>(null);
   const [diffOpen, setDiffOpen] = useState(false);
   const [discardGroup, setDiscardGroup] = useState<string | null>(null);
   const [discardAll, setDiscardAll] = useState(false);
   const [ruleFamily, setRuleFamily] = useState<GatewayFamilyMeta | null>(null);
-  const [activeOwnerPath, setActiveOwnerPath] = useState<string>('');
   const issued = useRef<Set<string>>(new Set());
   const pendingWrite = useRef<Record<string, string>>({});
 
@@ -182,6 +219,48 @@ export function FreshGatewayWorkspace({
 
   const dirtyCount = dirtyEdits.length + dirtyFamilies.size;
 
+  // One badge per tab: validation errors win over a plain unsaved count, so a
+  // tab that cannot be saved never looks like a tab that merely has drafts.
+  const tabMetrics = useMemo(() => {
+    const metrics: Partial<Record<GatewayTabKey, { dirty: number; errors: number }>> = {};
+    const bump = (key: GatewayTabKey, dirty: number, errors: number) => {
+      const current = metrics[key] ?? { dirty: 0, errors: 0 };
+      metrics[key] = { dirty: current.dirty + dirty, errors: current.errors + errors };
+    };
+    for (const group of groups) {
+      const dirty = dirtyByGroup.get(group.id)?.length ?? 0;
+      const errors = (dirtyByGroup.get(group.id) ?? []).filter((edit) => {
+        const field = fieldViews.get(edit.path);
+        const draft = drafts[edit.path];
+        return !!field && !!draft && draftIssue(field, draft) !== null;
+      }).length;
+      if (!dirty && !errors) continue;
+      bump('overview', dirty, errors);
+      bump(group.tab, dirty, errors);
+    }
+    for (const field of view?.fields ?? []) {
+      const draft = drafts[field.path];
+      if (!draft || draftEquals(field, draft)) continue;
+      if (COMMON_GATEWAY_PATHS[field.path] === true) bump('common', 1, 0);
+    }
+    for (const family of families) {
+      if (!dirtyFamilies.has(family.family)) continue;
+      bump('requests', 1, 0);
+    }
+    // A conflict is an error: the group cannot be saved again as it stands.
+    for (const scope of Object.keys(groupErrors)) {
+      if (scope.startsWith('rules:') || scope === 'rules') {
+        bump('requests', 0, 1);
+        continue;
+      }
+      const owning = groups.find((group) => group.id === scope);
+      bump(owning?.tab ?? 'overview', 0, 1);
+    }
+    return metrics;
+  }, [drafts, dirtyByGroup, dirtyFamilies, families, fieldViews, groups, groupErrors, view]);
+
+  const tabRefs = useRef<Partial<Record<GatewayTabKey, HTMLButtonElement | null>>>({});
+
   useEffect(() => {
     onDirtyChange?.(dirtyCount > 0);
   }, [dirtyCount, onDirtyChange]);
@@ -258,37 +337,139 @@ export function FreshGatewayWorkspace({
     }
   }
 
+  function clearFamilyDraft(family: string) {
+    setFamilyDrafts((current) => {
+      const next = { ...current };
+      delete next[family];
+      return next;
+    });
+    setGroupErrors((current) => {
+      const next = { ...current };
+      delete next[familyScope(family)];
+      return next;
+    });
+  }
+
+  function clearScopeDrafts(scope: string | null) {
+    if (scope === null) {
+      clearGroupDrafts(null);
+      return;
+    }
+    if (scope.startsWith('rules:')) {
+      clearFamilyDraft(scope.slice('rules:'.length));
+      return;
+    }
+    clearGroupDrafts(scope);
+  }
+
+  /**
+   * The operation the Manager journaled for one scope. It survives a page
+   * reload, which is why reconcile never depends on what this tab remembers.
+   */
+  function scopeOperation(scope: string): GatewayOperation | undefined {
+    if (scope.startsWith('rules:')) return familyViews.get(scope.slice('rules:'.length))?.operation;
+    return groupViews.get(scope)?.operation;
+  }
+
+  /** The ID to reconcile with: the journaled one first, then this tab's own. */
+  function reconcileTarget(scope: string): string {
+    return scopeOperation(scope)?.requestId ?? pendingWrite.current[scope] ?? '';
+  }
+
+  /**
+   * Capture the observations this page was editing against, before a conflict
+   * re-read overwrites them, so the conflict view can show old and new.
+   */
+  function rememberConflictBaseline(scope: string) {
+    const fields: Record<string, { presence: GatewayPresence; value: unknown }> = {};
+    for (const field of view?.fields ?? []) {
+      fields[field.path] = { presence: field.presence, value: field.value };
+    }
+    setConflictSnapshot({ scope, fields });
+  }
+
+  function needsReconcile(scope: string): boolean {
+    // A journaled operation outranks this tab's message: once the re-read shows
+    // it settled, the button goes away even if the old warning is still shown.
+    const operation = scopeOperation(scope);
+    if (operation) return operation.state === 'unknown';
+    return groupErrors[scope] === c('groupSaveUnknown');
+  }
+
   function reportWriteError(scope: string, error: unknown) {
     handleError(error);
-    const code = error instanceof PublicApiError ? error.code : '';
+    const code = error instanceof PublicApiError ? error.code ?? '' : '';
     const message = error instanceof PublicApiError ? (error.detail ?? '') : '';
+    const field = error instanceof PublicApiError ? error.field : undefined;
+    const reject = (key: Parameters<typeof c>[0], detail = '') =>
+      setGroupErrors((current) => ({
+        ...current,
+        [scope]: detail ? `${c(key)} ${detail}` : c(key),
+      }));
     if (code === 'source_or_operation_conflict') {
+      // The baseline moved. Keep the draft and show old, new and draft side by
+      // side: the user decides what to do against the new value.
+      rememberConflictBaseline(scope);
       setConflictGroup(scope);
-      setGroupErrors((current) => ({ ...current, [scope]: c('groupSaveConflict') }));
-      // A conflict keeps the draft: the user decides against the new baseline.
+      reject('groupSaveConflict');
       void load({ keepDrafts: true });
       return;
     }
-    if (code && GATEWAY_SAVE_UNKNOWN_CODES[code]) {
-      setGroupErrors((current) => ({ ...current, [scope]: c('groupSaveUnknown') }));
+    if (code === 'generation_mismatch') {
+      // A typed conflict: this page read a different CPA target than it writes.
+      rememberConflictBaseline(scope);
+      setConflictGroup(scope);
+      reject('groupSaveGenerationMismatch');
+      void load({ keepDrafts: true });
       return;
+    }
+    if (code === 'legacy_operation_unresolved' || code === 'original_operation_unknown') {
+      // Blocked until the earlier operation is settled; the group stays locked.
+      reject(code === 'legacy_operation_unresolved' ? 'groupSaveLegacyBlocked' : 'groupSaveUnknown');
+      void load({ keepDrafts: true });
+      return;
+    }
+    if (isUnknownResult(error)) {
+      // A network failure, the client abort or a code-less 5xx: nothing proves
+      // the document is unchanged, so the result is unknown, never "failed".
+      reject('groupSaveUnknown');
+      void load({ keepDrafts: true });
+      return;
+    }
+    // Every other named rejection is CPA's own verdict: the document is
+    // unchanged and a field the Manager named is where the user must look.
+    if (field) {
+      setIssues((current) => ({
+        ...current,
+        [field]: code === 'proxy_url_credentials' ? c('fieldProxyCredentials') : c('fieldCpaRejected'),
+      }));
     }
     if (code === 'cpa_rejected_config') {
-      const field = error instanceof PublicApiError ? error.field : undefined;
-      setGroupErrors((current) => ({
-        ...current,
-        [scope]: message ? `${c('groupSaveRejectedDetail')} ${message}` : c('groupSaveRejected'),
-      }));
-      if (field) setIssues((current) => ({ ...current, [field]: c('fieldCpaRejected') }));
+      reject('groupSaveRejectedDetail', message);
       return;
     }
-    setGroupErrors((current) => ({ ...current, [scope]: c('groupSaveFailed') }));
+    if (code === 'invalid_config_request') {
+      reject('groupSaveInvalidRequest');
+      return;
+    }
+    if (code === 'payload_rules_read_only' || code === 'gateway_config_read_only') {
+      reject('groupSaveReadOnly');
+      return;
+    }
+    reject('groupSaveFailed');
   }
 
   async function saveGroup(group: GatewayGroupMeta) {
     const groupView = groupViews.get(group.id);
     const edits = dirtyByGroup.get(group.id) ?? [];
     if (!groupView || !edits.length || !groupView.writable) return;
+    // The private H1 profile writes one field per operation and has no delete,
+    // so the Manager refuses both shapes; the page must never build them.
+    if (limitIssue(view?.profileLimits, edits.length)) return;
+    if (!allowsDefaultEdit(view?.profileLimits) && edits.some((edit) => edit.action === 'default')) {
+      setGroupErrors((current) => ({ ...current, [group.id]: c('groupSaveNoDefault') }));
+      return;
+    }
     const problems: Record<string, string> = {};
     for (const edit of edits) {
       const field = fieldViews.get(edit.path);
@@ -318,7 +499,7 @@ export function FreshGatewayWorkspace({
       });
       delete pendingWrite.current[group.id];
       if (result.operation.state === 'failed') {
-        setGroupErrors((current) => ({ ...current, [group.id]: c('groupSaveRejected') }));
+        reportWriteError(group.id, new PublicApiError('http', 422, undefined, 'cpa_rejected_config'));
       } else {
         clearGroupDrafts(group.id);
       }
@@ -334,47 +515,67 @@ export function FreshGatewayWorkspace({
     const rules = dirtyFamilies.get(family.family);
     const familyView = familyViews.get(family.family);
     if (!rules || !familyView || !familyView.writable) return;
+    const scope = familyScope(family.family);
     const requestId = newGatewayRequestId(issued.current);
-    pendingWrite.current[`rules:${family.family}`] = requestId;
-    setSaving(`rules:${family.family}`);
+    pendingWrite.current[scope] = requestId;
+    setSaving(scope);
+    setGroupErrors((current) => {
+      const next = { ...current };
+      delete next[scope];
+      return next;
+    });
     try {
       const result = await saveGatewayFamily(client, { kind: 'admin', value: credential }, family.family, {
         requestId,
         expected: { generation: view?.generation ?? '', baseline: familyView.baseline },
         rules,
       });
-      delete pendingWrite.current[`rules:${family.family}`];
+      delete pendingWrite.current[scope];
       if (result.operation.state === 'failed') {
-        setGroupErrors((current) => ({ ...current, rules: c('groupSaveRejected') }));
+        reportWriteError(scope, new PublicApiError('http', 422, undefined, 'cpa_rejected_config'));
       } else {
-        setFamilyDrafts((current) => {
-          const next = { ...current };
-          delete next[family.family];
-          return next;
-        });
+        clearFamilyDraft(family.family);
       }
       await load({ keepDrafts: true });
     } catch (error) {
-      reportWriteError('rules', error);
+      reportWriteError(scope, error);
     } finally {
       setSaving('');
     }
   }
 
   async function queryOriginal(scope: string) {
-    const requestId = pendingWrite.current[scope];
+    const requestId = reconcileTarget(scope);
+    if (!requestId) {
+      await load({ keepDrafts: true });
+      return;
+    }
     setReconciling(scope);
     try {
-      if (requestId) {
-        const result = await readGatewayOperation(client, { kind: 'admin', value: credential }, requestId, true);
-        if (result.operation.state === 'persisted') {
-          delete pendingWrite.current[scope];
-          clearGroupDrafts(scope === 'rules' ? null : scope);
-        }
+      const result = await readGatewayOperation(
+        client,
+        { kind: 'admin', value: credential },
+        requestId,
+        true
+      );
+      delete pendingWrite.current[scope];
+      // The journal is now authoritative, so the earlier "known unknown" warning
+      // must not outlive the evidence that answered it.
+      setGroupErrors((current) => {
+        if (!current[scope]) return current;
+        const next = { ...current };
+        delete next[scope];
+        return next;
+      });
+      if (result.operation.state === 'persisted') {
+        clearScopeDrafts(scope);
       }
       await load({ keepDrafts: true });
     } catch (error) {
       handleError(error);
+      if (!(error instanceof PublicApiError) || error.kind !== 'http') {
+        setGroupErrors((current) => ({ ...current, [scope]: c('groupSaveUnknown') }));
+      }
     } finally {
       setReconciling('');
     }
@@ -423,14 +624,26 @@ export function FreshGatewayWorkspace({
       : c(reasonKey(pageReason))
     : '';
 
-  const jumpToOwner = (owner: GatewayOwnerMeta) => {
-    setActiveOwnerPath(owner.path);
-    const target = owner.fields[0] ?? '';
-    const owning = groups.find((group) => group.fields.some((field) => field.path === target));
-    setCurrentTab(owning?.tab ?? 'owners');
-    setSearchText('');
-    setChangedOnly(false);
-  };
+  /** Old (this tab's baseline) and new (the re-read value) for a conflict. */
+  function conflictRows() {
+    const snapshot = conflictSnapshot?.fields ?? {};
+    return dirtyEdits
+      .map((edit) => {
+        const field = fieldViews.get(edit.path);
+        if (!field) return null;
+        const before = snapshot[edit.path];
+        return {
+          path: edit.path,
+          oldValue: before ? formatted(before.presence, edit.path, before.value) : c('valueUnknown'),
+          newValue: formatted(field.presence, field.path, field.value),
+          draftValue:
+            edit.action === 'default'
+              ? c('valueMissing')
+              : formatted('present', edit.path, edit.value),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
+  }
 
   function renderField(field: GatewayFieldView) {
     const meta = metaOf(field.path);
@@ -443,6 +656,13 @@ export function FreshGatewayWorkspace({
     const label = meta ? r(meta.labelKey) : field.path;
     const help = meta ? r(meta.helpKey) : '';
     const issue = issues[field.path];
+    // The private profile writes one field per operation and cannot delete a
+    // leaf, so restoring a default is not offered on it at all.
+    const canUseDefault = allowsDefaultEdit(view?.profileLimits);
+    // A `*bool` leaf whose unset state resolves to a CPA default is edited as
+    // inherit / on / off: an explicit false is a real change, not "no change".
+    const inheritable = isInheritable(field);
+    const state = boolState(draft);
     const testId = `gateway-field-${field.path}`;
     return (
       <div
@@ -457,7 +677,30 @@ export function FreshGatewayWorkspace({
           <code>{field.path}</code>
         </div>
         <div className="field-control">
-          {field.type === 'bool' ? (
+          {field.type === 'bool' && inheritable ? (
+            <div className="state-group" role="radiogroup" aria-label={label}>
+              {(
+                [
+                  ['inherit', c(field.inherit === true ? 'valueInheritOn' : 'valueInheritOff')],
+                  ['on', c('valueOn')],
+                  ['off', c('valueOff')],
+                ] as const
+              ).map(([option, optionLabel]) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={state === option}
+                  data-testid={`${testId}-${option}`}
+                  className={'btn btn-secondary btn-sm' + (state === option ? ' active' : '')}
+                  disabled={disabled || dependencyOff}
+                  onClick={() => setDraft(field.path, boolDraft(option))}
+                >
+                  {optionLabel}
+                </button>
+              ))}
+            </div>
+          ) : field.type === 'bool' ? (
             <label className="switch">
               <input
                 type="checkbox"
@@ -480,18 +723,18 @@ export function FreshGatewayWorkspace({
                   setDraft(field.path, { action: 'default', value: '' });
                   return;
                 }
-                if (field.type === 'bool') {
-                  setDraft(field.path, { action: 'set', value: event.target.value === 'true' });
-                  return;
-                }
                 setDraft(field.path, { action: 'set', value: event.target.value });
               }}
             >
-              {meta?.options?.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {r(option.labelKey)}
-                </option>
-              ))}
+              {/* An image-mode value CPA already persists is shown, never offered
+                  as a new draft: "passthrough" postdates the accepted inventory. */}
+              {meta?.options?.map((option) =>
+                option.readOnly && option.value !== String(field.value ?? '') ? null : (
+                  <option key={option.value} value={option.value} disabled={option.readOnly}>
+                    {r(option.labelKey)}
+                  </option>
+                )
+              )}
               {meta?.options?.some((option) => option.value === String(field.value ?? '')) ? null : (
                 <option value={String(field.value ?? '')}>
                   {formatted(field.presence, field.path, field.value)}
@@ -514,9 +757,7 @@ export function FreshGatewayWorkspace({
               }}
             />
           )}
-          {field.presence === 'missing' ? (
-            <span className="presence">{c('valueMissing')}</span>
-          ) : (
+          {!inheritable && canUseDefault && draft.action !== 'default' && field.presence !== 'missing' ? (
             <button
               className="btn btn-secondary btn-sm"
               disabled={disabled}
@@ -524,7 +765,7 @@ export function FreshGatewayWorkspace({
             >
               {c('fieldUseDefault')}
             </button>
-          )}
+          ) : null}
         </div>
         <p className="detail">{help}</p>
         <p className="detail">
@@ -534,7 +775,9 @@ export function FreshGatewayWorkspace({
               c('fieldDraftValue') +
               ' ' +
               (draft.action === 'default'
-                ? c('valueMissing')
+                ? inheritable
+                  ? c(field.inherit === true ? 'valueInheritOn' : 'valueInheritOff')
+                  : c('valueMissing')
                 : formatted('present', field.path, draft.value))
             : ''}
         </p>
@@ -543,7 +786,7 @@ export function FreshGatewayWorkspace({
         ) : null}
         {dependencyOff ? <p className="detail field-reason">{c('fieldDependencyOff')}</p> : null}
         {issue ? (
-          <p className="field-error" role="alert">
+          <p className="field-error" role="alert" data-testid={`${testId}-error`}>
             {issue}
           </p>
         ) : null}
@@ -556,12 +799,17 @@ export function FreshGatewayWorkspace({
     const edits = dirtyByGroup.get(group.id) ?? [];
     const operation = groupView?.operation;
     const error = groupErrors[group.id];
+    // An unresolved operation is reconciled from the journaled request ID, so
+    // the control survives a reload instead of depending on this tab's memory.
+    const reconcileId = reconcileTarget(group.id);
+    const blocked = needsReconcile(group.id);
     // `group` here is the filtered projection: an alias view never renders a
     // leaf the current tab, search or changed-only filter hides.
     const members = group.fields;
     const fieldViewsOfGroup = members
       .map((meta) => fieldViews.get(meta.path))
       .filter((field): field is GatewayFieldView => !!field);
+    const singleEdit = limitIssue(view?.profileLimits, edits.length);
     return (
       <section className="card" key={group.id} data-testid={`gateway-group-${group.id}`}>
         <header className="card-head">
@@ -586,32 +834,45 @@ export function FreshGatewayWorkspace({
             </button>
             <button
               className="btn btn-primary btn-sm"
-              disabled={!edits.length || !groupView?.writable || saving !== ''}
+              disabled={!edits.length || !groupView?.writable || saving !== '' || singleEdit !== null}
               onClick={() => void saveGroup(group)}
             >
               {saving === group.id ? c('groupSaving') : c('groupSave')}
             </button>
           </div>
         </div>
+        {singleEdit ? (
+          <p className="notice warn" data-testid={`gateway-group-single-edit-${group.id}`}>
+            {c('profileSingleEdit')}
+          </p>
+        ) : null}
         {groupView && !groupView.writable ? (
           <p className="notice warn">{c(reasonKey(groupView.reason))}</p>
         ) : null}
         {error ? (
           <p className="field-error" role="alert" data-testid={`gateway-group-error-${group.id}`}>
             {error}
-            {error === c('groupSaveUnknown') ? (
-              <button className="btn btn-secondary btn-sm" onClick={() => void queryOriginal(group.id)}>
-                {c('groupQueryOriginal')}
-              </button>
-            ) : null}
+          </p>
+        ) : null}
+        {blocked && reconcileId ? (
+          <p className="notice warn" data-testid={`gateway-group-reconcile-${group.id}`}>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={reconciling !== ''}
+              onClick={() => void queryOriginal(group.id)}
+            >
+              {reconciling === group.id ? c('groupReconciling') : c('groupQueryOriginal')}
+            </button>
           </p>
         ) : null}
         {operation ? (
           <p className="detail" data-testid={`gateway-group-status-${group.id}`}>
             {operation.state === 'persisted'
-              ? operation.code === 'superseded'
-                ? c('operationSuperseded')
-                : c('savedPersisted')
+              ? operation.code === 'partial'
+                ? c('operationPartial')
+                : operation.code === 'superseded'
+                  ? c('operationSuperseded')
+                  : c('savedPersisted')
               : operation.state === 'failed'
                 ? c('groupSaveRejected')
                 : c('groupSaveUnknown')}
@@ -627,6 +888,12 @@ export function FreshGatewayWorkspace({
     const draft = familyDrafts[family.family];
     const dirty = dirtyFamilies.has(family.family);
     const rules = draft ?? (Array.isArray(familyView?.rules) ? (familyView.rules as unknown[]) : []);
+    // A family save journals under its own scope, so its error and its
+    // reconcile target belong to this card and not to the whole rules group.
+    const scope = familyScope(family.family);
+    const error = groupErrors[scope];
+    const reconcileId = reconcileTarget(scope);
+    const blocked = needsReconcile(scope);
     return (
       <section className="card" key={family.family} data-testid={`gateway-family-${family.family}`}>
         <header className="card-head">
@@ -652,17 +919,7 @@ export function FreshGatewayWorkspace({
           >
             {c('ruleEditFamily')}
           </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            disabled={!dirty}
-            onClick={() =>
-              setFamilyDrafts((current) => {
-                const next = { ...current };
-                delete next[family.family];
-                return next;
-              })
-            }
-          >
+          <button className="btn btn-secondary btn-sm" disabled={!dirty} onClick={() => clearFamilyDraft(family.family)}>
             {c('discard')}
           </button>
           <button
@@ -670,10 +927,39 @@ export function FreshGatewayWorkspace({
             disabled={!dirty || !familyView?.writable || saving !== ''}
             onClick={() => void saveFamily(family)}
           >
-            {saving === `rules:${family.family}` ? c('groupSaving') : c('groupSave')}
+            {saving === scope ? c('groupSaving') : c('groupSave')}
           </button>
         </div>
-        {familyView?.readOnly ? <p className="notice warn">{c('rulesReadOnly')}</p> : null}
+        {error ? (
+          <p className="field-error" role="alert" data-testid={`gateway-family-error-${family.family}`}>
+            {error}
+          </p>
+        ) : null}
+        {blocked && reconcileId ? (
+          <p className="notice warn" data-testid={`gateway-family-reconcile-${family.family}`}>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={reconciling !== ''}
+              onClick={() => void queryOriginal(scope)}
+            >
+              {reconciling === scope ? c('groupReconciling') : c('groupQueryOriginal')}
+            </button>
+          </p>
+        ) : null}
+        {familyView?.operation ? (
+          <p className="detail" data-testid={`gateway-family-status-${family.family}`}>
+            {familyView.operation.state === 'persisted'
+              ? familyView.operation.code === 'superseded'
+                ? c('operationSuperseded')
+                : c('savedPersisted')
+              : familyView.operation.state === 'failed'
+                ? c('groupSaveRejected')
+                : c('groupSaveUnknown')}
+          </p>
+        ) : null}
+        {familyView?.readOnly && !blocked ? (
+          <p className="notice warn">{c(reasonKey(familyView.reason))}</p>
+        ) : null}
       </section>
     );
   }
@@ -713,9 +999,20 @@ export function FreshGatewayWorkspace({
       {conflictGroup ? (
         <div className="alert alert-warn" role="alert" data-testid="gateway-conflict">
           <strong>{c('conflictTitle')}</strong> {c('conflictHelp')}
-          <button className="btn btn-secondary btn-sm" onClick={() => setDiffOpen(true)}>
-            {c('viewChanges')}
-          </button>
+          <ul className="diff-list" data-testid="gateway-conflict-diff">
+            {conflictRows().map((row) => (
+              <li key={row.path}>
+                <code>{row.path}</code>
+                <span>{row.oldValue}</span>
+                <span aria-hidden="true">→</span>
+                <span>{row.newValue}</span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {c('fieldDraftValue')} {row.draftValue}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
       <div className="workspace-toolbar">
@@ -754,23 +1051,71 @@ export function FreshGatewayWorkspace({
           {c('discard')}
         </button>
       </div>
-      <nav className="gateway-tabs" role="tablist" aria-label={c('gateway')}>
-        {GATEWAY_TABS.map((tab) => (
-          <button
-            key={tab}
-            role="tab"
-            aria-selected={currentTab === tab}
-            className={'btn btn-secondary btn-sm' + (currentTab === tab ? ' active' : '')}
-            onClick={() => {
-              setCurrentTab(tab);
-              setActiveOwnerPath('');
-            }}
-          >
-            {c(tab)}
-          </button>
-        ))}
+      <nav
+        className="gateway-tabs"
+        role="tablist"
+        aria-label={c('gateway')}
+        onKeyDown={(event) => {
+          // Arrow/Home/End move between tabs, as the accepted prototype does.
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const index = GATEWAY_TABS.indexOf(currentTab);
+          const next =
+            event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? GATEWAY_TABS.length - 1
+                : (index + (event.key === 'ArrowRight' ? 1 : -1) + GATEWAY_TABS.length) %
+                  GATEWAY_TABS.length;
+          const target = GATEWAY_TABS[next];
+          setCurrentTab(target);
+          tabRefs.current[target]?.focus();
+        }}
+      >
+        {GATEWAY_TABS.map((tab) => {
+          const metric = tabMetrics[tab] ?? { dirty: 0, errors: 0 };
+          return (
+            <button
+              key={tab}
+              ref={(node) => {
+                tabRefs.current[tab] = node;
+              }}
+              role="tab"
+              id={`gateway-tab-${tab}`}
+              data-testid={`gateway-tab-${tab}`}
+              aria-selected={currentTab === tab}
+              aria-controls="gateway-tabpanel"
+              tabIndex={currentTab === tab ? 0 : -1}
+              aria-label={
+                metric.errors
+                  ? `${c(tab)} · ${c('validationIssues', metric.errors)}`
+                  : metric.dirty
+                    ? `${c(tab)} · ${c('unsaved', metric.dirty)}`
+                    : c(tab)
+              }
+              className={'btn btn-secondary btn-sm' + (currentTab === tab ? ' active' : '')}
+              onClick={() => setCurrentTab(tab)}
+            >
+              <span className="gateway-tab-label">{c(tab)}</span>
+              {metric.errors ? (
+                <span className="gateway-tab-count has-errors" data-testid={`gateway-tab-errors-${tab}`}>
+                  {metric.errors}
+                </span>
+              ) : metric.dirty ? (
+                <span className="gateway-tab-count" data-testid={`gateway-tab-dirty-${tab}`}>
+                  {metric.dirty}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
       </nav>
-      <div role="tabpanel" className="workspace-body">
+      <div
+        id="gateway-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`gateway-tab-${currentTab}`}
+        className="workspace-body"
+      >
         {currentTab === 'overview' ? (
           <div className="overview-grid" data-testid="gateway-overview">
             <section className="card">
@@ -806,6 +1151,15 @@ export function FreshGatewayWorkspace({
                   {c('gotoGroup')}
                 </button>
               </div>
+            </section>
+            <section className="card" key="runtime">
+              <header className="card-head">
+                <h2>{c('ownerDetailRuntime')}</h2>
+                <span className="badge">{c('independent')}</span>
+              </header>
+              <code>credentials.concurrency / credentials.in-flight</code>
+              <p className="detail">{c('runtimeLinkHelp')}</p>
+              <OwnerTargetLink inRouter={inRouter} target="/system/runtime" />
             </section>
             {groups.map((group) => (
               <section className="card" key={group.id}>
@@ -843,15 +1197,38 @@ export function FreshGatewayWorkspace({
                   </ul>
                 </details>
                 {owner.target ? (
-                  <a className="btn btn-secondary btn-sm" href={owner.target}>
-                    {c('openOwner')}
-                  </a>
+                  <OwnerTargetLink inRouter={inRouter} target={owner.target} />
                 ) : (
                   <p className="detail">{c('ownerUnavailable')}</p>
                 )}
-                <button className="btn btn-secondary btn-sm" onClick={() => jumpToOwner(owner)}>
-                  {c('gotoGateway')}
-                </button>
+              </section>
+            ))}
+          </div>
+        ) : null}
+        {currentTab === 'owners' ? (
+          <div className="owner-grid" data-testid="gateway-owners">
+            {owners.map((owner) => (
+              <section className="card" key={owner.path}>
+                <header className="card-head">
+                  <h2>{r(owner.ownerKey)}</h2>
+                </header>
+                <code>{owner.path}</code>
+                <p className="detail">{c(owner.detailKey)}</p>
+                <details>
+                  <summary>{c('ownerDetail')}</summary>
+                  <ul>
+                    {owner.fields.map((field) => (
+                      <li key={field}>
+                        <code>{field}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+                {owner.target ? (
+                  <OwnerTargetLink inRouter={inRouter} target={owner.target} />
+                ) : (
+                  <p className="detail">{c('ownerUnavailable')}</p>
+                )}
               </section>
             ))}
           </div>
@@ -865,11 +1242,6 @@ export function FreshGatewayWorkspace({
         {currentTab !== 'overview' && currentTab !== 'owners' && !visibleGroups.length && !visibleFamilies.length ? (
           <p className="detail" data-testid="gateway-no-matches">
             {c('noMatches')}
-          </p>
-        ) : null}
-        {activeOwnerPath ? (
-          <p className="detail" data-testid="gateway-owner-active">
-            {c('ownerActive')} <code>{activeOwnerPath}</code>
           </p>
         ) : null}
       </div>
@@ -983,6 +1355,8 @@ function reasonKey(reason: string | undefined): Parameters<typeof c>[0] {
       return 'reasonJournalInvalid';
     case 'original_operation_unknown':
       return 'reasonUnknownOriginal';
+    case 'legacy_operation_unresolved':
+      return 'reasonLegacyBlocked';
     case 'config_read_unavailable':
       return 'reasonReadUnavailable';
     case 'installation_incomplete':
@@ -992,3 +1366,33 @@ function reasonKey(reason: string | undefined): Parameters<typeof c>[0] {
   }
 }
 
+
+/**
+ * An ownership link to another Full Web route. Inside the Console router a Link
+ * resolves against the verified basename, so the page never escapes `/console`.
+ * The membership panel can also be mounted without a router (unit mounts), where
+ * a plain anchor against the same basename is the only safe form.
+ */
+function OwnerTargetLink({ inRouter, target }: { inRouter: boolean; target: string }) {
+  if (inRouter) {
+    return (
+      <Link className="btn btn-secondary btn-sm" to={target} data-testid={`gateway-owner-link-${target}`}>
+        {c('openOwner')}
+      </Link>
+    );
+  }
+  // No router above this mount: apply the verified base path by hand, because a
+  // bare href would resolve under the document root and leave the Console. A
+  // non-browser mount has no verified base path to prefix with.
+  const basePath =
+    typeof document === 'undefined' ? '' : readRoutingContext(document)?.basePath ?? '';
+  return (
+    <a
+      className="btn btn-secondary btn-sm"
+      href={basePath ? prefixRouteBase(target, basePath) : target}
+      data-testid={`gateway-owner-link-${target}`}
+    >
+      {c('openOwner')}
+    </a>
+  );
+}

@@ -848,3 +848,22 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* A three-state leaf (inherit / on / off) renders as a radio group, so the
+   unset state is visible instead of being disguised as "off". */
+.state-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.state-group .btn.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.gateway-tab-count {
+  margin-left: 6px;
+}

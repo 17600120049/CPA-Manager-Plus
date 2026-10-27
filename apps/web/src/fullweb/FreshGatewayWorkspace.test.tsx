@@ -135,6 +135,10 @@ function fakeClient(initial: GatewayView) {
     } satisfies GatewayOperation,
     saveError: null as unknown,
     reconcileError: null as unknown,
+    // A read is the only authority the page reconciles from after a reload.
+    setView: (next: GatewayView) => {
+      state.view = next;
+    },
   };
   const client: PublicApiClient = {
     get: async <T,>(resource: string) => {
@@ -204,11 +208,14 @@ describe('FreshGatewayWorkspace', () => {
     return renderer.root.findAllByProps({ 'data-testid': id })[0];
   }
 
-  async function openTab(key: Parameters<typeof c>[0]) {
-    const tab = renderer.root.findAll(
-      (node) => node.type === 'button' && node.props.role === 'tab' && node.props.children === c(key)
+  function tab(key: Parameters<typeof c>[0]) {
+    return renderer.root.findAll(
+      (node) => node.type === 'button' && node.props.role === 'tab' && node.props.id === `gateway-tab-${key}`
     )[0];
-    await act(async () => tab.props.onClick());
+  }
+
+  async function openTab(key: Parameters<typeof c>[0]) {
+    await act(async () => tab(key).props.onClick());
   }
 
   it('projects the whole page from the Manager view and never invents a field', async () => {
@@ -226,11 +233,11 @@ describe('FreshGatewayWorkspace', () => {
   it('renders the eight-field common view, group tabs and a search across sections', async () => {
     const { client } = fakeClient(buildView());
     await mount(client);
-    const tab = (label: string) =>
+    const byId = (label: string) =>
       renderer.root.findAll(
-        (node) => node.type === 'button' && node.props.role === 'tab' && node.props.children === label
+        (node) => node.type === 'button' && node.props.role === 'tab' && node.props.id === `gateway-tab-${label}`
       )[0];
-    await act(async () => tab(c('common')).props.onClick());
+    await act(async () => byId('common').props.onClick());
     const commonFields = renderer.root.findAll(
       (node) =>
         typeof node.type === 'string' &&
@@ -239,7 +246,7 @@ describe('FreshGatewayWorkspace', () => {
         node.props['data-testid'].startsWith('gateway-field-')
     );
     expect(commonFields).toHaveLength(8);
-    await act(async () => tab(c('routing')).props.onClick());
+    await act(async () => byId('routing').props.onClick());
     expect(maybeTestId('gateway-group-routing')).toBeDefined();
     expect(maybeTestId('gateway-group-retry')).toBeUndefined();
     const search = renderer.root.findByProps({ type: 'search' });
@@ -322,8 +329,10 @@ describe('FreshGatewayWorkspace', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    const error = testId('gateway-group-error-retry');
-    const query = error.findAll(
+    // The result is reported as unknown, and the original operation is offered
+    // next to it — the page might have lost the response, not the write.
+    expect(testId('gateway-group-error-retry').props.children).toBe(c('groupSaveUnknown'));
+    const query = testId('gateway-group-reconcile-retry').findAll(
       (node) => node.type === 'button' && node.props.children === c('groupQueryOriginal')
     )[0];
     const writesBefore = fake.calls.filter((call) => call.method === 'post').length;
@@ -357,12 +366,424 @@ describe('FreshGatewayWorkspace', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(testId('gateway-group-error-retry').props.children.join('')).toContain('invalid value');
+    expect(String(testId('gateway-group-error-retry').props.children)).toContain('invalid value');
     const field = testId('gateway-field-routing.retry.request-retry');
     const texts = field
       .findAllByType('p')
       .map((node) => [node.props.children].flat(2).filter((item) => typeof item === 'string').join(''));
     expect(texts.join(' | ')).toContain(c('fieldCpaRejected'));
+  });
+
+  it('reconciles a group whose journaled operation is unknown, after a reload', async () => {
+    // The page has no memory of this write: it was created by a browser session
+    // that is already gone. Only the persisted request ID can reconcile it.
+    const view = buildView();
+    view.groups = view.groups.map((group) =>
+      group.id === 'retry'
+        ? {
+            ...group,
+            operation: {
+              requestId: 'a'.repeat(32),
+              group: 'retry',
+              target: 'group' as const,
+              state: 'unknown' as const,
+            },
+          }
+        : group
+    );
+    const fake = fakeClient(view);
+    fake.state.operation = {
+      requestId: 'a'.repeat(32),
+      group: 'retry',
+      target: 'group',
+      state: 'persisted',
+    };
+    await mount(fake.client);
+    await openTab('retry');
+    // No draft, no error message, no previous write in this tab: the button must
+    // still exist because the journal says the group is unresolved.
+    const notice = testId('gateway-group-reconcile-retry');
+    expect(notice).toBeDefined();
+    const query = notice.findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupQueryOriginal')
+    )[0];
+    await act(async () => query.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const reconcile = fake.calls.filter((call) => call.method === 'post' && call.resource.endsWith('/reconcile'));
+    expect(reconcile).toHaveLength(1);
+    expect(reconcile[0].resource).toBe(`gateway/config/operations/${'a'.repeat(32)}/reconcile`);
+    // Once the journal says persisted, the group is unlocked again.
+    fake.state.setView(
+      buildView({
+        groups: buildView().groups.map((group) =>
+          group.id === 'retry'
+            ? {
+                ...group,
+                operation: {
+                  requestId: 'a'.repeat(32),
+                  group: 'retry',
+                  target: 'group' as const,
+                  state: 'persisted' as const,
+                },
+              }
+            : group
+        ),
+      })
+    );
+    await act(async () => query.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(maybeTestId('gateway-group-reconcile-retry')).toBeUndefined();
+  });
+
+  it('reconciles a rule family from its own journaled operation', async () => {
+    // The save journals under `rules:<family>`. Looking it up under `rules`
+    // meant rule reconcile never found an ID and silently did nothing.
+    const view = buildView();
+    view.families = view.families.map((family) =>
+      family.family === 'default'
+        ? {
+            ...family,
+            operation: {
+              requestId: 'b'.repeat(32),
+              group: 'rules',
+              target: 'family' as const,
+              state: 'unknown' as const,
+            },
+          }
+        : family
+    );
+    const fake = fakeClient(view);
+    await mount(fake.client);
+    await openTab('requests');
+    const notice = testId('gateway-family-reconcile-default');
+    expect(notice).toBeDefined();
+    const query = notice.findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupQueryOriginal')
+    )[0];
+    await act(async () => query.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const reconcile = fake.calls.filter((call) => call.method === 'post' && call.resource.endsWith('/reconcile'));
+    expect(reconcile).toHaveLength(1);
+    expect(reconcile[0].resource).toBe(`gateway/config/operations/${'b'.repeat(32)}/reconcile`);
+  });
+
+  it('renders a rule save error on the family card, not on the group', async () => {
+    const fake = fakeClient(buildView());
+    await mount(fake.client);
+    await openTab('requests');
+    const open = renderer.root.findAll(
+      (node) => node.type === 'button' && node.props.children === c('ruleEditFamily')
+    )[0];
+    await act(async () => open.props.onClick());
+    await act(async () => testId('rule-add').props.onClick());
+    await act(async () => testId('rule-model-name-0').props.onChange({ target: { value: 'gpt-*' } }));
+    await act(async () => testId('rule-param-add').props.onClick());
+    const rows = testId('gateway-rule-editor').findAll(
+      (node) => typeof node.type === 'string' && node.props['data-param-row'] !== undefined
+    );
+    const [pathInput, valueInput] = rows[0].findAllByType('input');
+    await act(async () => pathInput.props.onChange({ target: { value: 'reasoning.effort' } }));
+    await act(async () => valueInput.props.onChange({ target: { value: 'high' } }));
+    await act(async () => testId('rule-editor-apply').props.onClick());
+    await act(async () => testId('rule-save').props.onClick());
+    fake.state.saveError = new PublicApiError('http', 422, undefined, 'cpa_rejected_config', undefined, 'bad rule');
+    const save = testId('gateway-family-default').findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupSave')
+    )[0];
+    await act(async () => save.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const error = testId('gateway-family-error-default');
+    expect(error.props.children).toContain('bad rule');
+    // The unrelated group cards never carry the family's failure.
+    expect(maybeTestId('gateway-group-error-request')).toBeUndefined();
+    expect(maybeTestId('gateway-group-error-streaming')).toBeUndefined();
+  });
+
+  it('treats a network failure and a code-less 5xx as unknown, never as failed', async () => {
+    for (const failure of [new PublicApiError('network'), new PublicApiError('http', 502)]) {
+      const fake = fakeClient(buildView());
+      await mount(fake.client);
+      await openTab('retry');
+      const row = testId('gateway-field-routing.retry.request-retry');
+      await act(async () => row.findByType('input').props.onChange({ target: { value: '4' } }));
+      fake.state.saveError = failure;
+      const save = testId('gateway-group-retry').findAll(
+        (node) => node.type === 'button' && node.props.children === c('groupSave')
+      )[0];
+      await act(async () => save.props.onClick());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // "Unknown" keeps the draft and offers the original operation; "failed"
+      // would claim the document is unchanged and lock the group.
+      expect(testId('gateway-group-error-retry').props.children).toBe(c('groupSaveUnknown'));
+      expect(maybeTestId('gateway-group-reconcile-retry')).toBeDefined();
+      const writes = fake.calls.filter((call) => call.method === 'post' && !call.resource.endsWith('/reconcile'));
+      expect(writes).toHaveLength(1);
+      await act(async () => renderer.unmount());
+    }
+  });
+
+  it('edits an inheritable switch as inherit / on / off and saves an explicit off', async () => {
+    // routing.session-affinity-subagents defaults to TRUE in CPA. A two-state
+    // checkbox showed it as Off and treated the explicit false as no change.
+    const view = buildView();
+    view.fields = view.fields.map((field) =>
+      field.path === 'routing.session-affinity' ? { ...field, value: true } : field
+    );
+    const fake = fakeClient(view);
+    await mount(fake.client);
+    await openTab('routing');
+    const inheritable = buildView().fields.find(
+      (field) => field.path === 'routing.session-affinity-subagents'
+    ) as GatewayFieldView;
+    expect(inheritable).toBeDefined();
+    // The projection states the CPA default alongside the leaf.
+    view.fields = view.fields.map((field) =>
+      field.path === 'routing.session-affinity-subagents'
+        ? { ...field, presence: 'missing' as const, value: null, inherit: true }
+        : field
+    );
+    fake.state.setView(view);
+    await act(async () => renderer.unmount());
+    const { client, calls } = fakeClient(view);
+    await mount(client);
+    await openTab('routing');
+    const inherit = testId('gateway-field-routing.session-affinity-subagents-inherit');
+    expect(inherit.props['aria-checked']).toBe(true);
+    // The inherit label states what the default resolves to.
+    expect(JSON.stringify(inherit.props.children)).toContain(c('valueInheritOn'));
+    const off = testId('gateway-field-routing.session-affinity-subagents-off');
+    await act(async () => off.props.onClick());
+    expect(testId('gateway-field-routing.session-affinity-subagents').props['data-dirty']).toBe('true');
+    const save = testId('gateway-group-routing').findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupSave')
+    )[0];
+    await act(async () => save.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const write = calls.filter((call) => call.method === 'post')[0];
+    expect((write.body as { edits: unknown[] }).edits).toEqual([
+      { path: 'routing.session-affinity-subagents', action: 'set', value: false },
+    ]);
+    void fake;
+  });
+
+  it('shows proxy-url credentials on the proxy field, not only on the group', async () => {
+    const fake = fakeClient(buildView());
+    await mount(fake.client);
+    await openTab('common');
+    const row = testId('gateway-field-requests.proxy-url');
+    const input = row.findByType('input');
+    await act(async () => input.props.onChange({ target: { value: 'http://user:pass@proxy:8080' } }));
+    fake.state.saveError = new PublicApiError(
+      'http',
+      422,
+      undefined,
+      'proxy_url_credentials',
+      'requests.proxy-url',
+      'credentials in proxy URL'
+    );
+    const save = testId('gateway-group-request').findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupSave')
+    )[0];
+    await act(async () => save.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const error = testId('gateway-field-requests.proxy-url-error');
+    expect(error.props.children).toBe(c('fieldProxyCredentials'));
+    // The draft is kept so the user can edit the URL they typed.
+    expect(testId('gateway-field-requests.proxy-url').props['data-dirty']).toBe('true');
+  });
+
+  it('renders a generation mismatch as a typed conflict and keeps the draft', async () => {
+    const fake = fakeClient(buildView());
+    await mount(fake.client);
+    await openTab('retry');
+    const row = testId('gateway-field-routing.retry.request-retry');
+    await act(async () => row.findByType('input').props.onChange({ target: { value: '6' } }));
+    fake.state.saveError = new PublicApiError('http', 409, undefined, 'generation_mismatch');
+    const save = testId('gateway-group-retry').findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupSave')
+    )[0];
+    await act(async () => save.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(maybeTestId('gateway-conflict')).toBeDefined();
+    expect(testId('gateway-group-error-retry').props.children).toBe(c('groupSaveGenerationMismatch'));
+    expect(testId('gateway-field-routing.retry.request-retry').props['data-dirty']).toBe('true');
+  });
+
+  it('blocks a group whose earlier field operation is unresolved', async () => {
+    const view = buildView({
+      capability: {
+        mode: 'managed',
+        readable: true,
+        writable: true,
+        rulesWritable: true,
+      },
+      groups: buildView().groups.map((group) =>
+        group.id === 'retry'
+          ? { ...group, writable: false, reason: 'legacy_operation_unresolved' }
+          : group
+      ),
+    });
+    await mount(fakeClient(view).client);
+    await openTab('retry');
+    const card = testId('gateway-group-retry');
+    const texts = card
+      .findAllByType('p')
+      .map((node) => [node.props.children].flat(2).filter((item) => typeof item === 'string').join(''));
+    expect(texts.join(' | ')).toContain(c('reasonLegacyBlocked'));
+    expect(
+      card.findAll((node) => node.type === 'button' && node.props.children === c('groupSave'))[0].props.disabled
+    ).toBe(true);
+  });
+
+  it('allows one edit per save on the private profile and never offers a default', async () => {
+    const view = {
+      ...buildView({
+        capability: { mode: 'private', readable: true, writable: true, rulesWritable: false },
+      }),
+      // The Manager states the profile's save shape on the wire.
+      profile_limits: { single_edit: true, use_default: false },
+    } as unknown as GatewayView;
+    const fake = fakeClient(view);
+    await mount(fake.client);
+    await openTab('retry');
+    const one = testId('gateway-field-routing.retry.request-retry');
+    await act(async () => one.findByType('input').props.onChange({ target: { value: '5' } }));
+    const two = testId('gateway-field-routing.retry.max-retry-interval');
+    await act(async () => two.findByType('input').props.onChange({ target: { value: '30' } }));
+    // Two edits cannot be saved as one operation on this profile.
+    const save = testId('gateway-group-retry').findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupSave')
+    )[0];
+    expect(save.props.disabled).toBe(true);
+    expect(maybeTestId('gateway-group-single-edit-retry')).toBeDefined();
+    // And "use default" is not offered at all: the H1 protocol has no delete.
+    const defaults = renderer.root.findAll(
+      (node) => node.type === 'button' && node.props.children === c('fieldUseDefault')
+    );
+    expect(defaults).toHaveLength(0);
+    void fake;
+  });
+
+  it('moves between tabs with the keyboard and badges unsaved tabs', async () => {
+    await mount(fakeClient(buildView()).client);
+    const tabs = () =>
+      renderer.root.findAll((node) => node.type === 'button' && node.props.role === 'tab');
+    const list = renderer.root.find((node) => node.type === 'nav' && node.props.role === 'tablist');
+    const preventDefault = vi.fn();
+    await act(async () =>
+      list.props.onKeyDown({ key: 'ArrowRight', preventDefault })
+    );
+    expect(preventDefault).toHaveBeenCalled();
+    expect(tab('common').props['aria-selected']).toBe(true);
+    // Roving tabindex: exactly one tab is in the tab order.
+    expect(tabs().filter((tab) => tab.props.tabIndex === 0)).toHaveLength(1);
+    await act(async () => list.props.onKeyDown({ key: 'End', preventDefault }));
+    expect(tab('owners').props['aria-selected']).toBe(true);
+    await act(async () => list.props.onKeyDown({ key: 'Home', preventDefault }));
+    expect(tab('overview').props['aria-selected']).toBe(true);
+    // A dirty leaf badges its tab so a draft is never lost in a hidden tab.
+    await openTab('retry');
+    const row = testId('gateway-field-routing.retry.request-retry');
+    await act(async () => row.findByType('input').props.onChange({ target: { value: '8' } }));
+    expect(maybeTestId('gateway-tab-dirty-retry')).toBeDefined();
+  });
+
+  it('shows old and new values in the conflict view', async () => {
+    const fake = fakeClient(buildView());
+    await mount(fake.client);
+    await openTab('retry');
+    const row = testId('gateway-field-routing.retry.request-retry');
+    await act(async () => row.findByType('input').props.onChange({ target: { value: '9' } }));
+    fake.state.saveError = new PublicApiError('http', 409, undefined, 'source_or_operation_conflict');
+    // The installation moved to a different value while the draft was open.
+    const after = buildView();
+    after.fields = after.fields.map((field) =>
+      field.path === 'routing.retry.request-retry' ? { ...field, value: 11 } : field
+    );
+    const save = testId('gateway-group-retry').findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupSave')
+    )[0];
+    // The conflict re-read returns the value that moved.
+    fake.state.setView(after);
+    await act(async () => save.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const conflict = testId('gateway-conflict-diff');
+    const text = conflict.findAllByType('li')[0].findAll((node) => typeof node.type === 'string')
+      .map((node) => [node.props.children].flat(3).filter((item) => typeof item === 'string').join(''))
+      .join(' | ');
+    // old (the baseline this tab edited) → new (what the Manager now reports)
+    expect(text).toContain('3');
+    expect(text).toContain('11');
+    expect(text).toContain('9');
+  });
+
+  it('never offers passthrough as an image-mode choice but shows it when present', async () => {
+    const view = buildView();
+    view.fields = view.fields.map((field) =>
+      field.path === 'multimedia.disable-image-generation'
+        ? { ...field, presence: 'present' as const, value: 'true' }
+        : field
+    );
+    await mount(fakeClient(view).client);
+    await openTab('media');
+    const row = testId('gateway-field-multimedia.disable-image-generation');
+    const options = row.findAllByType('option');
+    const values = options.map((option) => option.props.value);
+    expect(values).toContain('true');
+    expect(values).not.toContain('passthrough');
+    // A value CPA already persists is shown and cannot be chosen as a draft.
+    const after = buildView();
+    after.fields = after.fields.map((field) =>
+      field.path === 'multimedia.disable-image-generation'
+        ? { ...field, presence: 'present' as const, value: 'passthrough' }
+        : field
+    );
+    await act(async () => renderer.unmount());
+    await mount(fakeClient(after).client);
+    await openTab('media');
+    const persisted = testId('gateway-field-multimedia.disable-image-generation').findAllByType('option');
+    const passthrough = persisted.find((option) => option.props.value === 'passthrough');
+    expect(passthrough).toBeDefined();
+    expect(passthrough?.props.disabled).toBe(true);
+  });
+
+  it('links ownership and runtime to Full Web routes instead of raw hrefs', async () => {
+    const fake = fakeClient(buildView());
+    await mount(fake.client);
+    await openTab('owners');
+    // Every ownership link is a route of the Console, so it is rendered through
+    // the router when one is mounted and never as a bare raw href.
+    const link = maybeTestId('gateway-owner-link-/api-keys');
+    expect(link).toBeDefined();
+    // Outside a router the href carries the verified base path by hand, so the
+    // link cannot escape the Console mount.
+    expect(link.props.href).toBe('/api-keys');
+    // The runtime card exists and points at the runtime page.
+    await act(async () => {
+      tab('overview').props.onClick();
+    });
+    expect(
+      renderer.root.findAll((node) => node.props['data-testid'] === 'gateway-owner-link-/system/runtime')
+    ).toHaveLength(1);
+    void fake;
   });
 
   it('locks the private profile and never renders a save action', async () => {
