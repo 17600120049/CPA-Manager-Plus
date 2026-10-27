@@ -114,6 +114,7 @@ describe('Fresh resources within the original Console', () => {
       expect(renderer.root.findAllByProps({ 'data-testid': 'retry-editor' })).toHaveLength(0);
       expect(transport.mock.calls.map(([url]) => String(url))).toEqual([
         'https://manager.example/console/api/v2/api-keys',
+        'https://manager.example/console/api/v2/api-keys/usage-summary',
       ]);
       await navigate('/console/config' + suffix);
       expect(panel('keys').props.hidden).toBe(true);
@@ -189,12 +190,22 @@ describe('Fresh resources within the original Console', () => {
       nameRevision: 1,
     };
     const secret = 'cpamp_sk_' + 'c'.repeat(64);
-    const transport = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
+    const transport = vi.fn<typeof fetch>().mockImplementation((url, init) => {
+      if (String(url).endsWith('/api-keys/usage-summary'))
+        return Promise.resolve(
+          Response.json({
+            fromMs: 1,
+            toMs: 2,
+            coverage: { state: 'unknown', reason: 'usage_read_failed' },
+            items: [],
+          })
+        );
+      if (init?.method === 'POST')
+        return Promise.resolve(Response.json({ key: record, createdSecret: secret }));
+      return Promise.resolve(
         Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
-      )
-      .mockResolvedValueOnce(Response.json({ key: record, createdSecret: secret }));
+      );
+    });
     await mount(transport);
     await navigate('/console/api-keys');
     await act(async () =>
@@ -216,7 +227,7 @@ describe('Fresh resources within the original Console', () => {
       expect(view).toContain(secret);
       expect(pending).toHaveBeenLastCalledWith(true);
     }
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(3);
   });
 
   it('keeps an unresolved retry and its logout lock when another resource first loads', async () => {

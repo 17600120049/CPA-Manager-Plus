@@ -37,15 +37,63 @@ type Result struct {
 	Key           Key    `json:"key"`
 	CreatedSecret string `json:"createdSecret,omitempty"`
 }
+
+// SourceRuntime resolves the runtime identity a new key's source binding
+// belongs to. It returns "" while the installation has no committed target.
+type SourceRuntime func(context.Context) (string, error)
+
+// Option configures optional Fresh Key collaborators.
+type Option func(*Service)
+
+// WithSourceRuntime enables same-transaction source binding for created keys.
+func WithSourceRuntime(source SourceRuntime) Option {
+	return func(s *Service) { s.source = source }
+}
+
 type Service struct {
 	repo      *repo.Repository
 	protector *security.Protector
+	source    SourceRuntime
 }
 
-func New(r *repo.Repository, p *security.Protector) *Service { return &Service{r, p} }
-func ValidRequestID(id string) bool                          { _, err := identity.ParseAPIKeyID(id); return err == nil }
+func New(r *repo.Repository, p *security.Protector, options ...Option) *Service {
+	s := &Service{repo: r, protector: p}
+	for _, option := range options {
+		option(s)
+	}
+	return s
+}
+
+func ValidRequestID(id string) bool { _, err := identity.ParseAPIKeyID(id); return err == nil }
+
+// runtimeIdentity reports the committed installation target. A read failure
+// only defers attribution to the startup backfill; it never fails key creation.
+func (s *Service) runtimeIdentity(ctx context.Context) string {
+	if s.source == nil {
+		return ""
+	}
+	value, err := s.source(ctx)
+	if err != nil {
+		return ""
+	}
+	return value
+}
 func public(v repo.Record) Key {
 	return Key{v.Identity.ID, v.RequestID, v.Preview, v.Identity.CreatedAtMS, "persisted", "not_applied", v.Name, v.NameRevision, v.Identity.Lifecycle}
+}
+
+// IdentityIDs lists the Canonical Keys of this workspace without touching any
+// stored secret. Usage reads need identity only, so they never decrypt one.
+func (s *Service) IdentityIDs(ctx context.Context) ([]identity.APIKeyID, error) {
+	records, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]identity.APIKeyID, 0, len(records))
+	for _, record := range records {
+		ids = append(ids, record.Identity.ID)
+	}
+	return ids, nil
 }
 
 func (s *Service) Detail(ctx context.Context, rawID string) (Key, error) {
@@ -159,7 +207,7 @@ func (s *Service) Create(ctx context.Context, requestID string) (Result, bool, e
 	}
 	now := time.Now().UnixMilli()
 	v := repo.Record{RequestID: requestID, Identity: identity.APIKeyIdentity{ID: id, Revision: identity.InitialRevision, Lifecycle: identity.LifecycleActive, CreatedAtMS: now, UpdatedAtMS: now}, Ciphertext: ciphertext, Hash: digest(secret), Preview: "cpamp_sk_…" + secret[len(secret)-4:], NameRevision: 1}
-	created, err := s.repo.Create(ctx, v)
+	created, err := s.repo.Create(ctx, v, s.runtimeIdentity(ctx))
 	if err != nil {
 		return Result{}, false, err
 	}

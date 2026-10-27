@@ -217,6 +217,15 @@ func (r *Repository) SaveOperation(ctx context.Context, o Operation) error {
 		if n != 1 {
 			return ErrConflict
 		}
+		// Close the superseded key's attribution window at the same instant. The
+		// binding keeps its first_seen value, so every event already recorded for
+		// that key stays attributed while the terminal identity holds no active
+		// binding and a replacement can never inherit its history.
+		if _, err = tx.ExecContext(ctx, `update gateway_api_key_source_bindings
+			set retired_at_ms = case when ? > first_seen_at_ms then ? else first_seen_at_ms end
+			where api_key_id = ? and retired_at_ms is null`, o.CompletedAtMS, o.CompletedAtMS, o.TargetID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
