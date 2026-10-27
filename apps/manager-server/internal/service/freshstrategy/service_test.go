@@ -161,6 +161,7 @@ type managedDestinationRuntime struct {
 	starts     []model.RuntimeMutationRequest
 	stages     []model.RuntimeDestinationRequest
 	startState model.RuntimeOperationState
+	stageErr   error
 }
 
 func (r *managedDestinationRuntime) Status(context.Context) (model.RuntimeObservedStatus, error) {
@@ -178,6 +179,9 @@ func (r *managedDestinationRuntime) Start(_ context.Context, request model.Runti
 
 func (r *managedDestinationRuntime) StageDestination(_ context.Context, request model.RuntimeDestinationRequest) (model.RuntimeOperationResult, error) {
 	r.stages = append(r.stages, request)
+	if r.stageErr != nil {
+		return model.RuntimeOperationResult{}, r.stageErr
+	}
 	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStageDestination, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: model.RuntimeOperationSucceeded}, nil
 }
 
@@ -288,5 +292,59 @@ func TestManagedRequiresDurableExactIntentAndReusesTypedRuntime(t *testing.T) {
 	runtime.status.Generation++
 	if _, err = service.Execute(t.Context(), op, request); !blockedWith(err, "managed_target_identity_mismatch") {
 		t.Fatal("accepted foreign runtime generation", err)
+	}
+}
+func TestManagedMigrationRequiresStoppedRuntimeAndIsJournaled(t *testing.T) {
+	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	op := operation()
+	op.ProductComplete = true
+	op.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}
+	op.Strategy = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: "committed", TargetIdentity: string(runtime.status.Identity), TargetGeneration: uint64(runtime.status.Generation), TargetArtifactID: string(artifact)}
+	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: runtime.status.Generation, ExpectedArtifactID: artifact}
+	if _, err := service.PrepareManagedMigration(t.Context(), op, request); !blockedWith(err, "managed_migration_requires_stopped") || len(runtime.stages) != 0 {
+		t.Fatalf("running legacy destination was not refused: %v", err)
+	}
+	runtime.status.State = model.RuntimeStateOffline
+	prepared, err := service.PrepareManagedMigration(t.Context(), op, request)
+	if err != nil || prepared.AdoptionCiphertext == "" || prepared.Checkpoint.Stage != "committed" || prepared.Checkpoint.DestinationConnectionIdentity != "" || len(runtime.stages) != 0 {
+		t.Fatalf("prepare migration: %+v %v", prepared, err)
+	}
+	op.Strategy = prepared.Checkpoint
+	request.AdoptionCiphertext = prepared.AdoptionCiphertext
+	committed, err := service.Execute(t.Context(), op, request)
+	if err != nil || committed.Checkpoint.Stage != "committed" || committed.Checkpoint.DestinationConnectionIdentity == "" || committed.Connection == nil || len(runtime.stages) != 1 || len(runtime.starts) != 1 {
+		t.Fatalf("execute migration: %+v %v", committed, err)
+	}
+	op.Strategy = committed.Checkpoint
+	if _, err = service.Execute(t.Context(), op, request); err != nil || len(runtime.stages) != 1 || len(runtime.starts) != 1 {
+		t.Fatalf("migration replay was not idempotent: %v", err)
+	}
+	if runtime.stages[0].OperationID != string(op.Identity.OperationID)+":managed-migration-destination" {
+		t.Fatalf("migration used the install operation id: %q", runtime.stages[0].OperationID)
+	}
+}
+
+func TestManagedMigrationRefusesGatewayAuthPresence(t *testing.T) {
+	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
+	runtime.status.State = model.RuntimeStateOffline
+	runtime.stageErr = &runtimeservice.ProtocolError{Code: runtimeservice.ProtocolErrorCode("gateway_auth_present"), HTTPStatus: 409}
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	op := operation()
+	op.ProductComplete = true
+	op.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}
+	op.Strategy = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: "committed", TargetIdentity: string(runtime.status.Identity), TargetGeneration: uint64(runtime.status.Generation), TargetArtifactID: string(artifact)}
+	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: runtime.status.Generation, ExpectedArtifactID: artifact}
+	prepared, err := service.PrepareManagedMigration(t.Context(), op, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op.Strategy = prepared.Checkpoint
+	request.AdoptionCiphertext = prepared.AdoptionCiphertext
+	if _, err = service.Execute(t.Context(), op, request); !blockedWith(err, "managed_gateway_auth_present") {
+		t.Fatalf("non-empty Gateway auth directory was not refused: %v", err)
+	}
+	if len(runtime.starts) != 0 {
+		t.Fatal("migration started Runtime after auth refusal")
 	}
 }

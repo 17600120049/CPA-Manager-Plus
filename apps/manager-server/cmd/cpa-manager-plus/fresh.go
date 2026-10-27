@@ -593,8 +593,15 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 	}
 	app := newFreshApplication(opened, cfg, freshDriver(cfg))
 	h.SetFreshHandler(app)
-	if opened.Record.Operation.ProductComplete && app.collectorWorker != nil {
-		app.collectorWorker.Start(ctx)
+	if opened.Record.Operation.ProductComplete {
+		if err := app.migrateManagedDestination(ctx); err != nil {
+			// Migration is durable and idempotent; keep the completed Fresh
+			// server available while a typed blocker waits for the next startup.
+			log.Printf("Fresh managed destination migration unavailable: %v", err)
+		}
+		if app.collectorWorker != nil {
+			app.collectorWorker.Start(ctx)
+		}
 	}
 	if opened.Record.Operation.ProductComplete && app.identityWorker != nil {
 		go app.identityWorker.Run(ctx)
