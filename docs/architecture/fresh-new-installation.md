@@ -265,13 +265,25 @@ it stays closed until Manager re-publishes the projection (the existing
 timeout, non-200 reply, legacy `204`, unknown field, trailing data or mismatch
 keeps the Gateway closed.
 
-Revoking every Client Key withdraws admission: the predicate reads the
-destination's canonical access projection, so an installation with zero
-installed keys answers `admitted: false` at the next TTL read and Ingress
-returns 503 instead of forwarding. The Key workspace also refuses to revoke the
-last key, so this state normally means the destination was changed outside
-Manager. With at least one installed key, a missing or wrong client credential
-is forwarded to CPA, which answers `401`.
+Client authentication is enforced by requiring at least one installed Client
+Key, not by reacting to its removal. Three facts form the safety chain:
+
+1. admission requires at least one installed key, so Manager never admits a
+   destination whose client set is empty;
+2. the product cannot empty that set: a managed revoke of the last effective
+   key is refused with `ErrLastKey` (HTTP 409 `last_effective_key`), and
+   replace installs the successor before the old key is dropped;
+3. if the destination's key set or managed posture is changed out of band
+   (outside Manager), the predicate returns false on the next read and Ingress
+   withdraws admission at that read.
+
+"Revoke every Client Key" is therefore not a reachable product state and does
+not itself withdraw admission. The residual window is out-of-band only: a
+positive answer already held by Ingress stays effective for at most 15 s, and
+CPA v8 with zero configured client keys does not enforce client
+authentication, so anonymous Gateway requests during that window are not
+rejected by CPA. With at least one installed key, a missing or wrong client
+credential is forwarded to CPA, which answers `401`.
 
 The public Ingress listener never proxies CPA management paths:
 `/v8/management` is denied at the transport edge, `/v0/management` keeps its
@@ -304,11 +316,12 @@ this document and verifies, in order:
 2. Create a Client Key and send a real model request through the public
    Ingress listener by setting
    `CPAMP_SMOKE_MODEL_TARGET=http://cpamp-ingress:18317` for the smoke run;
-   observe CPA acceptance. Revoke the key and observe the request rejected.
-   With no installed Client Key the same request returns 503; with a key
-   installed, a wrong or missing credential returns 401 from CPA. Replace a
-   key and repeat the positive/negative checks. A restart of Ingress must not
-   forward before it has reconfirmed admission.
+   observe CPA acceptance. Replace the key and observe the old key rejected
+   while the new key works; revoking the last effective key must return 409
+   `last_effective_key`. Before the first Client Key exists the same request
+   returns 503; with a key installed, a wrong or missing credential returns
+   401 from CPA. A restart of Ingress must not forward before it has
+   reconfirmed admission.
 3. Read and write each accepted Gateway retry/streaming field, then read it
    back and compare the CPA v8 config. Interrupt one write, query its operation
    and resume it; the journal must not duplicate the PUT.
