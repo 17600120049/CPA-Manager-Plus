@@ -6,9 +6,11 @@ its one-time plaintext result, and refreshes the persisted masked list. Refreshi
 the browser requires Admin login again. Existing four UI languages are retained.
 
 **Manager persistence is not CPA Runtime activation.** Keys remain staged;
-Gateway remains Pending. No CPA API, source binding, runtime acknowledgement or
-model endpoint is enabled. External and Adoption do not support these endpoints.
-An unselected Fresh strategy may stage keys before New Runtime qualification.
+Gateway remains Pending. No CPA API write, runtime acknowledgement or model
+endpoint is enabled, and External and Adoption do not support these endpoints.
+The Manager-side attribution binding described under "Usage and coverage" is
+durable in Manager's own SQLite only; it activates nothing in CPA. An unselected
+Fresh strategy may stage keys before New Runtime qualification.
 
 ## Public API
 
@@ -123,8 +125,11 @@ summary.
   installation's runtime identity. The window opens at the key's own creation
   instant. One secret hash has exactly one active binding, so passive identity
   synchronization binds the staged Canonical Key instead of minting a second
-  one, and a hash already bound to another identity fails closed
-  (`binding_conflict`).
+  one. A hash that already belongs to any staged key — including a revoked,
+  replaced or otherwise superseded one — refuses the snapshot
+  (`staged_source_terminal`), so lagging inventory evidence can never split a
+  key's recorded history; a hash actively bound to another identity fails
+  closed too (`binding_conflict`).
 - **Collection:** after `ProductComplete` the Fresh startup binds staged keys,
   starts the Collector with the install-derived CPA authority, feeds its events
   to the canonical identity projection worker, and records the first proven
@@ -132,17 +137,26 @@ summary.
   CPA by the destination template; this slice writes no CPA configuration.
 - **Reads:** `identityusage` aggregates `usage_events` joined to
   `gateway_usage_identity_projection_v1` where `api_key_state = 'mapped'`,
-  reusing the existing token and failure columns. Only counts and token sums
-  leave the adapter: no hash, secret, masking preview or management credential
-  appears in a response, a log or the journal.
+  reusing the existing token and failure columns. Batches larger than one
+  statement's placeholder limit are split and merged, never truncated. Only
+  counts and token sums leave the adapter: no hash, secret, masking preview or
+  management credential appears in a response, a log or the journal.
 - **Coverage** (one vocabulary for list and detail): `complete` only when
-  collection is proven, the Collector is running, the projection is caught up,
-  and no event of that key was left unattributed or archived out of the window;
-  `partial` when numbers exist but one of those proofs failed; `unknown` when
-  collection or attribution cannot be proven yet; `unavailable` when the key has
-  no binding, its hash belongs to another identity, or collection is stopped or
-  failing. Unknown and unavailable publish no totals at all, and partial prints a
-  lower bound. Reason codes are stable and localized by the UI.
+  collection is proven, the Collector is running, the projection checkpoint is
+  `ready` with its last processed position at or beyond the target and the
+  current event frontier, and no event of that key was left unattributed or
+  archived out of the window. A `pending` or lagging checkpoint is never
+  complete, even when its frontier is still empty. The provable window starts at
+  `max(collection start, binding start)`: a requested window that starts earlier
+  is `partial` (`window_partial`), and a requested window with no provable
+  interval publishes no totals (`window_unobserved`). `partial` also covers any
+  other failed proof, `unknown` means collection or attribution cannot be proven
+  yet, and `unavailable` means the key has no binding, its hash belongs to
+  another identity, or collection is stopped or failing. Unknown and unavailable
+  publish no totals at all, and partial prints a lower bound. The list header's
+  aggregate is the weakest per-key coverage, so one incomplete key makes the
+  summed total a lower bound or hides it. Reason codes are stable and localized
+  by the UI.
 - **Lifecycle:** rename never touches attribution. Revocation or replacement
   closes the superseded key's window (`retired_at_ms`) and keeps its projected
   history readable under its own Canonical Key; the replacement starts from a new
@@ -159,11 +173,14 @@ cover the Public API transport, timeout, duplicate click, unknown-result
 reconciliation, same-request retry, authentication failure and one-time display.
 
 Usage tests use real temporary SQLite too: same-transaction binding, replay and
-backfill idempotency, superseded-window closure, staged-identity reuse in passive
-synchronization, per-key aggregation with a fake Collector phase, every coverage
-state, and responses free of hashes, secrets and credentials. Web tests cover the
-usage column, the detail section, unknown/partial rendering and a failed usage
-read. Real numbers on a built default candidate remain a NOT RUN item until the
+backfill idempotency, completion inside the running process starting the chain
+exactly once, superseded-window closure, staged-identity reuse in passive
+synchronization and fail-closed rejection of terminal staged hashes, per-key
+aggregation with a fake Collector phase, batching beyond one statement, every
+coverage state, and responses free of hashes, secrets and credentials. Web tests
+cover the usage column, the detail section, unknown/partial/lower-bound rendering
+and a failed usage read. Real numbers on a built default candidate remain a NOT
+RUN item until the
 D acceptance run below.
 
 Linux/amd64 Manager/Ingress/SQLite and browser smoke results are reported in the
