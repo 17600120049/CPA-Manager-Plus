@@ -329,3 +329,101 @@ func TestManagedGrantIsRecheckedBeforeTheSingleWrite(t *testing.T) {
 		t.Fatalf("lost authority reserved intent: %#v %v", operation, err)
 	}
 }
+
+// setKeys replaces the destination client-key projection. It stands in for a
+// key written or removed outside this Manager so the predicate is never proven
+// from Manager state alone.
+func (c *managedCPA) setKeys(keys []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.keys = slices.Clone(keys)
+}
+
+func TestDefaultInstallCPAAuthorityProvenNeedsClientAuthAndExactTarget(t *testing.T) {
+	var nilService *Service
+	if nilService.DefaultInstallCPAAuthorityProven(t.Context()) {
+		t.Fatal("nil authority proven")
+	}
+	// A private attested profile is not the default install authority.
+	if New(nil, nil, nil).DefaultInstallCPAAuthorityProven(t.Context()) {
+		t.Fatal("private profile proven as a default install")
+	}
+	s, cpa, _, installedID := managedFixture(t)
+	// Committed installation, but the destination still accepts unauthenticated
+	// Gateway traffic: client authentication is off.
+	if s.DefaultInstallCPAAuthorityProven(t.Context()) {
+		t.Fatal("proven without any installed client key")
+	}
+	if _, err := s.Apply(t.Context(), installedID, 9); err != nil {
+		t.Fatal(err)
+	}
+	if !s.DefaultInstallCPAAuthorityProven(t.Context()) {
+		t.Fatal("committed managed install with an installed client key not proven")
+	}
+	// Losing the only key reopens the Gateway; the predicate must follow the
+	// destination, not Manager memory.
+	installed := cpa.snapshot()
+	cpa.setKeys(nil)
+	if s.DefaultInstallCPAAuthorityProven(t.Context()) {
+		t.Fatal("proven after the client key disappeared")
+	}
+	cpa.setKeys(installed)
+	if !s.DefaultInstallCPAAuthorityProven(t.Context()) {
+		t.Fatal("restored destination not proven")
+	}
+	for _, scenario := range []string{"identity", "generation", "artifact", "ready", "source", "endpoint"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, cpa, source, installedID := managedFixture(t)
+			if _, err := s.Apply(t.Context(), installedID, 9); err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "identity":
+				s.runtime.(*observedRuntime).status.Identity = "foreign-runtime"
+			case "generation":
+				s.runtime.(*observedRuntime).status.Generation = 10
+			case "artifact":
+				s.runtime.(*observedRuntime).status.ActiveGatewayArtifact.ArtifactID = model.RuntimeArtifactID("sha256:" + strings.Repeat("c", 64))
+			case "ready":
+				s.runtime.(*observedRuntime).status.State = model.RuntimeStateOffline
+			case "source":
+				source.fail(ErrUnavailable)
+			case "endpoint":
+				source.set(func(i *ManagedInstall) { i.BaseURL = "http://other-cpa:8317" })
+			}
+			writes := cpa.keyWrites
+			if s.DefaultInstallCPAAuthorityProven(t.Context()) {
+				t.Fatalf("%s drift proven", scenario)
+			}
+			if cpa.keyWrites != writes {
+				t.Fatalf("%s drift wrote", scenario)
+			}
+		})
+	}
+}
+
+// The destination posture is part of the proof: a CPA that keeps the credential
+// but drops client authentication or remote management is not admitted.
+func TestDefaultInstallCPAAuthorityProvenRejectsDestinationPostureDrift(t *testing.T) {
+	for _, scenario := range []string{"dirty", "forged-management"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, cpa, _, installedID := managedFixture(t)
+			if _, err := s.Apply(t.Context(), installedID, 9); err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "dirty":
+				cpa.mu.Lock()
+				cpa.dirtyConfig = true
+				cpa.mu.Unlock()
+			case "forged-management":
+				cpa.mu.Lock()
+				cpa.management = strings.Repeat("z", 64)
+				cpa.mu.Unlock()
+			}
+			if s.DefaultInstallCPAAuthorityProven(t.Context()) {
+				t.Fatalf("%s destination proven", scenario)
+			}
+		})
+	}
+}
