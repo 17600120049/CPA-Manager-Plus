@@ -603,7 +603,11 @@ func (a *freshApplication) submitRuntimeOperation(w http.ResponseWriter, r *http
 		outcome.FailureCode = "runtime_result_unknown"
 	}
 	desiredWriteFailed := false
-	if conflictCode == "" {
+	// Only accepted, running, succeeded, or unknown results may adopt the
+	// requested lifecycle. A valid Supervisor failed result proves the
+	// operation did not reach that lifecycle, so leave the reconciler's desired
+	// state unchanged.
+	if conflictCode == "" && outcome.State != freshRuntimeStateFailed {
 		if err := a.applyRuntimeDesiredLifecycle(r.Context(), operationType); err != nil {
 			// The Runtime side effect may already have happened, but without the
 			// durable desired lifecycle the reconciler cannot converge on it.

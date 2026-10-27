@@ -486,6 +486,46 @@ func TestFreshRuntimePollAnswersWhileMutationIsInFlight(t *testing.T) {
 	}
 }
 
+// A terminal failed Supervisor result is not evidence that the requested lifecycle
+// was reached, so it must not move the reconciler's desired lifecycle.
+func TestFreshRuntimeFailedResultDoesNotFlipDesiredLifecycle(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	client := &freshRuntimeTestClient{
+		status: freshRuntimeReadyStatus(model.RuntimeCapabilityStop),
+		stopResult: model.RuntimeOperationResult{
+			OperationID:       "runtime-ui/v1:stop-failed",
+			OperationType:     model.RuntimeOperationStop,
+			RuntimeIdentity:   "runtime-test",
+			RuntimeGeneration: 7,
+			State:             model.RuntimeOperationFailed,
+			Failure:           &model.RuntimeOperationFailure{Code: "gateway_stop_failed"},
+		},
+	}
+	app.runtime = client
+	app.runtimeExternal = nil
+	op := freshRuntimeProductCompleteOperation(t, app)
+
+	before, err := app.runtimeSettings.SetEmbeddedRuntimeDesiredLifecycle(t.Context(), model.EmbeddedRuntimeDesiredRunning)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := httptest.NewRecorder()
+	app.runtimeOperations(failed, freshRuntimeRequest(t, "stop", "stop-failed"), op, "runtime/operations")
+	if failed.Code != http.StatusOK || !strings.Contains(failed.Body.String(), `"state":"failed"`) ||
+		!strings.Contains(failed.Body.String(), `"failureCode":"gateway_stop_failed"`) {
+		t.Fatalf("failed stop = %d body=%s", failed.Code, failed.Body.String())
+	}
+	entry := freshRuntimeJournalOperation(t, app, "stop-failed")
+	if entry.State != freshRuntimeStateFailed || entry.FailureCode != "gateway_stop_failed" {
+		t.Fatalf("failed stop entry = %+v", entry)
+	}
+	after, found, err := app.runtimeSettings.LoadEmbeddedRuntimeDesiredState(t.Context())
+	if err != nil || !found || after.DesiredLifecycle != model.EmbeddedRuntimeDesiredRunning || after.Revision != before.Revision {
+		t.Fatalf("failed stop changed desired lifecycle: before=%+v after=%+v found=%v err=%v", before, after, found, err)
+	}
+}
+
 // A Supervisor rejection happens before any side effect, so the entry must end
 // up terminal and the desired lifecycle must not move.
 func TestFreshRuntimeSupervisorConflictEndsEntryWithoutFlippingDesiredLifecycle(t *testing.T) {
