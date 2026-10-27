@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strconv"
 )
 
 // configJournalKey is the single settings row holding every per-field journal.
@@ -86,24 +87,24 @@ type configJournalDoc struct {
 // damaged and those exact bytes. Damage is attributed per field so one corrupt
 // journal locks only its own field; a corrupt container cannot be attributed and
 // is reported separately by the caller.
-func loadConfigJournals(ctx context.Context, q queryer) (map[string]*FieldJournal, map[string]bool, map[string]json.RawMessage, map[string]*ConfigGroupJournal, bool, error) {
+func loadConfigJournals(ctx context.Context, q queryer) (map[string]*FieldJournal, map[string]bool, map[string]json.RawMessage, map[string]*ConfigGroupJournal, map[string]json.RawMessage, error) {
 	journals := map[string]*FieldJournal{}
 	invalid := map[string]bool{}
 	damaged := map[string]json.RawMessage{}
 	groups := map[string]*ConfigGroupJournal{}
-	groupsInvalid := false
+	var groupsDamaged map[string]json.RawMessage
 	var data string
 	err := q.QueryRowContext(ctx, "select value from settings where key=?", configJournalKey).Scan(&data)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
-		return nil, nil, nil, nil, false, err
+		return nil, nil, nil, nil, nil, err
 	default:
 		var doc configJournalDoc
 		if json.Unmarshal([]byte(data), &doc) != nil {
-			return nil, nil, nil, nil, false, ErrNotFresh
+			return nil, nil, nil, nil, nil, ErrNotFresh
 		}
-		if groups, groupsInvalid = loadConfigGroups(doc); groupsInvalid {
+		if groups, groupsDamaged = loadConfigGroups(doc); groupsDamaged != nil {
 			// A group journal this store cannot prove locks the page, never the
 			// legacy field entries beside it.
 			groups = map[string]*ConfigGroupJournal{}
@@ -131,7 +132,7 @@ func loadConfigJournals(ctx context.Context, q queryer) (map[string]*FieldJourna
 			continue
 		}
 		if err != nil {
-			return nil, nil, nil, nil, false, err
+			return nil, nil, nil, nil, nil, err
 		}
 		var journal FieldJournal
 		if json.Unmarshal([]byte(raw), &journal) != nil {
@@ -151,7 +152,7 @@ func loadConfigJournals(ctx context.Context, q queryer) (map[string]*FieldJourna
 		}
 		journals[legacy.path] = &journal
 	}
-	return journals, invalid, damaged, groups, groupsInvalid, nil
+	return journals, invalid, damaged, groups, groupsDamaged, nil
 }
 
 // normalizeFieldJournal converts JSON numbers back into the exact scalar types
@@ -176,6 +177,16 @@ func operationInt(value any) (int, bool) {
 		return int(number), int64(int(number)) == number
 	case float64:
 		return int(number), float64(int(number)) == number
+	case json.Number:
+		// An integer literal the page can show and CPA can validate becomes the
+		// int the service compares. Anything else (a fraction, or an integer wider
+		// than int) is left as json.Number: it stays exact and lets validation
+		// refuse it instead of rounding it.
+		parsed, err := strconv.ParseInt(string(number), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return int(parsed), int64(int(parsed)) == parsed
 	default:
 		return 0, false
 	}
@@ -389,7 +400,7 @@ func validateConfigOperationUpdate(old, next ConfigOperation) error {
 // writeConfigJournals persists the whole container only when it changed. Every
 // damaged field keeps its exact bytes: a save of another field must never discard
 // an original operation this store cannot read.
-func writeConfigJournals(ctx context.Context, tx *sql.Tx, before, after map[string]*FieldJournal, damaged map[string]json.RawMessage, groupsBefore, groupsAfter map[string]*ConfigGroupJournal) error {
+func writeConfigJournals(ctx context.Context, tx *sql.Tx, before, after map[string]*FieldJournal, damaged map[string]json.RawMessage, groupsBefore, groupsAfter map[string]*ConfigGroupJournal, groupsDamaged map[string]json.RawMessage) error {
 	if reflect.DeepEqual(before, after) && reflect.DeepEqual(groupsBefore, groupsAfter) {
 		return nil
 	}
@@ -404,7 +415,13 @@ func writeConfigJournals(ctx context.Context, tx *sql.Tx, before, after map[stri
 		}
 		fields[path] = raw
 	}
-	groups := make(map[string]json.RawMessage, len(groupsAfter))
+	// Bytes of a group journal this store could not prove are carried through
+	// verbatim: an unresolved original operation is never discarded by a write of
+	// another section.
+	groups := make(map[string]json.RawMessage, len(groupsAfter)+len(groupsDamaged))
+	for name, raw := range groupsDamaged {
+		groups[name] = raw
+	}
 	for name, journal := range groupsAfter {
 		raw, err := json.Marshal(journal)
 		if err != nil {

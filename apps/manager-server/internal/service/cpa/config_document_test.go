@@ -2,6 +2,7 @@ package cpa
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -154,5 +155,53 @@ func TestConfigWriteTransportFailureIsUnknown(t *testing.T) {
 	tr := &Transport{client: server.Client(), endpoint: server.URL}
 	if err := tr.PatchConfigPath(context.Background(), "management-test-only", "routing", []byte(`{}`)); !errors.Is(err, ErrApplyUnknown) {
 		t.Fatalf("lost reply not unknown: %v", err)
+	}
+}
+
+// TestDecodeConfigDocumentKeepsWideIntegers is the review's #13d at the source:
+// a rule parameter wider than 2^53 has to reach the page unchanged. Decoding into
+// map[string]any without UseNumber silently rewrites 9007199254740993 into
+// ...992, so the page would show a number CPA never stored and send it back on the
+// next family save.
+func TestDecodeConfigDocumentKeepsWideIntegers(t *testing.T) {
+	const literal = "9007199254740993"
+	document, err := DecodeConfigDocument([]byte(`{"requests":{"payload":[{"id":"big","size":` + literal + `,"ratio":1.5}]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, ok := document["requests"].(map[string]any)["payload"].([]any)
+	if !ok || len(rules) != 1 {
+		t.Fatalf("payload did not decode: %+v", document)
+	}
+	rule := rules[0].(map[string]any)
+	if encoded, err := json.Marshal(rule["size"]); err != nil || string(encoded) != literal {
+		t.Fatalf("wide integer lost: %s %v", encoded, err)
+	}
+	// A fraction stays exact too, so re-emitting the family is a no-op.
+	if encoded, err := json.Marshal(rule["ratio"]); err != nil || string(encoded) != "1.5" {
+		t.Fatalf("fraction changed: %s %v", encoded, err)
+	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"requests":{"payload":[{"id":"big","ratio":1.5,"size":` + literal + `}]}}`; string(encoded) != want {
+		t.Fatalf("document changed on re-emit:\n got %s\nwant %s", encoded, want)
+	}
+}
+
+// TestDecodeConfigDocumentRefusesTrailingData keeps the projection honest: the
+// value the page shows is exactly the value that was parsed.
+func TestDecodeConfigDocumentRefusesTrailingData(t *testing.T) {
+	for _, body := range []string{
+		`{} {}`,
+		`{"a":1} trailing`,
+		`null`,
+		`[]`,
+		``,
+	} {
+		if _, err := DecodeConfigDocument([]byte(body)); !errors.Is(err, ErrSourceConflict) {
+			t.Fatalf("%q decoded as a document: %v", body, err)
+		}
 	}
 }

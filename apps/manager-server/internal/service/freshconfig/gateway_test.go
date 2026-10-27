@@ -143,6 +143,25 @@ func (f *fakeWire) ConfigFieldSource(context.Context) (cpa.ConfigFieldSource, er
 
 func (f *fakeWire) HasRuntimeJournal() bool { return f.runtime }
 
+// The private H1/direct profile has its own transport surface. The group-path
+// fake refuses it, so a test that reaches it by mistake fails loudly instead of
+// silently writing a leaf through the group journal.
+func (f *fakeWire) ReadConfigField(context.Context, string, string) (cpa.ConfigFieldSource, string, any, error) {
+	return cpa.ConfigFieldSource{}, "unknown", nil, cpa.ErrProofUnavailable
+}
+
+func (f *fakeWire) BeginConfigField(context.Context, cpa.ConfigFieldSource, string, string, any) error {
+	return cpa.ErrProofUnavailable
+}
+
+func (f *fakeWire) PutConfigField(context.Context, cpa.ConfigFieldSource, string, string, string, any) error {
+	return cpa.ErrProofUnavailable
+}
+
+func (f *fakeWire) WriteH1ConfigField(context.Context, string, cpa.H1Step, string, string, any) error {
+	return cpa.ErrProofUnavailable
+}
+
 func mergeDocument(document map[string]any, prefix []string, body map[string]any) {
 	cursor := document
 	for _, part := range prefix {
@@ -303,7 +322,7 @@ func TestReadProjectsOnlyThePageScope(t *testing.T) {
 
 func TestGroupSaveWritesOnlyEditedLeavesAndRestoresDefaults(t *testing.T) {
 	wire := &fakeWire{document: map[string]any{
-		"routing": map[string]any{"retry": map[string]any{"request-retry": 3, "max-retry-interval": 30}},
+		"routing":  map[string]any{"retry": map[string]any{"request-retry": 3, "max-retry-interval": 30}},
 		"requests": map[string]any{"passthrough-headers": false},
 	}}
 	service, store := managedService(t, wire)
@@ -374,14 +393,20 @@ func TestGroupRequestValidationOwnsOnlyShapesAndProductRules(t *testing.T) {
 		t.Fatalf("unbounded integer refused: %v", err)
 	}
 	for name, mutate := range map[string]func(*GroupRequest){
-		"foreign leaf":        func(q *GroupRequest) { q.Edits = []Edit{{Path: "routing.strategy", Action: "set", Value: json.RawMessage(`"x"`)}} },
-		"duplicate leaf":      func(q *GroupRequest) { q.Edits = append(q.Edits, q.Edits[0]) },
-		"wrong shape":         func(q *GroupRequest) { q.Edits = []Edit{{Path: "routing.retry.request-retry", Action: "set", Value: json.RawMessage(`"3"`)}} },
-		"default with value":  func(q *GroupRequest) { q.Edits = []Edit{{Path: "routing.retry.request-retry", Action: "default", Value: json.RawMessage("3")}} },
-		"bad baseline":        func(q *GroupRequest) { q.Expected.Baseline = "abc" },
-		"missing generation":  func(q *GroupRequest) { q.Expected.Generation = "" },
-		"bad request id":      func(q *GroupRequest) { q.RequestID = "short" },
-		"empty edits":         func(q *GroupRequest) { q.Edits = nil },
+		"foreign leaf": func(q *GroupRequest) {
+			q.Edits = []Edit{{Path: "routing.strategy", Action: "set", Value: json.RawMessage(`"x"`)}}
+		},
+		"duplicate leaf": func(q *GroupRequest) { q.Edits = append(q.Edits, q.Edits[0]) },
+		"wrong shape": func(q *GroupRequest) {
+			q.Edits = []Edit{{Path: "routing.retry.request-retry", Action: "set", Value: json.RawMessage(`"3"`)}}
+		},
+		"default with value": func(q *GroupRequest) {
+			q.Edits = []Edit{{Path: "routing.retry.request-retry", Action: "default", Value: json.RawMessage("3")}}
+		},
+		"bad baseline":       func(q *GroupRequest) { q.Expected.Baseline = "abc" },
+		"missing generation": func(q *GroupRequest) { q.Expected.Generation = "" },
+		"bad request id":     func(q *GroupRequest) { q.RequestID = "short" },
+		"empty edits":        func(q *GroupRequest) { q.Edits = nil },
 		"proxy with password": func(q *GroupRequest) {
 			q.Edits = []Edit{{Path: "requests.proxy-url", Action: "set", Value: json.RawMessage(`"http://user:pass@proxy.test:8080"`)}}
 		},
@@ -520,7 +545,9 @@ func TestExternalProfileWritesScalarsAndRefusesRuleFamilies(t *testing.T) {
 	service := New(store, nil)
 	service.wire = wire
 	service.transport = nil
-	service.EnableExternal(func(context.Context) (string, string, error) { return "https://external.test", "management-test-only", nil })
+	service.EnableExternal(func(context.Context) (string, string, error) {
+		return "https://external.test", "management-test-only", nil
+	})
 	service.externalWire = func(string) configWire { return wire }
 	view, err := service.Read(context.Background())
 	if err != nil {
@@ -554,37 +581,6 @@ func TestExternalProfileWritesScalarsAndRefusesRuleFamilies(t *testing.T) {
 	}
 }
 
-func TestPrivateProfileIsReadableAndNeverWritable(t *testing.T) {
-	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"retry": map[string]any{"request-retry": 3}}}, runtime: true}
-	store := &memoryStore{record: managedRecord()}
-	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
-		Strategy: bootstrap.AdoptExisting, Stage: "committed", TargetIdentity: "private-runtime", TargetGeneration: 3,
-	}
-	service := New(store, func(context.Context, uint64) (string, error) { return "management-test-only", nil })
-	service.wire = wire
-	service.transport = nil
-	view, err := service.Read(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.Capability.Mode != ModePrivate || view.Capability.Writable || view.Capability.RulesWritable ||
-		view.Capability.Reason != ReasonPrivateFrozen {
-		t.Fatalf("private capability %+v", view.Capability)
-	}
-	for _, field := range view.Fields {
-		if field.Editable {
-			t.Fatalf("private field editable: %+v", field)
-		}
-	}
-	if _, err = service.SaveGroup(context.Background(), "retry", GroupRequest{
-		RequestID: strings.Repeat("88", 16),
-		Expected:  Expected{Generation: "3", Baseline: baseline(t, service, "retry")},
-		Edits:     []Edit{{Path: "routing.retry.request-retry", Action: "set", Value: json.RawMessage("4")}},
-	}); !errors.Is(err, ErrReadOnly) {
-		t.Fatalf("private profile written: %v", err)
-	}
-}
-
 func TestLegacyFieldOperationStaysReconcilableAndIsNeverWritten(t *testing.T) {
 	wire := &fakeWire{
 		document:      map[string]any{"routing": map[string]any{"retry": map[string]any{"request-retry": 3}}},
@@ -614,5 +610,211 @@ func TestLegacyFieldOperationStaysReconcilableAndIsNeverWritten(t *testing.T) {
 	}
 	if len(wire.patches) != 0 || len(wire.puts) != 0 || len(wire.deletes) != 0 {
 		t.Fatal("legacy reconciliation wrote to CPA")
+	}
+}
+
+// TestFailureAfterThePatchLandedIsUnknownNotUnchanged proves a save that mixes a
+// set and a default is not reported as "nothing was written" when the later
+// DELETE is refused. The PATCH is sent first, so by that point the document has
+// already moved; the only truthful answer is unknown, resolved by reading back.
+func TestFailureAfterThePatchLandedIsUnknownNotUnchanged(t *testing.T) {
+	wire := &fakeWire{
+		document: map[string]any{
+			"routing": map[string]any{"retry": map[string]any{"request-retry": 3, "max-retry-interval": 30}},
+		},
+		deleteErr: cpa.ConfigWriteError{Status: 422, Code: "invalid_config"},
+	}
+	service, store := managedService(t, wire)
+	request := GroupRequest{
+		RequestID: strings.Repeat("ab", 16),
+		Expected:  Expected{Generation: "7", Baseline: baseline(t, service, "retry")},
+		Edits: []Edit{
+			{Path: "routing.retry.request-retry", Action: "set", Value: json.RawMessage("5")},
+			{Path: "routing.retry.max-retry-interval", Action: "default"},
+		},
+	}
+	if _, err := service.SaveGroup(context.Background(), "retry", request); !errors.Is(err, cpa.ErrApplyUnknown) {
+		t.Fatalf("err = %v, want an unknown result", err)
+	}
+	// The PATCH went out before the failed DELETE, and it landed.
+	if len(wire.patches) != 1 {
+		t.Fatalf("patches %+v", wire.patches)
+	}
+	// The journal must still say unknown, never failed: the document did change.
+	journal := store.record.ConfigGroups["retry"]
+	operation := journal.Operations[request.RequestID]
+	if operation.State != "unknown" || operation.HTTP200 {
+		t.Fatalf("operation recorded as %+v", operation)
+	}
+	// Reading back now proves the PATCH half landed, so the result is not
+	// "write_not_applied" either; a second save replays nothing.
+	reconciled, err := service.Operation(context.Background(), request.RequestID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wire.patches) != 1 || len(wire.deletes) != 1 {
+		t.Fatalf("reconcile resent the write: patches=%d deletes=%d", len(wire.patches), len(wire.deletes))
+	}
+	if reconciled.State != "persisted" || reconciled.Code != "partial" {
+		t.Fatalf("partially applied save recorded as %+v", reconciled)
+	}
+	// The half that landed is visible in the document, so the group is writable
+	// again against the new baseline rather than locked on an unknown original.
+	view, err := service.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range view.Groups {
+		if group.ID != "retry" {
+			continue
+		}
+		if !group.Writable || group.Reason != "" {
+			t.Fatalf("group stayed locked after reconcile: %+v", group)
+		}
+	}
+}
+
+// TestDefiniteRejectionOfOneEditLandsOnThatField proves a CPA refusal names the
+// edited field even when CPA did not. CPA reports "field" for only a few codes,
+// so a one-leaf save would otherwise surface as a group-wide failure with no
+// indication of what to fix.
+func TestDefiniteRejectionOfOneEditLandsOnThatField(t *testing.T) {
+	wire := &fakeWire{
+		document: map[string]any{"routing": map[string]any{"retry": map[string]any{"request-retry": 3, "max-retry-interval": 30}}},
+		patchErr: cpa.ConfigWriteError{Status: 422, Code: "invalid_config"},
+	}
+	service, _ := managedService(t, wire)
+	request := GroupRequest{
+		RequestID: strings.Repeat("ab", 16),
+		Expected:  Expected{Generation: "7", Baseline: baseline(t, service, "retry")},
+		Edits:     []Edit{{Path: "routing.retry.max-retry-interval", Action: "set", Value: json.RawMessage("45")}},
+	}
+	_, err := service.SaveGroup(context.Background(), "retry", request)
+	var rejection Rejection
+	if !errors.As(err, &rejection) {
+		t.Fatalf("err = %v, want a rejection", err)
+	}
+	if rejection.Field != "routing.retry.max-retry-interval" {
+		t.Fatalf("rejection %+v did not name the edited field", rejection)
+	}
+	// A save that edited two leaves has no single owner for the message.
+	wire.patchErr = cpa.ConfigWriteError{Status: 422, Code: "invalid_config"}
+	second := GroupRequest{
+		RequestID: strings.Repeat("cd", 16),
+		Expected:  Expected{Generation: "7", Baseline: baseline(t, service, "retry")},
+		Edits: []Edit{
+			{Path: "routing.retry.max-retry-interval", Action: "set", Value: json.RawMessage("45")},
+			{Path: "routing.retry.request-retry", Action: "set", Value: json.RawMessage("4")},
+		},
+	}
+	_, err = service.SaveGroup(context.Background(), "retry", second)
+	if !errors.As(err, &rejection) || rejection.Field != "" {
+		t.Fatalf("multi-leaf rejection claimed a field: %+v err=%v", rejection, err)
+	}
+}
+
+// TestSaveRefusesATargetTheBrowserDidNotRead proves the echoed generation is
+// checked, not just stored. Without it a draft built against one CPA is applied
+// to whatever target the Manager now writes.
+func TestSaveRefusesATargetTheBrowserDidNotRead(t *testing.T) {
+	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"retry": map[string]any{"request-retry": 3, "max-retry-interval": 30}}}}
+	service, store := managedService(t, wire)
+	if _, err := service.SaveGroup(context.Background(), "retry", GroupRequest{
+		RequestID: strings.Repeat("ab", 16),
+		Expected:  Expected{Generation: "6", Baseline: baseline(t, service, "retry")},
+		Edits:     []Edit{{Path: "routing.retry.request-retry", Action: "set", Value: json.RawMessage("5")}},
+	}); !errors.Is(err, ErrGenerationMismatch) {
+		t.Fatalf("stale generation accepted: %v", err)
+	}
+	if len(wire.patches) != 0 || len(store.record.ConfigGroups) != 0 {
+		t.Fatal("refused save still wrote")
+	}
+	if _, err := service.SaveFamily(context.Background(), "filter", FamilyRequest{
+		RequestID: strings.Repeat("cd", 16),
+		Expected:  Expected{Generation: "6", Baseline: familyBaselineFor(t, service, "filter")},
+		Rules:     json.RawMessage(`[{"models":[{"name":"*"}],"params":["a"]}]`),
+	}); !errors.Is(err, ErrGenerationMismatch) {
+		t.Fatalf("stale generation accepted for a family: %v", err)
+	}
+	if len(wire.puts) != 0 {
+		t.Fatal("refused family save reached CPA")
+	}
+}
+
+// TestExternalProfileRefusesAConnectionItNoLongerOwns proves the page only writes
+// the CPA this installation committed. The live settings can be edited after the
+// install, and following them would point the page at someone else's gateway.
+func TestExternalProfileRefusesAConnectionItNoLongerOwns(t *testing.T) {
+	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"strategy": "round-robin"}}}
+	store := &memoryStore{record: managedRecord()}
+	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+		Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1,
+	}
+	store.record.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: "https://committed.test", ManagementKey: "cpamp_protected_envelope"}
+	service := New(store, nil)
+	service.wire = wire
+	service.transport = nil
+	service.EnableExternal(func(context.Context) (string, string, error) {
+		return "https://elsewhere.test", "management-test-only", nil
+	})
+	service.externalWire = func(string) configWire { return wire }
+	view, err := service.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Capability.Readable || view.Capability.Writable || view.Capability.Reason != ReasonNotInstalled {
+		t.Fatalf("unowned connection treated as writable: %+v", view.Capability)
+	}
+	if wire.reads != 0 {
+		t.Fatal("unowned connection was contacted")
+	}
+}
+
+// TestUnresolvedLegacyFieldOperationBlocksItsGroup proves the pre-cutover journal
+// still gates new saves. Resolving an old field operation reads the current
+// document, so letting the group save on top of it would let the reconcile read
+// the newer value and record the wrong outcome.
+func TestUnresolvedLegacyFieldOperationBlocksItsGroup(t *testing.T) {
+	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"retry": map[string]any{"request-retry": 3, "max-retry-interval": 30}}}}
+	service, store := managedService(t, wire)
+	legacyID := strings.Repeat("cd", 16)
+	store.record.Config["routing.retry.request-retry"] = &freshstore.FieldJournal{
+		Latest: legacyID,
+		Operations: map[string]freshstore.ConfigOperation{
+			legacyID: {RequestID: legacyID, Field: "routing.retry.request-retry", Value: 4,
+				SourceID: "install-identity-0001", Generation: "7", Revision: 1, State: "unknown"},
+		},
+	}
+	view, err := service.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range view.Groups {
+		switch group.ID {
+		case "retry":
+			if group.Writable || group.Reason != ReasonLegacyUnresolved {
+				t.Fatalf("group holding an unresolved legacy operation stayed writable: %+v", group)
+			}
+		default:
+			if group.ID == "request" && !group.Writable {
+				t.Fatalf("unrelated group blocked too: %+v", group)
+			}
+		}
+	}
+	for _, field := range view.Fields {
+		if field.Path == "routing.retry.max-retry-interval" && field.Editable {
+			t.Fatal("field of a blocked group stayed editable")
+		}
+	}
+	// The save itself is refused, not merely greyed out in the projection.
+	if _, err = service.SaveGroup(context.Background(), "retry", GroupRequest{
+		RequestID: strings.Repeat("ab", 16),
+		Expected:  Expected{Generation: "7", Baseline: baseline(t, service, "retry")},
+		Edits:     []Edit{{Path: "routing.retry.request-retry", Action: "set", Value: json.RawMessage("5")}},
+	}); !errors.Is(err, ErrLegacyUnresolved) {
+		t.Fatalf("save on a blocked group = %v", err)
+	}
+	if len(wire.patches) != 0 {
+		t.Fatal("blocked save reached CPA")
 	}
 }

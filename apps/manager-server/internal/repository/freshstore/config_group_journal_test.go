@@ -177,7 +177,173 @@ func TestLegacyContainerWithoutGroupsStaysReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	groups, damaged := loadConfigGroups(doc)
-	if damaged || len(groups) != 0 {
+	if damaged != nil || len(groups) != 0 {
 		t.Fatalf("legacy container groups=%v damaged=%v", groups, damaged)
+	}
+}
+
+// TestNumberEditSurvivesTheJournalBoundary is the regression for a group save
+// that carries a number. A journal entry is written from the in-memory operation
+// the service built (Value is int) but every later write — the acknowledgement,
+// the resolution, CPA's own rejection — compares it against the same entry as it
+// came back from SQLite, where encoding/json produced a float64. If that
+// comparison is type-sensitive, CPA has already applied the PATCH while the
+// Manager answers a conflict, and the group stays locked with no way back.
+func TestNumberEditSurvivesTheJournalBoundary(t *testing.T) {
+	store, _, id := journalStore(t)
+	checksum := strings.Repeat("a", 64)
+	requestID := strings.Repeat("ab", 16)
+	operation := groupOperation(requestID, checksum)
+	if _, err := store.Update(t.Context(), id, 1, func(v *Record) error {
+		v.ConfigGroups["retry"] = &ConfigGroupJournal{
+			Latest:     requestID,
+			Operations: map[string]ConfigGroupOperation{requestID: operation},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The acknowledgement and the resolution both write the service's own copy of
+	// the operation, so the entry comes back across the JSON boundary and is
+	// compared with the value the service still holds.
+	operation.HTTP200, operation.State = true, "persisted"
+	if _, err = store.Update(t.Context(), id, reloaded.Operation.Revision, func(v *Record) error {
+		v.ConfigGroups["retry"].Operations[requestID] = operation
+		return nil
+	}); err != nil {
+		t.Fatalf("number edit rejected on write-back: %v", err)
+	}
+	resolved, err := store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := resolved.ConfigGroups["retry"].Operations[requestID]
+	if entry.State != "persisted" || !entry.HTTP200 {
+		t.Fatalf("resolution not durable: %+v", entry)
+	}
+	if len(entry.Edits) != 1 || entry.Edits[0].Value != float64(3) && entry.Edits[0].Value != 3 {
+		t.Fatalf("number edit lost: %+v", entry.Edits)
+	}
+}
+
+// TestWideIntegerRuleParameterSurvivesTheJournal is the review's #13d regression:
+// a rule parameter wider than 2^53 must come back as the same integer. Decoding
+// the config document into float64 rounds such a value, so the page would show one
+// number and send a different one back on the next family save.
+func TestWideIntegerRuleParameterSurvivesTheJournal(t *testing.T) {
+	const literal = "9007199254740993"
+	store, _, id := journalStore(t)
+	checksum := strings.Repeat("a", 64)
+	requestID := strings.Repeat("cd", 16)
+	operation := ConfigGroupOperation{
+		RequestID: requestID, Group: "rules", Target: "family", Prefix: "requests.payload",
+		Baseline: checksum, State: "unknown", SourceID: "installation-gateway-01", Generation: "7",
+		Rules: []any{map[string]any{"id": "big", "size": json.Number(literal)}},
+	}
+	if _, err := store.Update(t.Context(), id, 1, func(v *Record) error {
+		v.ConfigGroups["rules"] = &ConfigGroupJournal{
+			Latest:     requestID,
+			Operations: map[string]ConfigGroupOperation{requestID: operation},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := reloaded.ConfigGroups["rules"].Operations[requestID]
+	rules, ok := entry.Rules.([]any)
+	if !ok || len(rules) != 1 {
+		t.Fatalf("rules did not survive: %+v", entry.Rules)
+	}
+	rule, ok := rules[0].(map[string]any)
+	if !ok {
+		t.Fatalf("rule did not survive: %+v", rules[0])
+	}
+	encoded, err := json.Marshal(rule["size"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != literal {
+		t.Fatalf("wide integer rounded across the journal: %s", encoded)
+	}
+	// Re-writing the entry must not round it either: the page's own copy and the
+	// reloaded one are the same operation.
+	if _, err = store.Update(t.Context(), id, reloaded.Operation.Revision, func(v *Record) error {
+		current := v.ConfigGroups["rules"].Operations[requestID]
+		if canonical := current.Clone(); canonical.Rules == nil {
+			return ErrConflict
+		}
+		current.State, current.HTTP200 = "persisted", true
+		v.ConfigGroups["rules"].Operations[requestID] = current
+		return nil
+	}); err != nil {
+		t.Fatalf("wide-integer entry rejected on write-back: %v", err)
+	}
+	final, err := store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err = json.Marshal(final.ConfigGroups["rules"].Operations[requestID].Rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), literal) {
+		t.Fatalf("wide integer changed on the second write: %s", encoded)
+	}
+}
+
+// TestDamagedGroupJournalSurvivesAnotherWrite proves a group journal this store
+// cannot prove is carried through verbatim. The damaged entry may hold an
+// unresolved original operation, so rewriting the record without it would unlock
+// a page whose last write is still unknown.
+func TestDamagedGroupJournalSurvivesAnotherWrite(t *testing.T) {
+	store, db, id := journalStore(t)
+	damagedEntry := `{"latest":"not-hex","operations":{}}`
+	container := `{"fields":{},"groups":{"retry":` + damagedEntry + `}}`
+	if _, err := db.ExecContext(t.Context(), "insert into settings(key,value,updated_at_ms) values(?,?,?) on conflict(key) do update set value=excluded.value, updated_at_ms=excluded.updated_at_ms", configJournalKey, container, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reloaded.ConfigGroupsInvalid || len(reloaded.ConfigGroupsDamaged) != 1 {
+		t.Fatalf("damage not preserved in the record: %+v", reloaded.ConfigGroupsDamaged)
+	}
+	// A legacy field operation is still refinable; the damaged group bytes must
+	// ride along unchanged.
+	fieldID := strings.Repeat("cd", 16)
+	if _, err = store.Update(t.Context(), id, reloaded.Operation.Revision, func(v *Record) error {
+		v.Config["requests.passthrough-headers"] = &FieldJournal{
+			Latest: fieldID,
+			Operations: map[string]ConfigOperation{
+				fieldID: {RequestID: fieldID, Field: "requests.passthrough-headers", Value: true,
+					SourceID: "installation-gateway-01", Generation: "7", Revision: 1, State: "unknown", HTTP200: true},
+			},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	if err = db.QueryRowContext(t.Context(), "select value from settings where key=?", configJournalKey).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	var doc configJournalDoc
+	if err = json.Unmarshal([]byte(stored), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if string(doc.Groups["retry"]) != damagedEntry {
+		t.Fatalf("damaged group journal rewritten: %s", doc.Groups["retry"])
+	}
+	if doc.Fields["requests.passthrough-headers"] == nil {
+		t.Fatal("field write lost while preserving damage")
 	}
 }

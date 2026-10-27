@@ -3,6 +3,7 @@ package cpa
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
 )
 
@@ -19,8 +20,8 @@ func ParseConfigRules(family string, raw json.RawMessage) ([]any, error) {
 	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return nil, ErrInvalidConfigPath
 	}
-	var rules []any
-	if json.Unmarshal(raw, &rules) != nil {
+	rules, err := decodeConfigRules(raw)
+	if err != nil {
 		return nil, ErrInvalidConfigPath
 	}
 	encoded, err := json.Marshal(rules)
@@ -30,12 +31,32 @@ func ParseConfigRules(family string, raw json.RawMessage) ([]any, error) {
 	return rules, ValidateConfigRules(entry, encoded)
 }
 
+// decodeConfigRules keeps numbers as json.Number so a 64-bit integer in a rule
+// parameter survives the round trip instead of collapsing into a float64 and
+// losing its low digits. json.Number marshals back as the original literal.
+func decodeConfigRules(raw []byte) ([]any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var rules []any
+	if decoder.Decode(&rules) != nil {
+		return nil, ErrInvalidConfigPath
+	}
+	if rules == nil {
+		return nil, ErrInvalidConfigPath
+	}
+	// Trailing data would make the value we validated differ from the value sent.
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, ErrInvalidConfigPath
+	}
+	return rules, nil
+}
+
 // ValidateConfigRules re-checks an already-decoded family. The wire form is used
 // so a caller cannot validate one shape and send another.
 func ValidateConfigRules(entry ConfigRuleFamily, raw []byte) error {
-	var rules []any
-	if json.Unmarshal(raw, &rules) != nil {
-		return ErrInvalidConfigPath
+	rules, err := decodeConfigRules(raw)
+	if err != nil {
+		return err
 	}
 	for _, rule := range rules {
 		if err := validateConfigRule(entry, rule); err != nil {

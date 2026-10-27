@@ -2,23 +2,23 @@ package freshconfig
 
 import (
 	"context"
-	"reflect"
 	"strconv"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 )
 
-// This file keeps exactly one capability of the pre-cutover field journal
-// readable: an operation journaled before the page became group-based is still
-// reconciled against the source that admitted it. Nothing here writes a leaf:
-// the original write is never replayed, only re-observed.
+// This file owns the single implementation of "resolve an unknown single-leaf
+// operation" for every per-field journal: the pre-cutover entries the page
+// inherited AND the live private H1/direct writes, which share the same journal.
+// Nothing here writes a leaf: the original write is never replayed, only
+// re-observed.
 
-// reconcileLegacyField resolves an unknown single-leaf operation of the old
-// journal. The H1 profile is verified against its Runtime parent, the direct
-// runtime-journal profile against its admitted source, and the manager-owned
-// profile against CPA's current value.
-func (s *Service) reconcileLegacyField(ctx context.Context, r freshstore.Record, auth authority, operation freshstore.ConfigOperation) (freshstore.ConfigOperation, error) {
+// reconcileFieldOperation resolves an unknown single-leaf operation. The H1
+// profile is verified against its Runtime parent, the direct runtime-journal
+// profile against its admitted source, and the manager-owned profile against
+// CPA's current value.
+func (s *Service) reconcileFieldOperation(ctx context.Context, r freshstore.Record, auth authority, operation freshstore.ConfigOperation) (freshstore.ConfigOperation, error) {
 	if operation.Field == "" {
 		return operation, ErrInvalid
 	}
@@ -30,9 +30,9 @@ func (s *Service) reconcileLegacyField(ctx context.Context, r freshstore.Record,
 		if s.h1 == nil || s.transport == nil {
 			return operation, cpa.ErrApplyUnknown
 		}
-		return s.reconcileLegacyH1(ctx, r, auth, operation, source)
+		return s.reconcileFieldOperationH1(ctx, r, operation)
 	case !auth.wire.HasRuntimeJournal():
-		return s.resolveLegacyManaged(ctx, r, auth, operation)
+		return s.resolveFieldOperationManaged(ctx, r, auth, operation)
 	default:
 		observed, err := auth.wire.ReconcileConfigField(ctx, source, operation.RequestID, operation.Field, operation.Value)
 		if err != nil {
@@ -43,7 +43,7 @@ func (s *Service) reconcileLegacyField(ctx context.Context, r freshstore.Record,
 		}
 		next := operation
 		next.State = observed.OperationState
-		if err := s.updateLegacyField(ctx, r, operation, next); err != nil {
+		if err := s.updateFieldJournal(ctx, r, operation, next); err != nil {
 			return operation, err
 		}
 		return next, nil
@@ -52,7 +52,7 @@ func (s *Service) reconcileLegacyField(ctx context.Context, r freshstore.Record,
 
 // reconcileLegacyH1 proves the original H1 parent still carries exactly this
 // intent before committing its receipt. A mismatch is a conflict, never a write.
-func (s *Service) reconcileLegacyH1(ctx context.Context, r freshstore.Record, auth authority, operation freshstore.ConfigOperation, source cpa.ConfigFieldSource) (freshstore.ConfigOperation, error) {
+func (s *Service) reconcileFieldOperationH1(ctx context.Context, r freshstore.Record, operation freshstore.ConfigOperation) (freshstore.ConfigOperation, error) {
 	if operation.ParentID != "c:"+operation.RequestID || !operation.Attempted || !operation.HTTP200 {
 		return operation, cpa.ErrApplyUnknown
 	}
@@ -68,7 +68,7 @@ func (s *Service) reconcileLegacyH1(ctx context.Context, r freshstore.Record, au
 		return operation, cpa.ErrApplyUnknown
 	}
 	intentPath, intentValue, ok := cpa.H1IntentField(parent.Intent)
-	if !ok || intentPath != operation.Field || !reflect.DeepEqual(intentValue, operation.Value) ||
+	if !ok || intentPath != operation.Field || !canonicalEqual(intentValue, operation.Value) ||
 		parent.SourceID != operation.SourceID || parent.Generation != operation.Generation ||
 		parent.ClaimSHA256 != operation.SHA256 || parent.ClaimRevision != operation.ClaimRevision ||
 		cpa.H1Terminal(parent.Intent) != operation.IntentDigest || parent.Intent.RequestID != operation.RequestID {
@@ -85,7 +85,7 @@ func (s *Service) reconcileLegacyH1(ctx context.Context, r freshstore.Record, au
 	next := operation
 	next.State = "persisted"
 	next.Receipt = receipt.Receipt
-	if err = s.updateLegacyField(ctx, r, operation, next); err != nil {
+	if err = s.updateFieldJournal(ctx, r, operation, next); err != nil {
 		return operation, err
 	}
 	if err = s.h1.Finish(ctx, s.transport, next.ParentID, cpa.H1Terminal(next)); err != nil {
@@ -97,7 +97,7 @@ func (s *Service) reconcileLegacyH1(ctx context.Context, r freshstore.Record, au
 // resolveLegacyManaged records what a manager-owned read-back proves. An
 // acknowledged write another writer already replaced is the superseded outcome,
 // never a failure of the original.
-func (s *Service) resolveLegacyManaged(ctx context.Context, r freshstore.Record, auth authority, operation freshstore.ConfigOperation) (freshstore.ConfigOperation, error) {
+func (s *Service) resolveFieldOperationManaged(ctx context.Context, r freshstore.Record, auth authority, operation freshstore.ConfigOperation) (freshstore.ConfigOperation, error) {
 	presence, value, err := auth.wire.ReadConfigFieldValue(ctx, auth.secret, operation.Field)
 	if err != nil {
 		return operation, cpa.ErrApplyUnknown
@@ -106,7 +106,7 @@ func (s *Service) resolveLegacyManaged(ctx context.Context, r freshstore.Record,
 	case presence == "present" && canonicalDigest(value) == canonicalDigest(operation.Value):
 		next := operation
 		next.State = "persisted"
-		if err = s.updateLegacyField(ctx, r, operation, next); err != nil {
+		if err = s.updateFieldJournal(ctx, r, operation, next); err != nil {
 			return operation, err
 		}
 		return next, nil
@@ -114,14 +114,14 @@ func (s *Service) resolveLegacyManaged(ctx context.Context, r freshstore.Record,
 		if operation.HTTP200 {
 			next := operation
 			next.State, next.Code = "persisted", "superseded"
-			if err = s.updateLegacyField(ctx, r, operation, next); err != nil {
+			if err = s.updateFieldJournal(ctx, r, operation, next); err != nil {
 				return operation, err
 			}
 			return next, nil
 		}
 		next := operation
 		next.State, next.Code = "failed", "write_not_applied"
-		if err = s.updateLegacyField(ctx, r, operation, next); err != nil {
+		if err = s.updateFieldJournal(ctx, r, operation, next); err != nil {
 			return operation, err
 		}
 		return next, nil
@@ -131,14 +131,16 @@ func (s *Service) resolveLegacyManaged(ctx context.Context, r freshstore.Record,
 	}
 }
 
-func (s *Service) updateLegacyField(ctx context.Context, r freshstore.Record, before, next freshstore.ConfigOperation) error {
+func (s *Service) updateFieldJournal(ctx context.Context, r freshstore.Record, before, next freshstore.ConfigOperation) error {
 	_, err := s.store.Update(ctx, r.Operation.Identity, r.Operation.Revision, func(v *freshstore.Record) error {
 		journal := v.Config[before.Field]
 		if journal == nil || journal.Latest != before.RequestID {
 			return freshstore.ErrConflict
 		}
 		current, ok := journal.Operations[before.RequestID]
-		if !ok || !reflect.DeepEqual(current, before) {
+		if !ok || !canonicalEqual(current, before) {
+			// The entry crossed the store's JSON boundary, so compare the canonical
+			// form: an int and the same number reloaded are one entry.
 			return freshstore.ErrConflict
 		}
 		journal.Operations[before.RequestID] = next

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -87,6 +88,12 @@ func validateEdits(group cpa.ConfigGroup, edits []Edit) ([]freshstore.ConfigGrou
 			}
 			if edit.Path == "requests.proxy-url" {
 				if err = cpa.ValidateProxyURL(value); err != nil {
+					// A credential in a proxy URL is the one rule here the user can
+					// fix from the field, so it names that field instead of the
+					// whole group. Every other refusal stays a shape error.
+					if errors.Is(err, cpa.ErrProxyURLCredentials) {
+						return nil, Rejection{Code: "proxy_url_credentials", Field: edit.Path}
+					}
 					return nil, ErrInvalid
 				}
 			}
@@ -135,6 +142,16 @@ func ValidateFamilyRequest(family string, q FamilyRequest) error {
 	return nil
 }
 
+// checkGeneration proves the browser is writing the target this Manager writes.
+// The page echoes the generation it read back; a save built against a different
+// CPA is refused instead of being applied to the wrong installation.
+func checkGeneration(expected Expected, target uint64) error {
+	if expected.Generation != strconv.FormatUint(target, 10) {
+		return ErrGenerationMismatch
+	}
+	return nil
+}
+
 func validateExpected(expected Expected) error {
 	if expected.Generation == "" || len(expected.Generation) > 64 || !isHex(expected.Baseline, 32) {
 		return ErrInvalid
@@ -160,8 +177,11 @@ func (s *Service) SaveGroup(ctx context.Context, groupID string, q GroupRequest)
 		return freshstore.ConfigGroupOperation{}, ErrInvalid
 	}
 	edits, err := validateEdits(group, q.Edits)
-	if err != nil || validateExpected(q.Expected) != nil || !freshkeysValidRequestID(q.RequestID) {
-		return freshstore.ConfigGroupOperation{}, ErrInvalid
+	if err == nil && (validateExpected(q.Expected) != nil || !freshkeysValidRequestID(q.RequestID)) {
+		err = ErrInvalid
+	}
+	if err != nil {
+		return freshstore.ConfigGroupOperation{}, err
 	}
 	r, err := s.store.Load(ctx)
 	if err != nil {
@@ -174,8 +194,19 @@ func (s *Service) SaveGroup(ctx context.Context, groupID string, q GroupRequest)
 	if !auth.capable.Writable {
 		return freshstore.ConfigGroupOperation{}, ErrReadOnly
 	}
+	if err = checkGeneration(q.Expected, r.Operation.Strategy.TargetGeneration); err != nil {
+		return freshstore.ConfigGroupOperation{}, err
+	}
 	if r.ConfigGroupsInvalid {
 		return freshstore.ConfigGroupOperation{}, cpa.ErrSourceConflict
+	}
+	if auth.mode == ModePrivate {
+		// The private H1 profile has its own write unit: one leaf, one operation,
+		// reserved by the Host. It never joins the group PATCH journal.
+		return s.savePrivateGroup(ctx, r, auth, groupID, edits, q)
+	}
+	if unresolvedLegacyField(r, groupID) {
+		return freshstore.ConfigGroupOperation{}, ErrLegacyUnresolved
 	}
 	if entry := r.ConfigGroups[groupID]; entry != nil {
 		if old, exists := entry.Operations[q.RequestID]; exists {
@@ -204,18 +235,23 @@ func (s *Service) SaveGroup(ctx context.Context, groupID string, q GroupRequest)
 	if err = s.appendGroupOperation(ctx, r.Operation.Identity, r.Operation.Revision, groupID, operation); err != nil {
 		return operation, err
 	}
-	// One DELETE per restored leaf, then one PATCH with only the edited leaves.
+	// One PATCH with only the edited leaves first, then one DELETE per restored
+	// leaf. The PATCH is the only write that can be rejected without having
+	// changed anything; once it is acknowledged the document has moved, so a
+	// later DELETE failure is unknown and is resolved by reading back, never by
+	// resending the save.
+	payload, patched := groupPatch(group.Prefix, edits)
+	if patched {
+		if err = auth.wire.PatchConfigPath(ctx, auth.secret, group.Prefix, payload); err != nil {
+			return s.failGroupOperation(ctx, groupID, operation, err, false)
+		}
+	}
 	for _, edit := range edits {
 		if edit.Action != "default" {
 			continue
 		}
 		if err = auth.wire.DeleteConfigPath(ctx, auth.secret, edit.Path); err != nil {
-			return s.failGroupOperation(ctx, groupID, operation, err)
-		}
-	}
-	if payload, ok := groupPatch(group.Prefix, edits); ok {
-		if err = auth.wire.PatchConfigPath(ctx, auth.secret, group.Prefix, payload); err != nil {
-			return s.failGroupOperation(ctx, groupID, operation, err)
+			return s.failGroupOperation(ctx, groupID, operation, err, patched)
 		}
 	}
 	acknowledged := operation
@@ -249,8 +285,14 @@ func (s *Service) SaveFamily(ctx context.Context, familyID string, q FamilyReque
 	if !auth.capable.RulesWritable {
 		return freshstore.ConfigGroupOperation{}, ErrRulesReadOnly
 	}
+	if err = checkGeneration(q.Expected, r.Operation.Strategy.TargetGeneration); err != nil {
+		return freshstore.ConfigGroupOperation{}, err
+	}
 	if r.ConfigGroupsInvalid {
 		return freshstore.ConfigGroupOperation{}, cpa.ErrSourceConflict
+	}
+	if unresolvedLegacyField(r, cpa.ConfigRulesGroupID) {
+		return freshstore.ConfigGroupOperation{}, ErrLegacyUnresolved
 	}
 	if entry := r.ConfigGroups[cpa.ConfigRulesGroupID]; entry != nil {
 		if old, exists := entry.Operations[q.RequestID]; exists {
@@ -283,7 +325,7 @@ func (s *Service) SaveFamily(ctx context.Context, familyID string, q FamilyReque
 		return operation, err
 	}
 	if err = auth.wire.PutConfigValue(ctx, auth.secret, family.Path, payload); err != nil {
-		return s.failGroupOperation(ctx, cpa.ConfigRulesGroupID, operation, err)
+		return s.failGroupOperation(ctx, cpa.ConfigRulesGroupID, operation, err, false)
 	}
 	acknowledged := operation
 	acknowledged.HTTP200 = true
@@ -330,10 +372,14 @@ func groupPatch(prefix string, edits []freshstore.ConfigGroupEdit) ([]byte, bool
 }
 
 // failGroupOperation records CPA's definite refusal and never repeats the write.
-func (s *Service) failGroupOperation(ctx context.Context, group string, operation freshstore.ConfigGroupOperation, cause error) (freshstore.ConfigGroupOperation, error) {
+// A definite refusal only proves the document unchanged while no part of the save
+// has landed, so callers pass applied=true once an earlier write of this save was
+// acknowledged: that failure is unknown and resolved by reading back.
+func (s *Service) failGroupOperation(ctx context.Context, group string, operation freshstore.ConfigGroupOperation, cause error, applied bool) (freshstore.ConfigGroupOperation, error) {
 	var rejection cpa.ConfigWriteError
-	if !errors.As(cause, &rejection) || !rejection.Definite() {
-		// A lost or unreadable response stays unknown until it is reconciled.
+	if applied || !errors.As(cause, &rejection) || !rejection.Definite() {
+		// A lost or unreadable response, or any failure after part of the save was
+		// applied, stays unknown until it is reconciled.
 		return operation, cpa.ErrApplyUnknown
 	}
 	next := operation
@@ -341,7 +387,14 @@ func (s *Service) failGroupOperation(ctx context.Context, group string, operatio
 	if err := s.updateGroupOperation(ctx, group, operation, next); err != nil {
 		return operation, err
 	}
-	return next, Rejection{Code: rejection.Code, Field: rejection.Field, Message: rejection.Message}
+	// CPA names a field only for a few codes. A save that edited exactly one leaf
+	// has exactly one place the rejection can belong to, so the page can show it
+	// on that field instead of as a group-wide failure.
+	field := rejection.Field
+	if field == "" && operation.Target == "group" && len(operation.Edits) == 1 {
+		field = operation.Edits[0].Path
+	}
+	return next, Rejection{Code: rejection.Code, Field: field, Message: rejection.Message}
 }
 
 // reconcileGroup resolves an unknown group operation that was never acknowledged.
@@ -369,6 +422,18 @@ func (s *Service) resolveGroupOperation(ctx context.Context, group string, auth 
 		}
 		return next, nil
 	}
+	// The read-back proves part of the save landed even though CPA never
+	// acknowledged all of it. Reporting "unchanged" here would be a lie the user
+	// acts on, and the document is the truth: record the partial outcome so the
+	// group shows the real values and can be saved again.
+	if applied, total := operationProgress(document, operation); applied > 0 && applied < total {
+		next := operation
+		next.State, next.Code = "persisted", "partial"
+		if err = s.updateGroupOperation(ctx, group, operation, next); err != nil {
+			return operation, err
+		}
+		return next, nil
+	}
 	if operation.HTTP200 {
 		next := operation
 		next.State, next.Code = "persisted", "superseded"
@@ -383,6 +448,40 @@ func (s *Service) resolveGroupOperation(ctx context.Context, group string, auth 
 		return operation, err
 	}
 	return next, nil
+}
+
+// operationProgress counts how many of the operation's own write instructions
+// CPA's current document already carries. A group save with both a set and a
+// default is several instructions, so a count between zero and the total is a
+// save that landed in part.
+func operationProgress(document map[string]any, operation freshstore.ConfigGroupOperation) (int, int) {
+	switch operation.Target {
+	case "family":
+		if operationInPlace(document, operation) {
+			return 1, 1
+		}
+		return 0, 1
+	case "group":
+		applied := 0
+		for _, edit := range operation.Edits {
+			value, presence := cpa.LookupConfigValue(document, edit.Path)
+			switch edit.Action {
+			case "default":
+				if presence == cpa.ConfigMissing {
+					applied++
+				}
+			case "set":
+				if presence == cpa.ConfigPresent && canonicalDigest(value) == canonicalDigest(edit.Value) {
+					applied++
+				}
+			default:
+				return 0, len(operation.Edits)
+			}
+		}
+		return applied, len(operation.Edits)
+	default:
+		return 0, 0
+	}
 }
 
 // operationInPlace reports whether CPA's current document carries exactly the

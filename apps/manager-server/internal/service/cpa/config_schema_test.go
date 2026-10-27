@@ -1,8 +1,8 @@
 package cpa
 
 import (
-	"errors"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -150,6 +150,10 @@ func TestLeafValuesAreShapesOnly(t *testing.T) {
 }
 
 // TestProxyURLCredentialsAreRejected is one of the two product rules CPAMP owns.
+// The scheme list is CPA's business, so every scheme and every "no proxy" spelling
+// CPA accepts must pass here; only a credential the browser would echo back into a
+// projected page is refused, and that refusal is its own error so the page can
+// show it on the field.
 func TestProxyURLCredentialsAreRejected(t *testing.T) {
 	for _, tc := range []struct {
 		value string
@@ -159,18 +163,23 @@ func TestProxyURLCredentialsAreRejected(t *testing.T) {
 		{"https://user:pass@proxy.test:8080", false},
 		{"socks5://user@proxy.test:1080", false},
 		{"socks5h://proxy.test:1080", true},
-		{"ftp://proxy.test", false},
-		{"proxy.test:8080", false},
-		{"", false},
-		{" http://proxy.test", false},
+		{"ftp://proxy.test", true},
+		{"proxy.test:8080", true},
+		{"", true},
+		{"direct", true},
+		{"none", true},
+		{"DIRECT", true},
 	} {
 		err := ValidateProxyURL(tc.value)
 		if (err == nil) != tc.ok {
 			t.Fatalf("%q ok=%v err=%v", tc.value, tc.ok, err)
 		}
+		if !tc.ok && !errors.Is(err, ErrProxyURLCredentials) {
+			t.Fatalf("%q refused for the wrong reason: %v", tc.value, err)
+		}
 	}
-	if err := ValidateProxyURL(1); err == nil {
-		t.Fatal("non-string proxy accepted")
+	if err := ValidateProxyURL(1); !errors.Is(err, ErrInvalidConfigPath) {
+		t.Fatalf("non-string proxy = %v", err)
 	}
 }
 

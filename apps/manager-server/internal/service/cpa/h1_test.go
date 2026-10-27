@@ -277,6 +277,63 @@ func TestH1WrongProfileRefused(t *testing.T) {
 	}
 }
 
+// TestH1WrongProfileAndExactFieldDelegation proves the H1 step writer accepts
+// only the single intent its parent reserved: another value, another field or
+// another request never reaches CPA, and the exact intent is written once.
+func TestH1WrongProfileAndExactFieldDelegation(t *testing.T) {
+	tr, h, m := h1Fixture(t)
+	tr.h1 = nil
+	if _, _, e := tr.configuration(t.Context(), "observe"); e == nil {
+		t.Fatal("standalone profile accepted combined authority")
+	}
+	tr.h1 = h
+	path := "routing.retry.request-retry"
+	i := H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "config-field", Path: path, Value: 0}
+	grantH1(m, i)
+	p, e := h.Claim(t.Context(), tr, i)
+	if e != nil {
+		t.Fatal(e)
+	}
+	step, e := h.Begin(t.Context(), tr, p.ID, 0)
+	if e != nil {
+		t.Fatal(e)
+	}
+	puts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/v8/management/config/routing/retry/request-retry" {
+			t.Error("unbounded writer", r.Method, r.URL.Path)
+		}
+		puts++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	tr.client = server.Client()
+	tr.endpoint = server.URL
+	if e = tr.WriteH1ConfigField(t.Context(), p.ID, step, testManagement(), path, 1); e == nil || puts != 0 {
+		t.Fatal("wrong value reached the PUT", e, puts)
+	}
+	if e = tr.WriteH1ConfigField(t.Context(), p.ID, step, testManagement(), "requests.passthrough-headers", true); e == nil || puts != 0 {
+		t.Fatal("another field reached the PUT", e, puts)
+	}
+	saved := m.v.H1.Parent.Intent
+	m.v.H1.Parent.Intent.RequestID = strings.Repeat("3", 32)
+	if e = tr.WriteH1ConfigField(t.Context(), p.ID, step, testManagement(), path, 0); e == nil || puts != 0 {
+		t.Fatal("another request reached the PUT", e, puts)
+	}
+	m.v.H1.Parent.Intent = saved
+	// The Host bounds are the private contract: a value it would refuse is
+	// stopped before the reserved step is written, even for the exact intent.
+	if e = tr.WriteH1ConfigField(t.Context(), p.ID, step, testManagement(), path, 11); e == nil || puts != 0 {
+		t.Fatal("out-of-range value reached the PUT", e, puts)
+	}
+	if e = tr.WriteH1ConfigField(t.Context(), p.ID, step, testManagement(), path, 0); e != nil || puts != 1 {
+		t.Fatal("exact zero delegation denied", e, puts)
+	}
+	if h.Free(t.Context(), tr) == nil {
+		t.Fatal("HTTP success released a pending source")
+	}
+}
+
 func TestH1ManagerB2KeyB2AndRestartBetweenKeySteps(t *testing.T) {
 	tr, h, m := h1Fixture(t)
 	finish := func(i H1Intent) {

@@ -1,6 +1,7 @@
 package freshstore
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -55,7 +56,8 @@ type ConfigGroupOperation struct {
 }
 
 // Clone returns a deep copy, so a verbatim raw entry and a decoded one never
-// alias each other.
+// alias each other. Rules go through a decoder that keeps json.Number, so a
+// 64-bit integer in a rule parameter is not rounded on the way to the copy.
 func (o ConfigGroupOperation) Clone() ConfigGroupOperation {
 	copied := o
 	if o.Edits != nil {
@@ -64,8 +66,10 @@ func (o ConfigGroupOperation) Clone() ConfigGroupOperation {
 	}
 	if o.Rules != nil {
 		if data, err := json.Marshal(o.Rules); err == nil {
+			decoder := json.NewDecoder(bytes.NewReader(data))
+			decoder.UseNumber()
 			var rules any
-			if json.Unmarshal(data, &rules) == nil {
+			if decoder.Decode(&rules) == nil {
 				copied.Rules = rules
 			}
 		}
@@ -74,18 +78,121 @@ func (o ConfigGroupOperation) Clone() ConfigGroupOperation {
 }
 
 // loadConfigGroups decodes the group section. Any entry this store cannot prove
-// is reported as damage: the page then refuses writes instead of trusting a
-// journal it cannot read.
-func loadConfigGroups(doc configJournalDoc) (map[string]*ConfigGroupJournal, bool) {
+// is reported with its exact bytes: the page then refuses writes instead of
+// trusting a journal it cannot read, and no later write of another section may
+// discard an original operation that is still unresolved.
+func loadConfigGroups(doc configJournalDoc) (map[string]*ConfigGroupJournal, map[string]json.RawMessage) {
 	groups := make(map[string]*ConfigGroupJournal, len(doc.Groups))
+	var damaged map[string]json.RawMessage
 	for group, raw := range doc.Groups {
-		var journal *ConfigGroupJournal
-		if json.Unmarshal(raw, &journal) != nil || !validConfigGroupJournal(group, journal) {
-			return nil, true
+		journal, err := decodeConfigGroupJournal(raw)
+		if err != nil || !validConfigGroupJournal(group, journal) {
+			if damaged == nil {
+				damaged = map[string]json.RawMessage{}
+			}
+			damaged[group] = raw
+			continue
 		}
+		normalizeConfigGroupJournal(journal)
 		groups[group] = journal
 	}
-	return groups, false
+	if len(damaged) != 0 {
+		// Fail closed: a page that cannot prove one group proves none of them.
+		return nil, damaged
+	}
+	return groups, nil
+}
+
+// decodeConfigGroupJournal decodes one entry keeping numbers as json.Number. A
+// rule parameter can hold a 64-bit integer, and a plain float64 decode would
+// change its low digits between the value the page shows and the value it sends
+// back. json.Number also marshals to the original literal, so the entry is
+// re-emitted exactly.
+func decodeConfigGroupJournal(raw json.RawMessage) (*ConfigGroupJournal, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var journal *ConfigGroupJournal
+	if decoder.Decode(&journal) != nil {
+		return nil, ErrConflict
+	}
+	return journal, nil
+}
+
+// normalizeConfigGroupJournal converts JSON numbers back into the exact scalar
+// types the service validated, so the append-only comparison never depends on
+// the float64 JSON decoding produces. Without it a group save that carries a
+// number compares its in-memory int against a reloaded float64, fails, and leaves
+// a write CPA already applied locked behind a conflict.
+func normalizeConfigGroupJournal(journal *ConfigGroupJournal) {
+	if journal == nil {
+		return
+	}
+	for id, operation := range journal.Operations {
+		for index := range operation.Edits {
+			operation.Edits[index].Value = normalizeGroupValue(operation.Edits[index].Value)
+		}
+		operation.Rules = normalizeRuleValue(operation.Rules)
+		journal.Operations[id] = operation
+	}
+}
+
+// normalizeRuleValue keeps every rule parameter as json.Number. A rule value is
+// arbitrary and can carry a 64-bit integer, so it must never become an int (which
+// would truncate) or a float64 (which would round). The literals are re-emitted
+// from the numbers, and canonicalEqual hashes the canonical form on both sides.
+func normalizeRuleValue(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		for index := range typed {
+			typed[index] = normalizeRuleValue(typed[index])
+		}
+		return typed
+	case map[string]any:
+		for key := range typed {
+			typed[key] = normalizeRuleValue(typed[key])
+		}
+		return typed
+	case float64:
+		// A rule the store decoded without UseNumber; json.Number from the
+		// literal is the best exact form still available.
+		if literal, err := json.Marshal(typed); err == nil {
+			return json.Number(literal)
+		}
+		return typed
+	default:
+		return value
+	}
+}
+
+// normalizeGroupValue rewrites every whole JSON number in a decoded value to an
+// int and rebuilds the containers around it. A number that arrived as
+// json.Number is already exact and is left alone; one that did not survive as a
+// whole int is kept so validation can refuse it.
+func normalizeGroupValue(value any) any {
+	switch typed := value.(type) {
+	case json.Number:
+		if number, ok := operationInt(typed); ok {
+			return number
+		}
+		return typed
+	case float64:
+		if number, ok := operationInt(typed); ok {
+			return number
+		}
+		return typed
+	case []any:
+		for index := range typed {
+			typed[index] = normalizeGroupValue(typed[index])
+		}
+		return typed
+	case map[string]any:
+		for key := range typed {
+			typed[key] = normalizeGroupValue(typed[key])
+		}
+		return typed
+	default:
+		return value
+	}
 }
 
 // validConfigGroupJournal is the structural contract of one group's journal.
@@ -138,7 +245,10 @@ func validConfigGroupJournal(group string, journal *ConfigGroupJournal) bool {
 				return false
 			}
 		case "persisted":
-			if operation.Code != "" && operation.Code != "superseded" {
+			// "superseded" records an acknowledged write another writer replaced;
+			// "partial" records a save only part of whose instructions landed, so
+			// the page must never claim the document is unchanged.
+			if operation.Code != "" && operation.Code != "superseded" && operation.Code != "partial" {
 				return false
 			}
 		case "failed":
@@ -198,8 +308,8 @@ func validateConfigGroupJournalUpdate(before, after map[string]*ConfigGroupJourn
 func validateConfigGroupOperationUpdate(old, next ConfigGroupOperation) error {
 	if next.RequestID != old.RequestID || next.Group != old.Group || next.Target != old.Target ||
 		next.Prefix != old.Prefix || next.Baseline != old.Baseline || next.SourceID != old.SourceID ||
-		next.Generation != old.Generation || !reflect.DeepEqual(next.Edits, old.Edits) ||
-		!reflect.DeepEqual(next.Rules, old.Rules) {
+		next.Generation != old.Generation || !journalEqual(next.Edits, old.Edits) ||
+		!journalEqual(next.Rules, old.Rules) {
 		return ErrConflict
 	}
 	if old.HTTP200 && !next.HTTP200 {
@@ -209,7 +319,7 @@ func validateConfigGroupOperationUpdate(old, next ConfigGroupOperation) error {
 		if old.State != "unknown" || next.Code == "" {
 			return ErrConflict
 		}
-		if next.State != "failed" && !(next.State == "persisted" && next.Code == "superseded") {
+		if next.State != "failed" && !(next.State == "persisted" && (next.Code == "superseded" || next.Code == "partial")) {
 			return ErrConflict
 		}
 	}
@@ -223,6 +333,22 @@ func validateConfigGroupOperationUpdate(old, next ConfigGroupOperation) error {
 		return ErrConflict
 	}
 	return nil
+}
+
+// journalEqual compares two journal values by their canonical JSON. A value that
+// crossed the JSON boundary and one that did not encode identically — 3 and
+// json.Number("3") are the same edit — so the append-only check must not read a
+// re-encoded value as a rewrite.
+func journalEqual(a, b any) bool {
+	if reflect.DeepEqual(a, b) {
+		return true
+	}
+	left, leftErr := json.Marshal(a)
+	right, rightErr := json.Marshal(b)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	return bytes.Equal(left, right)
 }
 
 // cloneConfigGroupJournals deep-copies the group map for a CAS before-image.
@@ -262,7 +388,7 @@ func ValidateConfigGroupJournals(ctx context.Context, q queryer) (map[string]*Co
 		return nil, true, nil
 	}
 	groups, damaged := loadConfigGroups(doc)
-	if damaged {
+	if damaged != nil {
 		return nil, true, nil
 	}
 	return groups, false, nil

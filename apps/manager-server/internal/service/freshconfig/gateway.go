@@ -62,9 +62,34 @@ const (
 	ReasonUnavailable     = "config_authority_unavailable"
 	ReasonJournalInvalid  = "config_journal_invalid"
 	ReasonUnknownOriginal = "original_operation_unknown"
-	ReasonReadUnavailable = "config_read_unavailable"
-	ReasonNotInstalled    = "installation_incomplete"
+	// ReasonLegacyUnresolved blocks a group whose pre-cutover field operation was
+	// never resolved. It is distinct from ReasonUnknownOriginal because the page
+	// has no group-level record to reconcile: the old field operation is settled
+	// through its own journal.
+	ReasonLegacyUnresolved = "legacy_operation_unresolved"
+	ReasonReadUnavailable  = "config_read_unavailable"
+	ReasonNotInstalled     = "installation_incomplete"
 )
+
+// ErrGenerationMismatch refuses a save the browser built against another CPA
+// target generation. It is a typed conflict so the page can re-read and keep the
+// draft instead of reporting a moved baseline.
+var ErrGenerationMismatch = errors.New("gateway config target generation mismatch")
+
+// ErrLegacyUnresolved refuses a save of a group that still carries a pre-cutover
+// field operation. Resolving that operation reads the document, so a newer write
+// would let it observe a value it never wrote.
+var ErrLegacyUnresolved = errors.New("legacy config operation is unresolved")
+
+// ProfileLimits is the write shape one profile accepts. The private H1 profile is
+// the only one that reserves a single leaf per operation and has no delete, so it
+// is the only profile that carries limits at all.
+type ProfileLimits struct {
+	// SingleEdit means a group save carries exactly one "set" edit.
+	SingleEdit bool `json:"single_edit"`
+	// UseDefault is whether "restore the CPA default" is offered.
+	UseDefault bool `json:"use_default"`
+}
 
 // Capability is what this installation may do with the page right now.
 type Capability struct {
@@ -84,31 +109,38 @@ type FieldView struct {
 	Presence string `json:"presence"`
 	Value    any    `json:"value"`
 	Editable bool   `json:"editable"`
-	Reason   string `json:"reason,omitempty"`
+	// Inherit is the value CPA resolves while the key is absent, for the leaves
+	// where that is a third state rather than an implied false. The page renders
+	// inherit / on / off and never invents an off.
+	Inherit *bool  `json:"inherit,omitempty"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // GroupView is one page group: its confirmed baseline and its latest operation.
 type GroupView struct {
-	ID        string                         `json:"id"`
-	Prefix    string                         `json:"prefix"`
-	Paths     []string                       `json:"paths"`
-	Baseline  string                         `json:"baseline"`
-	Writable  bool                           `json:"writable"`
-	Reason    string                         `json:"reason,omitempty"`
-	Persisted string                         `json:"persisted"`
-	Effective string                         `json:"effective"`
+	ID        string                           `json:"id"`
+	Prefix    string                           `json:"prefix"`
+	Paths     []string                         `json:"paths"`
+	Baseline  string                           `json:"baseline"`
+	Writable  bool                             `json:"writable"`
+	Reason    string                           `json:"reason,omitempty"`
+	Persisted string                           `json:"persisted"`
+	Effective string                           `json:"effective"`
 	Operation *freshstore.ConfigGroupOperation `json:"operation,omitempty"`
 }
 
-// FamilyView is one whole payload rule family.
+// FamilyView is one whole payload rule family. Operation is the latest save of
+// the shared rules group, so a family whose write is still unknown survives a
+// page reload and can be reconciled from persisted state alone.
 type FamilyView struct {
-	Family   string `json:"family"`
-	Path     string `json:"path"`
-	Rules    any    `json:"rules"`
-	Baseline string `json:"baseline"`
-	Writable bool   `json:"writable"`
-	Reason   string `json:"reason,omitempty"`
-	ReadOnly bool   `json:"readOnly"`
+	Family    string                           `json:"family"`
+	Path      string                           `json:"path"`
+	Rules     any                              `json:"rules"`
+	Baseline  string                           `json:"baseline"`
+	Writable  bool                             `json:"writable"`
+	Reason    string                           `json:"reason,omitempty"`
+	ReadOnly  bool                             `json:"readOnly"`
+	Operation *freshstore.ConfigGroupOperation `json:"operation,omitempty"`
 }
 
 // View is the whole page read model for one installation.
@@ -116,10 +148,14 @@ type View struct {
 	Capability Capability `json:"capability"`
 	// Generation is the CPA target generation this installation writes. The page
 	// echoes it back with every save so an operation is bound to one target.
-	Generation string      `json:"generation"`
-	Groups     []GroupView `json:"groups"`
-	Fields     []FieldView `json:"fields"`
-	Families   []FamilyView `json:"families"`
+	Generation string `json:"generation"`
+	// ProfileLimits is the write shape this profile accepts. It is present only
+	// where the page must constrain itself (the private H1 profile); absence
+	// means the group contract applies unchanged.
+	ProfileLimits *ProfileLimits `json:"profile_limits,omitempty"`
+	Groups        []GroupView    `json:"groups"`
+	Fields        []FieldView    `json:"fields"`
+	Families      []FamilyView   `json:"families"`
 	// GroupsInvalid reports a group journal this store cannot prove. The page
 	// stays readable and refuses every write.
 	GroupsInvalid bool `json:"groupsInvalid"`
@@ -136,12 +172,21 @@ type configWire interface {
 	ReconcileConfigField(context.Context, cpa.ConfigFieldSource, string, string, any) (cpa.ConfigFieldSource, error)
 	ConfigFieldSource(context.Context) (cpa.ConfigFieldSource, error)
 	HasRuntimeJournal() bool
+	// The private H1/direct profile writes one leaf per operation through the
+	// Host reservation protocol, not through the group PATCH path.
+	ReadConfigField(context.Context, string, string) (cpa.ConfigFieldSource, string, any, error)
+	BeginConfigField(context.Context, cpa.ConfigFieldSource, string, string, any) error
+	PutConfigField(context.Context, cpa.ConfigFieldSource, string, string, string, any) error
+	WriteH1ConfigField(context.Context, string, cpa.H1Step, string, string, any) error
 }
 
-// h1Wire is the H1 handoff bookkeeping legacy reconciliation needs.
+// h1Wire is the H1 handoff bookkeeping the private profile and legacy
+// reconciliation need.
 type h1Wire interface {
-	ParentRecord(context.Context, *cpa.Transport, string) (*cpa.H1Parent, error)
+	Claim(context.Context, *cpa.Transport, cpa.H1Intent) (*cpa.H1Parent, error)
+	Begin(context.Context, *cpa.Transport, string, int) (cpa.H1Step, error)
 	Commit(context.Context, *cpa.Transport, string, int) (cpa.H1Step, error)
+	ParentRecord(context.Context, *cpa.Transport, string) (*cpa.H1Parent, error)
 	Finish(context.Context, *cpa.Transport, string, string) error
 }
 
@@ -208,6 +253,9 @@ type authority struct {
 	secret   string
 	capable  Capability
 	readOnly string
+	// limits is the write shape this profile accepts; nil means the page's own
+	// group rules apply unchanged.
+	limits *ProfileLimits
 }
 
 // resolve proves the profile this service was constructed with and returns the
@@ -248,6 +296,14 @@ func (s *Service) resolve(ctx context.Context, r freshstore.Record) (authority, 
 		if err != nil {
 			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
 		}
+		// The live connection must still be the connection this installation
+		// committed. Reading settings alone proves nothing: a later edit would
+		// otherwise point the page at a CPA the installation does not own. The
+		// committed management key is a protected envelope, so the address is the
+		// comparable durable fact; the secret stays with the connection service.
+		if endpoint != strings.TrimRight(r.Connection.CPABaseURL, "/") {
+			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
+		}
 		wire := s.externalWire
 		var transport configWire
 		if wire != nil {
@@ -268,8 +324,10 @@ func (s *Service) resolve(ctx context.Context, r freshstore.Record) (authority, 
 		}, nil
 	default:
 		// The private H1/direct profile keeps its frozen six-leaf scope and the
-		// Host reservation protocol. The page reads it and never writes it.
-		if op.Strategy.Stage != "committed" || op.Strategy.TargetGeneration == 0 {
+		// Host reservation protocol: one leaf per operation, reserved by the
+		// Runtime, no delete. The rest of the page is readable and read-only.
+		if op.Strategy.Stage != "committed" || op.Strategy.TargetGeneration == 0 ||
+			op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
 			return authority{mode: ModePrivate, capable: Capability{Mode: ModePrivate, Readable: false, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
 		}
 		secret, err := s.target(ctx, op.Strategy.TargetGeneration)
@@ -281,8 +339,10 @@ func (s *Service) resolve(ctx context.Context, r freshstore.Record) (authority, 
 			wire:   s.wire,
 			secret: secret,
 			capable: Capability{
-				Mode: ModePrivate, Readable: true, Writable: false, RulesWritable: false, Reason: ReasonPrivateFrozen,
+				Mode: ModePrivate, Readable: true, Writable: true, RulesWritable: false,
+				Reason: ReasonPrivateFrozen,
 			},
+			limits: &ProfileLimits{SingleEdit: true, UseDefault: false},
 		}, nil
 	}
 }
@@ -302,6 +362,7 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 	}
 	auth, _ := s.resolve(ctx, r)
 	view.Capability = auth.capable
+	view.ProfileLimits = auth.limits
 	journal := r.ConfigGroups
 	if view.GroupsInvalid {
 		journal = nil
@@ -327,8 +388,51 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 			blocked[id] = ReasonUnknownOriginal
 		}
 	}
+	// A pre-cutover field operation that was never resolved blocks its group. It
+	// has its own reason code because the page settles it through the field
+	// journal, not through a group operation. On the private profile that journal
+	// IS the live write path, so its newest operation is projected as the group's
+	// own operation instead.
+	private := auth.mode == ModePrivate
+	privateOperations := map[string]*freshstore.ConfigGroupOperation{}
+	if private {
+		for _, id := range cpa.PrivateConfigGroups() {
+			group, ok := cpa.LookupPrivateConfigGroup(id)
+			if !ok {
+				continue
+			}
+			operation := latestPrivateOperation(r, group)
+			if operation == nil {
+				continue
+			}
+			privateOperations[id] = operation
+			if operation.State == "unknown" {
+				blocked[id] = ReasonUnknownOriginal
+			}
+		}
+	}
 	for _, id := range cpa.ConfigGroupIDs() {
+		if private {
+			break
+		}
+		if unresolvedLegacyField(r, id) && blocked[id] == "" {
+			blocked[id] = ReasonLegacyUnresolved
+		}
+	}
+	if !private && unresolvedLegacyField(r, cpa.ConfigRulesGroupID) && blocked[cpa.ConfigRulesGroupID] == "" {
+		blocked[cpa.ConfigRulesGroupID] = ReasonLegacyUnresolved
+	}
+	// A private-profile group is writable only if it holds a private leaf. Every
+	// other group of that profile stays readable and read-only.
+	groupIDs := cpa.ConfigGroupIDs()
+	if private {
+		groupIDs = cpa.PrivateConfigGroups()
+	}
+	for _, id := range groupIDs {
 		group, ok := cpa.LookupConfigGroup(id)
+		if private {
+			group, ok = cpa.LookupPrivateConfigGroup(id)
+		}
 		if !ok {
 			continue
 		}
@@ -342,6 +446,13 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 				entry.Operation = &copied
 				entry.Persisted = operation.State
 			}
+		}
+		if operation, ok := privateOperations[id]; ok {
+			// The private profile journals per field, so the persisted evidence of
+			// its last save lives there; the page reconciles from this record after
+			// a reload.
+			entry.Operation = operation
+			entry.Persisted = operation.State
 		}
 		if document != nil {
 			entry.Baseline = groupBaseline(document, group)
@@ -363,6 +474,9 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 	for _, path := range cpa.ConfigLeafPaths() {
 		leaf, _ := cpa.LookupConfigLeaf(path)
 		field := FieldView{Path: path, Type: string(leaf.Type), Kind: string(leaf.Kind), Group: leaf.Group, Presence: "unknown"}
+		if inherited, ok := cpa.ConfigLeafInheritable(path); ok {
+			field.Inherit = &inherited
+		}
 		if document != nil {
 			value, presence := cpa.LookupConfigValue(document, path)
 			field.Presence, field.Value = string(presence), value
@@ -375,14 +489,27 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 			field.Reason = reason
 		}
 		field.Editable = auth.capable.Writable && !view.GroupsInvalid && blocked[leaf.Group] == "" && document != nil
+		if private && field.Editable && !leaf.Private {
+			// The Host reservation protocol writes one private leaf per operation
+			// and nothing else, so the page must not offer the rest.
+			field.Editable = false
+			field.Reason = ReasonPrivateFrozen
+		}
 		if !field.Editable && field.Reason == "" {
-			field.Reason = ReasonUnavailable
+			field.Reason = firstReason(auth.capable.Reason, ReasonUnavailable)
 		}
 		view.Fields = append(view.Fields, field)
 	}
+	var rulesOperation *freshstore.ConfigGroupOperation
+	if entry := journal[cpa.ConfigRulesGroupID]; entry != nil {
+		if operation, ok := entry.Operations[entry.Latest]; ok {
+			copied := operation.Clone()
+			rulesOperation = &copied
+		}
+	}
 	for _, id := range cpa.ConfigRuleFamilyIDs() {
 		family, _ := cpa.LookupConfigRuleFamily(id)
-		item := FamilyView{Family: family.Family, Path: family.Path, ReadOnly: true}
+		item := FamilyView{Family: family.Family, Path: family.Path, ReadOnly: true, Operation: rulesOperation}
 		if document != nil {
 			if value, presence := cpa.LookupConfigValue(document, family.Path); presence == cpa.ConfigPresent {
 				if rules, ok := value.([]any); ok {
@@ -409,6 +536,21 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 // freshkeysValidRequestID keeps the request-ID contract of the retained field
 // journal and the new group journal identical.
 func freshkeysValidRequestID(id string) bool { return freshkeys.ValidRequestID(id) }
+
+// unresolvedLegacyField reports a pre-cutover field operation of this group that
+// was never resolved. Reconciling it reads the current document, so a newer save
+// would let the reconcile read a value it did not write.
+func unresolvedLegacyField(r freshstore.Record, group string) bool {
+	for path, entry := range r.Config {
+		if entry == nil || r.ConfigInvalid[path] || fieldGroup(path) != group {
+			continue
+		}
+		if operation, ok := entry.Operations[entry.Latest]; ok && operation.State == "unknown" {
+			return true
+		}
+	}
+	return false
+}
 
 func firstReason(reasons ...string) string {
 	for _, reason := range reasons {
@@ -496,7 +638,7 @@ func (s *Service) Operation(ctx context.Context, id string, reconcile bool) (fre
 		if resolveErr != nil {
 			return legacyView(operation), cpa.ErrApplyUnknown
 		}
-		reconciled, reconcileErr := s.reconcileLegacyField(ctx, r, auth, operation)
+		reconciled, reconcileErr := s.reconcileFieldOperation(ctx, r, auth, operation)
 		if reconcileErr != nil {
 			return legacyView(operation), reconcileErr
 		}

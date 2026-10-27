@@ -151,6 +151,143 @@ func (t *Transport) ReadConfigFieldValue(ctx context.Context, management, path s
 	}
 }
 
+// ReadConfigField retains missing, explicit null and present independently. The
+// observation must be stable across the scoped CPA read; this is not an atomic
+// upstream CAS and makes no effectiveness claim.
+func (t *Transport) ReadConfigField(ctx context.Context, management, path string) (ConfigFieldSource, string, any, error) {
+	if _, ok := LookupPrivateConfigLeaf(path); !ok {
+		return ConfigFieldSource{}, "unknown", nil, ErrProofUnavailable
+	}
+	before, err := t.ConfigFieldSource(ctx)
+	if err != nil {
+		return before, "unknown", nil, err
+	}
+	endpoint, err := ConfigLeafEndpoint(path)
+	if err != nil {
+		return before, "unknown", nil, err
+	}
+	code, body, err := t.request(ctx, http.MethodGet, endpoint, management, nil)
+	if err != nil {
+		return before, "unknown", nil, err
+	}
+	presence := "missing"
+	var value any
+	switch code {
+	case http.StatusNotFound:
+	case http.StatusOK:
+		trimmed := bytes.TrimSpace(body)
+		if bytes.Equal(trimmed, []byte("null")) {
+			presence = "null"
+			break
+		}
+		value, err = ParseConfigLeafValue(path, trimmed)
+		if err != nil {
+			return before, "unknown", nil, ErrSourceConflict
+		}
+		presence = "present"
+	default:
+		return before, "unknown", nil, ErrProofUnavailable
+	}
+	after, err := t.ConfigFieldSource(ctx)
+	if err != nil || !sameConfigFieldSource(before, after) {
+		return after, "unknown", nil, ErrSourceConflict
+	}
+	return after, presence, value, nil
+}
+
+// BeginConfigField durably reserves the original operation. It never retries a
+// reservation: the caller has already recorded this request ID in the journal.
+func (t *Transport) BeginConfigField(ctx context.Context, source ConfigFieldSource, id, path string, value any) error {
+	if ValidatePrivateConfigLeafValue(path, value) != nil || t.configurationAuthority == nil {
+		return ErrProofUnavailable
+	}
+	grant, err := t.configurationAuthority.grant()
+	if err != nil || grant.SourceID != source.SourceID || grant.Generation != source.Generation {
+		return ErrSourceConflict
+	}
+	v, err := t.configurationAuthority.call(ctx, configRequest{
+		Action:           "begin",
+		SourceID:         source.SourceID,
+		Generation:       source.Generation,
+		ExpectedRevision: source.Revision,
+		ExpectedSHA256:   source.SHA256,
+		OperationID:      id,
+		Scope:            path,
+		Path:             path,
+		Value:            value,
+	})
+	if err != nil || !v.Created || v.State != "unknown" || v.Operation.ID != id || v.Operation.Scope != path {
+		return ErrApplyUnknown
+	}
+	if observedPath, observedValue, ok := operationField(v.Operation); !ok || observedPath != path || !reflect.DeepEqual(observedValue, value) {
+		return ErrApplyUnknown
+	}
+	return nil
+}
+
+// PutConfigField sends exactly one non-replayable PUT of one scalar. No
+// redirects, retries, YAML, generic path or fallback; a transport error is
+// always an unknown result.
+func (t *Transport) PutConfigField(ctx context.Context, source ConfigFieldSource, id, management, path string, value any) error {
+	if ValidatePrivateConfigLeafValue(path, value) != nil {
+		return ErrProofUnavailable
+	}
+	v, err := t.ConfigFieldSource(ctx)
+	if err != nil || v.SourceID != source.SourceID || v.Generation != source.Generation ||
+		v.Revision != source.Revision+1 || v.SHA256 != source.SHA256 || v.OperationState != "unknown" ||
+		v.OperationID != id || v.OperationPath != path || !reflect.DeepEqual(v.OperationValue, value) {
+		return ErrApplyUnknown
+	}
+	endpoint, err := ConfigLeafEndpoint(path)
+	if err != nil {
+		return ErrProofUnavailable
+	}
+	payload, err := EncodeConfigLeafValue(path, value)
+	if err != nil {
+		return ErrProofUnavailable
+	}
+	code, _, err := t.request(ctx, http.MethodPut, endpoint, management, payload)
+	if err != nil || (code != http.StatusOK && code != http.StatusNoContent) {
+		return ErrApplyUnknown
+	}
+	return nil
+}
+
+// WriteH1ConfigField writes the one step already reserved by the H1 parent. The
+// intent is re-read from Runtime, never trusted from local state.
+func (t *Transport) WriteH1ConfigField(ctx context.Context, parent string, step H1Step, management, path string, value any) error {
+	if t.h1 == nil || ValidatePrivateConfigLeafValue(path, value) != nil || step.Scope != path {
+		return ErrProofUnavailable
+	}
+	v, err := t.h1.Parent(ctx, t, parent)
+	if err != nil {
+		return err
+	}
+	if v.H1 == nil || v.H1.Parent == nil {
+		return ErrSourceConflict
+	}
+	intentPath, intentValue, ok := v.H1.Parent.Intent.fieldIntent()
+	if !ok || intentPath != path || !reflect.DeepEqual(intentValue, value) {
+		return ErrSourceConflict
+	}
+	if err = t.h1.Reserved(ctx, t, parent, step); err != nil {
+		return err
+	}
+	endpoint, err := ConfigLeafEndpoint(path)
+	if err != nil {
+		return ErrProofUnavailable
+	}
+	payload, err := EncodeConfigLeafValue(path, value)
+	if err != nil {
+		return ErrProofUnavailable
+	}
+	code, _, err := t.request(ctx, http.MethodPut, endpoint, management, payload)
+	if err != nil || (code != http.StatusOK && code != http.StatusNoContent) {
+		return ErrApplyUnknown
+	}
+	return nil
+}
+
 // HasRuntimeJournal reports whether this Transport reserves through the private
 // runtime authority. Without it the Manager journal is the only reservation.
 func (t *Transport) HasRuntimeJournal() bool {

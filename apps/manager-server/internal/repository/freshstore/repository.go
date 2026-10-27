@@ -59,12 +59,13 @@ func load(ctx context.Context, q queryer) (Record, error) {
 			return Record{}, ErrNotFresh
 		}
 	}
-	config, configInvalid, configDamaged, configGroups, configGroupsInvalid, err := loadConfigJournals(ctx, q)
+	config, configInvalid, configDamaged, configGroups, configGroupsDamaged, err := loadConfigJournals(ctx, q)
 	if err != nil {
 		return Record{}, err
 	}
 	r.Config, r.ConfigInvalid, r.ConfigDamaged = config, configInvalid, configDamaged
-	r.ConfigGroups, r.ConfigGroupsInvalid = configGroups, configGroupsInvalid
+	r.ConfigGroups, r.ConfigGroupsInvalid = configGroups, configGroupsDamaged != nil
+	r.ConfigGroupsDamaged = configGroupsDamaged
 	// After installation, the existing Config service persists a compatibility
 	// setup row together with manager_config_v1. It does not replace the Fresh
 	// operation's ownership. Pending installations still reject that state.
@@ -304,6 +305,7 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	before.Config = cloneConfigJournals(v.Config)
 	before.ConfigGroups = cloneConfigGroupJournals(v.ConfigGroups)
 	before.ConfigDamaged = cloneRawMessages(v.ConfigDamaged)
+	before.ConfigGroupsDamaged = cloneRawMessages(v.ConfigGroupsDamaged)
 	before.Operation.Strategy.AdoptionDecisions = slices.Clone(v.Operation.Strategy.AdoptionDecisions)
 	before.Operation.Strategy.AdoptionResources = slices.Clone(v.Operation.Strategy.AdoptionResources)
 	if v.Admin != nil {
@@ -321,6 +323,11 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		return Record{}, err
 	}
 	if before.ConfigGroupsInvalid != v.ConfigGroupsInvalid || v.ConfigGroupsInvalid && len(v.ConfigGroups) != 0 {
+		return Record{}, ErrConflict
+	}
+	// Damaged group bytes are owned by the store, exactly like damaged field
+	// bytes: a callback may never erase the evidence of an unresolved original.
+	if !reflect.DeepEqual(before.ConfigGroupsDamaged, v.ConfigGroupsDamaged) {
 		return Record{}, ErrConflict
 	}
 	if err = validateConfigGroupJournalUpdate(before.ConfigGroups, v.ConfigGroups); err != nil {
@@ -381,7 +388,7 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		err = write(ctx, tx, "setup", setup)
 	}
 	if err == nil {
-		err = writeConfigJournals(ctx, tx, before.Config, v.Config, v.ConfigDamaged, before.ConfigGroups, v.ConfigGroups)
+		err = writeConfigJournals(ctx, tx, before.Config, v.Config, v.ConfigDamaged, before.ConfigGroups, v.ConfigGroups, v.ConfigGroupsDamaged)
 	}
 	if err != nil {
 		return Record{}, err

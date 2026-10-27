@@ -1,8 +1,10 @@
 package cpa
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -44,6 +46,10 @@ const maxConfigMessage = 240
 // ReadConfigDocument reads the whole configuration once. The document carries
 // provider and client secrets, so it NEVER leaves the Manager: callers project
 // the scoped leaves and rules they may show and drop everything else.
+//
+// Numbers are kept as json.Number. A rule parameter can hold a 64-bit integer,
+// and decoding it into float64 would silently change the low digits of a value
+// the page shows and sends straight back on the next family save.
 func (t *Transport) ReadConfigDocument(ctx context.Context, management string) (map[string]any, error) {
 	if !validManagementKey(management) {
 		return nil, ErrProofUnavailable
@@ -55,8 +61,23 @@ func (t *Transport) ReadConfigDocument(ctx context.Context, management string) (
 	if code != http.StatusOK {
 		return nil, ErrProofUnavailable
 	}
+	document, err := DecodeConfigDocument(body)
+	if err != nil {
+		return nil, err
+	}
+	return document, nil
+}
+
+// DecodeConfigDocument decodes a read document without losing integer precision.
+// Trailing data is refused so the value projected is exactly the value parsed.
+func DecodeConfigDocument(body []byte) (map[string]any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
 	var document map[string]any
-	if json.Unmarshal(body, &document) != nil || document == nil {
+	if decoder.Decode(&document) != nil || document == nil {
+		return nil, ErrSourceConflict
+	}
+	if _, err := decoder.Token(); err != io.EOF {
 		return nil, ErrSourceConflict
 	}
 	return document, nil

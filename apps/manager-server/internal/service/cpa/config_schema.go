@@ -57,6 +57,23 @@ type ConfigLeaf struct {
 	// existing six leaves and the Host reservation protocol; it is never widened
 	// to the full table.
 	Private bool
+	// Inherit is the value CPA resolves for a *bool leaf whose key is absent
+	// (internal/config/config_types.go:373, sdk/cliproxy/service_config.go:37).
+	// A missing key and an explicit null both mean "unset", which is a third
+	// state and NOT the same as an explicit false, so the page offers
+	// inherit / on / off and labels inherit with this value. It is nil for every
+	// leaf where absent already means false.
+	Inherit *bool
+	// Bounds is the range the private Host enforces on a private leaf
+	// (apps/runtime-supervisor/internal/privateconfig/fields.go:18-25). It exists
+	// only for the frozen private subset: the page never restates a CPA bound.
+	Bounds *ConfigLeafBounds
+}
+
+// ConfigLeafBounds is the inclusive integer range of one private H1 leaf.
+type ConfigLeafBounds struct {
+	Min int
+	Max int
 }
 
 // ConfigGroup is one page group: a single PATCH prefix plus its ordered leaves.
@@ -82,12 +99,15 @@ var gatewayLeaves = []ConfigLeaf{
 	{Path: "routing.strategy", Type: ConfigLeafString, Kind: ConfigKindSelect, Group: "routing"},
 	{Path: "routing.session-affinity", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "routing"},
 	{Path: "routing.session-affinity-ttl", Type: ConfigLeafString, Kind: ConfigKindDuration, Group: "routing"},
-	{Path: "routing.session-affinity-subagents", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "routing"},
+	// config_types.go:373 types this *bool and CPA seeds it to true before
+	// applying the pointer (sdk/cliproxy/service_config.go:37), so a missing key
+	// resolves to on and is not the same as an explicit false.
+	{Path: "routing.session-affinity-subagents", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "routing", Inherit: boolValue(true)},
 	{Path: "routing.force-model-prefix", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "routing"},
 
-	{Path: "routing.retry.request-retry", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "retry", Private: true},
+	{Path: "routing.retry.request-retry", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "retry", Private: true, Bounds: &ConfigLeafBounds{Min: 0, Max: 10}},
 	{Path: "routing.retry.max-retry-credentials", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "retry"},
-	{Path: "routing.retry.max-retry-interval", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "retry", Private: true},
+	{Path: "routing.retry.max-retry-interval", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "retry", Private: true, Bounds: &ConfigLeafBounds{Min: 0, Max: 300}},
 
 	{Path: "routing.cooldown.disable-cooling", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "cooldown"},
 	{Path: "routing.cooldown.save-cooldown-status", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "cooldown"},
@@ -95,10 +115,10 @@ var gatewayLeaves = []ConfigLeaf{
 
 	{Path: "requests.proxy-url", Type: ConfigLeafString, Kind: ConfigKindURL, Group: "request"},
 	{Path: "requests.passthrough-headers", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "request", Private: true},
-	{Path: "requests.nonstream-keepalive-interval", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "request", Private: true},
+	{Path: "requests.nonstream-keepalive-interval", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "request", Private: true, Bounds: &ConfigLeafBounds{Min: 0, Max: 300}},
 
-	{Path: "requests.streaming.keepalive-seconds", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "streaming", Private: true},
-	{Path: "requests.streaming.bootstrap-retries", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "streaming", Private: true},
+	{Path: "requests.streaming.keepalive-seconds", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "streaming", Private: true, Bounds: &ConfigLeafBounds{Min: 0, Max: 300}},
+	{Path: "requests.streaming.bootstrap-retries", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "streaming", Private: true, Bounds: &ConfigLeafBounds{Min: 0, Max: 10}},
 
 	{Path: "multimedia.disable-image-generation", Type: ConfigLeafImageMode, Kind: ConfigKindSelect, Group: "media"},
 	{Path: "multimedia.gpt-image-2-base-model", Type: ConfigLeafString, Kind: ConfigKindText, Group: "media"},
@@ -206,6 +226,7 @@ var (
 	gatewayGroupIndex   = buildGroupIndex()
 	gatewayFamilyIndex  = buildFamilyIndex()
 	privateConfigLeaves = buildPrivateLeaves()
+	privateConfigGroups = buildPrivateGroups()
 )
 
 func buildLeafIndex() map[string]ConfigLeaf {
@@ -243,6 +264,20 @@ func buildPrivateLeaves() []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+// buildPrivateGroups lists the page groups holding a private leaf, in page order.
+func buildPrivateGroups() []string {
+	var ids []string
+	for _, group := range gatewayGroups {
+		for _, path := range group.Leaves {
+			if leaf, ok := gatewayLeafIndex[path]; ok && leaf.Private {
+				ids = append(ids, group.ID)
+				break
+			}
+		}
+	}
+	return ids
 }
 
 // LookupConfigLeaf is the single membership test for the gateway path table.
@@ -385,13 +420,78 @@ func ValidateConfigLeafValue(path string, value any) error {
 
 // ValidatePrivateConfigLeafValue accepts a value for the frozen private H1
 // profile only. It exists so widening the page table cannot widen the private
-// Host contract.
+// Host contract: the Runtime Supervisor enforces 0-10 / 0-300 on the same six
+// fields (apps/runtime-supervisor/internal/privateconfig/fields.go:18-25), so the
+// page refuses an out-of-range value on the field instead of surfacing an opaque
+// Host refusal after the write is reserved. CPA-backed leaves never inherit these
+// bounds.
 func ValidatePrivateConfigLeafValue(path string, value any) error {
-	if _, ok := LookupPrivateConfigLeaf(path); !ok {
+	leaf, ok := LookupPrivateConfigLeaf(path)
+	if !ok {
 		return ErrInvalidConfigPath
 	}
-	return ValidateConfigLeafValue(path, value)
+	if err := ValidateConfigLeafValue(path, value); err != nil {
+		return err
+	}
+	if leaf.Bounds != nil {
+		number, ok := value.(int)
+		if !ok || number < leaf.Bounds.Min || number > leaf.Bounds.Max {
+			return ErrPrivateConfigOutOfRange
+		}
+	}
+	return nil
 }
+
+// ErrPrivateConfigOutOfRange is a private-profile value the Host would refuse.
+var ErrPrivateConfigOutOfRange = errors.New("private config value out of range")
+
+// ConfigLeafInheritable returns the value CPA resolves for a leaf whose key is
+// absent, and whether absence is a third state at all (see ConfigLeaf.Inherit).
+func ConfigLeafInheritable(path string) (bool, bool) {
+	leaf, ok := gatewayLeafIndex[path]
+	if !ok || leaf.Inherit == nil {
+		return false, false
+	}
+	return *leaf.Inherit, true
+}
+
+// PrivateConfigPaths returns the frozen private profile subset: the six leaves
+// the Host reservation protocol has always written. Every other page leaf stays
+// read-only there.
+func PrivateConfigPaths() []string { return PrivateConfigLeafPaths() }
+
+// PrivateConfigGroups returns the page groups the private profile may save.
+func PrivateConfigGroups() []string { return append([]string(nil), privateConfigGroups...) }
+
+// LookupPrivateConfigGroup reports the page group of one private save, restricted
+// to the groups that hold a private leaf.
+func LookupPrivateConfigGroup(id string) (ConfigGroup, bool) {
+	group, ok := gatewayGroupIndex[id]
+	if !ok {
+		return ConfigGroup{}, false
+	}
+	allowed := false
+	for _, path := range group.Leaves {
+		if leaf, ok := gatewayLeafIndex[path]; ok && leaf.Private {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return ConfigGroup{}, false
+	}
+	// The page must never offer a leaf the Host would refuse, so a private group
+	// carries only its private leaves.
+	private := ConfigGroup{ID: group.ID, Prefix: group.Prefix}
+	for _, path := range group.Leaves {
+		if leaf, ok := gatewayLeafIndex[path]; ok && leaf.Private {
+			private.Leaves = append(private.Leaves, path)
+		}
+	}
+	return private, true
+}
+
+func boolValue(value bool) *bool { return &value }
 
 // NormalizeConfigValue converts an integral JSON number back into the exact Go
 // scalar the table uses, so a value that crossed a JSON boundary still compares
@@ -464,28 +564,37 @@ func EncodeConfigLeafValue(path string, value any) ([]byte, error) {
 	}
 }
 
-// ValidateProxyURL is one of the two product rules CPAMP owns: the page refuses a
-// proxy URL that embeds credentials, because no safe reference design exists yet.
-// Scheme support, reachability and every other property stay CPA's business.
+// ErrProxyURLCredentials is the one proxy rule CPAMP owns (see ValidateProxyURL).
+var ErrProxyURLCredentials = errors.New("proxy url carries credentials")
+
+// ValidateProxyURL is the single product rule CPAMP owns for requests.proxy-url:
+// the page refuses a value that embeds userinfo, because no safe reference design
+// exists yet. Everything else is CPA's business (sdk/proxyutil/proxy.go:41-74),
+// so "", "direct", "none", a bare host and any scheme CPA accepts all pass here
+// and are judged by CPA on save.
 func ValidateProxyURL(value any) error {
 	text, ok := value.(string)
 	if !ok {
 		return ErrInvalidConfigPath
 	}
-	if text != strings.TrimSpace(text) || text == "" {
-		return ErrInvalidConfigPath
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" || strings.EqualFold(trimmed, "direct") || strings.EqualFold(trimmed, "none") {
+		return nil
 	}
-	lower := strings.ToLower(text)
-	scheme, rest, found := strings.Cut(lower, "://")
-	if !found || (scheme != "http" && scheme != "https" && scheme != "socks5" && scheme != "socks5h") {
-		return ErrInvalidConfigPath
+	// A value without a scheme cannot carry userinfo; CPA rejects such a host if
+	// it is invalid for the configured mode.
+	_, rest, found := strings.Cut(trimmed, "://")
+	if !found {
+		return nil
 	}
 	authority := rest
 	if slash := strings.IndexByte(authority, '/'); slash >= 0 {
 		authority = authority[:slash]
 	}
-	if strings.Contains(authority, "@") {
-		return ErrInvalidConfigPath
+	if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+		if before := authority[:at]; before != "" {
+			return ErrProxyURLCredentials
+		}
 	}
 	return nil
 }
