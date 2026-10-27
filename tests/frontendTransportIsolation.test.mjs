@@ -12,6 +12,8 @@ const web = path.join(root, 'apps/web');
 const src = path.join(web, 'src');
 const managerApi = path.join(src, 'services/api/usageService.ts');
 const panelShim = path.join(src, 'panel/unsupportedManagerApi.ts');
+const fullWebApi = path.join(src, 'fullweb/publicApi.ts');
+const panelPublicApiShim = path.join(src, 'panel/unsupportedPublicApi.ts');
 const config = ts.readConfigFile(path.join(web, 'tsconfig.json'), ts.sys.readFile);
 const { options } = ts.parseJsonConfigFileContent(config.config, ts.sys, web);
 const resolutionCache = ts.createModuleResolutionCache(web, (file) => file, options);
@@ -101,6 +103,7 @@ function graph(entry, panel = false, { skipLegacyCompatibility = false } = {}) {
       if (!resolution || resolution.isExternalLibraryImport) continue;
       let target = resolution.resolvedFileName;
       if (panel && target === managerApi) target = panelShim;
+      if (panel && target === fullWebApi) target = panelPublicApiShim;
       if (/\.[cm]?[jt]sx?$/.test(target) && !target.endsWith('.d.ts')) pending.push(target);
     }
   }
@@ -209,11 +212,13 @@ describe('Full Web / Panel Lite runtime dependency isolation', () => {
   it('Panel graph excludes Full Web transport/auth and replaces the legacy Manager transport', () => {
     const files = graph('main.tsx', true);
     expect(files).toContain('panel/unsupportedManagerApi.ts');
+    expect(files).toContain('panel/unsupportedPublicApi.ts');
     expect(files).toContain('services/api/client.ts');
     expect(files).not.toContain('services/api/usageService.ts');
     expect(files.filter((file) => file.startsWith('fullweb/'))).toEqual([]);
     const vite = readFileSync(path.join(web, 'vite.config.ts'), 'utf8');
     expect(vite).toContain('unsupportedManagerApi.ts');
+    expect(vite).toContain('unsupportedPublicApi.ts');
   }, 30_000);
 
   it('uses the Phase4-01 ledger suffix for the browser canonical API base', () => {
