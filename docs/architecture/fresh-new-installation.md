@@ -207,6 +207,29 @@ one installed Client Key, so a CPA with client authentication off is not
 admitted. The private profile remains separately discriminated and continues
 to require the short-lived host permit.
 
+### Failed stage or start
+
+The Supervisor journal never resumes a terminal operation, so a stage or start
+recorded as `failed` can only ever be replayed. The checkpoint therefore
+carries a durable `destinationAttempt`: stage/start operation IDs are derived
+from it (`<base>` for attempt zero, `<base>:attempt-<n>` afterwards) and it
+advances by exactly one, in the same revision-guarded Fresh CAS, only after the
+Supervisor reports a terminal `failed`. An unresolved outcome (transport
+error, `accepted`, `running`) keeps the attempt, so a retry replays the
+operation that may still be running rather than racing a second one, and two
+browser retries at the same revision cannot fork attempts. The legacy
+migration uses the same counter.
+
+The Runtime admits a replacement stage only under a new operation ID, only for
+the identical destination, and only with terminal failure evidence for the
+whole previous attempt: a failed stage published nothing usable, and a stage
+whose Start is terminally failed never owned a running child. A missing,
+accepted, running or successful Start, a content change, or a running CPA child
+stays a conflict. The superseded directory is renamed to a content-addressed
+`.destination-retired-<digest>` sibling, never deleted and never left as the
+live destination; a retry that fails to publish restores it, so a retry can
+neither orphan nor displace the previous attempt.
+
 ### Existing-install migration
 
 On Manager startup, a completed legacy default record with a committed
@@ -242,5 +265,8 @@ this document and verifies, in order:
    idempotent and refuses a non-empty bootstrap auth directory or generation
    drift. Capture only secret-free evidence.
 
-Before re-acceptance, any pin-gated step is `NOT RUN`; updating the pins or
-writing acceptance records is not part of this implementation lane.
+Before re-acceptance, any pin-gated step is `NOT RUN`. The two build-bound
+pins and the observation bytes they bind were recomputed/re-emitted on
+maintainer decision, ahead of independent re-acceptance; writing an acceptance
+record is not part of this implementation lane, and the retained independent
+review is unchanged.
