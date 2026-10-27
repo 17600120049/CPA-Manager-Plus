@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
@@ -169,5 +171,47 @@ func TestFreshRuntimeRequiresProductComplete(t *testing.T) {
 	app.runtimeOperations(response, freshRuntimeRequest(t, "start", "before-complete"), op, "runtime/operations")
 	if response.Code != http.StatusPreconditionRequired {
 		t.Fatalf("ProductComplete gate = %d body=%s", response.Code, response.Body.String())
+	}
+}
+
+// The journal keeps every non-terminal entry plus only the most recent terminal
+// ones, so the single settings row cannot grow without limit.
+func TestFreshRuntimeJournalBoundsTerminalEntries(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	journal := app.runtimeJournal
+	base := time.Now().UTC()
+	data := freshRuntimeJournalData{Operations: map[string]freshRuntimeOperation{}}
+	data.Operations["pending-stop"] = freshRuntimeOperation{
+		RequestID: "pending-stop", Action: string(model.RuntimeOperationStop),
+		OperationID: "runtime-ui/v1:pending-stop", State: freshRuntimeStateUnknown,
+		CreatedAt: base, UpdatedAt: base,
+	}
+	for index := range freshRuntimeJournalTerminalRetention + 10 {
+		requestID := fmt.Sprintf("done-%02d", index)
+		data.Operations[requestID] = freshRuntimeOperation{
+			RequestID: requestID, Action: string(model.RuntimeOperationStart),
+			OperationID: "runtime-ui/v1:" + requestID, State: freshRuntimeStateSucceeded,
+			CreatedAt: base.Add(time.Duration(index) * time.Second), UpdatedAt: base.Add(time.Duration(index) * time.Second),
+		}
+	}
+	if err := journal.save(t.Context(), data); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := journal.load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Operations) != freshRuntimeJournalTerminalRetention+1 {
+		t.Fatalf("bounded journal retained %d entries", len(loaded.Operations))
+	}
+	if _, found := loaded.Operations["pending-stop"]; !found {
+		t.Fatal("bounded journal dropped a non-terminal entry")
+	}
+	if _, found := loaded.Operations[fmt.Sprintf("done-%02d", freshRuntimeJournalTerminalRetention+9)]; !found {
+		t.Fatal("bounded journal dropped the newest terminal entry")
+	}
+	if _, found := loaded.Operations["done-00"]; found {
+		t.Fatal("bounded journal retained the oldest terminal entry")
 	}
 }

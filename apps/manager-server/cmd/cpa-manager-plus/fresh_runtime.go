@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,20 @@ import (
 )
 
 const freshRuntimeJournalKey = "fresh_runtime_operations_v1"
+
+// freshRuntimeJournalTerminalRetention bounds the durable journal to the most
+// recent terminal operations. Every non-terminal entry is always retained.
+const freshRuntimeJournalTerminalRetention = 50
+
+// Journal states mirror the Runtime Protocol operation vocabulary plus the
+// Manager-local `unknown` result of a mutation whose response was lost.
+const (
+	freshRuntimeStateAccepted  = string(model.RuntimeOperationAccepted)
+	freshRuntimeStateRunning   = string(model.RuntimeOperationRunning)
+	freshRuntimeStateSucceeded = string(model.RuntimeOperationSucceeded)
+	freshRuntimeStateFailed    = string(model.RuntimeOperationFailed)
+	freshRuntimeStateUnknown   = "unknown"
+)
 
 var freshRuntimeRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 var freshRuntimeOperationIDPattern = regexp.MustCompile(`^[A-Za-z0-9_:/-]{1,192}$`)
@@ -66,16 +81,59 @@ func (j *freshRuntimeJournal) load(ctx context.Context) (freshRuntimeJournalData
 	return data, nil
 }
 
+// save persists the journal. Every write is bounded so the single settings row
+// cannot grow without limit.
 func (j *freshRuntimeJournal) save(ctx context.Context, data freshRuntimeJournalData) error {
 	if j == nil || j.db == nil {
 		return errors.New("runtime operation journal is unavailable")
 	}
-	raw, err := json.Marshal(data)
+	raw, err := json.Marshal(freshRuntimeBoundOperations(data))
 	if err != nil {
 		return err
 	}
 	_, err = j.db.ExecContext(ctx, `insert into settings(key,value,updated_at_ms) values(?,?,?) on conflict(key) do update set value=excluded.value, updated_at_ms=excluded.updated_at_ms`, freshRuntimeJournalKey, string(raw), time.Now().UnixMilli())
 	return err
+}
+
+func freshRuntimeOperationTerminal(operation freshRuntimeOperation) bool {
+	return operation.State == freshRuntimeStateSucceeded || operation.State == freshRuntimeStateFailed
+}
+
+func freshRuntimeOperationsPending(data freshRuntimeJournalData) bool {
+	for _, operation := range data.Operations {
+		if !freshRuntimeOperationTerminal(operation) {
+			return true
+		}
+	}
+	return false
+}
+
+// freshRuntimeBoundOperations keeps every non-terminal entry plus the most
+// recent terminal ones. Journal compaction must never hide an operation whose
+// outcome the page can still be waiting for.
+func freshRuntimeBoundOperations(data freshRuntimeJournalData) freshRuntimeJournalData {
+	bounded := freshRuntimeJournalData{Operations: make(map[string]freshRuntimeOperation, len(data.Operations))}
+	terminal := make([]freshRuntimeOperation, 0, len(data.Operations))
+	for requestID, operation := range data.Operations {
+		if !freshRuntimeOperationTerminal(operation) {
+			bounded.Operations[requestID] = operation
+			continue
+		}
+		terminal = append(terminal, operation)
+	}
+	if len(terminal) > freshRuntimeJournalTerminalRetention {
+		sort.Slice(terminal, func(left, right int) bool {
+			if terminal[left].UpdatedAt.Equal(terminal[right].UpdatedAt) {
+				return terminal[left].RequestID < terminal[right].RequestID
+			}
+			return terminal[left].UpdatedAt.After(terminal[right].UpdatedAt)
+		})
+		terminal = terminal[:freshRuntimeJournalTerminalRetention]
+	}
+	for _, operation := range terminal {
+		bounded.Operations[operation.RequestID] = operation
+	}
+	return bounded
 }
 
 func (j *freshRuntimeJournal) setLast(status *freshRuntimeStatusResponse, observedAt time.Time) {
