@@ -34,10 +34,13 @@ type Repository struct{ db *sql.DB }
 
 func New(db *sql.DB) *Repository { return &Repository{db: db} }
 
+// List returns every staged key in creation order. Keys created inside the
+// same millisecond share created_at_ms, so the staged row's insertion order
+// breaks the tie; ordering by the random identity would silently reorder them.
 func (r *Repository) List(ctx context.Context) ([]Record, error) {
 	rows, err := r.db.QueryContext(ctx, `select k.request_id, i.id, i.revision, i.lifecycle, i.created_at_ms, i.updated_at_ms,
 		k.secret_ciphertext, k.secret_hash, k.masked_preview, k.name, k.name_revision from fresh_client_api_keys k
-		join gateway_api_key_identities i on i.id=k.api_key_id order by i.created_at_ms, i.id`)
+		join gateway_api_key_identities i on i.id=k.api_key_id order by i.created_at_ms, k.rowid`)
 	if err != nil {
 		return nil, err
 	}
