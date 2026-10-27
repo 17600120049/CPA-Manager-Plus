@@ -1488,6 +1488,14 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		for key, value := range headers {
 			req.Header.Set(key, value)
 		}
+		if strings.HasPrefix(target, "/v0/resource/plugins/") && req.Header.Get("Sec-Fetch-Site") == "" {
+			// A plugin page is served with `sandbox` and no allow-same-origin, so
+			// its own requests arrive from an opaque origin: the browser labels
+			// them cross-site. The Manager's plugin resource policy refuses
+			// anything that cannot prove that context.
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+			req.Header.Set("Sec-Fetch-Dest", "empty")
+		}
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 		return rr
@@ -1565,13 +1573,12 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		body:              `{"management_origin":"` + upstream.URL + `","refresh":true}`,
 	})
 
-	resourcePostNoAuthRR := testutil.Request(
-		t,
-		handler,
+	resourcePostNoAuthRR := requestWithHeaders(
 		http.MethodPost,
 		"/v0/resource/plugins/codex-invite/invite",
 		`{"managementKey":"plugin-key"}`,
 		"",
+		nil,
 	)
 	testutil.RequireStatus(t, resourcePostNoAuthRR, http.StatusOK)
 	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
@@ -1598,13 +1605,12 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		body:              `{"refresh":true}`,
 	})
 
-	resourcePostRR := testutil.Request(
-		t,
-		handler,
+	resourcePostRR := requestWithHeaders(
 		http.MethodPost,
 		"/v0/resource/plugins/codex-invite/invite",
 		`{"refresh":true}`,
 		testutil.AdminKey,
+		nil,
 	)
 	testutil.RequireStatus(t, resourcePostRR, http.StatusOK)
 	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
@@ -1614,13 +1620,12 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		body:          `{"refresh":true}`,
 	})
 
-	resourcePutRR := testutil.Request(
-		t,
-		handler,
+	resourcePutRR := requestWithHeaders(
 		http.MethodPut,
 		"/v0/resource/plugins/codex-invite/invite",
 		`{"key":"value"}`,
 		testutil.AdminKey,
+		nil,
 	)
 	testutil.RequireStatus(t, resourcePutRR, http.StatusOK)
 	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
@@ -1630,13 +1635,12 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		body:          `{"key":"value"}`,
 	})
 
-	resourceTraceRR := testutil.Request(
-		t,
-		handler,
+	resourceTraceRR := requestWithHeaders(
 		http.MethodTrace,
 		"/v0/resource/plugins/codex-invite/invite",
 		"",
 		"",
+		nil,
 	)
 	testutil.RequireStatus(t, resourceTraceRR, http.StatusMethodNotAllowed)
 
@@ -1672,13 +1676,12 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		authorization: "Bearer plugin-management-key",
 	})
 
-	resourceAdminAuthRR := testutil.Request(
-		t,
-		handler,
+	resourceAdminAuthRR := requestWithHeaders(
 		http.MethodGet,
 		"/v0/resource/plugins/codex-invite/invite",
 		"",
 		testutil.AdminKey,
+		nil,
 	)
 	testutil.RequireStatus(t, resourceAdminAuthRR, http.StatusOK)
 	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
@@ -1687,13 +1690,12 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		authorization: "Bearer management-key",
 	})
 
-	resourceHeadNoAuthRR := testutil.Request(
-		t,
-		handler,
+	resourceHeadNoAuthRR := requestWithHeaders(
 		http.MethodHead,
 		"/v0/resource/plugins/codex-invite/invite",
 		"",
 		"",
+		nil,
 	)
 	testutil.RequireStatus(t, resourceHeadNoAuthRR, http.StatusOK)
 	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
