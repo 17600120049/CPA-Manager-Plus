@@ -838,6 +838,50 @@ describe('Fresh client key persistence UI', () => {
     expect(view()).toContain('—');
     expect(view()).toContain(k('usageStateUnavailable'));
   });
+  it('shows the summary total as a lower bound or hides it when a key is incomplete', async () => {
+    const lastUsedAtMs = Date.UTC(2026, 0, 2, 3, 4);
+    const summaryCard = () =>
+      renderer.root
+        .findByProps({ 'data-testid': 'key-summary-usage' })
+        .findAllByType('span')
+        .flatMap((node) => (Array.isArray(node.props.children) ? node.props.children : [node.props.children]))
+        .filter((child): child is string => typeof child === 'string')
+        .join(' | ');
+    const keysOnly = () =>
+      vi.fn<typeof fetch>().mockImplementation(() =>
+        Promise.resolve(Response.json({ keys: [key], gatewayPending: true, revocationAvailable: false }))
+      );
+    // One proven key plus one key without attribution: the strip total is a
+    // lower bound, never the exact sum.
+    await mount(keysOnly(), vi.fn(), {
+      fromMs: 1,
+      toMs: 2,
+      coverage: { state: 'partial', reason: 'binding_missing' },
+      items: [
+        { keyId: key.id, calls: 5, lastUsedAtMs, coverage: { state: 'complete', reason: 'observed' } },
+        { keyId: 'd'.repeat(32), calls: 0, lastUsedAtMs: null, coverage: { state: 'unavailable', reason: 'binding_missing' } },
+      ],
+    });
+    expect(summaryCard()).toContain('≥5');
+    expect(summaryCard()).toContain(k('usageStatePartial'));
+
+    // An unobserved key makes the total unprovable, so the strip hides it.
+    await act(async () => {
+      renderer.unmount();
+    });
+    await mount(keysOnly(), vi.fn(), {
+      fromMs: 1,
+      toMs: 2,
+      coverage: { state: 'unknown', reason: 'window_unobserved' },
+      items: [
+        { keyId: key.id, calls: 5, lastUsedAtMs, coverage: { state: 'complete', reason: 'observed' } },
+        { keyId: 'e'.repeat(32), calls: 0, lastUsedAtMs: null, coverage: { state: 'unknown', reason: 'window_unobserved' } },
+      ],
+    });
+    expect(summaryCard()).toContain('—');
+    expect(summaryCard()).not.toContain('≥5');
+    expect(summaryCard()).toContain(k('usageStateUnknown'));
+  });
   it('keeps the key list usable when the usage read fails', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({
       keys: [key],

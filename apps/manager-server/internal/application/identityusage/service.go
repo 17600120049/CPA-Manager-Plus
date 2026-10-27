@@ -139,6 +139,12 @@ type evidence struct {
 	bindingErr   error
 	window       ports.Window
 	rawDeleted   bool
+	// requestedFromMS is the window the caller asked for; windowFromMS is the
+	// earliest instant Manager can actually prove. A window that starts before
+	// the latter is a lower bound, never a complete observation.
+	requestedFromMS int64
+	windowFromMS    int64
+	windowToMS      int64
 }
 
 // evaluate returns the coverage of one key's window. Reasons are stable codes;
@@ -169,6 +175,14 @@ func evaluate(in evidence) (ports.State, string) {
 			return ports.StatePartial, "projection_catching_up"
 		}
 		return ports.StateUnknown, "projection_catching_up"
+	case in.windowFromMS >= in.windowToMS:
+		// Nothing inside the requested range was ever observed. Publishing a
+		// zero here would claim a proven quiet window that does not exist.
+		return ports.StateUnknown, "window_unobserved"
+	case in.windowFromMS > in.requestedFromMS:
+		// Collection or attribution started inside the requested window, so the
+		// numbers are a lower bound for it.
+		return ports.StatePartial, "window_partial"
 	case in.window.UnmappedEvents > 0:
 		return ports.StatePartial, "identity_unmapped"
 	case in.rawDeleted:
@@ -193,30 +207,37 @@ func (s *Service) Detail(ctx context.Context, id identity.APIKeyID, fromMS, toMS
 	if fromMS <= 0 || toMS <= fromMS || toMS-fromMS > MaxWindowMS {
 		return DetailResponse{}, ErrWindow
 	}
-	in := evidence{phase: s.phase()}
+	in := evidence{phase: s.phase(), requestedFromMS: fromMS, windowFromMS: fromMS, windowToMS: toMS}
 	var err error
 	if in.collectingAt, err = s.repo.CollectionStartedAtMS(ctx); err != nil {
 		return DetailResponse{}, err
 	}
 	in.binding, in.bindingErr = s.repo.Binding(ctx, id)
-	// A key cannot be attributed before its binding existed, so the reported
-	// window never claims coverage of an earlier interval.
-	if in.bindingErr == nil && in.binding.FirstSeenAtMS > fromMS {
-		fromMS = in.binding.FirstSeenAtMS
+	// Manager can only prove a window from the later of the proven collection
+	// start and the key's own attribution start.
+	if in.collectingAt > in.windowFromMS {
+		in.windowFromMS = in.collectingAt
+	}
+	if in.bindingErr == nil && in.binding.FirstSeenAtMS > in.windowFromMS {
+		in.windowFromMS = in.binding.FirstSeenAtMS
 	}
 	bucketMS := bucketFor(toMS - fromMS)
-	response := DetailResponse{KeyID: string(id), FromMS: fromMS, ToMS: toMS, BucketMS: bucketMS, Series: []SeriesPoint{}}
+	responseFromMS := fromMS
+	if in.windowFromMS > fromMS && in.windowFromMS < toMS {
+		responseFromMS = in.windowFromMS
+	}
+	response := DetailResponse{KeyID: string(id), FromMS: responseFromMS, ToMS: toMS, BucketMS: bucketMS, Series: []SeriesPoint{}}
 	// The projection checkpoint and archive coverage are global facts; they are
 	// only meaningful once the key itself is attributable.
 	if in.collectingAt > 0 && in.bindingErr == nil {
 		in.projection, in.projectionOK = s.projection(ctx)
-		if fromMS < toMS {
-			windows, err := s.repo.Windows(ctx, []identity.APIKeyID{id}, fromMS, toMS)
+		if in.windowFromMS < toMS {
+			windows, err := s.repo.Windows(ctx, []identity.APIKeyID{id}, in.windowFromMS, toMS)
 			if err != nil {
 				return DetailResponse{}, err
 			}
 			in.window = windows[id]
-			if in.rawDeleted, err = s.repo.RawDeletedIn(ctx, fromMS, toMS); err != nil {
+			if in.rawDeleted, err = s.repo.RawDeletedIn(ctx, in.windowFromMS, toMS); err != nil {
 				return DetailResponse{}, err
 			}
 		}
@@ -236,8 +257,8 @@ func (s *Service) Detail(ctx context.Context, id identity.APIKeyID, fromMS, toMS
 		}
 		totals.Success = totals.Calls - totals.Failure
 		response.Totals = &totals
-		if fromMS < toMS {
-			buckets, err := s.repo.Series(ctx, id, fromMS, toMS, bucketMS)
+		if in.windowFromMS < toMS {
+			buckets, err := s.repo.Series(ctx, id, in.windowFromMS, toMS, bucketMS)
 			if err != nil {
 				return DetailResponse{}, err
 			}
@@ -303,10 +324,18 @@ func (s *Service) Summary(ctx context.Context, ids []identity.APIKeyID) (Summary
 			items = append(items, item)
 			continue
 		}
+		windowFromMS := fromMS
+		if collectingAt > windowFromMS {
+			windowFromMS = collectingAt
+		}
+		if bindings[id].FirstSeenAtMS > windowFromMS {
+			windowFromMS = bindings[id].FirstSeenAtMS
+		}
 		window := windows[id]
 		in := evidence{phase: phase, collectingAt: collectingAt, binding: bindings[id],
 			window: window, rawDeleted: rawDeleted, projection: projection,
-			projectionOK: projectionOK}
+			projectionOK: projectionOK, requestedFromMS: fromMS,
+			windowFromMS: windowFromMS, windowToMS: toMS}
 		state, reason := evaluate(in)
 		item.Coverage = CoverageState{State: string(state), Reason: reason}
 		if state == ports.StateComplete || state == ports.StatePartial {
@@ -316,7 +345,44 @@ func (s *Service) Summary(ctx context.Context, ids []identity.APIKeyID) (Summary
 		items = append(items, item)
 	}
 	response.Items = items
+	// The list header sums these items, so its coverage is the weakest per-key
+	// coverage: one incomplete key makes the total a lower bound or unprovable.
+	response.Coverage = aggregateCoverage(response.Coverage, items)
 	return response, nil
+}
+
+// aggregateCoverage folds per-key coverage into the list header. It never
+// upgrades the installation-wide state, and any incomplete key downgrades the
+// aggregate: an unknown key hides the sum, and an unavailable one proves it is
+// only a lower bound.
+func aggregateCoverage(global CoverageState, items []SummaryItem) CoverageState {
+	if len(items) == 0 {
+		return global
+	}
+	counts := map[string]int{}
+	reasons := map[string]string{}
+	for _, item := range items {
+		state := item.Coverage.State
+		if counts[state] == 0 {
+			reasons[state] = item.Coverage.Reason
+		}
+		counts[state]++
+	}
+	unknown := counts[string(ports.StateUnknown)]
+	partial := counts[string(ports.StatePartial)]
+	unavailable := counts[string(ports.StateUnavailable)]
+	complete := counts[string(ports.StateComplete)]
+	switch {
+	case unknown > 0:
+		return CoverageState{State: string(ports.StateUnknown), Reason: reasons[string(ports.StateUnknown)]}
+	case partial > 0:
+		return CoverageState{State: string(ports.StatePartial), Reason: reasons[string(ports.StatePartial)]}
+	case unavailable > 0 && complete > 0:
+		return CoverageState{State: string(ports.StatePartial), Reason: reasons[string(ports.StateUnavailable)]}
+	case unavailable > 0:
+		return CoverageState{State: string(ports.StateUnavailable), Reason: reasons[string(ports.StateUnavailable)]}
+	}
+	return CoverageState{State: string(ports.StateComplete), Reason: "observed"}
 }
 
 // globalCoverage reports the installation-wide collection state shown once per

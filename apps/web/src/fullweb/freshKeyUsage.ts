@@ -236,6 +236,10 @@ export function usageReasonText(reason: string): string {
       return k('usageReasonIdentityUnmapped');
     case 'raw_deleted':
       return k('usageReasonRawDeleted');
+    case 'window_partial':
+      return k('usageReasonWindowPartial');
+    case 'window_unobserved':
+      return k('usageReasonWindowUnobserved');
     case 'usage_read_failed':
       return k('usageReadFailed');
     default:

@@ -143,6 +143,10 @@ func TestDetailReportsUnknownAndUnavailableWithoutFabricatingZero(t *testing.T) 
 			r.projection = ports.ProjectionState{Status: "backfilling", LastProcessedEventID: 2, LatestEventID: 4}
 			r.windows = map[identity.APIKeyID]ports.Window{}
 		}, "unknown", "projection_catching_up"},
+		{"pending empty frontier", PhaseRunning, func(r *fakeRepo) {
+			r.projection = ports.ProjectionState{Status: "pending"}
+			r.windows = map[identity.APIKeyID]ports.Window{}
+		}, "unknown", "projection_catching_up"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -191,18 +195,58 @@ func TestDetailReportsPartialBoundsWithoutClaimingExhaustiveness(t *testing.T) {
 	}
 }
 
-func TestDetailClampsWindowToTheKeyAttributionStart(t *testing.T) {
+func TestDetailUsesTheLaterOfCollectionAndAttributionStart(t *testing.T) {
+	// The binding is older than the collection start, so the provable window
+	// starts when collection actually began. It is still inside the requested
+	// window, which therefore becomes a lower bound.
 	repo := healthy()
-	repo.bindings = map[identity.APIKeyID]ports.Binding{testKeyID: {APIKeyID: testKeyID, FirstSeenAtMS: testNowMS - 3_600_000}}
+	repo.collectingAt = testNowMS - 3*3_600_000
 	response := detail(t, repo, PhaseRunning)
-	if response.FromMS != testNowMS-3_600_000 {
-		t.Fatalf("from = %d, want the attribution start", response.FromMS)
+	if response.FromMS != testNowMS-3*3_600_000 {
+		t.Fatalf("from = %d, want the collection start", response.FromMS)
 	}
 	if repo.windowFromMS != response.FromMS || repo.windowToMS != testNowMS {
 		t.Fatalf("repo window = [%d,%d)", repo.windowFromMS, repo.windowToMS)
 	}
-	if response.Coverage.State != "complete" {
+	if response.Coverage.State != "partial" || response.Coverage.Reason != "window_partial" {
+		t.Fatalf("coverage = %+v, want a lower bound for the truncated window", response.Coverage)
+	}
+	if response.Totals == nil || response.Totals.Calls != 3 {
+		t.Fatalf("partial window must keep its observed lower bound, totals = %+v", response.Totals)
+	}
+
+	// A key created inside the requested window truncates it as well.
+	repo = healthy()
+	repo.bindings = map[identity.APIKeyID]ports.Binding{testKeyID: {APIKeyID: testKeyID, FirstSeenAtMS: testNowMS - 3_600_000}}
+	response = detail(t, repo, PhaseRunning)
+	if response.FromMS != testNowMS-3_600_000 {
+		t.Fatalf("from = %d, want the attribution start", response.FromMS)
+	}
+	if response.Coverage.State != "partial" || response.Coverage.Reason != "window_partial" {
 		t.Fatalf("coverage = %+v", response.Coverage)
+	}
+}
+
+func TestDetailProvesNothingForWindowsBeforeCoverageStarted(t *testing.T) {
+	repo := healthy()
+	repo.collectingAt = testNowMS - 3*3_600_000
+	repo.bindings = map[identity.APIKeyID]ports.Binding{testKeyID: {APIKeyID: testKeyID, FirstSeenAtMS: testNowMS - 1_000}}
+
+	// The whole requested window predates both collection and attribution. It
+	// must not become a complete zero just because there is nothing to sum.
+	service := newTestService(repo, PhaseRunning)
+	response, err := service.Detail(context.Background(), testKeyID, testNowMS-6*3_600_000, testNowMS-4*3_600_000)
+	if err != nil {
+		t.Fatalf("detail: %v", err)
+	}
+	if response.Coverage.State != "unknown" || response.Coverage.Reason != "window_unobserved" {
+		t.Fatalf("coverage = %+v, want an unobserved window", response.Coverage)
+	}
+	if response.Totals != nil || len(response.Series) != 0 {
+		t.Fatalf("unobserved window published totals=%+v series=%+v", response.Totals, response.Series)
+	}
+	if repo.windowFromMS != 0 || repo.windowToMS != 0 {
+		t.Fatalf("unobserved window still aggregated [%d,%d)", repo.windowFromMS, repo.windowToMS)
 	}
 }
 
@@ -262,6 +306,42 @@ func TestSummaryReportsPerKeyCoverageAndHidesUnprovenCalls(t *testing.T) {
 	}
 }
 
+func TestSummaryAggregateCoverageReflectsEveryKey(t *testing.T) {
+	// The list header sums per-key counts. One key without an attribution window
+	// makes that sum a lower bound, never an exact total.
+	repo := healthy()
+	repo.windows[testOtherID] = ports.Window{Totals: ports.Totals{Calls: 7}}
+	summary, err := newTestService(repo, PhaseRunning).Summary(context.Background(), []identity.APIKeyID{testKeyID, testOtherID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Items[0].Coverage.State != "complete" {
+		t.Fatalf("first item = %+v", summary.Items[0])
+	}
+	if summary.Items[1].Coverage.State != "unavailable" || summary.Items[1].Coverage.Reason != "binding_missing" {
+		t.Fatalf("second item = %+v", summary.Items[1])
+	}
+	if summary.Coverage.State != "partial" || summary.Coverage.Reason != "binding_missing" {
+		t.Fatalf("aggregate coverage = %+v, want a lower bound", summary.Coverage)
+	}
+
+	// A key whose provable window has not started yet hides the total: the sum
+	// cannot bound what was never observed.
+	repo = healthy()
+	repo.bindings[testOtherID] = ports.Binding{APIKeyID: testOtherID, FirstSeenAtMS: testNowMS}
+	repo.windows[testOtherID] = ports.Window{Totals: ports.Totals{Calls: 7}}
+	summary, err = newTestService(repo, PhaseRunning).Summary(context.Background(), []identity.APIKeyID{testKeyID, testOtherID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Items[1].Coverage.State != "unknown" || summary.Items[1].Coverage.Reason != "window_unobserved" {
+		t.Fatalf("unobserved item = %+v", summary.Items[1])
+	}
+	if summary.Coverage.State != "unknown" || summary.Coverage.Reason != "window_unobserved" {
+		t.Fatalf("aggregate coverage = %+v, want the weakest key", summary.Coverage)
+	}
+}
+
 func TestSummaryReportsProjectionStateEvenWithoutKeys(t *testing.T) {
 	// An empty workspace must not claim a complete list header while the
 	// attribution checkpoint is missing, failing or still behind.
@@ -274,6 +354,9 @@ func TestSummaryReportsProjectionStateEvenWithoutKeys(t *testing.T) {
 		{"caught up", func(*fakeRepo) {}, "complete", "observed"},
 		{"catching up", func(r *fakeRepo) {
 			r.projection = ports.ProjectionState{Status: "backfilling", LastProcessedEventID: 2, LatestEventID: 4}
+		}, "unknown", "projection_catching_up"},
+		{"pending empty frontier", func(r *fakeRepo) {
+			r.projection = ports.ProjectionState{Status: "pending"}
 		}, "unknown", "projection_catching_up"},
 		{"projection error", func(r *fakeRepo) { r.projection.Status = "error" }, "unknown", "projection_failed"},
 		{"projection missing", func(r *fakeRepo) { r.projectionErr = errors.New("missing") }, "unavailable", "projection_unavailable"},
