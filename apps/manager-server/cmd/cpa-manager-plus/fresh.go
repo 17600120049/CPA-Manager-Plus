@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/identityusage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityprojection"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityreconcile"
+	usageapp "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityusage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/collector"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
@@ -32,6 +35,7 @@ import (
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/updatecheck"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/worker"
 	"io"
 	"log"
@@ -77,6 +81,7 @@ func freshPaths(cfg config.Config) (sqliterepo.InspectionPaths, error) {
 var errFreshExternalPermitRevoked = errors.New("fresh external host permit revoked")
 
 type freshApplication struct {
+	cfg             config.Config
 	store           freshstore.Store
 	authority       *fresh.Service
 	routing         *freshrouting.Service
@@ -85,34 +90,47 @@ type freshApplication struct {
 	externalPermit  func(bootstrap.FreshOperation, uint64, string, string, string) bool
 	protector       *security.Protector
 	fixed           http.Handler
+	keyRepo         *keyrepo.Repository
 	keys            *freshkeys.Service
 	keyApply        *freshkeyapply.Service
 	updates         *updatecheck.Service
 	configRetry     *freshconfig.Service
 	legacy          http.Handler
+	legacyCollector *collectorservice.Service
 	collectorWorker *worker.CollectorWorker
 	identityWorker  *identityreconcile.Worker
+	// Usage chain: staged keys own source bindings, Collector events feed the
+	// canonical identity projection, and the workspace reads attributed usage.
+	managedSource   freshkeyapply.ManagedSource
+	usageProjection *identityprojection.Worker
+	usage           *usageapp.Service
 	pahS0           bool
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
-	a := &freshApplication{store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector, pahS0: cfg.PAHS0Enabled}
+	a := &freshApplication{cfg: cfg, store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver), protector: opened.Protector, pahS0: cfg.PAHS0Enabled}
 	// Fresh owns the SQLite admission and keeps the old app bootstrap bypassed,
-	// but the already-built CPAMP services remain the source of truth for
-	// Full Web's shared Dashboard/Config/System resources. This context reuses
-	// the admitted connection and starts no collector until a user explicitly
-	// saves a supported Manager configuration.
+	// but the already-built CPAMP services remain the source of truth for Full
+	// Web's shared Dashboard/Config/System resources. This context reuses the
+	// admitted connection. The Collector it builds starts only after
+	// ProductComplete, when the committed install-derived CPA authority exists;
+	// pending installs cannot start collection through an old host route.
 	legacyStore := store.New(opened.DB, opened.Protector)
 	legacyCollector := collector.NewManager(cfg, legacyStore)
 	legacyCollectorService := collectorservice.New(legacyCollector)
 	legacyContext := app.FromExistingWithModelsDev(cfg, legacyStore, legacyCollector, time.Now().UnixMilli(), nil, nil, nil, nil, "cpa-manager-plus")
-	// Fresh startup deliberately bypasses the historical app bootstrap. Keep
-	// the existing collector lifecycle, but restore it only from the persisted
-	// completed Manager Config after ProductComplete; pending installs remain
-	// unable to start collection through an old route.
+	a.legacyCollector = legacyCollectorService
 	a.collectorWorker = worker.NewCollectorWorker(cfg, legacyStore, legacyCollectorService)
-	a.keys = freshkeys.New(keyrepo.New(opened.DB), opened.Protector)
+	// The Collector is the only writer of Fresh usage events, so its inserts are
+	// exactly what the canonical identity projection must attribute.
+	a.usageProjection = identityprojection.NewWorker(legacyStore.IdentityProjections)
+	legacyCollector.SetUsageEventHandler(collector.UsageEventHandlerFunc(func(ctx context.Context, _ collector.RuntimeConfig, events []usage.Event) {
+		a.usageProjection.HandleUsageEvents(ctx, events)
+	}))
+	a.usage = usageapp.New(identityusage.New(opened.DB), a.collectionPhase)
+	a.keyRepo = keyrepo.New(opened.DB)
+	a.keys = freshkeys.New(a.keyRepo, opened.Protector, freshkeys.WithSourceRuntime(a.installedRuntimeIdentity))
 	// Reuse the existing settings authority without opening a Legacy app,
 	// collector, CPA client, or second SQLite connection.
 	a.updates = updatecheck.New(store.New(opened.DB), buildinfo.Version, buildinfo.SourceCommit, os.Getenv("CPAMP_UPDATE_CHECK_ENABLED") != "false")
@@ -141,7 +159,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	h1Mode := os.Getenv("CPAMP_PRIVATE_H1")
 	h1Valid := h1Mode == "" || (h1Mode == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1")
 	if h1Valid && os.Getenv("CPAMP_PRIVATE_S1_PERMIT") == freshkeyapply.PermitPath && cfg.RuntimeURL == "http://127.0.0.1:9081" && cfg.CPAUpstreamURL == "http://127.0.0.1:8317" {
-		a.keyApply = freshkeyapply.New(keyrepo.New(opened.DB), a.keys, runtime)
+		a.keyApply = freshkeyapply.New(a.keyRepo, a.keys, runtime)
 		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
 		if os.Getenv("CPAMP_PRIVATE_H1") == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1" {
 			h := cpa.NewH1Coordinator(opened.DB)
@@ -152,8 +170,8 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	if a.keyApply == nil && runtime != nil && h1Valid {
 		// Default Compose installations derive CPA management authority from
 		// the committed destination and the protected Manager connection.
-		a.keyApply = freshkeyapply.NewManaged(keyrepo.New(opened.DB), a.keys, runtime, cfg.CPAUpstreamURL,
-			managedInstallSource(st, opened.Protector, cfg.CPAUpstreamURL))
+		a.managedSource = managedInstallSource(st, opened.Protector, cfg.CPAUpstreamURL)
+		a.keyApply = freshkeyapply.NewManaged(a.keyRepo, a.keys, runtime, cfg.CPAUpstreamURL, a.managedSource)
 		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
 	}
 	// Only the build-bound consumer record can grant production qualification.
@@ -641,9 +659,7 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 			// server available while a typed blocker waits for the next startup.
 			log.Printf("Fresh managed destination migration unavailable: %v", err)
 		}
-		if app.collectorWorker != nil {
-			app.collectorWorker.Start(ctx)
-		}
+		app.startUsageCollection(ctx, opened.Record.Operation)
 	}
 	if opened.Record.Operation.ProductComplete && app.identityWorker != nil {
 		go app.identityWorker.Run(ctx)
