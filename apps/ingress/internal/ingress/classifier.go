@@ -193,6 +193,14 @@ func routeCandidates(value string) []string {
 	return result
 }
 
+// CPAManagementPaths are the CPA destination's remote management namespaces
+// that no public client may reach through Ingress. `/v0/management` is the
+// Manager's own public API and keeps its Control ownership; the CPA v8
+// management API is reached only by the Manager's authenticated server-side
+// consumers, so the transport edge refuses it instead of forwarding CPA
+// management requests to the model Gateway.
+var CPAManagementPaths = []string{"/v8/management"}
+
 func privateRoutingCandidate(candidates []string) bool {
 	for _, value := range candidates {
 		if strings.HasPrefix(value, PrivateChatAdmissionPath) {
@@ -203,6 +211,11 @@ func privateRoutingCandidate(candidates []string) bool {
 		}
 		for _, private := range []string{FreshRoutingControlPath, FreshRoutingAuthorityPath, pahS0GuardPath, "/internal/fresh-client-key-stage/probe", PrivateChatAdmissionPath} {
 			if value == private || strings.HasPrefix(value, private+"/") {
+				return true
+			}
+		}
+		for _, management := range CPAManagementPaths {
+			if value == management || strings.HasPrefix(value, management+"/") {
 				return true
 			}
 		}

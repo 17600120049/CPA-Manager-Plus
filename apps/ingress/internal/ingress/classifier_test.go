@@ -38,6 +38,11 @@ func TestTransitionalClassifier(t *testing.T) {
 		{path: "/future-gateway-protocol", want: RouteGateway},
 		{path: "/usage-services", want: RouteGateway},
 		{path: "/v0/management-other", want: RouteGateway},
+		{path: "/v8/management", want: RouteDeny},
+		{path: "/v8/management/config", want: RouteDeny},
+		{path: "/v8/management/config/access/api-keys", want: RouteDeny},
+		{path: "/v8/management-other", want: RouteGateway},
+		{path: "/v8/management-lookalike/v1", want: RouteGateway},
 	}
 	for _, test := range tests {
 		test := test
