@@ -379,6 +379,36 @@ const messages = {
   ],
   fieldSave: ['Save', '保存', '儲存', 'Сохранить'],
   fieldReconcile: ['Reconcile', '核对', '核對', 'Сверить'],
+  fieldWriteNotApplied: [
+    'The write did not land: save again when ready.',
+    '写入未生效：确认后可重新保存。',
+    '寫入未生效：確認後可重新儲存。',
+    'Запись не применена: сохраните заново, когда будете готовы.',
+  ],
+  fieldReasonJournalInvalid: [
+    'This field journal is damaged; it stays locked until it is repaired.',
+    '该字段的日志已损坏，修复前保持锁定。',
+    '該欄位的日誌已損壞，修復前保持鎖定。',
+    'Журнал этого поля повреждён и остаётся заблокированным до восстановления.',
+  ],
+  fieldReasonKeyWriter: [
+    'The configuration source still has a reachable key writer.',
+    '配置来源仍存在可达的密钥写入通道。',
+    '設定來源仍存在可達的金鑰寫入通道。',
+    'У источника конфигурации по-прежнему доступна запись ключей.',
+  ],
+  fieldReasonSourceUnavailable: [
+    'This source cannot be written from here yet.',
+    '当前来源尚不能从此处写入。',
+    '目前來源尚不能從此處寫入。',
+    'Этот источник пока недоступен для записи отсюда.',
+  ],
+  fieldReasonReconcile: [
+    'The original operation needs reconciliation before this field can change.',
+    '需要先核对该字段的原操作，之后才能修改。',
+    '需要先核對該欄位的原操作，之後才能修改。',
+    'Перед изменением поля нужно сверить исходную операцию.',
+  ],
   mediaTitle: ['Images and video', '图片与视频', '圖片與影片', 'Изображения и видео'],
   mediaHelp: [
     'Global media controls; Codex Live and TURN belong to their provider.',

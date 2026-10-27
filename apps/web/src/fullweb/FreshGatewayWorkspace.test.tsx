@@ -288,6 +288,23 @@ describe('FreshGatewayWorkspace component', () => {
     ).toHaveLength(1);
     expect(node('fresh-managed-retry').props.hidden).toBe(true);
   });
+  it('keeps an edited requests draft and never re-reads its group while typing', async () => {
+    await mount();
+    await click('gateway-tab-requests');
+    const kept = `config-input-requests.streaming.keepalive-seconds`;
+    const reads = () =>
+      transport.mock.calls.filter(
+        ([url, init]) => !init?.method && String(url).includes('requests/streaming/keepalive-seconds')
+      ).length;
+    const before = reads();
+    expect(node(kept).props.value).toBe('2');
+    // Two keystrokes are two draft updates: neither may restart the group loader.
+    await change(kept, '4');
+    await change(kept, '45');
+    expect(node(kept).props.value).toBe('45');
+    expect(reads()).toBe(before);
+    expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
+  });
   it('filters actual dirty paths rather than their entire category', async () => {
     await mount();
     await change('retry-value', '4');

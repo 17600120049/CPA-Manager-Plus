@@ -111,13 +111,6 @@ export function FreshGatewayWorkspace({
     [sections]
   );
   const requestsVisible = requestsFields.some((field) => visiblePaths.has(field.path));
-  // Field metadata and the draft hook are memoized so the requests group reads
-  // them once per real change; an unstable prop would re-run its loaders and
-  // report drafts on every render.
-  const requestsGroupFields = useMemo(
-    () => requestsFields.filter((field) => visiblePaths.has(field.path)),
-    [requestsFields, visiblePaths]
-  );
   const mergeDraftDiffs = useCallback((diffs: RetryDraftDiff[]) => {
     setDraftDiffs((current) => {
       const next = [
@@ -423,7 +416,8 @@ export function FreshGatewayWorkspace({
         </div>
         <div hidden={!requestsVisible || showOverview || showOwners} data-testid="fresh-managed-requests">
           <RequestsConfigFieldGroup
-            fields={requestsGroupFields}
+            fields={requestsFields}
+            visiblePaths={visiblePaths}
             client={client}
             credential={credential}
             onUnauthorized={onUnauthorized}
