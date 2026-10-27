@@ -13,6 +13,13 @@ func (s *Service) ConfigTarget(ctx context.Context, generation uint64) (string, 
 	if s == nil {
 		return "", ErrUnavailable
 	}
+	if s.managed {
+		p, err := s.operationTarget(ctx, generation)
+		if err != nil {
+			return "", err
+		}
+		return p.ManagementKey, nil
+	}
 	if s.h1 != nil {
 		p, e := s.operationTarget(ctx, generation)
 		if e != nil {
@@ -43,4 +50,20 @@ func (s *Service) ConfigTarget(ctx context.Context, generation uint64) (string, 
 		return "", e
 	}
 	return p.ManagementKey, nil
+}
+
+// DefaultInstallCPAAuthorityProven is the Manager-internal admission predicate
+// for lane G: the committed NewManaged callback must yield a valid credential
+// and authenticated Runtime status must match its identity/generation/artifact.
+// It intentionally exposes only a boolean and never returns the credential.
+func (s *Service) DefaultInstallCPAAuthorityProven(ctx context.Context) bool {
+	if s == nil || !s.managed {
+		return false
+	}
+	p, err := s.permit()
+	if err != nil {
+		return false
+	}
+	_, err = s.target(ctx, p)
+	return err == nil
 }

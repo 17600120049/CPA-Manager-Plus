@@ -4,13 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"time"
-
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityreconcile"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
@@ -40,6 +33,12 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/updatecheck"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/worker"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 )
 
 // initialize is a host-owned offline operation. It admits the actual store and
@@ -149,6 +148,13 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 			a.keyApply.EnableH1(h)
 			a.configRetry.EnableH1(h)
 		}
+	}
+	if a.keyApply == nil && runtime != nil && h1Valid {
+		// Default Compose installations derive CPA management authority from
+		// the committed destination and the protected Manager connection.
+		a.keyApply = freshkeyapply.NewManaged(keyrepo.New(opened.DB), a.keys, runtime, cfg.CPAUpstreamURL,
+			managedInstallSource(st, opened.Protector, cfg.CPAUpstreamURL))
+		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.

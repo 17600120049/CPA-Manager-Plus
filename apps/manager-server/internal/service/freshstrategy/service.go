@@ -112,7 +112,10 @@ type managedDestinationSnapshot struct {
 	BaseURL     string                          `json:"baseUrl"`
 }
 
-func managedDestinationIdentity(baseURL string) string {
+// ManagedDestinationIdentity hashes the exact destination value an identity
+// binds: the normalized Manager connection for a checkpoint, or the Fresh
+// operation for a destination source.
+func ManagedDestinationIdentity(baseURL string) string {
 	digest := sha256.Sum256([]byte(baseURL))
 	return "managed:sha256:" + hex.EncodeToString(digest[:])
 }
@@ -152,7 +155,7 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 			return result, &Blocker{Code: "management_secret_storage_unavailable"}
 		}
 		managementKey := hex.EncodeToString(keyBytes)
-		destination := model.RuntimeDestinationRequest{OperationID: string(op.Identity.OperationID) + ":managed-destination", ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: status.ActiveGatewayArtifact.ArtifactID, SourceIdentity: managedDestinationIdentity(string(op.Identity.OperationID)), SourceClass: "new_managed", APIKeys: []string{}, ManagementKey: managementKey}
+		destination := model.RuntimeDestinationRequest{OperationID: string(op.Identity.OperationID) + ":managed-destination", ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: status.ActiveGatewayArtifact.ArtifactID, SourceIdentity: ManagedDestinationIdentity(string(op.Identity.OperationID)), SourceClass: "new_managed", APIKeys: []string{}, ManagementKey: managementKey}
 		data, err := json.Marshal(managedDestinationSnapshot{Destination: destination, BaseURL: baseURL})
 		if err != nil {
 			return result, &Blocker{Code: "management_secret_storage_unavailable"}
@@ -161,7 +164,7 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 		if err != nil {
 			return result, &Blocker{Code: "management_secret_storage_unavailable"}
 		}
-		checkpoint.DestinationConnectionIdentity = managedDestinationIdentity(baseURL)
+		checkpoint.DestinationConnectionIdentity = ManagedDestinationIdentity(baseURL)
 		result.Checkpoint = checkpoint
 		return result, nil
 	}

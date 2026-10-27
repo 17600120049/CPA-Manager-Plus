@@ -45,17 +45,39 @@ type Service struct {
 	runtime       runtimeservice.RuntimeClient
 	wire          wire
 	permit        func() (Permit, error)
-	keyPermit     func() (KeyPermit, error)
+	keyPermit     func(context.Context, string, string) (KeyPermit, error)
+	source        ManagedSource
+	endpoint      string
+	managed       bool
 	keyOperations bool
 	startedAtMS   int64
 }
 
 func New(r *repo.Repository, keys *freshkeys.Service, runtime runtimeservice.RuntimeClient) *Service {
-	s := &Service{repo: r, keys: keys, runtime: runtime, wire: cpa.NewTransport(), permit: loadPermit, keyPermit: loadKeyPermit, keyOperations: os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1", startedAtMS: time.Now().UnixMilli()}
+	s := &Service{repo: r, keys: keys, runtime: runtime, wire: cpa.NewTransport(), permit: loadPermit,
+		keyPermit:     func(context.Context, string, string) (KeyPermit, error) { return loadKeyPermit() },
+		keyOperations: os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1", startedAtMS: time.Now().UnixMilli()}
 	if os.Getenv("CPAMP_PRIVATE_S2B_CHAT") == "1" {
 		s.wire = cpa.NewPrivateS2BTransport(func() (cpa.PrivateProviderSeed, error) { p, err := s.permit(); return p.S2B, err })
 	}
 	return s
+}
+
+// keyGrantHeld re-derives the grant for this operation step. A Host permit is a
+// fixed file and must be identical; a managed grant is derived per call from
+// the committed installation and the live destination source, so its validity
+// window is re-established on every read instead of compared.
+func (s *Service) keyGrantHeld(ctx context.Context, grant KeyPermit, operationID, step string) bool {
+	current, err := s.keyPermit(ctx, operationID, step)
+	if err != nil {
+		return false
+	}
+	if s.managed {
+		return current.OperationID == grant.OperationID && current.Step == grant.Step &&
+			current.RunID == grant.RunID && current.Generation == grant.Generation &&
+			current.SourceSHA256 == grant.SourceSHA256
+	}
+	return current == grant
 }
 
 func (s *Service) target(ctx context.Context, p Permit) (model.RuntimeObservedStatus, error) {
@@ -65,6 +87,19 @@ func (s *Service) target(ctx context.Context, p Permit) (model.RuntimeObservedSt
 	v, err := s.runtime.Status(ctx)
 	if err != nil {
 		return v, ErrUnavailable
+	}
+	if p.Profile == ProfileManaged {
+		// The committed installation pins identity, generation and artifact.
+		// A stale target is a generation conflict; a runtime that is not ready
+		// or a different artifact is unavailable, exactly as for the private
+		// profile.
+		if string(v.Identity) != p.Identity || strconv.FormatUint(uint64(v.Generation), 10) != p.Generation {
+			return v, ErrGeneration
+		}
+		if v.State != model.RuntimeStateReady || v.ActiveGatewayArtifact == nil || string(v.ActiveGatewayArtifact.ArtifactID) != p.ArtifactID {
+			return v, ErrUnavailable
+		}
+		return v, nil
 	}
 	if string(v.Identity) != cpa.PrivateKeyRuntime || strconv.FormatUint(uint64(v.Generation), 10) != p.Generation {
 		return v, ErrGeneration
@@ -105,7 +140,7 @@ func (s *Service) Apply(ctx context.Context, id string, generation uint64) (Stat
 		if _, err := s.target(ctx, p); err != nil {
 			return err
 		}
-		_, err := s.wire.InstallOne(ctx, cpa.TargetProof{Identity: string(target.Identity), Generation: uint64(target.Generation), ArtifactID: cpa.PrivateKeyArtifact, Ready: true, SourceExclusive: true, Disposable: true, ExpiresAtMS: p.ExpiresAtMS, ProviderSeed: p.S2B}, p.ManagementKey, secret)
+		_, err := s.wire.InstallOne(ctx, s.targetProof(target, p), p.ManagementKey, secret)
 		return err
 	})
 	if err != nil {

@@ -157,3 +157,21 @@ aborting browser delivery. Source tests, real Docker execution and interactive
 browser results must be reported separately. See the
 [acceptance record](fresh-new-installation-acceptance.md) for actual observed
 outcomes and the remaining limits.
+
+## Default New Managed CPA authority
+
+The default Compose installation uses the Runtime `new_managed` destination.
+`freshstrategy.newManaged` generates a random 256-bit management key, stores
+the protected destination snapshot in the Fresh CAS checkpoint, stages and
+starts the destination, then requires an authenticated CPA v8 config read-back
+before committing `manager_config_v1`. The runtime template binds CPA to
+`0.0.0.0`, enables remote management and usage statistics, and disables the
+control panel. The key is never returned to the browser, Runtime journal,
+operation response, or logs.
+
+After commit, `freshkeyapply.Service.DefaultInstallCPAAuthorityProven` in
+`apps/manager-server/internal/service/freshkeyapply/config_target.go` is the
+Manager-internal predicate exposed for Gateway admission. It requires the
+committed New Managed connection and an authenticated Runtime status matching
+the recorded identity, generation, and artifact. Private attested installs
+continue to use their explicit host-permit profile.
