@@ -59,6 +59,7 @@ async function setup(
     rejectExternal?: boolean;
     loseIdentity?: boolean;
     partialRoute?: boolean;
+    verifyPending?: boolean;
   } = {}
 ) {
   let operation: FreshOperation = {
@@ -73,6 +74,7 @@ async function setup(
   let lost = false;
   let recovered = false;
   let externalRejected = false;
+  let verificationRefused = false;
   const transport = vi.fn<typeof fetch>(async (url, init) => {
     const resource = new URL(String(url)).pathname.split('/api/v2/')[1];
     const body = init?.body ? JSON.parse(String(init.body)) : {};
@@ -103,6 +105,16 @@ async function setup(
     if (resource === 'strategy') {
       expect(body.identity).toEqual(identity);
       expect(body.expectedRevision).toBe(operation.revision);
+      if (options.verifyPending && body.strategy === 'new_managed' && !verificationRefused) {
+        // The adapter refuses before it records a checkpoint, so the stored
+        // operation stays exactly where the browser read it.
+        verificationRefused = true;
+        expect(operation.strategy).toBeUndefined();
+        return Response.json(
+          { Code: 'managed_destination_verification_required' },
+          { status: 409 }
+        );
+      }
       if (body.strategy === 'connect_external') {
         if (options.rejectExternal && !externalRejected) {
           externalRejected = true;
@@ -306,6 +318,42 @@ it('does not commit the route or finish while managed CPA is not ready', async (
   ).toBe(false);
   expect(JSON.stringify(renderer.toJSON())).toContain('CPA 正在启动');
 });
+
+it('keeps an unverified CPA readiness refusal resumable instead of freezing the installation', async () => {
+  const { transport } = await setup({ verifyPending: true });
+  await click('setup-review');
+  await input('confirm-key-saved-checkbox', true);
+  await click('setup-execute');
+  // The refusal recorded no checkpoint, so the same operation stays continuable.
+  expect(byID('setup-resume').props.disabled).toBe(false);
+  expect(JSON.stringify(renderer.toJSON())).toContain('已保存的进度不会丢失');
+  expect(renderer.root.findAllByProps({ 'data-testid': 'enter-console' })).toHaveLength(0);
+  await click('setup-resume');
+  expect(byID('enter-console').props.href).toBe('/private');
+  expect(
+    transport.mock.calls.filter(([url]) => String(url).endsWith('/admin/commit'))
+  ).toHaveLength(1);
+});
+
+it.each(['zh-CN', 'zh-TW', 'en', 'ru'])(
+  'explains the unverified readiness state in every locale (%s)',
+  async (language) => {
+    await setup({ verifyPending: true });
+    setFullWebLanguage(language);
+    await click('setup-review');
+    await input('confirm-key-saved-checkbox', true);
+    await click('setup-execute');
+    expect(byID('setup-resume').props.disabled).toBe(false);
+    expect(JSON.stringify(renderer.toJSON())).toContain(
+      {
+        'zh-CN': '已保存的进度不会丢失',
+        'zh-TW': '已儲存的進度不會遺失',
+        en: 'could not be verified yet',
+        ru: 'пока нельзя проверить',
+      }[language]
+    );
+  }
+);
 
 it('recovers the committed route using reads after activation and identity replies were both lost', async () => {
   const { transport, recover } = await setup({
