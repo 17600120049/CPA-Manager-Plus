@@ -57,14 +57,14 @@ describe('canonical Full Web Public API transport', () => {
   });
 
   it.each([
-    ['gateway/retry/request-retry', 'invalid_retry_request', 'invalid_retry_request'],
+    ['gateway/config/routing/retry/request-retry', 'invalid_config_field', 'invalid_config_field'],
     [
-      'gateway/retry/operations/' + 'a'.repeat(32) + '/reconcile',
-      'invalid_retry_request',
-      'invalid_retry_request',
+      'gateway/config/operations/' + 'a'.repeat(32) + '/reconcile',
+      'invalid_config_field',
+      'invalid_config_field',
     ],
-    ['gateway/retry/request-retry', 'raw upstream secret', undefined],
-    ['api-keys', 'invalid_retry_request', undefined],
+    ['gateway/config/routing/retry/request-retry', 'raw upstream secret', undefined],
+    ['api-keys', 'invalid_config_field', undefined],
   ])('bounds HTTP 400 parsing for %s (%s)', async (resource, code, expectedCode) => {
     browserOrigin();
     const transport = vi
@@ -152,7 +152,7 @@ describe('canonical Full Web Public API transport', () => {
           })
       );
       const pending = createPublicApiClient(() => context, transport).get(
-        'gateway/retry/request-retry',
+        'gateway/config/routing/retry/request-retry',
         credential
       );
       const assertion = expect(pending).rejects.toMatchObject({
@@ -189,7 +189,7 @@ describe('canonical Full Web Public API transport', () => {
       )
     );
     const error = (await createPublicApiClient(() => context, transport)
-      .put('gateway/retry/request-retry', { requestId: operation.requestId, value: 3 }, credential)
+      .put('gateway/config/routing/retry/request-retry', { requestId: operation.requestId, value: 3 }, credential)
       .catch((value) => value)) as Error & { code?: string; operationResult?: unknown };
     expect(error).toMatchObject({
       kind: 'http',

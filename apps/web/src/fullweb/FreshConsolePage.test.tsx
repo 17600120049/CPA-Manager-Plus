@@ -166,7 +166,7 @@ describe('Fresh installation and Console authority boundary', () => {
                   activeGatewayArtifact: { artifactId: 'sha256:' + 'a'.repeat(64) },
                   state: 'ready',
                 });
-              if (target.includes('/gateway/retry/'))
+              if (target.includes('/gateway/config/'))
                 return retryTransport
                   ? retryTransport(url, init)
                   : new Response('', { status: 503 });

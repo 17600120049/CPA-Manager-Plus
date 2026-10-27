@@ -74,8 +74,8 @@ describe('Full Web request retry editor', () => {
       renderer = create(
         <FreshRetryConfiguration
           client={createPublicApiClient(() => context, ((url, init) =>
-            (String(url).includes('/gateway/retry/max-retry-interval') ||
-              String(url).includes('/gateway/retry/interval-operations/'))
+            (String(url).includes('/gateway/config/routing/retry/max-retry-interval') ||
+              String(url).includes('/gateway/config/operations/'))
               ? (intervalTransport
                   ? intervalTransport(url, init)
                   : Promise.resolve(Response.json(retryView({
@@ -199,7 +199,7 @@ describe('Full Web request retry editor', () => {
     await click('retry-interval-reconcile');
     expect(renderer.root.findByProps({ 'data-testid': 'retry-interval-value' }).props.value).toBe('5');
     expect(pendingEvents[pendingEvents.length - 1]).toBe(false);
-    expect(b3.mock.calls.map(([url, init]) => [String(url).split('/gateway/retry/')[1], init?.method])).toEqual([
+    expect(b3.mock.calls.map(([url, init]) => [String(url).split('/gateway/config/')[1], init?.method])).toEqual([
       ['max-retry-interval', 'GET'],
       ['max-retry-interval', 'PUT'],
       [`interval-operations/${id}`, 'GET'],
@@ -337,7 +337,7 @@ describe('Full Web request retry editor', () => {
       .mockResolvedValueOnce(Response.json(retryView()))
       .mockResolvedValueOnce(
         Response.json(
-          { code: 'invalid_retry_request', message: 'private details' },
+          { code: 'invalid_config_field', message: 'private details' },
           { status: 400 }
         )
       );
@@ -360,7 +360,7 @@ describe('Full Web request retry editor', () => {
         .mockResolvedValueOnce(Response.json(retryView()))
         .mockResolvedValueOnce(
           Response.json(
-            { code: status === 400 ? 'private unknown code' : 'invalid_retry_request' },
+            { code: status === 400 ? 'private unknown code' : 'invalid_config_field' },
             { status }
           )
         );
@@ -531,7 +531,7 @@ describe('Full Web request retry editor', () => {
                 else
                   resolve(
                     Response.json(
-                      { code: failure === '400' ? 'invalid_retry_request' : 'journal_unknown' },
+                      { code: failure === '400' ? 'invalid_config_field' : 'journal_unknown' },
                       { status: Number(failure) }
                     )
                   );
@@ -581,12 +581,12 @@ describe('Full Web request retry editor', () => {
       await click('retry-check-operation');
       expect(button('retry-operation-id').props.children).toBe(secondId);
       expect(transport.mock.calls[4][0]).toBe(
-        `https://manager.example${context.apiBase}/gateway/retry/operations/${secondId}`
+        `https://manager.example${context.apiBase}/gateway/config/operations/${secondId}`
       );
       expect(transport.mock.calls[4][1]?.method).toBe('GET');
       await click('retry-reconcile');
       expect(transport.mock.calls[5][0]).toBe(
-        `https://manager.example${context.apiBase}/gateway/retry/operations/${secondId}/reconcile`
+        `https://manager.example${context.apiBase}/gateway/config/operations/${secondId}/reconcile`
       );
       expect(transport.mock.calls[5][1]?.method).toBe('POST');
       expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(2);
