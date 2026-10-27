@@ -1,6 +1,6 @@
 ---
 title: CPA 插件管理与插件商店
-description: 使用 CPA Manager Plus 安装、选择版本、启用、配置和排查 CPA 插件，包括 GitHub Release、prerelease、手动 tag 和插件页面。
+description: 使用 CPA Manager Plus 安装、选择版本、启用、配置和排查 CPA 插件，包括 GitHub Release、prerelease、手动 tag、沙箱化插件页面与主题同步协议。
 ---
 
 # CPA 插件管理与插件商店
@@ -15,6 +15,8 @@ description: 使用 CPA Manager Plus 安装、选择版本、启用、配置和�
 - **插件商店**：从 `plugins.store-sources` 获取可安装插件。
 
 如果 `plugins.enabled` 关闭，单个插件即使标记为启用也不会运行。
+
+插件入口只在 Manager 报告当前连接支持插件时出现（`X-CPA-SUPPORT-PLUGIN`）。默认安装由 Manager 自己回答该能力，因此无需额外配置。若入口消失，说明连接的 Manager 版本或保存的 CPA 连接无法端到端提供插件能力。
 
 ## 安装版本
 
@@ -44,9 +46,62 @@ GitHub Release 列表可能受到仓库权限、网络、代理或 API rate limi
 
 保存后如果提示需要重启，应按部署方式重启 CPA 或 Manager Server，不要只刷新浏览器。
 
+## 插件页面的沙箱边界
+
+插件页面在 Console 中以 iframe 打开，并始终运行在**不透明来源**（sandboxed opaque origin）中。这不是可选配置，而是 Manager 强制的响应契约：
+
+- 每个 `/v0/resource/plugins/*` 响应都带 `Content-Security-Policy: sandbox allow-scripts allow-forms`，不含 `allow-same-origin`。
+- iframe 自身使用 `sandbox="allow-scripts allow-forms"`，不授予弹窗、顶层导航、下载或同源访问。
+- 响应被剥离 `Set-Cookie`，跳转只能指向同一插件自身的前缀。
+
+由此得到的限制：
+
+- 插件页面**不能**读取 `localStorage`、`sessionStorage`、Cookie 或管理界面的 DOM，也不能调用管理 API。
+- 插件页面**只能**从自己的 `/v0/resource/plugins/<插件 id>/` 前缀加载资源。跨域、`data:`、`blob:` 与其他相对路径都会被判定为不支持。
+- 依赖同源访问的插件（例如直接读取 Console 存储、依赖相对路径 API 或使用同源 Cookie 的页面）**不受支持**。界面会显示"无法显示该插件页面"的说明，而不会降级为同源加载。
+
+插件资源只接受 `GET`/`HEAD`。Manager 还会校验 Fetch Metadata：缺少 `Sec-Fetch-Site` 的请求一律返回 403，来自管理界面的 `script`、`worker`、`style`、`font` 等非文档型子资源请求也会被拒绝。管理站点的 CSP 同时对插件路径封锁管理与 Worker 执行路径。
+
+不支持 Fetch Metadata 的老旧浏览器仍可使用插件管理，但插件页面无法打开。这是预期的降级。
+
+## 主题同步协议
+
+插件页面无法被宿主读取或写入 DOM，主题因此改为完全可选的消息协议。Console 在 iframe 加载完成、自身主题变化以及页面重新导航后，向 iframe 的 window 发送：
+
+```json
+{
+  "type": "cpamp:plugin-theme",
+  "version": 1,
+  "theme": "light",
+  "themeAttribute": "white",
+  "hostAttribute": "data-cpamp-plugin-host",
+  "variables": { "--primary-color": "#409eff" }
+}
+```
+
+- 因为沙箱文档的来源是 `null`，`targetOrigin` 只能是 `*`。消息中不含任何凭证，只有管理界面已可见的主题变量。
+- Plugin 只有在自己的文档中监听 `message` 并主动应用变量时才会跟随主题；不监听则保持自身样式。
+- Console 只发送，不监听插件消息，也不向插件暴露任何回调或 API。
+- `variables` 使用 CSS 自定义属性（包括 `--app-*`、`--bg-*`、`--text-*`、`--border-*`、`--primary-*` 等），可直接写入 `document.documentElement.style`。
+
+最小实现：
+
+```js
+window.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || data.type !== 'cpamp:plugin-theme' || data.version !== 1) return;
+  const root = document.documentElement;
+  root.setAttribute(data.hostAttribute, '');
+  root.setAttribute('data-theme', data.themeAttribute);
+  for (const [name, value] of Object.entries(data.variables)) {
+    root.style.setProperty(name, value);
+  }
+});
+```
+
 ## 插件页面和反向代理
 
-插件页面资源通过 `/v0/resource/plugins/*` 访问。自定义反向代理必须把该路径交给 CPAMP，否则页面可能空白。
+插件页面资源通过 `/v0/resource/plugins/*` 访问，位置在站点根命名空间，而不是 `/api/v2/cpamp` 之下。自定义反向代理必须把该路径交给 CPAMP，否则页面可能空白。
 
 常见问题：
 
@@ -55,10 +110,21 @@ GitHub Release 列表可能受到仓库权限、网络、代理或 API rate limi
 - 反向代理路径错误。
 - 插件版本与 CPA runtime 不兼容。
 - 插件配置缺少必填项。
+- 插件页面依赖同源访问：只支持 `/v0/resource/plugins/<插件 id>/` 前缀下的资源。
+
+## CPA 版本升级回归清单
+
+CPAMP 只支持 CPA v8 及以后版本。升级到新的固定 CPA 版本时，必须回归：
+
+1. **插件 v0 接口**：`/v0/management/plugins`、`/v0/management/plugins/<id>/enabled`、`/v0/management/plugins/<id>/config`、`/v0/management/plugin-store` 仍存在且语义不变。插件启停与配置只在 `v0` 提供，`/v8/management` 不替代它们。
+2. **管理路径归属**：`cpaBuiltinManagementPathHeads` 必须与 CPA 当前内置路由一致。"非内置即插件"的判断一旦错位，插件接口会被误判为内置或反之。
+3. **`pluginabi` 版本**：`pluginabi.SchemaVersion`（v8.0.44 为 7）与插件商店中插件的兼容性；版本不一致会导致安装成功但无法加载。
+4. **资源前缀**：`/v0/resource/plugins/<id>/` 前缀自 v8.0.13 至 v8.0.44 未变，升级后重新验证一次插件页面打开与主题同步。
 
 ## 安全边界
 
 - 插件是可执行扩展，应像部署服务端代码一样审查来源、权限和更新。
 - CPAMP 展示插件元数据并代理管理操作，不保证第三方插件安全或兼容。
+- 未认证请求永远不会获得保存的 CPA 管理密钥；插件管理代发只在已认证管理员会话下发生。
 - 不要把插件目录、配置或密钥放入公开日志和 Issue。
 - 生产升级后观察[仪表盘](./dashboard.md)、[请求监控](./monitoring.md)和[日志](./logs.md)。

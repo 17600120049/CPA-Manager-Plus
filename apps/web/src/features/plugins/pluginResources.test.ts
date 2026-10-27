@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PluginListEntry, PluginStoreEntry } from '@/types';
 import {
   collectPluginResourceEntries,
@@ -9,6 +9,8 @@ import {
   isOfficialRepository,
   isPluginManagementNavVisible,
   isPluginResourceNavVisible,
+  isSupportedPluginResourcePath,
+  resolvePluginAssetURL,
 } from './pluginResources';
 
 const createPlugin = (patch: Partial<PluginListEntry> = {}): PluginListEntry => ({
@@ -155,5 +157,98 @@ describe('plugin resource helpers', () => {
     expect(isDefaultPluginStoreSource(createStoreEntry({ sourceId: 'custom', sourceName: 'Custom' }))).toBe(
       false
     );
+  });
+});
+
+describe('plugin resource URL boundary', () => {
+  const ORIGIN = 'https://admin.example.test';
+  const API_BASE = `${ORIGIN}/api/v2/cpamp`;
+
+  beforeEach(() => {
+    vi.stubGlobal('window', { location: { origin: ORIGIN } });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('accepts only the deployment plugin namespace', () => {
+    for (const supported of [
+      '/v0/resource/plugins/demo/index.html',
+      '/v0/resource/plugins/demo/nested/page.html?theme=dark',
+      '/v0/resource/plugins/demo/logo.png',
+    ]) {
+      expect(isSupportedPluginResourcePath(supported), supported).toBe(true);
+    }
+
+    for (const rejected of [
+      '',
+      '/',
+      '/v0/resource/plugins',
+      '/v0/resource/plugins/',
+      'v0/resource/plugins/demo/index.html',
+      '/api/v2/cpamp/v0/resource/plugins/demo/index.html',
+      'https://elsewhere.test/v0/resource/plugins/demo/index.html',
+      '//elsewhere.test/v0/resource/plugins/demo/index.html',
+      'data:text/html,<p>plugin</p>',
+      'blob:https://admin.example.test/1234',
+      'javascript:alert(1)',
+      '/v0/resource/plugins/../management.html',
+      '/v0/resource/plugins/demo/../../management.html',
+      '/v0/resource/plugins/%2e%2e/management.html',
+      '/v0/resource/plugins%2Fdemo/index.html',
+      '/v0/resource/plugins//demo/index.html',
+      '/v0/resource/plugins/demo\\index.html',
+      '/v0/resource/plugins/demo/a b.html',
+      '/v0/resource/plugins/demo/http://elsewhere.test/a.html',
+    ]) {
+      expect(isSupportedPluginResourcePath(rejected), JSON.stringify(rejected)).toBe(false);
+    }
+  });
+
+  it('normalizes surrounding whitespace instead of passing it into the URL', () => {
+    expect(
+      resolvePluginAssetURL('  /v0/resource/plugins/demo/index.html  ', API_BASE)
+    ).toBe(`${ORIGIN}/v0/resource/plugins/demo/index.html`);
+  });
+
+  it('resolves supported resources against the document origin, never the API prefix', () => {
+    // The Manager proxy answers the namespace at the origin root, so the
+    // console's `/api/v2/cpamp` namespace must not appear in the URL.
+    expect(resolvePluginAssetURL('/v0/resource/plugins/demo/index.html', API_BASE)).toBe(
+      `${ORIGIN}/v0/resource/plugins/demo/index.html`
+    );
+    expect(resolvePluginAssetURL('/v0/resource/plugins/demo/logo.png', '')).toBe(
+      `${ORIGIN}/v0/resource/plugins/demo/logo.png`
+    );
+  });
+
+  it('reports unsupported targets instead of producing a loadable URL', () => {
+    for (const rejected of [
+      'https://cdn.example.test/logo.png',
+      'data:image/png;base64,AAAA',
+      'blob:https://admin.example.test/logo',
+      '/assets/logo.png',
+      'demo/logo.png',
+    ]) {
+      expect(resolvePluginAssetURL(rejected, API_BASE), rejected).toBe('');
+    }
+  });
+
+  it('refuses a configured API base on another origin', () => {
+    // A cross-origin Manager cannot host a plugin document this admin
+    // document may frame (frame-src 'self'), so it is unsupported outright.
+    expect(
+      resolvePluginAssetURL(
+        '/v0/resource/plugins/demo/index.html',
+        'https://manager.elsewhere.test/api/v2/cpamp'
+      )
+    ).toBe('');
+    expect(resolvePluginAssetURL('/v0/resource/plugins/demo/index.html', 'not a url')).toBe('');
+  });
+
+  it('refuses to resolve anything without a browser origin', () => {
+    vi.unstubAllGlobals();
+    expect(resolvePluginAssetURL('/v0/resource/plugins/demo/index.html', API_BASE)).toBe('');
   });
 });

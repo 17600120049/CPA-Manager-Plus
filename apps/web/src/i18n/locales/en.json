@@ -4719,7 +4719,6 @@
     "gate_step3_hint": "Enter the exact identifier shown above."
   },
   "plugin_resource": {
-    "pah_s0_unsupported": "Plugin pages are disabled in this private security profile. Plugin management remains available.",
     "title": "Plugin Page",
     "page_count": "{{count}} pages",
     "load_failed": "Failed to load plugin page",
@@ -4728,7 +4727,9 @@
     "not_found": "Plugin page not found",
     "not_found_desc": "The current service does not declare this plugin page.",
     "empty_src": "Plugin page URL is empty",
-    "empty_src_desc": "This plugin menu does not provide a page URL that can be opened."
+    "empty_src_desc": "This plugin menu does not provide a page URL that can be opened.",
+    "unsupported_target": "This plugin page cannot be displayed",
+    "unsupported_target_desc": "Plugin pages must be served from this deployment's own /v0/resource/plugins/ namespace. Same-origin-dependent, external, data: and blob: pages are not supported because plugin pages run in a sandboxed origin."
   },
   "system_info": {
     "title": "System Info",

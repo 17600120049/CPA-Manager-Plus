@@ -4717,7 +4717,6 @@
     "gate_step3_hint": "请输入上方显示的完整标识。"
   },
   "plugin_resource": {
-    "pah_s0_unsupported": "当前私有安全配置已禁用插件页面；插件管理功能仍可使用。",
     "title": "插件页面",
     "page_count": "{{count}} 个页面",
     "load_failed": "加载插件页面失败",
@@ -4726,7 +4725,9 @@
     "not_found": "未找到插件页面",
     "not_found_desc": "当前服务没有声明这个插件页面。",
     "empty_src": "插件页面地址为空",
-    "empty_src_desc": "该插件菜单没有提供可打开的页面地址。"
+    "empty_src_desc": "该插件菜单没有提供可打开的页面地址。",
+    "unsupported_target": "无法显示该插件页面",
+    "unsupported_target_desc": "插件页面必须由本站点的 /v0/resource/plugins/ 命名空间提供。由于插件页面运行在沙箱源中，依赖同源访问、外部地址、data: 与 blob: 的页面不受支持。"
   },
   "system_info": {
     "title": "系统信息",
