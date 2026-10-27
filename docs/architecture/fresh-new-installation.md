@@ -93,8 +93,10 @@ After signing in, the installation wizard continues the same durable operation:
 
 Installation completion requires a committed Fresh New checkpoint and a real
 Runtime observation of **ready**, matching the original identity, generation
-and official artifact. It does not open the model Gateway: `gatewayPending`
-remains true, including with zero Client Keys. Diagnostics are available in
+and official artifact. It does not open the model Gateway by itself:
+`gatewayPending` remains true and Ingress keeps answering 503 until a Client
+Key is installed and Manager proves the admission posture in
+[Gateway admission](#gateway-admission-ingress). Diagnostics are available in
 expandable details instead of the normal user workflow.
 
 ## Restart and recovery
@@ -235,6 +237,60 @@ content-addressed `.destination-retired-<digest>` sibling, never deleted and
 never left as the live destination; a retry that fails to publish restores it,
 so a retry can neither orphan nor displace the previous attempt.
 
+### Gateway admission (Ingress)
+
+Ingress keeps every Fresh client Gateway route closed with
+`503 gateway pending configuration` until Manager answers the private
+`/internal/routing/fresh-authority` read with an admission posture that is
+consistent with the installation:
+
+- the Fresh install is committed (`committed: true`) and the reply repeats the
+  installation, generation, operation, revision and target that Ingress
+  already holds in its routing projection;
+- `gatewayAdmission.installationId` and `gatewayAdmission.generation` are the
+  same installation generation;
+- `gatewayAdmission.admitted` is true, which Manager sets only while
+  `DefaultInstallCPAAuthorityProven` is true for the default New Managed
+  profile (committed destination, authenticated Runtime status, managed CPA
+  posture and at least one installed Client Key).
+
+Manager computes the posture on every read and never persists it; the reply
+carries no key, management secret or destination address, and a Manager that
+does not send the field (an older Manager) never admits. Ingress caches one
+positive answer for 15s and one negative answer for 1s, re-reads Manager after
+that TTL, and withdraws a cached positive answer immediately when its routing
+projection changes or disappears. A restarted Ingress has no cached answer, so
+it stays closed until Manager re-publishes the projection (the existing
+`restoreFreshRouting` loop runs every 2s) and admits again. Any Manager error,
+timeout, non-200 reply, legacy `204`, unknown field, trailing data or mismatch
+keeps the Gateway closed.
+
+Client authentication is enforced by requiring at least one installed Client
+Key, not by reacting to its removal. Three facts form the safety chain:
+
+1. admission requires at least one installed key, so Manager never admits a
+   destination whose client set is empty;
+2. the product cannot empty that set: a managed revoke of the last effective
+   key is refused with `ErrLastKey` (HTTP 409 `last_effective_key`), and
+   replace installs the successor before the old key is dropped;
+3. if the destination's key set or managed posture is changed out of band
+   (outside Manager), the predicate returns false on the next read and Ingress
+   withdraws admission at that read.
+
+"Revoke every Client Key" is therefore not a reachable product state and does
+not itself withdraw admission. The residual window is out-of-band only: a
+positive answer already held by Ingress stays effective for at most 15 s, and
+CPA v8 with zero configured client keys does not enforce client
+authentication, so anonymous Gateway requests during that window are not
+rejected by CPA. With at least one installed key, a missing or wrong client
+credential is forwarded to CPA, which answers `401`.
+
+The public Ingress listener never proxies CPA management paths:
+`/v8/management` is denied at the transport edge, `/v0/management` keeps its
+Manager ownership, and the private `/internal/...` namespaces are denied before
+either upstream. Legacy deployments keep the existing `204` authority contract
+unchanged.
+
 ### Existing-install migration
 
 On Manager startup, a completed legacy default record with a committed
@@ -257,9 +313,15 @@ this document and verifies, in order:
 1. Fresh New Managed completes with the destination identity, generation and
    artifact recorded; `manager_config_v1` and `setup` resolve to the same base
    URL and management authority without exposing it.
-2. Create a Client Key, send a real model request through Ingress and observe
-   CPA acceptance; revoke the key and observe the request rejected. Replace a
-   key and repeat the positive/negative checks.
+2. Create a Client Key and send a real model request through the public
+   Ingress listener by setting
+   `CPAMP_SMOKE_MODEL_TARGET=http://cpamp-ingress:18317` for the smoke run;
+   observe CPA acceptance. Replace the key and observe the old key rejected
+   while the new key works; revoking the last effective key must return 409
+   `last_effective_key`. Before the first Client Key exists the same request
+   returns 503; with a key installed, a wrong or missing credential returns
+   401 from CPA. A restart of Ingress must not forward before it has
+   reconfirmed admission.
 3. Read and write each accepted Gateway retry/streaming field, then read it
    back and compare the CPA v8 config. Interrupt one write, query its operation
    and resume it; the journal must not duplicate the PUT.

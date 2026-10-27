@@ -205,7 +205,7 @@ func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r != nil && r.URL != nil && r.URL.Path == freshrouting.AuthorityPath && r.URL.EscapedPath() == r.URL.Path && r.URL.RawQuery == "" {
-		a.routingAuthority(w, r)
+		a.freshAuthority(w, r)
 		return
 	}
 	if r != nil && r.URL != nil && r.URL.Path == privateStagedKeyProofPath {
@@ -214,19 +214,6 @@ func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	protect := routing.ProtectFixedBootstrap(http.HandlerFunc(a.canonical), a.fixed)
 	httpapi.ProtectBrandResources(protect).ServeHTTP(w, r)
-}
-
-func (a *freshApplication) routingAuthority(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	op, err := a.current(r.Context())
-	if err != nil || op.Routing.Target == "" || op.Routing.OperationID == "" {
-		http.NotFound(w, r)
-		return
-	}
-	writeFreshJSON(w, freshrouting.StateFor(op))
 }
 
 func (a *freshApplication) canonical(w http.ResponseWriter, r *http.Request) {
