@@ -305,6 +305,28 @@ describe('FreshGatewayWorkspace component', () => {
     expect(reads()).toBe(before);
     expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
   });
+  it('keeps a requests draft when the retry draft is edited and reverted', async () => {
+    await mount();
+    await click('gateway-tab-requests');
+    await change('config-input-requests.streaming.keepalive-seconds', '45');
+    expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
+    await click('gateway-tab-retry');
+    await change('retry-value', '4');
+    await change('retry-value', '2');
+    // The retry card reports only its own path: the requests draft must survive it.
+    await click('gateway-tab-requests');
+    expect(node('config-input-requests.streaming.keepalive-seconds').props.value).toBe('45');
+    expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
+  });
+  it('discards a requests draft with the same action as every other draft', async () => {
+    await mount();
+    await click('gateway-tab-requests');
+    await change('config-input-requests.streaming.keepalive-seconds', '45');
+    expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
+    await discard();
+    expect(node('config-input-requests.streaming.keepalive-seconds').props.value).toBe('2');
+    expect(node('gateway-dirty-count').props.children).toBe(c('noDrafts'));
+  });
   it('filters actual dirty paths rather than their entire category', async () => {
     await mount();
     await change('retry-value', '4');

@@ -408,7 +408,7 @@ export function FreshGatewayWorkspace({
               onPending={onPending}
               navigationRequest={navigationRequest}
               discardEpoch={discardEpoch}
-              onDraftChange={setDraftDiffs}
+              onDraftChange={mergeDraftDiffs}
               countVisible={countVisible}
               intervalVisible={intervalVisible}
             />
@@ -418,6 +418,7 @@ export function FreshGatewayWorkspace({
           <RequestsConfigFieldGroup
             fields={requestsFields}
             visiblePaths={visiblePaths}
+            discardEpoch={discardEpoch}
             client={client}
             credential={credential}
             onUnauthorized={onUnauthorized}

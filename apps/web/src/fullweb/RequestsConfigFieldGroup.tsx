@@ -77,6 +77,7 @@ function invalidDraft(field: GatewayFieldMeta, draft: unknown) {
 export function RequestsConfigFieldGroup({
   fields,
   visiblePaths,
+  discardEpoch,
   client,
   credential,
   onUnauthorized,
@@ -85,6 +86,7 @@ export function RequestsConfigFieldGroup({
 }: {
   fields: GatewayFieldMeta[];
   visiblePaths: ReadonlySet<string>;
+  discardEpoch: number;
   client: Client;
   credential: string;
   onUnauthorized: () => void;
@@ -141,6 +143,16 @@ export function RequestsConfigFieldGroup({
   useEffect(() => {
     void load(editable, false);
   }, [editable, load]);
+
+  // Discarding drafts is the only other way a draft may be replaced: the epoch
+  // clears the edited marks and reloads the group so no draft survives it.
+  const discarded = useRef(discardEpoch);
+  useEffect(() => {
+    if (discarded.current === discardEpoch) return;
+    discarded.current = discardEpoch;
+    edited.current.clear();
+    void load(editable, true);
+  }, [discardEpoch, editable, load]);
 
   const onDraft = useRef(onDraftChange);
   onDraft.current = onDraftChange;

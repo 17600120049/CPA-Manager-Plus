@@ -147,10 +147,15 @@ describe('RequestsConfigFieldGroup', () => {
     vi.unstubAllGlobals();
   });
 
-  const element = (client: PublicApiClient, visible: ReadonlySet<string> = all) => (
+  const element = (
+    client: PublicApiClient,
+    visible: ReadonlySet<string> = all,
+    discardEpoch = 0
+  ) => (
     <RequestsConfigFieldGroup
       fields={catalog}
       visiblePaths={visible}
+      discardEpoch={discardEpoch}
       client={client}
       credential={credential.value}
       onUnauthorized={onUnauthorized}
@@ -319,5 +324,18 @@ describe('RequestsConfigFieldGroup', () => {
     await mount(server.client);
     expect(text()).toContain(c('fieldReasonReconcile'));
     expect(text()).not.toContain('original_operation_or_source_requires_reconciliation');
+  });
+
+  it('drops every draft when the workspace discards drafts', async () => {
+    const server = gatewayFieldServer(CATALOG_PATHS, { [KEEPALIVE]: 2, [BOOTSTRAP]: 0, [HEADERS]: false });
+    await mount(server.client);
+    await change(`config-input-${KEEPALIVE}`, '45');
+    expect(diff(KEEPALIVE)).toMatchObject({ dirty: true });
+    const reads = server.gets[KEEPALIVE];
+    await act(async () => renderer.update(element(server.client, all, 1)));
+    expect(node(`config-input-${KEEPALIVE}`).props.value).toBe('2');
+    expect(diff(KEEPALIVE)).toMatchObject({ dirty: false, newVal: '2' });
+    // The edited mark is gone with the draft, so the reload may replace it.
+    expect(server.gets[KEEPALIVE]).toBeGreaterThan(reads);
   });
 });
