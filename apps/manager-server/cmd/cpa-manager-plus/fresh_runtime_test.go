@@ -8,11 +8,16 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 )
 
@@ -213,5 +218,71 @@ func TestFreshRuntimeJournalBoundsTerminalEntries(t *testing.T) {
 	}
 	if _, found := loaded.Operations["done-00"]; found {
 		t.Fatal("bounded journal retained the oldest terminal entry")
+	}
+}
+
+// External must stay strictly status-only: it never becomes the Fresh
+// lifecycle/strategy Runtime, even after ProductComplete.
+func TestFreshRuntimeExternalConstructionKeepsRuntimeStatusOnly(t *testing.T) {
+	dir := t.TempDir()
+	paths := legacypreflight.DefaultPaths(filepath.Join(dir, "manager.sqlite"))
+	paths.Config = filepath.Join(dir, "config.json")
+	opened, err := fresh.Open(t.Context(), paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = opened.Close() }()
+	records := freshstore.New(opened.DB)
+	if _, err := records.Update(t.Context(), opened.Record.Operation.Identity, opened.Record.Operation.Revision, func(record *freshstore.Record) error {
+		record.Operation.Routing = bootstrap.FreshRoutingCheckpoint{
+			OperationID: record.Operation.Identity.OperationID, Revision: 1,
+			Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true,
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	installed := validInstallationRuntime()
+	routed, err := records.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := records.Update(t.Context(), routed.Operation.Identity, routed.Operation.Revision, func(record *freshstore.Record) error {
+		record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+			Strategy: bootstrap.NewManaged, Stage: "committed", TargetIdentity: string(installed.Identity),
+			TargetGeneration: uint64(installed.Generation), TargetArtifactID: string(installed.ActiveGatewayArtifact.ArtifactID),
+		}
+		record.Operation.ProductComplete = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := records.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened.Record = completed
+
+	app := newFreshApplication(opened, config.Config{}, nil)
+	if app.runtime != nil {
+		t.Fatal("External was injected as the Fresh lifecycle Runtime")
+	}
+	if app.runtimeExternal == nil {
+		t.Fatal("External observation client was not constructed")
+	}
+	op := freshRuntimeProductCompleteOperation(t, app)
+	status := httptest.NewRecorder()
+	app.runtimeStatus(status, httptest.NewRequest(http.MethodGet, "/runtime/status", nil), op)
+	var body freshRuntimeStatusResponse
+	if err := json.Unmarshal(status.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Mode != string(model.RuntimeModeExternal) || body.ErrorCode != "runtime_unreachable" {
+		t.Fatalf("External status = %+v", body)
+	}
+	submit := httptest.NewRecorder()
+	app.runtimeOperations(submit, freshRuntimeRequest(t, "start", "external-1"), op, "runtime/operations")
+	if submit.Code != http.StatusConflict {
+		t.Fatalf("External start = %d body=%s", submit.Code, submit.Body.String())
 	}
 }

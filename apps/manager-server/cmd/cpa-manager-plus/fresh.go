@@ -140,11 +140,9 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 			}
 			return managerCfg.CPAConnection.CPABaseURL, managerCfg.CPAConnection.ManagementKey, nil
 		})
-		// External status is available after ProductComplete, but must not be
-		// passed to Fresh strategy execution while setup is still in progress.
-		if opened.Record.Operation.ProductComplete {
-			runtime = a.runtimeExternal
-		}
+		// External stays strictly read-only and status-only: it never becomes the
+		// lifecycle/strategy Runtime of this application. The Runtime status page
+		// observes it through runtimeStatusClient and offers no lifecycle actions.
 	}
 	// Attach the same durable mutation services as the normal Embedded app
 	// before publishing its routes. An incomplete graph must never fall back to
