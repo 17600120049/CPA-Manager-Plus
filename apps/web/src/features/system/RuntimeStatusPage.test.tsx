@@ -1,4 +1,4 @@
-import '@/i18n';
+import i18n from '@/i18n';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,7 +61,10 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // The i18n default language is derived from the host locale, so the copy these
+  // tests assert on must be pinned instead of depending on the machine running them.
+  await i18n.changeLanguage('zh-CN');
   vi.stubGlobal('window', { setInterval: vi.fn(() => 1), clearInterval: vi.fn() });
   vi.stubGlobal('document', { visibilityState: 'visible' });
 });
