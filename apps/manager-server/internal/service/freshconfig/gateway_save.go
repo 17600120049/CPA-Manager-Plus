@@ -236,23 +236,28 @@ func (s *Service) SaveGroup(ctx context.Context, groupID string, q GroupRequest)
 		return operation, err
 	}
 	// One PATCH with only the edited leaves first, then one DELETE per restored
-	// leaf. The PATCH is the only write that can be rejected without having
-	// changed anything; once it is acknowledged the document has moved, so a
-	// later DELETE failure is unknown and is resolved by reading back, never by
-	// resending the save.
+	// leaf. The PATCH is the only write that can be refused before anything
+	// changed, but a delete-only save has the same shape one step later: each
+	// acknowledged DELETE has already changed the document. So "applied" tracks
+	// every write of this save that landed, not just the PATCH, and any later
+	// failure is unknown and resolved by reading back, never reported as
+	// "nothing was written" and never resent.
 	payload, patched := groupPatch(group.Prefix, edits)
+	applied := false
 	if patched {
 		if err = auth.wire.PatchConfigPath(ctx, auth.secret, group.Prefix, payload); err != nil {
 			return s.failGroupOperation(ctx, groupID, operation, err, false)
 		}
+		applied = true
 	}
 	for _, edit := range edits {
 		if edit.Action != "default" {
 			continue
 		}
 		if err = auth.wire.DeleteConfigPath(ctx, auth.secret, edit.Path); err != nil {
-			return s.failGroupOperation(ctx, groupID, operation, err, patched)
+			return s.failGroupOperation(ctx, groupID, operation, err, applied)
 		}
+		applied = true
 	}
 	acknowledged := operation
 	acknowledged.HTTP200 = true

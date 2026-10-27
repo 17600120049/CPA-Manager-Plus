@@ -347,3 +347,107 @@ func TestDamagedGroupJournalSurvivesAnotherWrite(t *testing.T) {
 		t.Fatal("field write lost while preserving damage")
 	}
 }
+
+// TestValidGroupSurvivesADamagedSibling is the round-2 #10 regression: a valid
+// group journal holding an unresolved original sat next to a damaged one, and the
+// next legacy field write erased it — the page then reported no unknown operation
+// and unlocked a group whose last write is still unresolved. Valid groups and the
+// damaged bytes must both survive a write of another section.
+func TestValidGroupSurvivesADamagedSibling(t *testing.T) {
+	store, db, id := journalStore(t)
+	checksum := strings.Repeat("a", 64)
+	requestID := strings.Repeat("ab", 16)
+	if _, err := store.Update(t.Context(), id, 1, func(v *Record) error {
+		v.ConfigGroups["retry"] = &ConfigGroupJournal{
+			Latest:     requestID,
+			Operations: map[string]ConfigGroupOperation{requestID: groupOperation(requestID, checksum)},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// An older writer leaves a second group this store cannot prove.
+	var stored string
+	if err := db.QueryRowContext(t.Context(), "select value from settings where key=?", configJournalKey).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	var doc configJournalDoc
+	if err := json.Unmarshal([]byte(stored), &doc); err != nil {
+		t.Fatal(err)
+	}
+	damagedEntry := `{"latest":"not-hex","operations":{}}`
+	container := `{"fields":` + string(mustJSON(t, doc.Fields)) + `,"groups":{"retry":` + string(doc.Groups["retry"]) + `,"cooldown":` + damagedEntry + `}}`
+	if _, err := db.ExecContext(t.Context(), "insert into settings(key,value,updated_at_ms) values(?,?,?) on conflict(key) do update set value=excluded.value, updated_at_ms=excluded.updated_at_ms", configJournalKey, container, time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := store.Load(t.Context())
+	if err != nil {
+		t.Fatalf("damaged sibling rejected the record: %v", err)
+	}
+	if !reloaded.ConfigGroupsInvalid {
+		t.Fatal("damage not reported")
+	}
+	// The provable group is still there, with its unresolved original.
+	valid := reloaded.ConfigGroups["retry"]
+	if valid == nil || valid.Operations[requestID].State != "unknown" {
+		t.Fatalf("valid group journal dropped beside damage: %+v", valid)
+	}
+	if len(reloaded.ConfigGroupsDamaged) != 1 || string(reloaded.ConfigGroupsDamaged["cooldown"]) != damagedEntry {
+		t.Fatalf("damaged bytes %+v", reloaded.ConfigGroupsDamaged)
+	}
+	// The page is locked, so no group write may proceed through the store.
+	if _, err = store.Update(t.Context(), id, reloaded.Operation.Revision, func(v *Record) error {
+		j := v.ConfigGroups["retry"]
+		j.Latest = strings.Repeat("cd", 16)
+		return nil
+	}); err == nil {
+		t.Fatal("page with a damaged group accepted a group write")
+	}
+	// A legacy field write of another section is still allowed, and must carry
+	// BOTH the valid group journal and the damaged bytes through unchanged.
+	fieldID := strings.Repeat("cd", 16)
+	if _, err = store.Update(t.Context(), id, reloaded.Operation.Revision, func(v *Record) error {
+		v.Config["requests.passthrough-headers"] = &FieldJournal{
+			Latest: fieldID,
+			Operations: map[string]ConfigOperation{
+				fieldID: {RequestID: fieldID, Field: "requests.passthrough-headers", Value: true,
+					SourceID: "installation-gateway-01", Generation: "7", Revision: 1, State: "unknown", HTTP200: true},
+			},
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(t.Context(), "select value from settings where key=?", configJournalKey).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	doc = configJournalDoc{}
+	if err = json.Unmarshal([]byte(stored), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if string(doc.Groups["cooldown"]) != damagedEntry {
+		t.Fatalf("damaged group rewritten: %s", doc.Groups["cooldown"])
+	}
+	if doc.Groups["retry"] == nil {
+		t.Fatal("valid group journal erased by another section's write")
+	}
+	var kept ConfigGroupJournal
+	if err = json.Unmarshal(doc.Groups["retry"], &kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept.Operations[requestID].State != "unknown" || kept.Operations[requestID].HTTP200 {
+		t.Fatalf("unresolved original lost or changed: %+v", kept.Operations[requestID])
+	}
+	if doc.Fields["requests.passthrough-headers"] == nil {
+		t.Fatal("field write lost")
+	}
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}

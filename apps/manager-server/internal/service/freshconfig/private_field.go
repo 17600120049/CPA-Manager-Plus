@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strconv"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
@@ -20,11 +21,6 @@ import (
 // multi-leaf instruction and no delete, so a private save is one "set" of one
 // private leaf, and its evidence lives in the pre-cutover field journal that
 // legacy_field.go already reconciles.
-
-// ErrWriteFailed is a definite, terminal per-field failure: the original
-// operation is known not to have landed, its journal entry names why, and the
-// field is writable again without ever resending that operation.
-var ErrWriteFailed = errors.New("config field write did not land")
 
 // privateOwner proves the private profile this process was constructed for and
 // returns the management authority of exactly the committed target generation.
@@ -132,12 +128,14 @@ func newFieldOperation(path, requestID string, value any, source cpa.ConfigField
 	}
 }
 
-// latestPrivateOperation returns the newest operation of a private group in the
+// newestPrivateOperation returns the newest operation of a private group in the
 // group-operation shape, so the page sees persistent evidence after a reload.
 // Each private group holds leaves of its own journal entries; the newest one is
-// the group's latest save.
-func latestPrivateOperation(r freshstore.Record, group cpa.ConfigGroup) *freshstore.ConfigGroupOperation {
+// the group's latest save. An unresolved original outranks every resolved one,
+// because it is the only operation the page can still act on.
+func newestPrivateOperation(r freshstore.Record, group cpa.ConfigGroup) *freshstore.ConfigGroupOperation {
 	var newest *freshstore.ConfigGroupOperation
+	var newestRevision uint64
 	for _, path := range group.Leaves {
 		entry := r.Config[path]
 		if entry == nil || r.ConfigInvalid[path] {
@@ -149,13 +147,40 @@ func latestPrivateOperation(r freshstore.Record, group cpa.ConfigGroup) *freshst
 		}
 		view := legacyView(operation)
 		view.Group, view.Prefix = group.ID, group.Prefix
-		if newest == nil || operation.State == "unknown" {
-			newest = &view
-		}
 		if operation.State == "unknown" {
 			// An unresolved original is the one the page must reconcile, and only
 			// one can be outstanding per group because no new save is accepted.
-			return newest
+			return &view
+		}
+		// The source revision orders two resolved leaves of one group; the first
+		// leaf wins a tie, so the projection is stable across reads.
+		if newest == nil || operation.Revision > newestRevision {
+			newest, newestRevision = &view, operation.Revision
+		}
+	}
+	return newest
+}
+
+// newestUnresolvedFieldOperation returns the newest unresolved pre-cutover field
+// operation of a managed or External group, in the group-operation shape. The
+// page reconciles a legacy original through its request ID, so surfacing it as
+// the group's operation is what lets the group be unlocked at all.
+func newestUnresolvedFieldOperation(r freshstore.Record, group cpa.ConfigGroup) *freshstore.ConfigGroupOperation {
+	var newest *freshstore.ConfigGroupOperation
+	var newestRevision uint64
+	for _, path := range group.Leaves {
+		entry := r.Config[path]
+		if entry == nil || r.ConfigInvalid[path] {
+			continue
+		}
+		operation, ok := entry.Operations[entry.Latest]
+		if !ok || operation.State != "unknown" {
+			continue
+		}
+		view := legacyView(operation)
+		view.Group, view.Prefix = group.ID, group.Prefix
+		if newest == nil || operation.Revision > newestRevision {
+			newest, newestRevision = &view, operation.Revision
 		}
 	}
 	return newest
@@ -293,11 +318,18 @@ func (s *Service) saveH1(ctx context.Context, path string, value any, requestID 
 	if err = s.wire.WriteH1ConfigField(ctx, operation.ParentID, step, management, path, value); err != nil {
 		return operation, cpa.ErrApplyUnknown
 	}
-	// Only a complete successful response becomes durable HTTP200 evidence.
+	// Only a complete successful response becomes durable HTTP200 evidence. The
+	// Host already accepted the write, so the flag is the Manager's own receipt:
+	// it is written with a detached, bounded context exactly as the shipped
+	// per-field save did. Tying it to the request would let a browser abort after
+	// the write lose the evidence H1 reconcile requires, and the group would be
+	// locked with no way back.
 	before := operation
 	operation.HTTP200 = true
 	operation.BeginRevision = step.BeginRevision
-	if err = s.updateFieldOperation(ctx, before, operation); err != nil {
+	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	defer cancel()
+	if err = s.updateFieldOperation(saveCtx, before, operation); err != nil {
 		return before, err
 	}
 	return s.reconcileH1(ctx, path, r, operation)

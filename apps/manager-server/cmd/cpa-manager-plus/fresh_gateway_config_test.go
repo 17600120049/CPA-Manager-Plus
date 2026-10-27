@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
 )
 
 func gatewayRequest(t *testing.T, app *freshApplication, method, resource, body string, contentType string) *httptest.ResponseRecorder {
@@ -118,5 +120,44 @@ func TestGatewayConfigOperationReadsNeedAnAuthority(t *testing.T) {
 	response := gatewayRequest(t, app, http.MethodGet, "gateway/config/operations/"+strings.Repeat("ab", 16), "", "")
 	if response.Code != http.StatusConflict || errorCode(t, response) != "config_authority_unavailable" {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+// TestGatewayConfigReplyPassesCPARejectionCodeThrough is the round-2 #7
+// regression: every CPA refusal was flattened into one generic
+// "cpa_rejected_config" code, so the browser's per-field branches — the proxy-URL
+// credential warning and the private profile's own "invalid_config" range — could
+// never fire against the real server. The wire code is now CPA's own.
+func TestGatewayConfigReplyPassesCPARejectionCodeThrough(t *testing.T) {
+	cases := []struct {
+		name      string
+		rejection freshconfig.Rejection
+		status    int
+		field     string
+	}{
+		{"proxy credentials", freshconfig.Rejection{Code: "proxy_url_credentials", Field: "requests.proxy-url"}, http.StatusUnprocessableEntity, "requests.proxy-url"},
+		{"private out of range", freshconfig.Rejection{Code: "invalid_config", Field: "requests.streaming.keepalive-seconds", Message: "value outside the private profile range"}, http.StatusUnprocessableEntity, "requests.streaming.keepalive-seconds"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			gatewayConfigReply(response, nil, tc.rejection)
+			if response.Code != tc.status {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if code := errorCode(t, response); code != tc.rejection.Code {
+				t.Fatalf("wire code = %q, want %q", code, tc.rejection.Code)
+			}
+			var payload struct {
+				Field   string `json:"field"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Field != tc.field || payload.Message != tc.rejection.Message {
+				t.Fatalf("payload %+v", payload)
+			}
+		})
 	}
 }

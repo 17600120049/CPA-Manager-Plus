@@ -85,14 +85,17 @@ func gatewayConfigReply(w http.ResponseWriter, v any, e error) {
 	switch {
 	case errors.As(e, &rejection):
 		// CPA parsed, validated and refused: the file is unchanged and this names
-		// the group or field the user must fix.
+		// the group or field the user must fix. The code is CPA-facing product
+		// knowledge the page branches on (proxy_url_credentials, the private
+		// profile's invalid_config), so it is passed through instead of being
+		// flattened into one generic refusal the browser cannot act on.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		writeFreshJSON(w, struct {
 			Code    string `json:"code"`
 			Field   string `json:"field,omitempty"`
 			Message string `json:"message,omitempty"`
-		}{"cpa_rejected_config", rejection.Field, rejection.Message})
+		}{rejection.Code, rejection.Field, rejection.Message})
 		return
 	case errors.As(e, &writeError):
 		code, status = "cpa_rejected_config", http.StatusUnprocessableEntity
@@ -110,10 +113,6 @@ func gatewayConfigReply(w http.ResponseWriter, v any, e error) {
 		code, status = "generation_mismatch", http.StatusConflict
 	case errors.Is(e, freshconfig.ErrLegacyUnresolved):
 		code, status = "legacy_operation_unresolved", http.StatusConflict
-	case errors.Is(e, freshconfig.ErrWriteFailed):
-		// A definite terminal per-field failure: the original never landed and the
-		// field is writable again, so this is not an unknown-result conflict.
-		code, status = "config_field_write_failed", http.StatusUnprocessableEntity
 	case errors.Is(e, cpa.ErrSourceConflict), errors.Is(e, freshstore.ErrConflict):
 		code, status = "source_or_operation_conflict", http.StatusConflict
 	case errors.Is(e, cpa.ErrProofUnavailable):

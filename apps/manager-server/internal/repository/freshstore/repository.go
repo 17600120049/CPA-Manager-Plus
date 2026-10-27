@@ -322,7 +322,12 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	if err = validateConfigJournalUpdate(before.Config, v.Config); err != nil {
 		return Record{}, err
 	}
-	if before.ConfigGroupsInvalid != v.ConfigGroupsInvalid || v.ConfigGroupsInvalid && len(v.ConfigGroups) != 0 {
+	// A page with an unprovable group journal is read-only: its provable journals
+	// may still be loaded (they carry unresolved originals), but a callback may
+	// neither add to nor change them. The damaged bytes have their own guard
+	// below.
+	if before.ConfigGroupsInvalid != v.ConfigGroupsInvalid ||
+		v.ConfigGroupsInvalid && !reflect.DeepEqual(before.ConfigGroups, v.ConfigGroups) {
 		return Record{}, ErrConflict
 	}
 	// Damaged group bytes are owned by the store, exactly like damaged field

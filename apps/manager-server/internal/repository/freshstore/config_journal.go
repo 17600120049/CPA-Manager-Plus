@@ -104,11 +104,10 @@ func loadConfigJournals(ctx context.Context, q queryer) (map[string]*FieldJourna
 		if json.Unmarshal([]byte(data), &doc) != nil {
 			return nil, nil, nil, nil, nil, ErrNotFresh
 		}
-		if groups, groupsDamaged = loadConfigGroups(doc); groupsDamaged != nil {
-			// A group journal this store cannot prove locks the page, never the
-			// legacy field entries beside it.
-			groups = map[string]*ConfigGroupJournal{}
-		}
+		// A group journal this store cannot prove locks the page, never the legacy
+		// field entries beside it — and never the group journals it can still
+		// prove, which may hold unresolved originals of their own.
+		groups, groupsDamaged = loadConfigGroups(doc)
 		for path, raw := range doc.Fields {
 			var journal *FieldJournal
 			if json.Unmarshal(raw, &journal) == nil {

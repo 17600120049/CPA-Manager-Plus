@@ -96,11 +96,12 @@ func loadConfigGroups(doc configJournalDoc) (map[string]*ConfigGroupJournal, map
 		normalizeConfigGroupJournal(journal)
 		groups[group] = journal
 	}
-	if len(damaged) != 0 {
-		// Fail closed: a page that cannot prove one group proves none of them.
-		return nil, damaged
-	}
-	return groups, nil
+	// A damaged entry is reported beside the groups this store can prove. Dropping
+	// the valid ones would erase their unresolved original operations on the next
+	// write of any other section, which is exactly the harm the damaged bytes are
+	// preserved to prevent. The caller still treats the page as unprovable, so no
+	// write may proceed; only durability of the whole map is at stake here.
+	return groups, damaged
 }
 
 // decodeConfigGroupJournal decodes one entry keeping numbers as json.Number. A

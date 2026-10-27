@@ -390,32 +390,44 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 	}
 	// A pre-cutover field operation that was never resolved blocks its group. It
 	// has its own reason code because the page settles it through the field
-	// journal, not through a group operation. On the private profile that journal
-	// IS the live write path, so its newest operation is projected as the group's
-	// own operation instead.
+	// journal, not through a group operation. That journal operation is also
+	// surfaced AS the group's operation, on every profile: it carries the request
+	// ID and the unknown state the page reconciles from, so the group can be
+	// unlocked. Without it the page says "reconcile it" and has no way to.
 	private := auth.mode == ModePrivate
-	privateOperations := map[string]*freshstore.ConfigGroupOperation{}
+	fieldOperations := map[string]*freshstore.ConfigGroupOperation{}
 	if private {
 		for _, id := range cpa.PrivateConfigGroups() {
 			group, ok := cpa.LookupPrivateConfigGroup(id)
 			if !ok {
 				continue
 			}
-			operation := latestPrivateOperation(r, group)
+			operation := newestPrivateOperation(r, group)
 			if operation == nil {
 				continue
 			}
-			privateOperations[id] = operation
+			fieldOperations[id] = operation
 			if operation.State == "unknown" {
 				blocked[id] = ReasonUnknownOriginal
 			}
 		}
-	}
-	for _, id := range cpa.ConfigGroupIDs() {
-		if private {
-			break
-		}
-		if unresolvedLegacyField(r, id) && blocked[id] == "" {
+	} else {
+		for _, id := range cpa.ConfigGroupIDs() {
+			group, ok := cpa.LookupConfigGroup(id)
+			if !ok {
+				continue
+			}
+			// A group journal that already holds an unknown original owns this
+			// group's reconcile: its operation is the newer write, and the page
+			// must settle that one first.
+			if blocked[id] != "" {
+				continue
+			}
+			operation := newestUnresolvedFieldOperation(r, group)
+			if operation == nil {
+				continue
+			}
+			fieldOperations[id] = operation
 			blocked[id] = ReasonLegacyUnresolved
 		}
 	}
@@ -447,10 +459,11 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 				entry.Persisted = operation.State
 			}
 		}
-		if operation, ok := privateOperations[id]; ok {
-			// The private profile journals per field, so the persisted evidence of
-			// its last save lives there; the page reconciles from this record after
-			// a reload.
+		if operation, ok := fieldOperations[id]; ok {
+			// A per-field journal holds no group entry, so its operation is what the
+			// page reconciles from after a reload — on the private profile, where it
+			// is also the live write path, and on managed/External installs, where it
+			// is a pre-cutover original the group must settle before it can be saved.
 			entry.Operation = operation
 			entry.Persisted = operation.State
 		}
