@@ -146,3 +146,67 @@ func TestH1IdleChecksPreAllowlistConfigJournals(t *testing.T) {
 		t.Fatal("a damaged legacy interval journal admitted a new claim")
 	}
 }
+
+// TestH1IdleIgnoresMigratedLegacyJournals keeps the admission checkpoint on the
+// same rule as the store: once the current container owns a field, its
+// pre-allowlist row is folded in and never consulted again. Otherwise a legacy
+// unknown row would block every later claim forever.
+func TestH1IdleIgnoresMigratedLegacyJournals(t *testing.T) {
+	id := strings.Repeat("3", 32)
+	legacy := func(field string, value int) string {
+		operation := map[string]any{"requestId": id, "value": value, "sourceId": "isolated-h1-source", "generation": "7", "revision": 4, "sha256": strings.Repeat("b", 64), "state": "unknown"}
+		if field != "" {
+			operation["field"] = field
+		}
+		b, err := json.Marshal(map[string]any{"latest": id, "operations": map[string]any{id: operation}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	// The current container holds the field as a terminal persisted operation,
+	// which is what reconciling the legacy original produces.
+	container := func(path string, value int) string {
+		operation := map[string]any{"field": path, "requestId": id, "value": value, "sourceId": "isolated-h1-source", "generation": "7", "revision": 4, "sha256": strings.Repeat("b", 64), "state": "persisted"}
+		b, err := json.Marshal(map[string]any{"fields": map[string]any{path: map[string]any{"latest": id, "operations": map[string]any{id: operation}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	for _, tc := range []struct {
+		name                 string
+		legacyKey, legacyRow string
+		path                 string
+		value                int
+	}{
+		{"legacy retry", "fresh_config_retry_v1", legacy("", 3), "routing.retry.request-retry", 3},
+		{"legacy interval", "fresh_config_retry_interval_v1", legacy("max-retry-interval", 120), "routing.retry.max-retry-interval", 120},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, e := sqlite.Open(filepath.Join(t.TempDir(), "manager.sqlite"))
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer db.Close()
+			if e = sqlite.Migrate(db); e != nil {
+				t.Fatal(e)
+			}
+			r := New(db)
+			put := func(key, value string) {
+				t.Helper()
+				if _, err := db.Exec("insert into settings(key,value,updated_at_ms) values(?,?,0) on conflict(key) do update set value=excluded.value", key, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			put(tc.legacyKey, tc.legacyRow)
+			if e := r.H1Idle(t.Context()); e == nil {
+				t.Fatal("an unknown legacy row did not block a claim")
+			}
+			put("fresh_config_fields_v1", container(tc.path, tc.value))
+			if e := r.H1Idle(t.Context()); e != nil {
+				t.Fatalf("a migrated legacy row still blocked a claim: %v", e)
+			}
+		})
+	}
+}

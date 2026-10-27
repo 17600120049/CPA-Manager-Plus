@@ -80,17 +80,23 @@ func (r *Repository) H1Idle(ctx context.Context) error {
 	// is only safe when no field still holds an original unknown operation; a
 	// damaged field entry is skipped because the store already locks that field.
 	var raw string
+	owned := map[string]bool{}
 	e = r.db.QueryRowContext(ctx, "select value from settings where key=?", freshstore.ConfigJournalSettingKey()).Scan(&raw)
 	if e == nil {
 		if err := freshstore.ValidateConfigJournals([]byte(raw)); err != nil {
 			return err
 		}
+		owned = freshstore.ConfigJournalOwnedPaths([]byte(raw))
 	} else if !errors.Is(e, sql.ErrNoRows) {
 		return e
 	}
 	// The pre-allowlist rows are read-only but still owned: an interrupted legacy
-	// write must block a new claim exactly like a current one.
+	// write must block a new claim exactly like a current one. Once the current
+	// container owns that field the row is folded in, so it is no longer evidence.
 	for _, legacy := range freshstore.LegacyConfigJournalKeys() {
+		if owned[legacy.Path] {
+			continue
+		}
 		e = r.db.QueryRowContext(ctx, "select value from settings where key=?", legacy.Key).Scan(&raw)
 		if errors.Is(e, sql.ErrNoRows) {
 			continue

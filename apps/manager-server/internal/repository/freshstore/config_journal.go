@@ -238,6 +238,21 @@ func validFieldJournal(path string, journal *FieldJournal) bool {
 	return true
 }
 
+// ConfigJournalOwnedPaths lists the fields the current container is authoritative
+// for, including entries it cannot decode. A pre-allowlist row for one of them is
+// folded in and must never be consulted again, which is the rule Load applies.
+func ConfigJournalOwnedPaths(data []byte) map[string]bool {
+	owned := map[string]bool{}
+	var doc configJournalDoc
+	if json.Unmarshal(data, &doc) != nil {
+		return owned
+	}
+	for path := range doc.Fields {
+		owned[path] = true
+	}
+	return owned
+}
+
 // ValidateConfigJournals is the shared admission-checkpoint view: malformed
 // container bytes or any field whose original operation is still unknown blocks
 // a new claim. Every field entry is decoded on its own, so a damaged one is
