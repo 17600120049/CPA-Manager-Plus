@@ -152,7 +152,7 @@ func (s *Service) saveH1(ctx context.Context, path string, q FieldRequest, value
 // host reservation, so the readback is the only effectiveness evidence.
 func (s *Service) saveManaged(ctx context.Context, path string, q FieldRequest, value any, r freshstore.Record, management string) (freshstore.ConfigOperation, error) {
 	source := managedSource(r, path)
-	presence, current, err := s.wire.ReadConfigFieldValue(ctx, management, path)
+	presence, _, err := s.wire.ReadConfigFieldValue(ctx, management, path)
 	if err != nil {
 		return freshstore.ConfigOperation{}, err
 	}
@@ -162,7 +162,6 @@ func (s *Service) saveManaged(ctx context.Context, path string, q FieldRequest, 
 	if fieldExpected(source) != q.Expected {
 		return freshstore.ConfigOperation{}, cpa.ErrSourceConflict
 	}
-	_ = current
 	operation := newOperation(path, q.RequestID, value, source)
 	if err = s.appendOperation(ctx, r.Operation.Identity, r.Operation.Revision, path, operation); err != nil {
 		return operation, err
@@ -204,15 +203,21 @@ func (s *Service) reconcileManaged(ctx context.Context, path string, operation f
 	if err != nil {
 		return operation, cpa.ErrApplyUnknown
 	}
-	if presence != "present" || !reflect.DeepEqual(value, operation.Value) {
+	switch {
+	case presence == "present" && reflect.DeepEqual(value, operation.Value):
+		next := operation
+		next.State = "persisted"
+		if err = s.updateOperation(ctx, path, operation, next); err != nil {
+			return operation, err
+		}
+		return next, nil
+	case presence == "present", presence == "missing", presence == "null":
+		// The scalar is not what was written, so the original never landed.
 		return s.failManagedOperation(ctx, path, operation, "write_not_applied")
+	default:
+		// An unreadable scalar is still unknown: nothing here proves either way.
+		return operation, cpa.ErrApplyUnknown
 	}
-	next := operation
-	next.State = "persisted"
-	if err = s.updateOperation(ctx, path, operation, next); err != nil {
-		return operation, err
-	}
-	return next, nil
 }
 
 func (s *Service) appendOperation(ctx context.Context, identity bootstrap.FreshIdentity, revision uint64, path string, operation freshstore.ConfigOperation) error {
