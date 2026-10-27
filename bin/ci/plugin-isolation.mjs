@@ -245,21 +245,40 @@ async function runEngine(engineName, launcher) {
     record(engineName, 'plugin fetches its own resource', 'PASS', ownFetch);
 
     // ---- Positive: the host theme arrives over postMessage ----------------
-    const theme = await frame.evaluate(
-      (type) =>
-        new Promise((settle) => {
-          const timer = setTimeout(() => settle(null), 8000);
-          addEventListener('message', (event) => {
-            const data = event.data;
-            if (data && data.type === type) {
-              clearTimeout(timer);
-              settle({ type: data.type, version: data.version, theme: data.theme });
-            }
-          });
-        }),
-      themeMessageType
-    );
+    // The host posts the theme when the frame finishes a navigation, so a frame
+    // that already settled before this listener attached is reloaded once to
+    // make the host re-post. Only the host can produce this message.
+    const awaitTheme = () =>
+      frame.evaluate(
+        (type) =>
+          new Promise((settle) => {
+            const timer = setTimeout(() => settle(null), 8000);
+            addEventListener('message', (event) => {
+              const data = event.data;
+              if (data && data.type === type) {
+                clearTimeout(timer);
+                settle({
+                  version: data.version,
+                  themeAttribute: data.themeAttribute,
+                  variables: Object.keys(data.variables || {}).length,
+                });
+              }
+            });
+          }),
+        themeMessageType
+      );
+    let theme = await awaitTheme();
+    if (!theme) {
+      await frame.goto(`${resourceBase}/probe`, { waitUntil: 'domcontentloaded' });
+      await frame.locator('#probe-ready').waitFor({ timeout: 60000 });
+      theme = await awaitTheme();
+    }
     assert(theme, 'plugin never received the host theme postMessage');
+    assert(
+      theme.themeAttribute === 'dark' || theme.themeAttribute === 'white',
+      `host theme message has no resolved attribute: ${JSON.stringify(theme)}`
+    );
+    assert(theme.variables > 0, `host theme message carried no variables: ${JSON.stringify(theme)}`);
     record(engineName, 'plugin receives the host theme postMessage', 'PASS', theme);
 
     // ---- Negatives inside the Console iframe ------------------------------
