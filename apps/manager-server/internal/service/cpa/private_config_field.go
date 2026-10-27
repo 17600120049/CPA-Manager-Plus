@@ -12,9 +12,11 @@ import (
 // ErrWriterIsolation reports a config source whose key writer is not isolated.
 var ErrWriterIsolation = errors.New("private config source has a reachable key writer")
 
-// ConfigFieldSource is the Runtime observation for one bounded field write. It
-// contains Runtime metadata only: never YAML, a management key or a raw config.
-// SHA256 is always the admitted raw-file digest, never ConfigV8's normalized GET.
+// ConfigFieldSource is the Runtime observation of one admitted configuration
+// source. It contains Runtime metadata only: never YAML, a management key or a
+// raw config. The gateway page is group-based and no longer creates these
+// observations; the type survives so an operation journaled before the cutover
+// still reconciles against the Runtime record that admitted it.
 type ConfigFieldSource struct {
 	H1             bool   `json:"h1,omitempty"`
 	ParentID       string `json:"parentId,omitempty"`
@@ -32,7 +34,7 @@ type ConfigFieldSource struct {
 	OperationValue any    `json:"operationValue,omitempty"`
 }
 
-// legacyOperationPath maps a pre-allowlist Runtime operation scope onto its field.
+// legacyOperationPath maps a pre-table Runtime operation scope onto its field.
 func legacyOperationPath(scope string) (string, bool) {
 	switch scope {
 	case "request-retry":
@@ -45,11 +47,11 @@ func legacyOperationPath(scope string) (string, bool) {
 }
 
 // operationField resolves the field an observation's original operation wrote,
-// including operations reserved before the allowlist cutover.
+// including operations reserved before the table replaced the short allowlist.
 func operationField(op configOperation) (string, any, bool) {
 	if op.Path != "" {
 		value := NormalizeConfigValue(op.Value)
-		if ValidateConfigFieldValue(op.Path, value) != nil {
+		if ValidateConfigLeafValue(op.Path, value) != nil {
 			return "", nil, false
 		}
 		return op.Path, value, true
@@ -67,8 +69,8 @@ func operationField(op configOperation) (string, any, bool) {
 }
 
 // ConfigFieldRequestID is the journal request ID behind a Runtime operation ID.
-// Pre-allowlist direct writes prefixed it; an H1 step embeds its parent request
-// ID ("c:<requestId>:<step>:<scope>") and is therefore resolved back to it.
+// Pre-table direct writes prefixed it; an H1 step embeds its parent request ID
+// ("c:<requestId>:<step>:<scope>") and is therefore resolved back to it.
 func ConfigFieldRequestID(id string) string {
 	id = strings.TrimPrefix(id, "retry-")
 	parent, ok := strings.CutPrefix(id, "c:")
@@ -118,11 +120,12 @@ func sameConfigFieldSource(a, b ConfigFieldSource) bool {
 		a.OperationPath == b.OperationPath && reflect.DeepEqual(a.OperationValue, b.OperationValue)
 }
 
-// ReadConfigFieldValue reads one allowlisted field with the caller's management
-// authority. It is the read half of the managed profile, whose journal is owned
-// by the Manager; it never reaches CPA for a path outside the allowlist.
+// ReadConfigFieldValue reads one leaf with the caller's management authority.
+// It is the read-back half of legacy reconciliation: the page never writes a
+// single leaf any more, but an operation journaled before the cutover is still
+// resolved by what CPA now holds. A path outside the table is refused.
 func (t *Transport) ReadConfigFieldValue(ctx context.Context, management, path string) (string, any, error) {
-	endpoint, err := ConfigFieldEndpoint(path)
+	endpoint, err := ConfigLeafEndpoint(path)
 	if err != nil {
 		return "unknown", nil, ErrProofUnavailable
 	}
@@ -138,7 +141,7 @@ func (t *Transport) ReadConfigFieldValue(ctx context.Context, management, path s
 		if bytes.Equal(trimmed, []byte("null")) {
 			return "null", nil, nil
 		}
-		value, err := ParseConfigFieldValue(path, trimmed)
+		value, err := ParseConfigLeafValue(path, trimmed)
 		if err != nil {
 			return "unknown", nil, ErrSourceConflict
 		}
@@ -148,79 +151,18 @@ func (t *Transport) ReadConfigFieldValue(ctx context.Context, management, path s
 	}
 }
 
-// WriteConfigFieldValue performs exactly one non-replayable PUT of one scalar.
-func (t *Transport) WriteConfigFieldValue(ctx context.Context, management, path string, value any) error {
-	endpoint, err := ConfigFieldEndpoint(path)
-	if err != nil {
-		return ErrProofUnavailable
-	}
-	payload, err := EncodeConfigFieldValue(path, value)
-	if err != nil {
-		return ErrProofUnavailable
-	}
-	code, _, err := t.request(ctx, http.MethodPut, endpoint, management, payload)
-	if err != nil {
-		return ErrApplyUnknown
-	}
-	if code == http.StatusOK || code == http.StatusNoContent {
-		return nil
-	}
-	if definiteRejection(code) {
-		return ErrWriteRejected
-	}
-	return ErrApplyUnknown
-}
-
-// definiteRejection reports a 4xx the upstream would answer identically again:
-// the request never landed, so its result is a known failure, not an unknown one.
-// Timeouts and rate limits stay unknown because the write may still be in flight.
-func definiteRejection(code int) bool {
-	if code < 400 || code >= 500 {
-		return false
-	}
-	switch code {
-	case http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests:
-		return false
-	}
-	return true
-}
-
-// HasRuntimeJournal reports whether this Transport reserves through the private
-// runtime authority. Without it the Manager journal is the only reservation.
-func (t *Transport) HasRuntimeJournal() bool {
-	return t.configurationAuthority != nil || t.h1 != nil
-}
-
-// ConfigFieldSource reports the private source and the single H1 handoff state.
-// A private H1 profile must additionally prove its handoff is ready and free.
-func (t *Transport) ConfigFieldSource(ctx context.Context) (ConfigFieldSource, error) {
-	if t.h1 == nil {
-		_, v, err := t.configuration(ctx, "observe")
-		return configFieldSource(v), err
-	}
-	v, err := t.h1.Ready(ctx, t)
-	out := configFieldSource(v)
-	if err != nil {
-		return out, err
-	}
-	if v.H1.Parent == nil {
-		out.HandoffValid = t.h1.Free(ctx, t) == nil
-	}
-	return out, nil
-}
-
 // ReadConfigField retains missing, explicit null and present independently. The
 // observation must be stable across the scoped CPA read; this is not an atomic
 // upstream CAS and makes no effectiveness claim.
 func (t *Transport) ReadConfigField(ctx context.Context, management, path string) (ConfigFieldSource, string, any, error) {
-	if _, ok := LookupConfigField(path); !ok {
+	if _, ok := LookupPrivateConfigLeaf(path); !ok {
 		return ConfigFieldSource{}, "unknown", nil, ErrProofUnavailable
 	}
 	before, err := t.ConfigFieldSource(ctx)
 	if err != nil {
 		return before, "unknown", nil, err
 	}
-	endpoint, err := ConfigFieldEndpoint(path)
+	endpoint, err := ConfigLeafEndpoint(path)
 	if err != nil {
 		return before, "unknown", nil, err
 	}
@@ -238,7 +180,7 @@ func (t *Transport) ReadConfigField(ctx context.Context, management, path string
 			presence = "null"
 			break
 		}
-		value, err = ParseConfigFieldValue(path, trimmed)
+		value, err = ParseConfigLeafValue(path, trimmed)
 		if err != nil {
 			return before, "unknown", nil, ErrSourceConflict
 		}
@@ -256,7 +198,7 @@ func (t *Transport) ReadConfigField(ctx context.Context, management, path string
 // BeginConfigField durably reserves the original operation. It never retries a
 // reservation: the caller has already recorded this request ID in the journal.
 func (t *Transport) BeginConfigField(ctx context.Context, source ConfigFieldSource, id, path string, value any) error {
-	if ValidateConfigFieldValue(path, value) != nil || t.configurationAuthority == nil {
+	if ValidatePrivateConfigLeafValue(path, value) != nil || t.configurationAuthority == nil {
 		return ErrProofUnavailable
 	}
 	grant, err := t.configurationAuthority.grant()
@@ -287,7 +229,7 @@ func (t *Transport) BeginConfigField(ctx context.Context, source ConfigFieldSour
 // redirects, retries, YAML, generic path or fallback; a transport error is
 // always an unknown result.
 func (t *Transport) PutConfigField(ctx context.Context, source ConfigFieldSource, id, management, path string, value any) error {
-	if ValidateConfigFieldValue(path, value) != nil {
+	if ValidatePrivateConfigLeafValue(path, value) != nil {
 		return ErrProofUnavailable
 	}
 	v, err := t.ConfigFieldSource(ctx)
@@ -296,11 +238,11 @@ func (t *Transport) PutConfigField(ctx context.Context, source ConfigFieldSource
 		v.OperationID != id || v.OperationPath != path || !reflect.DeepEqual(v.OperationValue, value) {
 		return ErrApplyUnknown
 	}
-	endpoint, err := ConfigFieldEndpoint(path)
+	endpoint, err := ConfigLeafEndpoint(path)
 	if err != nil {
 		return ErrProofUnavailable
 	}
-	payload, err := EncodeConfigFieldValue(path, value)
+	payload, err := EncodeConfigLeafValue(path, value)
 	if err != nil {
 		return ErrProofUnavailable
 	}
@@ -314,7 +256,7 @@ func (t *Transport) PutConfigField(ctx context.Context, source ConfigFieldSource
 // WriteH1ConfigField writes the one step already reserved by the H1 parent. The
 // intent is re-read from Runtime, never trusted from local state.
 func (t *Transport) WriteH1ConfigField(ctx context.Context, parent string, step H1Step, management, path string, value any) error {
-	if t.h1 == nil || ValidateConfigFieldValue(path, value) != nil || step.Scope != path {
+	if t.h1 == nil || ValidatePrivateConfigLeafValue(path, value) != nil || step.Scope != path {
 		return ErrProofUnavailable
 	}
 	v, err := t.h1.Parent(ctx, t, parent)
@@ -331,11 +273,11 @@ func (t *Transport) WriteH1ConfigField(ctx context.Context, parent string, step 
 	if err = t.h1.Reserved(ctx, t, parent, step); err != nil {
 		return err
 	}
-	endpoint, err := ConfigFieldEndpoint(path)
+	endpoint, err := ConfigLeafEndpoint(path)
 	if err != nil {
 		return ErrProofUnavailable
 	}
-	payload, err := EncodeConfigFieldValue(path, value)
+	payload, err := EncodeConfigLeafValue(path, value)
 	if err != nil {
 		return ErrProofUnavailable
 	}
@@ -344,6 +286,29 @@ func (t *Transport) WriteH1ConfigField(ctx context.Context, parent string, step 
 		return ErrApplyUnknown
 	}
 	return nil
+}
+
+// HasRuntimeJournal reports whether this Transport reserves through the private
+// runtime authority. Without it the Manager journal is the only reservation.
+func (t *Transport) HasRuntimeJournal() bool {
+	return t.configurationAuthority != nil || t.h1 != nil
+}
+
+// ConfigFieldSource reports the private source and the single H1 handoff state.
+func (t *Transport) ConfigFieldSource(ctx context.Context) (ConfigFieldSource, error) {
+	if t.h1 == nil {
+		_, v, err := t.configuration(ctx, "observe")
+		return configFieldSource(v), err
+	}
+	v, err := t.h1.Ready(ctx, t)
+	out := configFieldSource(v)
+	if err != nil {
+		return out, err
+	}
+	if v.H1.Parent == nil {
+		out.HandoffValid = t.h1.Free(ctx, t) == nil
+	}
+	return out, nil
 }
 
 // ReconcileConfigField records only the ORIGINAL Runtime operation after the
@@ -375,7 +340,7 @@ func (t *Transport) ReconcileConfigField(ctx context.Context, source ConfigField
 		result.Operation.State != "persisted" {
 		return v, ErrApplyUnknown
 	}
-	// The Runtime reports the original operation, which may carry a pre-allowlist
+	// The Runtime reports the original operation, which may carry a pre-table
 	// scope: bind it to the field it wrote, never to the raw scope string.
 	observedPath, observedValue, ok := operationField(result.Operation)
 	if !ok || observedPath != path || !reflect.DeepEqual(observedValue, value) {

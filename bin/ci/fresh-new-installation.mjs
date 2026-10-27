@@ -710,28 +710,27 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     await navigate('/config');
     await page.locator('[role="tablist"]').first().waitFor();
     await screenshot('legacy-config-' + name);
-    const retryPanel = page.getByTestId('fresh-managed-retry');
-    if (await retryPanel.isVisible()) {
-      await retryPanel.scrollIntoViewIfNeeded();
+    const gatewayPanel = page.getByTestId('gateway-config-workspace');
+    if (await gatewayPanel.isVisible()) {
+      await gatewayPanel.scrollIntoViewIfNeeded();
       await wait(async () => page.evaluate(() => {
-        const retry = document.querySelector('[data-testid="fresh-managed-retry"]').getBoundingClientRect();
+        const gateway = document.querySelector('[data-testid="gateway-config-workspace"]').getBoundingClientRect();
         const toggle = document.querySelector('.hamburger-container');
         const box = toggle.getBoundingClientRect();
         if (!toggle.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))) return false;
         return [...document.querySelectorAll('[class*="floatingSidebarContainer"]')].every((rail) => {
           if (getComputedStyle(rail).opacity === '0') return true;
-          return rail.getBoundingClientRect().bottom <= retry.top + 1;
+          return rail.getBoundingClientRect().bottom <= gateway.top + 1;
         });
       }), 'configuration navigation stays inside its original workspace');
-      await screenshot('integrated-retry-' + name);
-    } else if (!report.retryPanelDeferred) {
-      // The retained retry group renders only when the config catalog exposes a
-      // retry count or interval field, which the config-field workspace now
-      // provides. A deployment whose catalog omits both records the layout check
-      // as NOT RUN instead of passing on an absent panel.
-      report.retryPanelDeferred = true;
+      await screenshot('integrated-gateway-config-' + name);
+    } else if (!report.gatewayPanelDeferred) {
+      // The gateway configuration workspace renders only when the Manager can
+      // read the CPA configuration. A deployment whose authority is unresolved
+      // records the layout check as NOT RUN instead of passing on an absent page.
+      report.gatewayPanelDeferred = true;
       notRun(
-        'managed retry configuration panel layout (hidden: the config catalog exposes no retry field)'
+        'gateway configuration workspace layout (hidden: the Manager cannot read the CPA configuration)'
       );
     }
     if (width < 768) {

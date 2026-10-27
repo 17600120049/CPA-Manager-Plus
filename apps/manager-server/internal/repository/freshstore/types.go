@@ -43,6 +43,15 @@ type Record struct {
 	Config        map[string]*FieldJournal
 	ConfigInvalid map[string]bool
 	ConfigDamaged map[string]json.RawMessage
+	// ConfigGroups holds one journal per gateway configuration page group.
+	// ConfigGroupsInvalid reports a group journal this store cannot prove: the
+	// page then refuses every group write instead of trusting it.
+	// ConfigGroupsDamaged keeps the exact bytes of those unprovable entries, so a
+	// later write of another section rewrites them unchanged instead of discarding
+	// an unresolved original operation.
+	ConfigGroups        map[string]*ConfigGroupJournal
+	ConfigGroupsInvalid bool
+	ConfigGroupsDamaged map[string]json.RawMessage
 }
 
 // FieldJournal is the Manager-side journal for ONE allowlisted config field. It

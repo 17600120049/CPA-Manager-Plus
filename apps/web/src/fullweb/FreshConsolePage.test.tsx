@@ -25,6 +25,7 @@ import { SystemPage } from '../features/system/SystemPage';
 import { FreshSystemWorkspace } from './FreshSystemWorkspace';
 import { useNotificationStore } from '../stores/useNotificationStore';
 import { configurationText as c } from '../i18n/configurationWorkspace';
+import { gatewayViewFixture } from './gatewayViewFixture';
 vi.mock('../components/ui/Modal', () => ({
   Modal: ({ open, children, footer }: { open: boolean; children: ReactNode; footer: ReactNode }) =>
     open ? (
@@ -166,7 +167,7 @@ describe('Fresh installation and Console authority boundary', () => {
                   activeGatewayArtifact: { artifactId: 'sha256:' + 'a'.repeat(64) },
                   state: 'ready',
                 });
-              if (target.includes('/gateway/config/'))
+              if (target.includes('/gateway/config'))
                 return retryTransport
                   ? retryTransport(url, init)
                   : new Response('', { status: 503 });
@@ -260,27 +261,17 @@ describe('Fresh installation and Console authority boundary', () => {
     }
     expect(renderRoute('/api-keys/')).toBeNull();
   });
-  const retryTransport: typeof fetch = async (url) =>
-    Response.json({
-      field: String(url).includes('max-retry-interval')
-        ? 'routing.retry.max-retry-interval'
-        : 'routing.retry.request-retry',
-      presence: 'present',
-      value: 2,
-      source: 'isolated-test',
-      authority: 'host-runtime',
-      editable: true,
-      reason: '',
-      persisted: 'persisted',
-      effective: 'unknown',
-      concurrentProtection: 'host-exclusive-runtime-reservation',
-      expected: { sourceId: 'test-only', generation: '1', revision: 1, sha256: 'a'.repeat(64) },
-    });
+  const retryTransport: typeof fetch = async () => Response.json(gatewayViewFixture());
   async function editGateway() {
     await mount(retryTransport);
     await login();
     await navigate('/config');
-    await act(async () => find('retry-value').props.onChange({ target: { value: '4' } }));
+    await act(async () => find('gateway-tab-retry').props.onClick());
+    await act(async () =>
+      find('gateway-field-routing.retry.request-retry')
+        .findByType('input')
+        .props.onChange({ target: { value: '4' } })
+    );
   }
   it('keeps existing system information and session tools in a collapsed section below product settings', async () => {
     await mount();
@@ -312,7 +303,7 @@ describe('Fresh installation and Console authority boundary', () => {
       .find((button) => button.props.children === c('keep'))!;
     await act(async () => keep.props.onClick());
     await navigate('/config');
-    expect(find('retry-value').props.value).toBe('4');
+    expect(find('gateway-field-routing.retry.request-retry').findByType('input').props.value).toBe('4');
     await act(async () => logout().props.onClick());
     await act(async () => {
       await useNotificationStore.getState().confirmation.options!.onConfirm();
@@ -328,7 +319,7 @@ describe('Fresh installation and Console authority boundary', () => {
       await confirm();
     });
     expect(has('legacy-console')).toBe(true);
-    expect(find('retry-value').props.value).toBe('4');
+    expect(find('gateway-field-routing.retry.request-retry').findByType('input').props.value).toBe('4');
   });
   it('warns before clearing login storage and rechecks a newly started operation', async () => {
     await editGateway();

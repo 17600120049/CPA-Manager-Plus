@@ -101,7 +101,7 @@ type freshApplication struct {
 	keys            *freshkeys.Service
 	keyApply        *freshkeyapply.Service
 	updates         *updatecheck.Service
-	configRetry     *freshconfig.Service
+	gatewayConfig   *freshconfig.Service
 	legacy          http.Handler
 	legacyCollector *collectorservice.Service
 	collectorWorker *worker.CollectorWorker
@@ -163,19 +163,26 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	// collector, CPA client, or second SQLite connection.
 	a.updates = updatecheck.New(store.New(opened.DB), buildinfo.Version, buildinfo.SourceCommit, os.Getenv("CPAMP_UPDATE_CHECK_ENABLED") != "false")
 	var runtime runtimeservice.RuntimeClient
+	// externalConnection is the Manager-configured External CPA. It is the only
+	// source of an External management credential; no environment fallback exists.
+	externalConnection := func(ctx context.Context) (string, string, error) {
+		managerCfg, found, err := settings.LoadManagerConfig(ctx)
+		if err != nil {
+			return "", "", err
+		}
+		if !found {
+			return "", "", errors.New("CPA connection is not configured")
+		}
+		return managerCfg.CPAConnection.CPABaseURL, managerCfg.CPAConnection.ManagementKey, nil
+	}
 	if cfg.EmbeddedRuntimeConfigured() {
 		runtime = runtimeservice.NewEmbeddedClientWithTokenSource(cfg.RuntimeURL, runtimeservice.NewFileRuntimeTokenSource(cfg.RuntimeTokenFile))
 	} else {
-		a.runtimeExternal = runtimeservice.NewExternalClientWithConnectionSource(func(ctx context.Context) (string, string, error) {
-			managerCfg, found, err := settings.LoadManagerConfig(ctx)
-			if err != nil {
-				return "", "", err
-			}
-			if !found {
-				return "", "", errors.New("CPA connection is not configured")
-			}
-			return managerCfg.CPAConnection.CPABaseURL, managerCfg.CPAConnection.ManagementKey, nil
-		})
+		a.runtimeExternal = runtimeservice.NewExternalClientWithConnectionSource(externalConnection)
+		// An External CPA stays rule-read-only on the gateway page: without an
+		// exclusive write window CPAMP writes only best-effort scalars there.
+		a.gatewayConfig = freshconfig.New(st, nil)
+		a.gatewayConfig.EnableExternal(externalConnection)
 		// External stays strictly read-only and status-only: it never becomes the
 		// lifecycle/strategy Runtime of this application. The Runtime status page
 		// observes it through runtimeStatusClient and offers no lifecycle actions.
@@ -204,7 +211,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	h1Valid := h1Mode == "" || (h1Mode == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1")
 	if h1Valid && os.Getenv("CPAMP_PRIVATE_S1_PERMIT") == freshkeyapply.PermitPath && cfg.RuntimeURL == "http://127.0.0.1:9081" && cfg.CPAUpstreamURL == "http://127.0.0.1:8317" {
 		a.keyApply = freshkeyapply.New(a.keyRepo, a.keys, runtime)
-		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
+		a.gatewayConfig = freshconfig.New(st, a.keyApply.ConfigTarget)
 		// The explicit private profile keeps its own host-supplied Collector
 		// authority. Managed and External installs never reach this branch and
 		// therefore never fall back to it.
@@ -218,7 +225,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		if os.Getenv("CPAMP_PRIVATE_H1") == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1" {
 			h := cpa.NewH1Coordinator(opened.DB)
 			a.keyApply.EnableH1(h)
-			a.configRetry.EnableH1(h)
+			a.gatewayConfig.EnableH1(h)
 		}
 	}
 	if a.keyApply == nil && runtime != nil && h1Valid {
@@ -226,10 +233,10 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		// the committed destination and the protected Manager connection.
 		a.managedSource = managedInstallSource(st, opened.Protector, cfg.CPAUpstreamURL)
 		a.keyApply = freshkeyapply.NewManaged(a.keyRepo, a.keys, runtime, cfg.CPAUpstreamURL, a.managedSource)
-		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
+		a.gatewayConfig = freshconfig.New(st, a.keyApply.ConfigTarget)
 		// The destination address is the managed installation's own CPA, not the
 		// private loopback profile the default Transport dials.
-		a.configRetry.EnableManaged(cfg.CPAUpstreamURL)
+		a.gatewayConfig.EnableManaged(cfg.CPAUpstreamURL)
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
@@ -375,8 +382,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	switch {
-	case strings.HasPrefix(resource, "gateway/config/"):
-		a.configFieldConfiguration(w, r, strings.TrimPrefix(resource, "gateway/config/"))
+	case resource == "gateway/config" || strings.HasPrefix(resource, "gateway/config/"):
+		a.gatewayConfiguration(w, r, strings.TrimPrefix(strings.TrimPrefix(resource, "gateway/config"), "/"))
 	case resource == "settings/update-channel":
 		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):
