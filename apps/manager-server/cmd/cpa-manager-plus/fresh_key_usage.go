@@ -111,41 +111,48 @@ func (a *freshApplication) attemptUsageStart(ctx context.Context, op bootstrap.F
 		a.usageProjection.Start(ctx)
 		a.usageWorkersStarted = true
 	}
-	started := false
-	switch {
-	case a.privateCollector != nil:
-		// Only the explicit private profile owns a host-supplied Collector
-		// authority.
-		started = a.privateCollector(ctx)
-	case a.managedSource != nil && a.legacyCollector != nil:
-		install, err := a.managedSource(ctx)
-		if err != nil {
-			// Managed and External installs have no other authority. Usage stays
-			// unavailable instead of collecting from an unverified CPA.
-			log.Printf("Fresh usage collection unavailable: %v", err)
+	// Starting the Collector is its own success-only step. A retry after a
+	// durable marker failure only retries the marker: StartRuntime cancels the
+	// running Collector, so repeating it would open a restart window that loses
+	// whatever arrived in between.
+	if !a.usageCollectorStarted {
+		started := false
+		switch {
+		case a.privateCollector != nil:
+			// Only the explicit private profile owns a host-supplied Collector
+			// authority.
+			started = a.privateCollector(ctx)
+		case a.managedSource != nil && a.legacyCollector != nil:
+			install, err := a.managedSource(ctx)
+			if err != nil {
+				// Managed and External installs have no other authority. Usage
+				// stays unavailable instead of collecting from an unverified CPA.
+				log.Printf("Fresh usage collection unavailable: %v", err)
+				return false
+			}
+			if err := a.legacyCollector.StartRuntime(ctx, collector.RuntimeConfig{
+				CPAUpstreamURL: install.BaseURL,
+				ManagementKey:  install.ManagementKey,
+				CollectorMode:  a.cfg.CollectorMode,
+				Queue:          a.cfg.Queue,
+				PopSide:        a.cfg.PopSide,
+				BatchSize:      a.cfg.BatchSize,
+				PollInterval:   a.cfg.PollInterval,
+				TLSSkipVerify:  a.cfg.TLSSkipVerify,
+			}); err != nil {
+				log.Printf("Fresh usage collection unavailable: %v", err)
+				return false
+			}
+			started = a.collectionPhase() != usageapp.PhaseStopped
+		default:
+			// No Collector authority is configured for this strategy: starting
+			// one would be a guess, so nothing is retried here.
+			return true
+		}
+		if !started {
 			return false
 		}
-		if err := a.legacyCollector.StartRuntime(ctx, collector.RuntimeConfig{
-			CPAUpstreamURL: install.BaseURL,
-			ManagementKey:  install.ManagementKey,
-			CollectorMode:  a.cfg.CollectorMode,
-			Queue:          a.cfg.Queue,
-			PopSide:        a.cfg.PopSide,
-			BatchSize:      a.cfg.BatchSize,
-			PollInterval:   a.cfg.PollInterval,
-			TLSSkipVerify:  a.cfg.TLSSkipVerify,
-		}); err != nil {
-			log.Printf("Fresh usage collection unavailable: %v", err)
-			return false
-		}
-		started = a.collectionPhase() != usageapp.PhaseStopped
-	default:
-		// No Collector authority is configured for this strategy: starting one
-		// would be a guess, so nothing is retried here.
-		return true
-	}
-	if !started {
-		return false
+		a.usageCollectorStarted = true
 	}
 	if err := a.usage.MarkCollectionStart(ctx); err != nil {
 		log.Printf("Fresh usage collection start unavailable: %v", err)

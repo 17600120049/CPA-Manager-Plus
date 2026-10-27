@@ -108,9 +108,10 @@ type freshApplication struct {
 	// usageStartMu serializes post-completion startup attempts and guards the
 	// two success flags below. Only a fully successful attempt is recorded, so a
 	// failed start is retried by a completion replay or a later trigger.
-	usageStartMu        sync.Mutex
-	usageStarted        bool
-	usageWorkersStarted bool
+	usageStartMu          sync.Mutex
+	usageStarted          bool
+	usageWorkersStarted   bool
+	usageCollectorStarted bool
 	// runCtx is the host lifetime of this application. Workers started after an
 	// in-process ProductComplete must outlive the request that triggered them.
 	runCtx context.Context

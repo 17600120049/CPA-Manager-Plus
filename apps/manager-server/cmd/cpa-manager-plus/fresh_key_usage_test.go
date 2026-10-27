@@ -679,3 +679,64 @@ func TestFreshUsageStartIsSerializedAcrossConcurrentTriggers(t *testing.T) {
 		t.Fatalf("startup did not record collection: %q err = %v", started, err)
 	}
 }
+
+// A durable marker failure is retried without touching the running Collector:
+// restarting it would cancel the process and drop whatever arrived meanwhile.
+func TestFreshUsageStartRetriesOnlyTheMarkerAfterAMarkerFailure(t *testing.T) {
+	hostCtx, stopHost := context.WithCancel(t.Context())
+	defer stopHost()
+	opened, app := newUsageCompletionApplication(t, hostCtx, config.Config{})
+	installManagedCheckpoint(t, app, "committed")
+	record, err := app.store.Load(hostCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceCalls := 0
+	app.managedSource = func(context.Context) (freshkeyapply.ManagedInstall, error) {
+		sourceCalls++
+		return freshkeyapply.ManagedInstall{BaseURL: "http://127.0.0.1:1", ManagementKey: "test-management-key"}, nil
+	}
+	collectionStarted := func() int {
+		t.Helper()
+		var count int
+		if err := opened.DB.QueryRow(`select count(*) from settings where key = 'fresh_usage_collection_started_at_ms'`).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		return count
+	}
+
+	// Fail only the durable marker, after the Collector is already running.
+	if _, err := opened.DB.Exec(`create trigger fail_collection_start before insert on settings
+		when new.key = 'fresh_usage_collection_started_at_ms'
+		begin select raise(abort, 'forced marker failure'); end`); err != nil {
+		t.Fatal(err)
+	}
+	app.startUsageCollection(record.Operation)
+	if sourceCalls != 1 {
+		t.Fatalf("managed source started %d times, want once", sourceCalls)
+	}
+	if phase := app.collectionPhase(); phase == usageapp.PhaseStopped {
+		t.Fatalf("collector phase = %s, want it running before the marker retry", phase)
+	}
+	if count := collectionStarted(); count != 0 {
+		t.Fatalf("marker rows = %d, want none after the forced failure", count)
+	}
+
+	// The retry writes the marker only; the Collector must not be restarted.
+	if _, err := opened.DB.Exec(`drop trigger fail_collection_start`); err != nil {
+		t.Fatal(err)
+	}
+	app.startUsageCollection(record.Operation)
+	if sourceCalls != 1 {
+		t.Fatalf("retry restarted the collector: managed source started %d times", sourceCalls)
+	}
+	if count := collectionStarted(); count != 1 {
+		t.Fatalf("marker rows = %d, want exactly one", count)
+	}
+
+	// Once everything succeeded the startup is done for good.
+	app.startUsageCollection(record.Operation)
+	if sourceCalls != 1 {
+		t.Fatalf("completed startup started the source again: %d", sourceCalls)
+	}
+}
