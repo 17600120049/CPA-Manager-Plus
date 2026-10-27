@@ -680,6 +680,12 @@ function MainLayoutContent({
           exact: true,
         },
         {
+          path: '/system/runtime',
+          label: t('nav.runtime_status', { defaultValue: 'Runtime status' }),
+          shortLabel: navShortLabel('nav.runtime_status', t('nav.runtime_status', { defaultValue: 'Runtime' })),
+          icon: sidebarIcons.system,
+        },
+        {
           path: '/config',
           label: renderRoute
             ? t('nav.gateway_management')

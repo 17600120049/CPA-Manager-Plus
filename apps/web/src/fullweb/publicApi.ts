@@ -81,6 +81,9 @@ export function createPublicApiClient(
       body !== undefined ||
       resource === 'operation' ||
       resource === 'installation/runtime' ||
+      resource === 'runtime/status' ||
+      resource === 'runtime/operations' ||
+      resource.startsWith('runtime/operations/') ||
       resource.startsWith('api-keys/') ||
       resource === 'settings/update-channel' ||
       resource.startsWith('gateway/config/')

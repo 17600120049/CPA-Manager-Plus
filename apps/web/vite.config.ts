@@ -81,6 +81,10 @@ export default defineConfig(({ mode }) => {
                 find: /^(?:@\/services\/api\/usageService|\.\/usageService|.*\/services\/api\/usageService(?:\.ts)?)$/,
                 replacement: path.resolve(__dirname, './src/panel/unsupportedManagerApi.ts'),
               },
+              {
+                find: /^(?:@\/fullweb\/publicApi|\.\/publicApi|.*\/fullweb\/publicApi(?:\.ts)?)$/,
+                replacement: path.resolve(__dirname, './src/panel/unsupportedPublicApi.ts'),
+              },
             ]
           : []),
         {
