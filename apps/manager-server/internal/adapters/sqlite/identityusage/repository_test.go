@@ -224,3 +224,69 @@ func TestCollectionStartMarkerKeepsEarliestInstant(t *testing.T) {
 		t.Fatalf("start = %d err = %v, want the earliest instant", startedAt, err)
 	}
 }
+
+func TestProjectionStateIsNotCaughtUpWhilePending(t *testing.T) {
+	db, repo := setupTestDB(t)
+	ctx := context.Background()
+
+	// A fresh projection is pending with an empty frontier. It has processed
+	// nothing yet, so it can never be mistaken for a caught-up window.
+	state, err := repo.ProjectionState(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.CaughtUp() {
+		t.Fatalf("pending projection with an empty frontier reported caught up: %+v", state)
+	}
+
+	// Pending is not caught up even when its checkpoint equals the frontier:
+	// the projection has not committed a ready window.
+	insertEvent(t, db, 1, sha256Hex("staged-secret"), 1000, 10, 0)
+	setProjectionState(t, db, "pending", 1, 1)
+	if state, err = repo.ProjectionState(ctx); err != nil || state.CaughtUp() {
+		t.Fatalf("pending state = %+v err = %v", state, err)
+	}
+
+	// A lagging ready checkpoint still has events to read.
+	setProjectionState(t, db, "ready", 0, 0)
+	if state, err = repo.ProjectionState(ctx); err != nil || state.CaughtUp() {
+		t.Fatalf("lagging ready state = %+v err = %v", state, err)
+	}
+
+	setProjectionState(t, db, "ready", 1, 1)
+	if state, err = repo.ProjectionState(ctx); err != nil || !state.CaughtUp() {
+		t.Fatalf("caught-up state = %+v err = %v", state, err)
+	}
+}
+
+func TestWindowsAggregatesEveryBatchBeyondOneStatement(t *testing.T) {
+	db, repo := setupTestDB(t)
+	ctx := context.Background()
+	// More keys than one statement can bind: the adapter must batch and merge
+	// instead of silently truncating the list.
+	const keyCount = maxIdentityPlaceholders + 50
+	ids := make([]identity.APIKeyID, 0, keyCount)
+	for i := 0; i < keyCount; i++ {
+		id := fmt.Sprintf("%032x", i+1)
+		hash := sha256Hex("batched-secret-" + id)
+		insertIdentity(t, db, id, "active")
+		insertStagedKey(t, db, id, hash)
+		insertBinding(t, db, id, hash, 100, nil)
+		insertEvent(t, db, int64(i+1), hash, 1000+int64(i), 10, 0)
+		insertProjection(t, db, int64(i+1), "mapped", id, hash, 1000+int64(i))
+		ids = append(ids, identity.APIKeyID(id))
+	}
+
+	windows, err := repo.Windows(ctx, ids, 500, 5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(windows) != keyCount {
+		t.Fatalf("windows = %d, want every one of the %d requested keys", len(windows), keyCount)
+	}
+	for _, id := range ids {
+		if window := windows[id]; window.Totals.Calls != 1 || window.Totals.TotalTokens != 10 {
+			t.Fatalf("window %s = %+v, want its own single call", id, window)
+		}
+	}
+}

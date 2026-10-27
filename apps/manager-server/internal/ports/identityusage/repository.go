@@ -48,9 +48,19 @@ type ProjectionState struct {
 	LatestEventID        int64
 }
 
-// CaughtUp reports whether every stored usage event has been projected.
+// CaughtUp reports whether the projection finished every event Manager can
+// already see. Only a ready checkpoint proves that: a pending or backfilling
+// projection is not caught up even when its frontier is still empty, because an
+// unprocessed window proves nothing about the events it has not read yet.
 func (s ProjectionState) CaughtUp() bool {
-	return s.Status != "error" && s.LastProcessedEventID >= s.LatestEventID
+	if s.Status != "ready" {
+		return false
+	}
+	target := s.TargetEventID
+	if s.LatestEventID > target {
+		target = s.LatestEventID
+	}
+	return s.LastProcessedEventID >= target
 }
 
 // Totals are window totals for one Canonical Key. Failure counts requests the

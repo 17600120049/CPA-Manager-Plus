@@ -88,6 +88,22 @@ func (r *repository) Windows(ctx context.Context, ids []identity.APIKeyID, fromM
 	if toMS <= fromMS {
 		return nil, errors.New("invalid identity usage window")
 	}
+	// One statement can only carry a bounded number of placeholders, so large
+	// key lists are aggregated in batches and merged. Never truncate: a key
+	// dropped here would be reported as an exact zero by its caller.
+	for start := 0; start < len(ids); start += maxIdentityPlaceholders {
+		end := start + maxIdentityPlaceholders
+		if end > len(ids) {
+			end = len(ids)
+		}
+		if err := r.windowsBatch(ctx, result, ids[start:end], fromMS, toMS); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+func (r *repository) windowsBatch(ctx context.Context, result map[identity.APIKeyID]ports.Window, ids []identity.APIKeyID, fromMS, toMS int64) error {
 	args, placeholders := identityArgs(ids)
 	mappedSource := ` select p.api_key_id, count(*) as calls,
 			coalesce(sum(case when u.failed <> 0 then 1 else 0 end), 0) as failures,
@@ -103,7 +119,7 @@ func (r *repository) Windows(ctx context.Context, ids []identity.APIKeyID, fromM
 		and u.timestamp_ms >= ? and u.timestamp_ms < ?
 		group by p.api_key_id`, totalsArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("aggregate canonical key usage: %w", err)
+		return fmt.Errorf("aggregate canonical key usage: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -113,7 +129,7 @@ func (r *repository) Windows(ctx context.Context, ids []identity.APIKeyID, fromM
 		if err := rows.Scan(&rawID, &window.Totals.Calls, &window.Totals.Failure,
 			&window.Totals.InputTokens, &window.Totals.OutputTokens, &window.Totals.TotalTokens,
 			&lastUsed); err != nil {
-			return nil, fmt.Errorf("scan canonical key usage: %w", err)
+			return fmt.Errorf("scan canonical key usage: %w", err)
 		}
 		if lastUsed.Valid && lastUsed.Int64 > 0 {
 			window.Totals.LastUsedAtMS = &lastUsed.Int64
@@ -121,7 +137,7 @@ func (r *repository) Windows(ctx context.Context, ids []identity.APIKeyID, fromM
 		result[identity.APIKeyID(rawID)] = window
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate canonical key usage: %w", err)
+		return fmt.Errorf("iterate canonical key usage: %w", err)
 	}
 	rows.Close()
 
@@ -135,14 +151,14 @@ func (r *repository) Windows(ctx context.Context, ids []identity.APIKeyID, fromM
 		  and p.evidence_timestamp_ms >= ? and p.evidence_timestamp_ms < ?
 		group by b.api_key_id`, totalsArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("count unattributed canonical key usage: %w", err)
+		return fmt.Errorf("count unattributed canonical key usage: %w", err)
 	}
 	defer unmappedRows.Close()
 	for unmappedRows.Next() {
 		var rawID string
 		var count int64
 		if err := unmappedRows.Scan(&rawID, &count); err != nil {
-			return nil, fmt.Errorf("scan unattributed canonical key usage: %w", err)
+			return fmt.Errorf("scan unattributed canonical key usage: %w", err)
 		}
 		window, ok := result[identity.APIKeyID(rawID)]
 		if !ok {
@@ -151,7 +167,7 @@ func (r *repository) Windows(ctx context.Context, ids []identity.APIKeyID, fromM
 		window.UnmappedEvents = count
 		result[identity.APIKeyID(rawID)] = window
 	}
-	return result, unmappedRows.Err()
+	return unmappedRows.Err()
 }
 
 func (r *repository) Series(ctx context.Context, id identity.APIKeyID, fromMS, toMS, bucketMS int64) ([]ports.Bucket, error) {
@@ -231,10 +247,9 @@ func (r *repository) MarkCollectionStarted(ctx context.Context, nowMS int64) err
 	return nil
 }
 
+// identityArgs renders one bounded batch. Callers split larger lists before
+// calling it; truncating here would silently report later keys as empty.
 func identityArgs(ids []identity.APIKeyID) ([]any, string) {
-	if len(ids) > maxIdentityPlaceholders {
-		ids = ids[:maxIdentityPlaceholders]
-	}
 	args := make([]any, len(ids))
 	for i, id := range ids {
 		args[i] = string(id)
