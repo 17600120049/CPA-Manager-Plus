@@ -253,15 +253,27 @@ The first strategy call only returns this protected snapshot. The caller writes
 it through the Fresh CAS before `StageDestination` or `Start` is attempted.
 The next call reuses the same child operation ID, verifies the Runtime facts,
 stages the `new_managed` destination, starts it and authenticates
-`GET /v8/management/config`. Only after that read succeeds does the CAS store
+`GET /v8/management/config`. A Supervisor `Start` result only publishes the
+spawn, so the install consumer's Runtime client first waits for the Supervisor's
+own readiness observation of that exact identity and generation (bounded to
+20 s); a readiness timeout is not a failed spawn, and it leaves the typed,
+resumable `managed_destination_verification_required` blocker instead of an
+unconfirmed write. Only after that read succeeds does the CAS store
 the protected Manager connection. Completing the Fresh routing/product CAS
 also mirrors that connection to `manager_config_v1` and the compatibility
 `setup` row; both rows contain the protected envelope and are decrypted only by
 Manager-owned repositories.
 
 Key install, revoke, replace and retry configuration use this connection as
-the default authority. `DefaultInstallCPAAuthorityProven` is the boolean
-admission predicate at
+the default authority. One profile discriminator decides that ownership:
+`freshkeyapply.Service.Targets` compares the committed checkpoint with the
+profile the Manager constructed — the managed destination for the default
+Compose install, the attested private target for the host-permit profile.
+Initial install, key revoke/replace, the private chat consumer and the gateway
+configuration page all ask that one function, so no surface can accept a
+checkpoint another refuses, and an adoption, External or uncommitted
+checkpoint is refused everywhere. `DefaultInstallCPAAuthorityProven` is the
+boolean admission predicate at
 `apps/manager-server/internal/service/freshkeyapply/config_target.go`; it
 requires the exact committed Runtime facts, managed CPA posture and at least
 one installed Client Key, so a CPA with client authentication off is not
