@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 // PAH G2 real-browser isolation proof for CPA plugin pages.
 //
-// Prerequisites (all provided by the caller; this script creates nothing):
+// This drives a running Manager. It creates no container and installs no
+// plugin: the caller supplies a deployment that already has an admin session
+// and one enabled plugin contributing the fixture resources documented in
+// bin/ci/README-plugin-isolation.md.
+//
 //   MANAGER_ORIGIN   origin of a Manager serving Full Web, e.g. http://127.0.0.1:19319
-//   ADMIN_KEY        the Manager admin key the Console logs in with
-//   PLUGIN_ID        id of an enabled CPA plugin that contributes the fixture
-//                    resources described in bin/ci/README-plugin-isolation.md
+//   ADMIN_KEY        the Manager Admin Key the Console logs in with
+//   PLUGIN_ID        id of the enabled fixture plugin (isolation-probe)
+//   CONSOLE_BASE     verified Control base path, default /console
 //   PLAYWRIGHT_MODULE (optional) path to the `playwright` package
 //
 // Every negative below MUST fail to escape. A single escape is a build failure.
@@ -17,83 +21,119 @@ import { resolve } from 'node:path';
 const origin = (process.env.MANAGER_ORIGIN || '').replace(/\/+$/, '');
 const adminKey = process.env.ADMIN_KEY || '';
 const pluginId = process.env.PLUGIN_ID || '';
+const consoleBase = process.env.CONSOLE_BASE || '/console';
 assert(origin && adminKey && pluginId, 'MANAGER_ORIGIN, ADMIN_KEY and PLUGIN_ID are required');
 
 const { chromium, webkit } = createRequire(import.meta.url)(
   process.env.PLAYWRIGHT_MODULE || 'playwright'
 );
-const out = resolve(process.env.G2_OUTPUT_DIR || '/tmp/pah-g2-output');
+const out = resolve(process.env.G2_OUTPUT_DIR || '/tmp/cpamp-g2-output');
 mkdirSync(out, { recursive: true, mode: 0o700 });
 
-const base = `${origin}/v0/resource/plugins/${pluginId}`;
-const report = { result: 'FAIL', origin, pluginId, engines: {}, checks: [], consoleErrors: [], notRun: [] };
+// Full Web serves the Console under the verified Control base path and its
+// public admin API at <base>/api/v2. The legacy CPAMP contracts the Console
+// consumes are bridged below that same namespace (`cpamp/` prefix), so this is
+// the only API base a browser request can use.
+const consoleRoot = `${origin}${consoleBase}`;
+const apiBase = `${consoleRoot}/api/v2`;
+const resourceBase = `${origin}/v0/resource/plugins/${pluginId}`;
+const themeMessageType = 'cpamp:plugin-theme';
+
+const report = {
+  result: 'FAIL',
+  origin,
+  consoleBase,
+  pluginId,
+  engines: {},
+  checks: [],
+  consoleErrors: [],
+  notRun: [],
+};
 
 function record(engine, name, result, detail) {
-  report.checks.push({ engine, name, result, ...(detail ? { detail } : {}) });
-  console.log(`${result} ${engine} ${name}${detail ? ' — ' + JSON.stringify(detail) : ''}`);
+  report.checks.push({ engine, name, result, ...(detail === undefined ? {} : { detail }) });
+  console.log(`${result} ${engine} ${name}${detail === undefined ? '' : ' — ' + JSON.stringify(detail)}`);
 }
 
-// Admin authority the plugin must never reach.
 const adminStorageKeys = [];
 const adminCookies = [];
 
 async function login(page) {
-  await page.goto(origin + '/', { waitUntil: 'domcontentloaded' });
-  // Full Web gates every admin API on the bearer key held in storage; the
-  // login document persists it before navigating to the Console shell.
-  const field = page.locator('input[type="password"], input[name="adminKey"], #admin-key').first();
-  await field.waitFor({ state: 'visible', timeout: 45000 });
-  await field.fill(adminKey);
-  await page.locator('button[type="submit"], button:has-text("Login"), button:has-text("登录")').first().click();
-  await page.waitForURL((url) => !/login/i.test(url.pathname), { timeout: 45000 });
-  await page.waitForLoadState('networkidle');
+  await page.goto(`${consoleRoot}/`, { waitUntil: 'domcontentloaded' });
+  // Full Web renders the Console login adapter with a stable test id and the
+  // admin key field it declares for the console surface.
+  const form = page.getByTestId('console-login');
+  await form.waitFor({ state: 'visible', timeout: 60000 });
+  await page.locator('#console-admin-key').fill(adminKey);
+  await form.locator('button[type=submit]').click();
+  await page.getByTestId('legacy-console').waitFor({ timeout: 60000 });
+  await page.locator('.app-shell').first().waitFor({ timeout: 60000 });
 }
 
 async function snapshotAdminAuthority(context, page) {
+  // The Console keeps its session under the real storage key. The value is
+  // reversible obfuscation, which is exactly why the sandbox must make it
+  // unreachable: this proof asserts reachability, not secrecy of the bytes.
   const storage = await page.evaluate(() =>
-    Object.fromEntries([['local', localStorage], ['session', sessionStorage]].map(
-      ([kind, store]) => [kind, Object.keys(store).map((key) => [key, store.getItem(key)])]
-    ))
+    Object.fromEntries(
+      [['local', localStorage], ['session', sessionStorage]].map(([kind, store]) => [
+        kind,
+        Object.keys(store).map((key) => [key, store.getItem(key)]),
+      ])
+    )
   );
   for (const [kind, entries] of Object.entries(storage)) {
     for (const [key, value] of entries) adminStorageKeys.push({ kind, key, value });
   }
   adminCookies.push(...(await context.cookies()));
-  assert(adminStorageKeys.length > 0, 'Console stored no credential; login did not complete');
+  assert(
+    adminStorageKeys.some((entry) => entry.key === 'cli-proxy-auth'),
+    'Console did not persist cli-proxy-auth; login did not complete'
+  );
 }
 
-// Runs inside the plugin document. Returns which probes were contained.
-async function probe(page) {
-  return page.evaluate(async () => {
+// Runs inside the plugin document.
+async function probe(target) {
+  return target.evaluate(async () => {
     const result = { storage: {}, network: {}, dom: {} };
-    for (const [name, store] of [['localStorage', 'localStorage'], ['sessionStorage', 'sessionStorage']]) {
+    for (const name of ['localStorage', 'sessionStorage']) {
       try {
-        const value = window[store];
+        const value = window[name];
         result.storage[name] = { reachable: true, length: value.length };
       } catch (error) {
         result.storage[name] = { reachable: false, error: (error && error.name) || 'Error' };
       }
     }
-    for (const path of ['/api/v2/bootstrap/identity', '/v0/management/config.yaml']) {
-      for (const credentials of ['omit', 'include']) {
-        try {
-          const response = await fetch(path, { credentials, method: 'GET' });
-          const body = await response.text();
-          result.network[`${path}#${credentials}`] = { ok: response.ok, status: response.status, bytes: body.length };
-        } catch (error) {
-          result.network[`${path}#${credentials}`] = { ok: false, error: (error && error.name) || 'Error' };
-        }
-      }
-    }
+    // An opaque origin cannot name its parent document or its cookie jar.
     try {
       result.dom.parentTitle = { reachable: true, value: String(parent.document.title) };
     } catch (error) {
       result.dom.parentTitle = { reachable: false, error: (error && error.name) || 'Error' };
     }
     try {
-      result.dom.origin = String(location.origin);
+      result.dom.cookie = { reachable: true, value: String(document.cookie) };
     } catch (error) {
-      result.dom.origin = 'Error';
+      result.dom.cookie = { reachable: false, error: (error && error.name) || 'Error' };
+    }
+    result.dom.origin = String(location.origin);
+    // Any admin API path, with and without credentials.
+    for (const path of ['/v0/management/plugins', '/v0/management/config.yaml']) {
+      for (const credentials of ['omit', 'include']) {
+        try {
+          const response = await fetch(path, { credentials, method: 'GET' });
+          const body = await response.text();
+          result.network[`${path}#${credentials}`] = {
+            status: response.status,
+            ok: response.ok,
+            bytes: body.length,
+          };
+        } catch (error) {
+          result.network[`${path}#${credentials}`] = {
+            ok: false,
+            error: (error && error.name) || 'Error',
+          };
+        }
+      }
     }
     return result;
   });
@@ -101,178 +141,257 @@ async function probe(page) {
 
 function assertContained(engine, where, result) {
   for (const [name, value] of Object.entries(result.storage)) {
-    assert.equal(value.reachable && value.length > 0, false,
-      `${engine} ${where}: plugin read ${name} (${JSON.stringify(value)})`);
+    assert.equal(
+      value.reachable && value.length > 0,
+      false,
+      `${engine} ${where}: plugin read ${name} (${JSON.stringify(value)})`
+    );
   }
-  record(engine, `${where}: admin storage unreadable`, 'PASS');
-  assert.equal(result.dom.parentTitle.reachable, false,
-    `${engine} ${where}: plugin reached parent.document (${JSON.stringify(result.dom.parentTitle)})`);
+  record(engine, `${where}: storage unreachable`, 'PASS');
+  assert.equal(
+    result.dom.parentTitle.reachable,
+    false,
+    `${engine} ${where}: plugin reached parent.document (${JSON.stringify(result.dom.parentTitle)})`
+  );
   record(engine, `${where}: parent.document unreachable`, 'PASS');
+  assert.equal(
+    Boolean(result.dom.cookie.reachable && result.dom.cookie.value),
+    false,
+    `${engine} ${where}: plugin read a cookie (${JSON.stringify(result.dom.cookie)})`
+  );
+  record(engine, `${where}: cookie jar empty`, 'PASS');
   for (const [target, value] of Object.entries(result.network)) {
-    assert.equal(value.ok, false, `${engine} ${where}: plugin fetch succeeded for ${target} (${JSON.stringify(value)})`);
+    assert.equal(
+      value.ok,
+      false,
+      `${engine} ${where}: plugin fetch succeeded for ${target} (${JSON.stringify(value)})`
+    );
   }
   record(engine, `${where}: admin API fetches refused`, 'PASS', Object.keys(result.network));
+}
+
+async function adminList(page) {
+  // Confirm the plugin is enabled and read the menu the Console routes to,
+  // using the Console's own credential against the real bridge path.
+  const response = await page.evaluate(
+    async ({ base, key }) => {
+      const call = await fetch(`${base}/cpamp/v0/management/plugins`, {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      return { status: call.status, body: await call.text() };
+    },
+    { base: apiBase, key: adminKey }
+  );
+  assert.equal(response.status, 200, 'plugin list through the admin session failed');
+  const parsed = JSON.parse(response.body);
+  report.pluginsEnabled = parsed.plugins_enabled;
+  assert.equal(parsed.plugins_enabled, true, 'plugins.enabled is false on this deployment');
+  const entry = (parsed.plugins || []).find((item) => item.id === pluginId);
+  assert(entry, `plugin ${pluginId} is not registered`);
+  assert.equal(entry.effective_enabled, true, `plugin ${pluginId} is not effectively enabled`);
+  const menuIndex = (entry.menus || []).findIndex((menu) => menu.path.includes('/probe'));
+  assert(menuIndex >= 0, `plugin ${pluginId} exposes no probe menu`);
+  return { entry, menuIndex };
 }
 
 async function runEngine(engineName, launcher) {
   const browser = await launcher.launch({ headless: true });
   const engineReport = { checks: [] };
+  report.engines[engineName] = engineReport;
   try {
-    // ---- Positives through a real admin session -------------------------
-    const context = await browser.newContext();
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const page = await context.newPage();
     page.on('console', (message) => {
-      if (message.type() === 'error') report.consoleErrors.push({ engine: engineName, text: message.text() });
+      if (message.type() === 'error')
+        report.consoleErrors.push({ engine: engineName, text: message.text() });
     });
     await login(page);
     await snapshotAdminAuthority(context, page);
-    record(engineName, 'Console login established', 'PASS');
+    record(engineName, 'Console login with cli-proxy-auth persisted', 'PASS');
 
-    // Plugin list, enable/disable, config read/write and store listing are
-    // exercised through the admin session with the Console's own credential.
-    const api = await page.evaluate(async (key) => {
-      const call = async (method, path, body) => {
-        const response = await fetch('/api/v2/cpamp/' + path, {
-          method,
-          headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-          body: body === undefined ? undefined : JSON.stringify(body),
-        });
-        return { status: response.status, ok: response.ok };
-      };
-      const key = localStorage.getItem('cpamp-admin-key') || sessionStorage.getItem('cpamp-admin-key');
-      return { key, list: await call('GET', 'v0/management/plugins') };
-    }, adminKey);
-    assert.equal(api.list.ok, true, 'plugin list through the admin session failed: ' + JSON.stringify(api.list));
-    record(engineName, 'plugin list through admin session', 'PASS', api.list);
+    const { menuIndex } = await adminList(page);
+    record(engineName, 'plugin list through the admin bridge', 'PASS', { pluginId, menuIndex });
 
-    // The plugin page renders inside the Console iframe.
-    const iframeSrc = `${base}/probe`;
-    await page.goto(origin + '/plugins');
-    await page.waitForLoadState('networkidle');
-    const frameHandle = await page.evaluate((src) => {
-      const frame = document.createElement('iframe');
-      frame.id = 'pah-g2-frame';
-      frame.src = src;
-      document.body.appendChild(frame);
-      return true;
-    }, iframeSrc);
-    assert.equal(frameHandle, true);
-    const frame = page.frameLocator('#pah-g2-frame');
-    await frame.locator('#probe-ready').waitFor({ timeout: 45000 });
-    record(engineName, 'plugin page renders inside Console', 'PASS');
+    // ---- Positive: the Console renders the plugin menu in a sandbox -------
+    await page.goto(`${consoleRoot}/plugin-pages/${encodeURIComponent(pluginId)}/${menuIndex}`, {
+      waitUntil: 'networkidle',
+    });
+    const iframe = page.locator('iframe').first();
+    await iframe.waitFor({ timeout: 60000 });
+    const sandboxAttr = (await iframe.getAttribute('sandbox')) || '';
+    assert.equal(sandboxAttr.trim(), 'allow-scripts allow-forms', `unexpected iframe sandbox: ${sandboxAttr}`);
+    const frameSrc = (await iframe.getAttribute('src')) || '';
+    assert(
+      frameSrc.startsWith(resourceBase + '/'),
+      `iframe src is outside the plugin prefix: ${frameSrc}`
+    );
+    record(engineName, 'Console frames the plugin page with allow-scripts allow-forms', 'PASS', {
+      src: frameSrc,
+    });
 
-    // The plugin can fetch its own resource.
-    const ownFetch = await page.frames().find((f) => f.url().startsWith(base))
-      ?.evaluate(async (url) => {
-        const response = await fetch(url, { credentials: 'omit' });
-        return { status: response.status, ok: response.ok, text: (await response.text()).length };
-      }, `${base}/probe.js`);
-    assert(ownFetch && ownFetch.ok && ownFetch.text > 0, 'plugin could not read its own resource: ' + JSON.stringify(ownFetch));
+    const pluginFrame = () =>
+      page.frames().find((frame) => frame.url().startsWith(resourceBase));
+    const frame = pluginFrame();
+    assert(frame, 'plugin document never loaded');
+    await frame.locator('#probe-ready').waitFor({ timeout: 60000 });
+    record(engineName, 'plugin page renders inside the Console', 'PASS');
+
+    // ---- Positive: the plugin reads its own resource ----------------------
+    const ownFetch = await frame.evaluate(async (url) => {
+      const response = await fetch(url, { credentials: 'omit' });
+      return { status: response.status, ok: response.ok, bytes: (await response.text()).length };
+    }, `${resourceBase}/probe.js`);
+    assert(ownFetch.ok && ownFetch.bytes > 0, `plugin could not read its own resource: ${JSON.stringify(ownFetch)}`);
     record(engineName, 'plugin fetches its own resource', 'PASS', ownFetch);
 
-    // The theme postMessage arrives.
-    const theme = await page.evaluate(() => {
-      const frame = document.getElementById('pah-g2-frame');
-      const seen = new Promise((resolve) => {
-        addEventListener('message', (event) => { if (event.data && event.data.type === 'theme') resolve(event.data); });
-        setTimeout(() => resolve(null), 5000);
-      });
-      frame.contentWindow.postMessage({ type: 'theme', theme: 'dark' }, '*');
-      return seen;
-    });
-    assert(theme, 'plugin never received the theme postMessage');
-    record(engineName, 'plugin receives theme postMessage', 'PASS', theme);
+    // ---- Positive: the host theme arrives over postMessage ----------------
+    const theme = await frame.evaluate(
+      (type) =>
+        new Promise((settle) => {
+          const timer = setTimeout(() => settle(null), 8000);
+          addEventListener('message', (event) => {
+            const data = event.data;
+            if (data && data.type === type) {
+              clearTimeout(timer);
+              settle({ type: data.type, version: data.version, theme: data.theme });
+            }
+          });
+        }),
+      themeMessageType
+    );
+    assert(theme, 'plugin never received the host theme postMessage');
+    record(engineName, 'plugin receives the host theme postMessage', 'PASS', theme);
 
-    // Negatives inside the Console iframe.
-    assertContained(engineName, 'iframe', await probe(page.frames().find((f) => f.url().startsWith(base))));
+    // ---- Negatives inside the Console iframe ------------------------------
+    assertContained(engineName, 'iframe', await probe(frame));
 
-    // Negatives after a refresh.
-    const framePage = page.frames().find((f) => f.url().startsWith(base));
-    await framePage.goto(`${base}/probe`, { waitUntil: 'domcontentloaded' });
-    assertContained(engineName, 'iframe-after-refresh', await probe(framePage));
+    // ---- Negatives after a plugin refresh --------------------------------
+    await frame.goto(`${resourceBase}/probe`, { waitUntil: 'domcontentloaded' });
+    assertContained(engineName, 'iframe-after-refresh', await probe(frame));
 
-    // Negatives when the plugin page is opened directly.
+    // ---- Negatives on a direct open and in a new tab ----------------------
     const direct = await context.newPage();
-    await direct.goto(`${base}/probe`, { waitUntil: 'domcontentloaded' });
+    await direct.goto(`${resourceBase}/probe`, { waitUntil: 'domcontentloaded' });
     assertContained(engineName, 'direct', await probe(direct));
-
-    // Negatives in a brand-new tab of the same authenticated context.
     const tab = await context.newPage();
-    await tab.goto(`${base}/probe`, { waitUntil: 'domcontentloaded' });
+    await tab.goto(`${resourceBase}/probe`, { waitUntil: 'domcontentloaded' });
     assertContained(engineName, 'new-tab', await probe(tab));
 
-    // ---- Attacker-controlled loads from the admin page ------------------
+    // ---- Negative: a Control document cannot load plugin code ------------
+    await page.goto(`${consoleRoot}/dashboard`, { waitUntil: 'networkidle' });
     const injections = await page.evaluate(async (src) => {
       const results = {};
-      const settle = (name, promise) => promise.then(
-        () => { results[name] = { loaded: true }; },
-        (error) => { results[name] = { loaded: false, error: (error && error.name) || 'Error' }; }
+      const settle = (name, promise) =>
+        promise.then(
+          () => {
+            results[name] = { loaded: true };
+          },
+          (error) => {
+            results[name] = { loaded: false, error: (error && error.name) || 'Error' };
+          }
+        );
+      await settle(
+        'script',
+        new Promise((ok, fail) => {
+          const element = document.createElement('script');
+          element.src = src + '.js';
+          element.onload = ok;
+          element.onerror = fail;
+          document.head.appendChild(element);
+        })
       );
-      await settle('script', new Promise((resolve, reject) => {
-        const el = document.createElement('script');
-        el.src = src + '.js';
-        el.onload = resolve;
-        el.onerror = reject;
-        document.head.appendChild(el);
-      }));
       await settle('import', import(src + '.js'));
-      await settle('worker', new Promise((resolve, reject) => {
-        const worker = new Worker(src + '.js');
-        worker.onerror = reject;
-        setTimeout(resolve, 1500);
-      }));
-      await settle('svg-use', new Promise((resolve, reject) => {
-        const host = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-        use.setAttribute('href', src + '.svg#shape');
-        use.onload = resolve;
-        use.onerror = reject;
-        host.appendChild(use);
-        document.body.appendChild(host);
-        setTimeout(resolve, 1500);
-      }));
-      await settle('svg-image', new Promise((resolve, reject) => {
-        const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-        image.setAttribute('href', src + '.svg');
-        image.onload = resolve;
-        image.onerror = reject;
-        document.body.appendChild(image);
-        setTimeout(resolve, 1500);
-      }));
+      await settle(
+        'worker',
+        new Promise((ok, fail) => {
+          const worker = new Worker(src + '.js');
+          worker.onerror = fail;
+          setTimeout(ok, 1500);
+        })
+      );
+      await settle(
+        'svg-use',
+        new Promise((ok, fail) => {
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+          use.setAttribute('href', src + '.svg#shape');
+          use.onload = ok;
+          use.onerror = fail;
+          svg.appendChild(use);
+          document.body.appendChild(svg);
+          setTimeout(ok, 1500);
+        })
+      );
+      await settle(
+        'svg-image',
+        new Promise((ok, fail) => {
+          const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+          image.setAttribute('href', src + '.svg');
+          image.onload = ok;
+          image.onerror = fail;
+          document.body.appendChild(image);
+          setTimeout(ok, 1500);
+        })
+      );
       return results;
-    }, base);
+    }, resourceBase);
     for (const [kind, value] of Object.entries(injections)) {
-      assert.equal(value.loaded, false, `${engineName}: admin page loaded plugin resource as ${kind} (${JSON.stringify(value)})`);
+      assert.equal(
+        value.loaded,
+        false,
+        `${engineName}: the admin page loaded a plugin resource as ${kind} (${JSON.stringify(value)})`
+      );
     }
-    record(engineName, 'admin page cannot load plugin paths (script/import/Worker/SVG use+image)', 'PASS', Object.keys(injections));
+    record(
+      engineName,
+      'admin page cannot load plugin paths (script/import/Worker/SVG use+image)',
+      'PASS',
+      Object.keys(injections)
+    );
 
-    // ---- Redirect and cookie containment -------------------------------
-    for (const path of ['redirect-admin', 'redirect-self']) {
-      const response = await context.request.get(`${base}/${path}`, { maxRedirects: 0 });
-      if (path === 'redirect-admin') {
-        assert.notEqual(response.status(), 302, 'plugin escaped its prefix via 302');
-        record(engineName, 'plugin 302 out of prefix refused', 'PASS', { status: response.status() });
-      } else {
-        const location = response.headers()['location'] || '';
-        assert(location.startsWith(base) || !location.includes('/v0/management'),
-          'in-prefix redirect was not preserved: ' + location);
-        record(engineName, 'in-prefix 302 preserved', 'PASS', { status: response.status(), location });
-      }
-    }
-    const cookieResponse = await context.request.get(`${base}/cookie`);
+    // ---- Negative: redirects and cookies, asserted on raw responses ------
+    // A plugin page's own requests arrive cross-site from the opaque origin,
+    // so the sandbox shape is what the Fetch Metadata policy admits.
+    const sandboxHeaders = { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Dest': 'empty' };
+    const escaped = await context.request.get(`${resourceBase}/redirect-admin`, {
+      maxRedirects: 0,
+      headers: sandboxHeaders,
+    });
+    assert(
+      escaped.status() !== 302 && escaped.status() !== 307 && escaped.status() !== 308,
+      `plugin escaped its prefix via ${escaped.status()}`
+    );
+    record(engineName, 'out-of-prefix redirect refused', 'PASS', { status: escaped.status() });
+
+    const inside = await context.request.get(`${resourceBase}/redirect-self`, {
+      maxRedirects: 0,
+      headers: sandboxHeaders,
+    });
+    const location = inside.headers()['location'] || '';
+    assert(location.startsWith(resourceBase + '/'), `in-prefix redirect was not preserved: ${location}`);
+    record(engineName, 'in-prefix redirect preserved', 'PASS', { status: inside.status(), location });
+
+    const cookieResponse = await context.request.get(`${resourceBase}/cookie`, {
+      headers: sandboxHeaders,
+    });
     assert.equal(cookieResponse.headers()['set-cookie'], undefined, 'plugin Set-Cookie survived');
-    const afterCookies = await context.cookies();
-    assert.equal(afterCookies.some((c) => c.name.startsWith('plugin_probe')), false, 'plugin cookie was planted');
+    assert.equal(
+      (await context.cookies()).some((cookie) => cookie.name.startsWith('plugin_probe')),
+      false,
+      'plugin cookie was planted in the admin context'
+    );
     record(engineName, 'plugin Set-Cookie stripped', 'PASS');
 
-    // Nothing the plugin did may have replaced the admin credential.
+    // ---- Acceptance 5: a client without Fetch Metadata is refused --------
+    const noMetadata = await context.request.get(`${resourceBase}/probe`, { headers: {} });
+    assert.equal(noMetadata.status(), 403, `plugin resource without Fetch Metadata returned ${noMetadata.status()}`);
+    record(engineName, 'plugin resource without Fetch Metadata is 403', 'PASS');
+
+    // ---- The plugin must not have replaced the admin credential ----------
+    const state = await context.storageState();
+    const stored = JSON.stringify(state.origins.find((item) => item.origin === origin)?.localStorage ?? []);
     for (const entry of adminStorageKeys) {
-      const now = await context.storageState();
-      assert.equal(
-        JSON.stringify(now.origins.find((o) => o.origin === origin)?.localStorage ?? []).includes(entry.value),
-        true,
-        'admin credential disappeared after plugin interaction'
-      );
+      assert(stored.includes(entry.value), `admin storage ${entry.kind}/${entry.key} changed after plugin interaction`);
     }
     record(engineName, 'admin credential unchanged after plugin interaction', 'PASS');
 
@@ -286,7 +405,7 @@ async function runEngine(engineName, launcher) {
 async function adminCspCheck(engineName, launcher) {
   const browser = await launcher.launch({ headless: true });
   try {
-    const context = await browser.newContext();
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const page = await context.newPage();
     const violations = [];
     await page.addInitScript(() => {
@@ -298,29 +417,35 @@ async function adminCspCheck(engineName, launcher) {
       });
     });
     const errors = [];
-    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text());
+    });
 
-    const pages = ['/', '/login', '/setup'];
-    for (const path of pages) {
-      await page.goto(origin + path, { waitUntil: 'networkidle' }).catch(() => {});
-      const found = await page.evaluate(() => window.__cspViolations || []);
-      const visible = await page.evaluate(() => (document.body?.innerText || '').trim().length > 0);
-      violations.push(...found.map((v) => ({ path, ...v })));
-      assert.equal(visible, true, `${engineName} ${path}: no visible content`);
-    }
+    // The admin document policy is nonce-based; a served document must carry it.
+    const documentResponse = await page.goto(`${consoleRoot}/`, { waitUntil: 'networkidle' });
+    const policy = (await documentResponse.allHeaders())['content-security-policy'] || '';
+    assert(/script-src 'nonce-/.test(policy), `admin document CSP is not nonce-scoped: ${policy}`);
+    assert(/frame-src 'self'/.test(policy), `admin document CSP does not confine frames: ${policy}`);
+    record(engineName, 'admin document carries the nonce CSP', 'PASS', { policy });
+
     await login(page);
-    const consolePages = ['/dashboard', '/plugins'];
-    for (const path of consolePages) {
-      await page.goto(origin + path, { waitUntil: 'networkidle' }).catch(() => {});
-      const found = await page.evaluate(() => window.__cspViolations || []);
-      violations.push(...found.map((v) => ({ path, ...v })));
-      assert.equal(await page.evaluate(() => (document.body?.innerText || '').trim().length > 0), true,
-        `${engineName} ${path}: no visible content`);
+    for (const path of ['/dashboard', '/plugins', '/config', '/accounts']) {
+      await page.goto(`${consoleRoot}${path}`, { waitUntil: 'networkidle' });
+      violations.push(
+        ...(await page.evaluate(() => window.__cspViolations || [])).map((item) => ({ path, ...item }))
+      );
+      assert.equal(
+        (await page.evaluate(() => (document.body?.innerText || '').trim().length > 0)),
+        true,
+        `${engineName} ${path}: no visible content under CSP`
+      );
     }
-    assert.deepEqual(violations, [], `${engineName}: CSP violations ` + JSON.stringify(violations));
+    assert.deepEqual(violations, [], `${engineName}: CSP violations ${JSON.stringify(violations)}`);
     const cspErrors = errors.filter((text) => /Content Security Policy|Refused to/i.test(text));
-    assert.deepEqual(cspErrors, [], `${engineName}: CSP console errors ` + JSON.stringify(cspErrors));
-    record(engineName, 'admin CSP: zero violations on login/setup/Console', 'PASS');
+    assert.deepEqual(cspErrors, [], `${engineName}: CSP console errors ${JSON.stringify(cspErrors)}`);
+    record(engineName, 'admin CSP: zero violations across Console pages', 'PASS', {
+      pages: ['/dashboard', '/plugins', '/config', '/accounts'],
+    });
     await context.close();
   } finally {
     await browser.close();
