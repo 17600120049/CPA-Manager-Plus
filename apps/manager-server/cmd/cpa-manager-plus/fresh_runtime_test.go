@@ -485,3 +485,49 @@ func TestFreshRuntimePollAnswersWhileMutationIsInFlight(t *testing.T) {
 		t.Fatalf("final entry = %+v", entry)
 	}
 }
+
+// A Supervisor rejection happens before any side effect, so the entry must end
+// up terminal and the desired lifecycle must not move.
+func TestFreshRuntimeSupervisorConflictEndsEntryWithoutFlippingDesiredLifecycle(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		code runtimeservice.ProtocolErrorCode
+		want string
+	}{
+		{name: "state conflict", code: runtimeservice.ProtocolErrorOperationStateConflict, want: "operation_conflict"},
+		{name: "operation ID conflict", code: runtimeservice.ProtocolErrorOperationIDConflict, want: "operation_id_conflict"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			app, closeApp := newA3TestApp(t)
+			defer closeApp()
+			client := &freshRuntimeTestClient{status: freshRuntimeReadyStatus(model.RuntimeCapabilityStart, model.RuntimeCapabilityStop)}
+			app.runtime = client
+			app.runtimeExternal = nil
+			op := freshRuntimeProductCompleteOperation(t, app)
+			before, err := app.runtimeSettings.SetEmbeddedRuntimeDesiredLifecycle(t.Context(), model.EmbeddedRuntimeDesiredRunning)
+			if err != nil {
+				t.Fatal(err)
+			}
+			client.stopErr = &runtimeservice.ProtocolError{Code: testCase.code, HTTPStatus: http.StatusConflict}
+
+			rejected := httptest.NewRecorder()
+			app.runtimeOperations(rejected, freshRuntimeRequest(t, "stop", "stop-rejected"), op, "runtime/operations")
+			if rejected.Code != http.StatusConflict || !strings.Contains(rejected.Body.String(), testCase.want) {
+				t.Fatalf("rejected stop = %d body=%s", rejected.Code, rejected.Body.String())
+			}
+			entry := freshRuntimeJournalOperation(t, app, "stop-rejected")
+			if entry.State != freshRuntimeStateFailed || entry.FailureCode != testCase.want {
+				t.Fatalf("rejected stop entry = %+v", entry)
+			}
+			after, found, err := app.runtimeSettings.LoadEmbeddedRuntimeDesiredState(t.Context())
+			if err != nil || !found || after.DesiredLifecycle != model.EmbeddedRuntimeDesiredRunning || after.Revision != before.Revision {
+				t.Fatalf("rejected stop changed the desired lifecycle: before=%+v after=%+v found=%v err=%v", before, after, found, err)
+			}
+			start := httptest.NewRecorder()
+			app.runtimeOperations(start, freshRuntimeRequest(t, "start", "start-after-rejection"), op, "runtime/operations")
+			if start.Code != http.StatusOK {
+				t.Fatalf("start after a rejected stop = %d body=%s", start.Code, start.Body.String())
+			}
+		})
+	}
+}

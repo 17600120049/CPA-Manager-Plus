@@ -574,34 +574,57 @@ func (a *freshApplication) submitRuntimeOperation(w http.ResponseWriter, r *http
 	if operationType == model.RuntimeOperationStart && observed.ActiveGatewayArtifact != nil {
 		expectedArtifact = observed.ActiveGatewayArtifact.ArtifactID
 	}
-	if err := a.applyRuntimeDesiredLifecycle(r.Context(), operationType); err != nil {
-		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "desired_lifecycle_unavailable")
-		return
-	}
 	// The mutation runs without the journal mutex: operation polling must stay
 	// responsive while a lifecycle call (a restart included) is in flight.
 	result, mutationErr := a.submitRuntimeMutation(r.Context(), operationType, model.RuntimeMutationRequest{
 		OperationID: reserved.OperationID, ExpectedRuntimeIdentity: observed.Identity,
 		ExpectedRuntimeGeneration: observed.Generation, ExpectedActiveArtifactID: expectedArtifact,
 	})
-	if conflictCode := runtimeMutationConflictCode(mutationErr); conflictCode != "" {
-		freshRuntimeOperationError(w, http.StatusConflict, conflictCode)
-		return
-	}
 	outcome := reserved
 	outcome.UpdatedAt = time.Now().UTC()
+	conflictCode := runtimeMutationConflictCode(mutationErr)
 	switch {
+	case conflictCode != "":
+		// The Supervisor rejected the mutation before any side effect. The entry
+		// becomes terminal and the desired lifecycle is never written, so the
+		// reconciler cannot drive the Runtime toward a state the user's operation
+		// did not reach.
+		outcome.State = freshRuntimeStateFailed
+		outcome.FailureCode = conflictCode
 	case mutationErr == nil && result.Validate() == nil:
 		outcome.State = string(result.State)
 		if result.Failure != nil {
 			outcome.FailureCode = result.Failure.Code
 		}
 	default:
+		// The response was lost after the Supervisor may have accepted the
+		// mutation. The desired lifecycle is still adopted so the reconciler
+		// converges on what the user asked for, and the entry stays resolvable.
 		outcome.State = freshRuntimeStateUnknown
 		outcome.FailureCode = "runtime_result_unknown"
 	}
+	desiredWriteFailed := false
+	if conflictCode == "" {
+		if err := a.applyRuntimeDesiredLifecycle(r.Context(), operationType); err != nil {
+			// The Runtime side effect may already have happened, but without the
+			// durable desired lifecycle the reconciler cannot converge on it.
+			desiredWriteFailed = true
+			outcome.State = freshRuntimeStateFailed
+			outcome.FailureCode = "desired_lifecycle_unavailable"
+		}
+	}
 	if err := a.finalizeRuntimeOperation(r.Context(), outcome); err != nil {
 		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "operation_journal_unavailable")
+		return
+	}
+	if desiredWriteFailed {
+		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "desired_lifecycle_unavailable")
+		return
+	}
+	if conflictCode != "" {
+		// Preserve the 409 contract for a Supervisor rejection while the durable
+		// entry already records the terminal outcome.
+		freshRuntimeOperationError(w, http.StatusConflict, conflictCode)
 		return
 	}
 	if outcome.State == freshRuntimeStateUnknown {
