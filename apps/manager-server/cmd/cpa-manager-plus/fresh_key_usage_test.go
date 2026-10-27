@@ -12,7 +12,10 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	usageadapter "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/identityusage"
 	usageapp "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityusage"
@@ -444,7 +447,7 @@ func TestFreshCompleteStartsUsageOnceAndBackfillsStagedKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app.startUsageCollection(ctx, record.Operation)
+	app.startUsageCollection(record.Operation)
 	if replay := installationAPI(t, app, http.MethodPost, "complete", strategyTestAdmin); replay.Code != http.StatusOK {
 		t.Fatalf("completion replay = %d", replay.Code)
 	}
@@ -484,7 +487,7 @@ func TestUsageCollectionNeverFallsBackToLegacyAuthority(t *testing.T) {
 	app.managedSource = func(context.Context) (freshkeyapply.ManagedInstall, error) {
 		return freshkeyapply.ManagedInstall{}, freshkeyapply.ErrUnavailable
 	}
-	app.startUsageCollection(ctx, bootstrap.FreshOperation{ProductComplete: true,
+	app.startUsageCollection(bootstrap.FreshOperation{ProductComplete: true,
 		Strategy: bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.ConnectExternal, Stage: "committed"}})
 	if phase := app.collectionPhase(); phase != usageapp.PhaseStopped {
 		t.Fatalf("unavailable managed authority left collection %s, want stopped", phase)
@@ -505,5 +508,164 @@ func TestUsageCollectionNeverFallsBackToLegacyAuthority(t *testing.T) {
 	}
 	if privateApp.managedSource != nil {
 		t.Fatal("the private profile acquired the managed install authority")
+	}
+}
+
+// newUsageCompletionApplication builds a routed Fresh app whose usage workers
+// run on the caller's host lifetime.
+func newUsageCompletionApplication(t *testing.T, ctx context.Context, cfg config.Config) (*fresh.Opened, *freshApplication) {
+	t.Helper()
+	dir := t.TempDir()
+	paths := legacypreflight.DefaultPaths(filepath.Join(dir, "manager.sqlite"))
+	paths.Config = filepath.Join(dir, "config.json")
+	opened, err := fresh.Open(ctx, paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = opened.Close() })
+	app := newFreshApplication(opened, cfg, nil)
+	app.runCtx = ctx
+	if _, err = app.store.Update(ctx, opened.Record.Operation.Identity, opened.Record.Operation.Revision, func(r *freshstore.Record) error {
+		r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: r.Operation.Identity.OperationID, Revision: 1, Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return opened, app
+}
+
+func stageClientKey(t *testing.T, app *freshApplication) freshkeys.Result {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, "/control/api/v2/api-keys", strings.NewReader(`{"requestId":"`+strings.Repeat("f", 32)+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+	response := httptest.NewRecorder()
+	app.canonicalAPI(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create staged key = %d %s", response.Code, response.Body.String())
+	}
+	var result freshkeys.Result
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.CreatedSecret == "" {
+		t.Fatalf("creation result: %v", err)
+	}
+	return result
+}
+
+// The startup runs on the host lifetime, never on the completion request, and a
+// failed attempt is retried by a completion replay instead of being consumed.
+func TestFreshUsageStartUsesHostLifetimeAndRetriesAfterFailure(t *testing.T) {
+	hostCtx, stopHost := context.WithCancel(t.Context())
+	defer stopHost()
+	opened, app := newUsageCompletionApplication(t, hostCtx, config.Config{})
+
+	installManagedCheckpoint(t, app, "staged")
+	staged := stageClientKey(t, app)
+	installManagedCheckpoint(t, app, "committed")
+	app.runtime = &installationTestRuntime{status: validInstallationRuntime()}
+
+	sourceCalls, workerStarts := 0, 0
+	var sourceCtx context.Context
+	app.managedSource = func(ctx context.Context) (freshkeyapply.ManagedInstall, error) {
+		sourceCalls++
+		sourceCtx = ctx
+		if sourceCalls == 1 {
+			return freshkeyapply.ManagedInstall{}, freshkeyapply.ErrUnavailable
+		}
+		return freshkeyapply.ManagedInstall{BaseURL: "http://127.0.0.1:1", ManagementKey: "test-management-key"}, nil
+	}
+	app.startIdentityWorker = func(context.Context) { workerStarts++ }
+
+	if complete := installationAPI(t, app, http.MethodPost, "complete", strategyTestAdmin); complete.Code != http.StatusOK {
+		t.Fatalf("complete = %d %s", complete.Code, complete.Body.String())
+	}
+	if sourceCtx != hostCtx {
+		t.Fatal("usage startup ran on the completion request instead of the host lifetime")
+	}
+	if sourceCalls != 1 || workerStarts != 1 {
+		t.Fatalf("failed attempt source=%d worker=%d, want 1/1", sourceCalls, workerStarts)
+	}
+	var bindings int
+	var firstSeen int64
+	if err := opened.DB.QueryRow(`select count(*), coalesce(min(first_seen_at_ms), 0) from gateway_api_key_source_bindings where api_key_id = ?`,
+		string(staged.Key.ID)).Scan(&bindings, &firstSeen); err != nil {
+		t.Fatal(err)
+	}
+	if bindings != 1 || firstSeen != staged.Key.CreatedAtMS {
+		t.Fatalf("host-lifetime backfill = %d bindings first seen %d, want one at %d", bindings, firstSeen, staged.Key.CreatedAtMS)
+	}
+
+	// A completion replay retries the failed attempt on the same host lifetime.
+	if replay := installationAPI(t, app, http.MethodPost, "complete", strategyTestAdmin); replay.Code != http.StatusOK {
+		t.Fatalf("replay = %d", replay.Code)
+	}
+	if sourceCalls != 2 || workerStarts != 1 {
+		t.Fatalf("replay source=%d worker=%d, want 2/1 (retried authority, worker not restarted)", sourceCalls, workerStarts)
+	}
+	var started string
+	if err := opened.DB.QueryRow(`select value from settings where key = 'fresh_usage_collection_started_at_ms'`).Scan(&started); err != nil || started == "" {
+		t.Fatalf("retried startup did not record collection: %q err = %v", started, err)
+	}
+}
+
+// Concurrent triggers serialize: one authority call, one worker start, and no
+// overlapping attempt.
+func TestFreshUsageStartIsSerializedAcrossConcurrentTriggers(t *testing.T) {
+	hostCtx, stopHost := context.WithCancel(t.Context())
+	defer stopHost()
+	opened, app := newUsageCompletionApplication(t, hostCtx, config.Config{})
+	installManagedCheckpoint(t, app, "committed")
+	app.runtime = &installationTestRuntime{status: validInstallationRuntime()}
+	record, err := app.store.Load(hostCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	release := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	var sourceCalls, workerStarts int32
+	var inFlight, maxInFlight int32
+	app.managedSource = func(context.Context) (freshkeyapply.ManagedInstall, error) {
+		if n := atomic.AddInt32(&inFlight, 1); n > atomic.LoadInt32(&maxInFlight) {
+			atomic.StoreInt32(&maxInFlight, n)
+		}
+		defer atomic.AddInt32(&inFlight, -1)
+		atomic.AddInt32(&sourceCalls, 1)
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+		return freshkeyapply.ManagedInstall{BaseURL: "http://127.0.0.1:1", ManagementKey: "test-management-key"}, nil
+	}
+	app.startIdentityWorker = func(context.Context) { atomic.AddInt32(&workerStarts, 1) }
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			app.startUsageCollection(record.Operation)
+		}()
+	}
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("usage startup never reached the managed authority")
+	}
+	close(release)
+	wg.Wait()
+
+	if calls := atomic.LoadInt32(&sourceCalls); calls != 1 {
+		t.Fatalf("managed source started %d times, want once", calls)
+	}
+	if max := atomic.LoadInt32(&maxInFlight); max != 1 {
+		t.Fatalf("management authority attempts overlapped: max in flight %d", max)
+	}
+	if starts := atomic.LoadInt32(&workerStarts); starts != 1 {
+		t.Fatalf("identity worker started %d times, want once", starts)
+	}
+	var started string
+	if err := opened.DB.QueryRow(`select value from settings where key = 'fresh_usage_collection_started_at_ms'`).Scan(&started); err != nil || started == "" {
+		t.Fatalf("startup did not record collection: %q err = %v", started, err)
 	}
 }

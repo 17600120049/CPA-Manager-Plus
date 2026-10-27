@@ -105,9 +105,12 @@ type freshApplication struct {
 	managedSource   freshkeyapply.ManagedSource
 	usageProjection *identityprojection.Worker
 	usage           *usageapp.Service
-	// usageStartOnce makes the post-completion startup path idempotent: the
-	// boot path and an in-process completion may both reach it.
-	usageStartOnce sync.Once
+	// usageStartMu serializes post-completion startup attempts and guards the
+	// two success flags below. Only a fully successful attempt is recorded, so a
+	// failed start is retried by a completion replay or a later trigger.
+	usageStartMu        sync.Mutex
+	usageStarted        bool
+	usageWorkersStarted bool
 	// runCtx is the host lifetime of this application. Workers started after an
 	// in-process ProductComplete must outlive the request that triggered them.
 	runCtx context.Context
@@ -360,6 +363,10 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if op.ProductComplete {
+			// A replay is also the retry trigger for a completion whose usage
+			// startup failed (for example while the Collector authority was
+			// temporarily unavailable). The attempt is idempotent.
+			a.startUsageCollection(op)
 			writeFreshJSON(w, op)
 			return
 		}
@@ -399,7 +406,7 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		// the same idempotent startup path as a resumed install runs now: it
 		// backfills keys staged before completion and starts collection,
 		// projection and identity reconciliation exactly once.
-		a.startUsageCollection(r.Context(), next.Operation)
+		a.startUsageCollection(next.Operation)
 		writeFreshJSON(w, next.Operation)
 	default:
 		http.NotFound(w, r)
@@ -693,7 +700,7 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 			// server available while a typed blocker waits for the next startup.
 			log.Printf("Fresh managed destination migration unavailable: %v", err)
 		}
-		app.startUsageCollection(ctx, opened.Record.Operation)
+		app.startUsageCollection(opened.Record.Operation)
 	}
 	go restoreFreshRouting(ctx, app.routing)
 	go app.runFreshUpdateChecks(ctx)

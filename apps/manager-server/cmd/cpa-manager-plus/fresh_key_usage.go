@@ -59,71 +59,99 @@ func (a *freshApplication) collectionPhase() usageapp.CollectionPhase {
 // startUsageCollection arms the real usage chain of a completed installation:
 // staged-key bindings (including keys created before completion), the canonical
 // identity projection, the Collector reading the install-derived CPA authority,
-// and the durable collection start instant. It is idempotent: the boot path and
-// an in-process ProductComplete may both reach it, and exactly one of them runs.
+// and the durable collection start instant. It runs on the host lifetime, never
+// on the request that triggered it, so a client disconnect cannot abort a
+// durable start. Attempts are serialized, and only a fully successful attempt is
+// recorded: a failed start is retried by a completion replay or a later trigger.
 // Nothing is claimed when the authority is unavailable: coverage then reports
 // that collection was never proven.
-func (a *freshApplication) startUsageCollection(ctx context.Context, op bootstrap.FreshOperation) {
+func (a *freshApplication) startUsageCollection(op bootstrap.FreshOperation) {
 	if a == nil || a.usageProjection == nil || a.usage == nil {
 		return
 	}
-	a.usageStartOnce.Do(func() {
-		// Bind staged keys before the first event arrives so it is attributable,
-		// and backfill keys that were staged before a committed target existed.
-		// This is a one-shot durable write, so it does not need a worker lifetime.
-		checkpoint := op.Strategy
-		if checkpoint.Strategy == bootstrap.NewManaged && checkpoint.Stage == "committed" && checkpoint.TargetIdentity != "" {
-			if _, err := a.keyRepo.BindFreshKeySources(ctx, checkpoint.TargetIdentity, time.Now().UnixMilli()); err != nil {
-				log.Printf("Fresh key usage bindings unavailable: %v", err)
-			}
+	// Long-running workers must outlive the request that triggered them and stop
+	// with the host. The host installs that lifetime before serving this
+	// application; without one, hosting them would leak past the database.
+	runCtx := a.runCtx
+	if runCtx == nil {
+		log.Printf("Fresh usage workers not started: no host lifetime")
+		return
+	}
+	a.usageStartMu.Lock()
+	defer a.usageStartMu.Unlock()
+	if a.usageStarted {
+		return
+	}
+	if a.attemptUsageStart(runCtx, op) {
+		a.usageStarted = true
+	}
+}
+
+// attemptUsageStart performs one startup attempt on the host lifetime. It
+// reports success only when every durable step committed; serialization and the
+// worker flag keep a retry from starting a second Collector or worker.
+func (a *freshApplication) attemptUsageStart(ctx context.Context, op bootstrap.FreshOperation) bool {
+	// Bind staged keys before the first event arrives so it is attributable,
+	// and backfill keys that were staged before a committed target existed. No
+	// event may be collected before its key is attributable, so a failed backfill
+	// fails the whole attempt instead of starting a Collector that loses history.
+	checkpoint := op.Strategy
+	if checkpoint.Strategy == bootstrap.NewManaged && checkpoint.Stage == "committed" && checkpoint.TargetIdentity != "" {
+		if _, err := a.keyRepo.BindFreshKeySources(ctx, checkpoint.TargetIdentity, time.Now().UnixMilli()); err != nil {
+			log.Printf("Fresh key usage bindings unavailable: %v", err)
+			return false
 		}
-		// Long-running workers must outlive the request that triggered them and
-		// stop with the host. The host installs that lifetime before serving this
-		// application; without one, hosting them would leak past the database.
-		runCtx := a.runCtx
-		if runCtx == nil {
-			log.Printf("Fresh usage workers not started: no host lifetime")
-			return
-		}
-		started := false
-		switch {
-		case a.privateCollector != nil:
-			// Only the explicit private profile owns a host-supplied Collector
-			// authority.
-			started = a.privateCollector(runCtx)
-		case a.managedSource != nil && a.legacyCollector != nil:
-			install, err := a.managedSource(ctx)
-			if err != nil {
-				// Managed and External installs have no other authority. Usage
-				// stays unavailable instead of collecting from an unverified CPA.
-				log.Printf("Fresh usage collection unavailable: %v", err)
-				break
-			}
-			if err := a.legacyCollector.StartRuntime(runCtx, collector.RuntimeConfig{
-				CPAUpstreamURL: install.BaseURL,
-				ManagementKey:  install.ManagementKey,
-				CollectorMode:  a.cfg.CollectorMode,
-				Queue:          a.cfg.Queue,
-				PopSide:        a.cfg.PopSide,
-				BatchSize:      a.cfg.BatchSize,
-				PollInterval:   a.cfg.PollInterval,
-				TLSSkipVerify:  a.cfg.TLSSkipVerify,
-			}); err != nil {
-				log.Printf("Fresh usage collection unavailable: %v", err)
-				break
-			}
-			started = a.collectionPhase() != usageapp.PhaseStopped
-		}
+	}
+	// The projection and identity workers maintain attribution independently of
+	// the Collector authority, so they start once the keys are attributable.
+	if !a.usageWorkersStarted {
 		if a.startIdentityWorker != nil {
-			a.startIdentityWorker(runCtx)
+			a.startIdentityWorker(ctx)
 		}
-		a.usageProjection.Start(runCtx)
-		if started {
-			if err := a.usage.MarkCollectionStart(ctx); err != nil {
-				log.Printf("Fresh usage collection start unavailable: %v", err)
-			}
+		a.usageProjection.Start(ctx)
+		a.usageWorkersStarted = true
+	}
+	started := false
+	switch {
+	case a.privateCollector != nil:
+		// Only the explicit private profile owns a host-supplied Collector
+		// authority.
+		started = a.privateCollector(ctx)
+	case a.managedSource != nil && a.legacyCollector != nil:
+		install, err := a.managedSource(ctx)
+		if err != nil {
+			// Managed and External installs have no other authority. Usage stays
+			// unavailable instead of collecting from an unverified CPA.
+			log.Printf("Fresh usage collection unavailable: %v", err)
+			return false
 		}
-	})
+		if err := a.legacyCollector.StartRuntime(ctx, collector.RuntimeConfig{
+			CPAUpstreamURL: install.BaseURL,
+			ManagementKey:  install.ManagementKey,
+			CollectorMode:  a.cfg.CollectorMode,
+			Queue:          a.cfg.Queue,
+			PopSide:        a.cfg.PopSide,
+			BatchSize:      a.cfg.BatchSize,
+			PollInterval:   a.cfg.PollInterval,
+			TLSSkipVerify:  a.cfg.TLSSkipVerify,
+		}); err != nil {
+			log.Printf("Fresh usage collection unavailable: %v", err)
+			return false
+		}
+		started = a.collectionPhase() != usageapp.PhaseStopped
+	default:
+		// No Collector authority is configured for this strategy: starting one
+		// would be a guess, so nothing is retried here.
+		return true
+	}
+	if !started {
+		return false
+	}
+	if err := a.usage.MarkCollectionStart(ctx); err != nil {
+		log.Printf("Fresh usage collection start unavailable: %v", err)
+		return false
+	}
+	return true
 }
 
 // usageWindow parses the optional bounded window of one key's usage read. The
