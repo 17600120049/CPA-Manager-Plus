@@ -44,6 +44,12 @@ func (s *Service) SaveField(ctx context.Context, path string, q FieldRequest) (f
 			return freshstore.ConfigOperation{}, cpa.ErrApplyUnknown
 		}
 	}
+	// The managed profile has no Runtime journal to observe: its authority is the
+	// committed installation itself, so the private source read is not part of
+	// this path. saveManaged re-reads the scalar with the same credential.
+	if s.managedProfile() {
+		return s.saveManaged(ctx, path, q, value, r, management)
+	}
 	source, _, _, err := s.wire.ReadConfigField(ctx, management, path)
 	if err != nil {
 		return freshstore.ConfigOperation{}, err
@@ -55,9 +61,6 @@ func (s *Service) SaveField(ctx context.Context, path string, q FieldRequest) (f
 	}
 	if s.h1 != nil {
 		return s.saveH1(ctx, path, q, value, r, management, source)
-	}
-	if !s.wire.HasRuntimeJournal() {
-		return s.saveManaged(ctx, path, q, value, r, management)
 	}
 	return s.saveDirect(ctx, path, q, value, r, management, source)
 }

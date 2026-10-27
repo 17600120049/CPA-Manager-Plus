@@ -155,6 +155,9 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		a.keyApply = freshkeyapply.NewManaged(keyrepo.New(opened.DB), a.keys, runtime, cfg.CPAUpstreamURL,
 			managedInstallSource(st, opened.Protector, cfg.CPAUpstreamURL))
 		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
+		// The destination address is the managed installation's own CPA, not the
+		// private loopback profile the default Transport dials.
+		a.configRetry.EnableManaged(cfg.CPAUpstreamURL)
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.

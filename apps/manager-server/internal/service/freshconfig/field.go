@@ -9,6 +9,7 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -92,6 +93,17 @@ func (s *Service) EnableH1(h *cpa.H1Coordinator) {
 	}
 }
 
+// EnableManaged switches the service onto the install-derived managed authority:
+// the CPA it writes is the committed destination address, never the private
+// loopback one, and there is no Runtime journal. NewTransport alone dials the
+// private address, so a managed installation MUST select its endpoint before
+// serving.
+func (s *Service) EnableManaged(endpoint string) {
+	transport := cpa.NewTransportForEndpoint(endpoint)
+	s.transport = transport
+	s.wire = transport
+}
+
 func fieldValue(path string, raw json.RawMessage) (any, error) {
 	return cpa.ParseConfigFieldValue(path, raw)
 }
@@ -160,8 +172,19 @@ func knownSource(r freshstore.Record, source cpa.ConfigFieldSource) bool {
 	return false
 }
 
-// fieldOwner proves the private profile and returns the management authority for
-// exactly the committed Fresh target generation.
+// managedProfile reports whether this service was built on the install-derived
+// managed authority. That profile has no Runtime journal and no H1 handoff, so
+// the Manager owns the journal and the CPA read-back is the only evidence. The
+// profile is a property of the constructed authority, never of the record.
+func (s *Service) managedProfile() bool {
+	if s.h1 != nil || s.wire == nil {
+		return false
+	}
+	return !s.wire.HasRuntimeJournal()
+}
+
+// fieldOwner proves the constructed profile and returns the management authority
+// for exactly the committed Fresh target generation.
 func (s *Service) fieldOwner(ctx context.Context, path string) (freshstore.Record, string, error) {
 	if _, ok := cpa.LookupConfigField(path); !ok {
 		return freshstore.Record{}, "", ErrInvalid
@@ -171,17 +194,30 @@ func (s *Service) fieldOwner(ctx context.Context, path string) (freshstore.Recor
 		return r, "", err
 	}
 	op := r.Operation
-	if s.target == nil || op.Strategy.Stage != "committed" || op.Strategy.Strategy != bootstrap.NewManaged ||
-		op.Strategy.TargetGeneration == 0 {
+	if s.target == nil || op.Strategy.Strategy != bootstrap.NewManaged || op.Strategy.Stage != "committed" ||
+		op.Strategy.TargetIdentity == "" || op.Strategy.TargetGeneration == 0 {
 		return r, "", cpa.ErrProofUnavailable
 	}
-	// The private attested profile must name its exact runtime artifact; a managed
-	// install writes through the install-derived ConfigTarget instead.
-	if op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
+	// Each profile accepts exactly its own committed shape. The private attested
+	// installation names its exact runtime artifact; the managed installation
+	// names the committed managed destination connection instead. A record that
+	// does not match the authority this process was constructed with is never a
+	// write path.
+	if s.managedProfile() {
+		if !strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:") {
+			return r, "", cpa.ErrProofUnavailable
+		}
+	} else if op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
 		return r, "", cpa.ErrProofUnavailable
 	}
 	management, err := s.target(ctx, op.Strategy.TargetGeneration)
-	return r, management, err
+	if err != nil {
+		return r, "", err
+	}
+	if management == "" {
+		return r, "", cpa.ErrProofUnavailable
+	}
+	return r, management, nil
 }
 
 // readOwner is fieldOwner plus the isolated-journal check used by reads, where a
