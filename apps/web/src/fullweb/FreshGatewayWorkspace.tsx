@@ -444,16 +444,34 @@ export function FreshGatewayWorkspace({
       void load({ keepDrafts: true });
       return;
     }
-    // Every other named rejection is CPA's own verdict: the document is
-    // unchanged and a field the Manager named is where the user must look.
+    // Every other named rejection leaves the document unchanged, and the field
+    // the Manager named is where the user must look. The two Manager-owned
+    // codes are refusals decided before CPA was asked, so they never borrow
+    // CPA's wording: each states its own rule instead.
     if (field) {
-      setIssues((current) => ({
-        ...current,
-        [field]: code === 'proxy_url_credentials' ? c('fieldProxyCredentials') : c('fieldCpaRejected'),
-      }));
+      const fieldKey =
+        code === 'proxy_url_credentials'
+          ? 'fieldProxyCredentials'
+          : code === 'invalid_config'
+            ? 'fieldPrivateRange'
+            : 'fieldCpaRejected';
+      setIssues((current) => ({ ...current, [field]: c(fieldKey) }));
     }
     if (code === 'cpa_rejected_config') {
       reject('groupSaveRejectedDetail', message);
+      return;
+    }
+    if (code === 'invalid_config') {
+      // A private-profile value outside its range: the Manager decided this
+      // before CPA was asked, so the group names the Manager and keeps the
+      // message it sent (the range it refused) instead of a generic failure.
+      reject(message ? 'groupSavePrivateRangeDetail' : 'groupSavePrivateRange', message);
+      return;
+    }
+    if (code === 'proxy_url_credentials') {
+      // Also decided before CPA was asked; the leaf text names the credential
+      // rule, so the group only says who refused and what unblocks the save.
+      reject('groupSaveProxyCredentials');
       return;
     }
     if (code === 'invalid_config_request') {

@@ -1,6 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import i18n from '../i18n';
 import { configurationText as c } from '../i18n/configurationWorkspace';
 import { gatewayFamilies, gatewayGroups, gatewayOwners } from './gatewayCatalog';
@@ -12,8 +12,7 @@ import type {
   GatewayView,
 } from './gatewayConfigClient';
 import { FreshGatewayWorkspace } from './FreshGatewayWorkspace';
-import type { PublicApiClient } from './publicApi';
-import { PublicApiError } from './publicApi';
+import { createPublicApiClient, PublicApiError, type PublicApiClient } from './publicApi';
 
 vi.mock('../components/ui/Modal', () => ({
   Modal: ({ children, footer, open }: { children: ReactNode; footer: ReactNode; open: boolean }) =>
@@ -170,6 +169,18 @@ function fakeClient(initial: GatewayView) {
   return { client, calls, state };
 }
 
+// The page against the real Public API client: only the transport is faked, so
+// a refusal has to survive the true error mapping to reach the page.
+const PUBLIC_CONTEXT = { basePath: '/console', apiBase: '/console/api/v2', revision: 1 };
+
+function gatewayTransport(view: GatewayView, refusal: Record<string, unknown>): Mock<typeof fetch> {
+  return vi.fn<typeof fetch>((_input, init) =>
+    Promise.resolve(
+      init?.method === 'POST' ? Response.json(refusal, { status: 422 }) : Response.json(view)
+    )
+  );
+}
+
 describe('FreshGatewayWorkspace', () => {
   let renderer: ReactTestRenderer;
 
@@ -180,6 +191,7 @@ describe('FreshGatewayWorkspace', () => {
 
   afterEach(async () => {
     if (renderer) await act(async () => renderer.unmount());
+    vi.unstubAllGlobals();
   });
 
   async function mount(client: PublicApiClient, onDirtyChange = vi.fn(), onPending = vi.fn()) {
@@ -216,6 +228,44 @@ describe('FreshGatewayWorkspace', () => {
 
   async function openTab(key: Parameters<typeof c>[0]) {
     await act(async () => tab(key).props.onClick());
+  }
+
+  // Mounts the page against the real Public API client so a refusal travels the
+  // whole mapping: the transport, the bounded code allowlist and the page.
+  async function mountThroughPublicApi(transport: Mock<typeof fetch>) {
+    vi.stubGlobal('window', {
+      location: new URL('https://manager.example/console'),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    await mount(createPublicApiClient(() => PUBLIC_CONTEXT, transport));
+    await settle();
+  }
+
+  // The real transport reads a Response stream, so a save settles after more
+  // than one microtask turn. One macrotask flush drains the whole chain.
+  async function settle() {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  async function save(scope: string) {
+    const button = testId(`gateway-group-${scope}`).findAll(
+      (node) => node.type === 'button' && node.props.children === c('groupSave')
+    )[0];
+    await act(async () => button.props.onClick());
+    await settle();
+  }
+
+  // Every string a refusal put on this group card: its leaves and its group
+  // error. A Manager refusal must never read as one of CPA's.
+  function refusalText(scope: string) {
+    return testId(`gateway-group-${scope}`)
+      .findAllByType('p')
+      .map((node) => [node.props.children].flat(3).filter((item) => typeof item === 'string').join(''))
+      .join(' | ');
   }
 
   it('projects the whole page from the Manager view and never invents a field', async () => {
@@ -635,6 +685,59 @@ describe('FreshGatewayWorkspace', () => {
     expect(error.props.children).toBe(c('fieldProxyCredentials'));
     // The draft is kept so the user can edit the URL they typed.
     expect(testId('gateway-field-requests.proxy-url').props['data-dirty']).toBe('true');
+  });
+
+  it('states the private profile range on its own field and group, never as a CPA refusal', async () => {
+    // The Manager decides this refusal before CPA is asked, so the page must
+    // not borrow CPA's wording and must show the Manager's own range message.
+    const view = buildView();
+    const transport = gatewayTransport(view, {
+      code: 'invalid_config',
+      field: 'requests.streaming.keepalive-seconds',
+      message: 'value outside the private profile range',
+    });
+    await mountThroughPublicApi(transport);
+    await openTab('requests');
+    const path = 'requests.streaming.keepalive-seconds';
+    await act(async () =>
+      testId(`gateway-field-${path}`)
+        .findByType('input')
+        .props.onChange({ target: { value: '9000' } })
+    );
+    await save('streaming');
+    expect(testId(`gateway-field-${path}-error`).props.children).toBe(c('fieldPrivateRange'));
+    const group = String(testId('gateway-group-error-streaming').props.children);
+    // The group names the Manager and keeps the message it sent.
+    expect(group).toContain(c('groupSavePrivateRangeDetail'));
+    expect(group).toContain('value outside the private profile range');
+    expect(group).not.toBe(c('groupSaveFailed'));
+    expect(refusalText('streaming')).not.toContain(c('fieldCpaRejected'));
+    expect(refusalText('streaming')).not.toContain('CPA rejected');
+    // The draft survives so the user can correct the value they typed.
+    expect(testId(`gateway-field-${path}`).props['data-dirty']).toBe('true');
+  });
+
+  it('states proxy-url credentials as a Manager refusal on the group too', async () => {
+    const transport = gatewayTransport(buildView(), {
+      code: 'proxy_url_credentials',
+      field: 'requests.proxy-url',
+    });
+    await mountThroughPublicApi(transport);
+    await openTab('requests');
+    await act(async () =>
+      testId('gateway-field-requests.proxy-url')
+        .findByType('input')
+        .props.onChange({ target: { value: 'http://user:pass@proxy:8080' } })
+    );
+    await save('request');
+    expect(testId('gateway-field-requests.proxy-url-error').props.children).toBe(
+      c('fieldProxyCredentials')
+    );
+    const group = String(testId('gateway-group-error-request').props.children);
+    expect(group).toBe(c('groupSaveProxyCredentials'));
+    expect(group).not.toBe(c('groupSaveFailed'));
+    expect(refusalText('request')).not.toContain('CPA rejected');
+    expect(refusalText('request')).not.toContain(c('fieldCpaRejected'));
   });
 
   it('renders a generation mismatch as a typed conflict and keeps the draft', async () => {
