@@ -699,23 +699,24 @@ func TestLoadedArtifactUsesExistingExactRuntimeFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime := &managedRuntime{status: model.RuntimeObservedStatus{Identity: "destination", Generation: 7, ProtocolVersion: "v1", State: model.RuntimeStateOffline,
-		Capabilities: model.RuntimeCapabilities{model.RuntimeCapabilityStart}, ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: record.ArtifactID}}}
-	service := &Service{options: Options{Runtime: runtime}, production: true, consumers: consumers}
+	runtime, baseURL, protector, _ := managedDestinationFixture(t)
+	runtime.status.ActiveGatewayArtifact.ArtifactID = record.ArtifactID
+	service := &Service{options: Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL}, production: true, consumers: consumers}
 	op := operation()
-	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "destination", ExpectedRuntimeGeneration: 7, ExpectedArtifactID: record.ArtifactID}
+	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: runtime.status.Generation, ExpectedArtifactID: record.ArtifactID}
 	staged, err := service.Execute(context.Background(), op, request)
-	if err != nil || staged.Checkpoint.Stage != "staged" || len(runtime.starts) != 0 || !staged.GatewayPending {
+	if err != nil || staged.Checkpoint.Stage != "staged" || len(runtime.stages) != 0 || len(runtime.starts) != 0 || !staged.GatewayPending {
 		t.Fatalf("stage: %+v %v", staged, err)
 	}
 	op.Strategy = staged.Checkpoint
+	request.AdoptionCiphertext = staged.AdoptionCiphertext
 	committed, err := service.Execute(context.Background(), op, request)
-	if err != nil || committed.Checkpoint.Stage != "committed" || len(runtime.starts) != 1 || !committed.GatewayPending {
+	if err != nil || committed.Checkpoint.Stage != "committed" || len(runtime.stages) != 1 || len(runtime.starts) != 1 || !committed.GatewayPending || committed.Connection == nil {
 		t.Fatalf("commit: %+v %v", committed, err)
 	}
 	runtime.status.ActiveGatewayArtifact.ArtifactID = model.RuntimeArtifactID("sha256:" + strings.Repeat("c", 64))
 	before := op
-	if result, err := service.Execute(context.Background(), op, request); err == nil || result.Checkpoint.Stage == "committed" || len(runtime.starts) != 1 || !reflect.DeepEqual(op, before) {
+	if result, err := service.Execute(context.Background(), op, request); err == nil || result.Checkpoint.Stage == "committed" || len(runtime.stages) != 1 || len(runtime.starts) != 1 || !reflect.DeepEqual(op, before) {
 		t.Fatal("changed runtime artifact accepted")
 	}
 }

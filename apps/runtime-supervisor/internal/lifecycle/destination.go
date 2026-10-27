@@ -266,10 +266,14 @@ func (d *destination) publish(r DestinationRequest) error {
 	}
 	// JSON is a YAML subset accepted by the exact CPA v8 config parser. Only
 	// this new target receives resources; the source is never contacted here.
+	// Usage statistics are productized for the default Fresh New Managed
+	// installation only; Adopt and existing sources keep the base template so an
+	// operator's CPA posture is not silently changed.
+	usage := r.SourceClass == SourceClassNewManaged
 	config := map[string]any{"config-version": 8, "server": map[string]any{"host": "0.0.0.0", "port": json.Number(d.port)},
 		"management": map[string]any{"allow-remote": true, "secret-key": r.ManagementKey, "disable-control-panel": true, "disable-auto-update-panel": true},
 		"access":     map[string]any{"api-keys": r.APIKeys}, "oauth": map[string]any{"auth-dir": filepath.Join(d.root, "auth")},
-		"plugins": map[string]any{"enabled": false}, "observability": map[string]any{"logs": map[string]any{"logging-to-file": false}, "usage": map[string]any{"usage-statistics-enabled": true}}}
+		"plugins": map[string]any{"enabled": false}, "observability": map[string]any{"logs": map[string]any{"logging-to-file": false}, "usage": map[string]any{"usage-statistics-enabled": usage}}}
 	if d.child == nil {
 		config["server"].(map[string]any)["host"] = "127.0.0.1"
 	}

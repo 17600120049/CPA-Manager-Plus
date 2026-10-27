@@ -177,6 +177,18 @@ func TestDestinationStageReplayReopenAndEverySpawnRetainOwnedConfiguration(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Adoption keeps the base template: only the default Fresh New Managed
+	// installation productizes usage statistics.
+	var adopted struct {
+		Observability struct {
+			Usage struct {
+				Enabled bool `json:"usage-statistics-enabled"`
+			} `json:"usage"`
+		} `json:"observability"`
+	}
+	if json.Unmarshal(configBefore, &adopted) != nil || adopted.Observability.Usage.Enabled {
+		t.Fatal("adoption destination changed the CPA usage statistics posture")
+	}
 	// A lost successful reply replays without replacing files or spawning.
 	if op, err := f.starter.StageDestination(t.Context(), r); err != nil || !reflect.DeepEqual(op, staged) {
 		t.Fatal("stage replay lost durable operation", err)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -331,6 +332,92 @@ func TestExternalCommittedRequiresMatchingDurableConnection(t *testing.T) {
 				}
 			} else if !errors.Is(err, ErrNotFresh) {
 				t.Fatal("corrupt External record survived reopen", err)
+			}
+		})
+	}
+}
+
+// A managed destination connection is Manager-owned CPA ownership. Legacy
+// start-only checkpoints and later Config edits must keep loading, while a
+// connection that the committed destination does not bind is refused.
+func TestManagedConnectionRequiresCommittedDestinationBinding(t *testing.T) {
+	baseURL := "http://cpamp-runtime:8317"
+	digest := sha256.Sum256([]byte(baseURL))
+	binding := "managed:sha256:" + hex.EncodeToString(digest[:])
+	artifact := "sha256:" + strings.Repeat("a", 64)
+	for _, scenario := range []struct {
+		name       string
+		stage      string
+		binding    string
+		snapshot   bool
+		connection string
+		accepted   bool
+	}{
+		{name: "legacy start only", stage: "committed", accepted: true},
+		{name: "legacy config connection", stage: "committed", connection: baseURL, accepted: true},
+		{name: "bound connection", stage: "committed", binding: binding, snapshot: true, connection: baseURL, accepted: true},
+		{name: "staged snapshot", stage: "staged", binding: binding, snapshot: true, accepted: true},
+		{name: "connection before commit", stage: "starting", binding: binding, snapshot: true, connection: baseURL},
+		{name: "connection for another address", stage: "committed", binding: binding, snapshot: true, connection: "http://other:8317"},
+		{name: "committed without connection", stage: "committed", binding: binding, snapshot: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "manager.sqlite")
+			db, err := sqlite.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = db.Close() }()
+			st := New(db)
+			id := bootstrap.FreshIdentity{AdmissionID: "a", InstallationID: "i", Generation: "g", DatabasePath: path, OperationID: "fresh-operation"}
+			admin, err := security.NewAdminCredential("Cpamp_Strategy_Admin_Secret_839216", "host")
+			if err != nil {
+				t.Fatal(err)
+			}
+			record, err := st.Create(t.Context(), id, &admin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			protector, err := security.NewProtector([]byte("isolated test key"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret, err := protector.ProtectString(strings.Repeat("d", 64))
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: scenario.stage, TargetIdentity: "runtime", TargetGeneration: 1, TargetArtifactID: artifact, DestinationConnectionIdentity: scenario.binding}
+			var connection *model.ManagerCPAConnectionConfig
+			if scenario.connection != "" {
+				connection = &model.ManagerCPAConnectionConfig{CPABaseURL: scenario.connection, ManagementKey: secret}
+			}
+			_, err = st.Update(t.Context(), id, record.Operation.Revision, func(r *Record) error {
+				r.Operation.Strategy = checkpoint
+				r.Connection = connection
+				if scenario.snapshot {
+					snapshot, protectErr := protector.ProtectString(`{"baseUrl":"` + baseURL + `"}`)
+					if protectErr != nil {
+						return protectErr
+					}
+					r.AdoptionCiphertext = snapshot
+				}
+				return nil
+			})
+			if scenario.accepted {
+				if err != nil {
+					t.Fatal(err)
+				}
+				loaded, err := st.Load(t.Context())
+				if err != nil || !reflect.DeepEqual(loaded.Operation.Strategy, checkpoint) || (loaded.Connection == nil) != (connection == nil) {
+					t.Fatal("accepted managed record did not survive reopen", err)
+				}
+				return
+			}
+			if !errors.Is(err, ErrNotFresh) {
+				t.Fatal("unbound managed connection accepted", err)
+			}
+			if _, err = st.Load(t.Context()); err != nil {
+				t.Fatal("rejected update damaged the record", err)
 			}
 		})
 	}

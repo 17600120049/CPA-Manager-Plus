@@ -141,10 +141,12 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 	checkpoint := op.Strategy
 	if checkpoint.Strategy == "" {
 		checkpoint = bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, TargetIdentity: string(status.Identity), TargetGeneration: uint64(status.Generation), TargetArtifactID: string(status.ActiveGatewayArtifact.ArtifactID), Stage: "staged"}
-		// Compatibility for unit-only strategy tests which do not wire a destination.
+		// A default install without protected storage or a destination address
+		// cannot stage, start and verify a managed CPA. Never fall back to a
+		// start-only checkpoint: it carries no credential and leaves the Gateway
+		// permanently unusable, so the strategy fails closed instead.
 		if s.options.Protector == nil || s.options.DestinationBaseURL == "" {
-			result.Checkpoint = checkpoint
-			return result, nil
+			return result, &Blocker{Code: "managed_destination_connection_unavailable"}
 		}
 		baseURL, err := cpa.NormalizeV8BaseURL(s.options.DestinationBaseURL)
 		if err != nil {
@@ -173,23 +175,6 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 		return result, &Blocker{Code: "managed_target_identity_mismatch"}
 	}
 	if checkpoint.Stage == "committed" {
-		return result, nil
-	}
-	if request.AdoptionCiphertext == "" && (s.options.Protector == nil || s.options.DestinationBaseURL == "") {
-		if !status.Capabilities.Supports(model.RuntimeCapabilityStart) {
-			return result, &Blocker{Code: "managed_target_start_unsupported"}
-		}
-		response, err := s.options.Runtime.Start(ctx, model.RuntimeMutationRequest{OperationID: string(op.Identity.OperationID) + ":managed-start", ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: model.RuntimeArtifactID(checkpoint.TargetArtifactID)})
-		if err != nil || response.Validate() != nil {
-			return result, &Blocker{Code: "managed_target_start_unresolved"}
-		}
-		if response.State == model.RuntimeOperationSucceeded {
-			result.Checkpoint.Stage = "committed"
-		} else if response.State == model.RuntimeOperationAccepted || response.State == model.RuntimeOperationRunning {
-			result.Checkpoint.Stage = "starting"
-		} else {
-			return result, &Blocker{Code: "managed_target_start_failed"}
-		}
 		return result, nil
 	}
 	if !security.IsValidProtectedEnvelope(request.AdoptionCiphertext) || s.options.Protector == nil {

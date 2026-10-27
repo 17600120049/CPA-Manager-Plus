@@ -189,13 +189,26 @@ func valid(r Record) error {
 		}
 	}
 	if r.Operation.Strategy.Strategy == bootstrap.NewManaged {
+		strategy := r.Operation.Strategy
 		if r.AdoptionCiphertext != "" && !security.IsValidProtectedEnvelope(r.AdoptionCiphertext) {
 			return ErrNotFresh
 		}
-		if r.Connection != nil && r.Operation.Strategy.DestinationConnectionIdentity != "" {
-			digest := sha256.Sum256([]byte(r.Connection.CPABaseURL))
-			if r.Operation.Strategy.DestinationConnectionIdentity != "managed:sha256:"+hex.EncodeToString(digest[:]) {
+		// Only a committed checkpoint may own the CPA connection staged for it.
+		if r.Connection != nil && strategy.Stage != "committed" {
+			return ErrNotFresh
+		}
+		if strategy.DestinationConnectionIdentity != "" {
+			// An installation that recorded its destination snapshot and then
+			// committed must also carry the verified connection; a half commit
+			// would leave the Manager without the authority it derives.
+			if strategy.Stage == "committed" && r.AdoptionCiphertext != "" && r.Connection == nil {
 				return ErrNotFresh
+			}
+			if r.Connection != nil {
+				digest := sha256.Sum256([]byte(r.Connection.CPABaseURL))
+				if strategy.DestinationConnectionIdentity != "managed:sha256:"+hex.EncodeToString(digest[:]) {
+					return ErrNotFresh
+				}
 			}
 		}
 	} else if r.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
