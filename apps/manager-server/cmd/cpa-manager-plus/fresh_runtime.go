@@ -244,8 +244,14 @@ func freshRuntimeResolveOperation(
 			return succeed()
 		}
 	}
-	// A lost Restart result restores the lifecycle it started from, so no
-	// observation can distinguish it; it expires below instead.
+	// A lost Restart result cannot be confirmed from an observation: the
+	// Supervisor mints runtimeGeneration once per process from crypto/rand
+	// (apps/runtime-supervisor/cmd/cpamp-runtime-supervisor/main.go:142-148) and
+	// keeps that fixed authority through Restart
+	// (apps/runtime-supervisor/internal/lifecycle/restart.go:72-105), so a
+	// completed restart leaves both generation and identity unchanged. Since a
+	// restored lifecycle is equally consistent with the restart never running,
+	// the entry expires as unknown below rather than being guessed succeeded.
 	if age >= freshRuntimeOperationUnknownBound {
 		return expire("unknown_expired")
 	}
