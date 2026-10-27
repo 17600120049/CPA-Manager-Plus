@@ -37,6 +37,7 @@ type RetryTextKey =
   | 'retryIntervalValueRequired'
   | 'retryIntervalValueInvalid';
 
+type ConfigFieldPath = 'routing.retry.request-retry' | 'routing.retry.max-retry-interval';
 type RetryPresence = 'missing' | 'null' | 'present' | 'unknown';
 type RetryOperationState = 'unknown' | 'persisted' | 'recovered';
 
@@ -49,7 +50,7 @@ interface RetryExpected {
 
 interface RetryOperation {
   requestId: string;
-  field?: 'max-retry-interval';
+  field: ConfigFieldPath;
   value: number;
   sourceId: string;
   generation: string;
@@ -59,7 +60,7 @@ interface RetryOperation {
 }
 
 interface RetryView {
-  field: 'routing.retry.request-retry' | 'routing.retry.max-retry-interval';
+  field: ConfigFieldPath;
   presence: RetryPresence;
   value: number | null;
   source: string;
@@ -99,6 +100,10 @@ function isRevision(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
+function configFieldPath(variant: 'count' | 'interval'): ConfigFieldPath {
+  return variant === 'interval' ? 'routing.retry.max-retry-interval' : 'routing.retry.request-retry';
+}
+
 function isOperationState(value: unknown): value is RetryOperationState {
   return value === 'unknown' || value === 'persisted' || value === 'recovered';
 }
@@ -129,7 +134,7 @@ function parseOperation(value: unknown, variant: 'count' | 'interval' = 'count')
     !isRecord(value) ||
     !isHex(value.requestId, 32) ||
     !isRetryValue(value.value, variant) ||
-    (variant === 'interval' ? value.field !== 'max-retry-interval' : value.field !== undefined) ||
+    value.field !== configFieldPath(variant) ||
     typeof value.sourceId !== 'string' ||
     value.sourceId.length === 0 ||
     value.sourceId.length > 256 ||
@@ -143,7 +148,7 @@ function parseOperation(value: unknown, variant: 'count' | 'interval' = 'count')
     throw new Error('Invalid retry operation');
   return {
     requestId: value.requestId,
-    ...(variant === 'interval' ? { field: 'max-retry-interval' as const } : {}),
+    field: configFieldPath(variant),
     value: value.value,
     sourceId: value.sourceId,
     generation: value.generation,
@@ -166,10 +171,7 @@ function parseRetryView(value: unknown, variant: 'count' | 'interval' = 'count')
   const parsedValue = presence === 'present' ? value.value : null;
   if (
     (presence === 'present' && !isRetryValue(parsedValue, variant)) ||
-    value.field !==
-      (variant === 'interval'
-        ? 'routing.retry.max-retry-interval'
-        : 'routing.retry.request-retry') ||
+    value.field !== configFieldPath(variant) ||
     typeof value.source !== 'string' ||
     typeof value.authority !== 'string' ||
     typeof value.editable !== 'boolean' ||
@@ -186,8 +188,7 @@ function parseRetryView(value: unknown, variant: 'count' | 'interval' = 'count')
   if (value.operation !== undefined && value.operation !== null)
     operation = parseOperation(value.operation, variant);
   return {
-    field:
-      variant === 'interval' ? 'routing.retry.max-retry-interval' : 'routing.retry.request-retry',
+    field: configFieldPath(variant),
     presence,
     value: safeValue,
     source: value.source,
@@ -303,10 +304,7 @@ function RetryScalarEditor({
   const w = (key: Parameters<typeof workspaceText>[0]) => workspaceText(key, i18n.resolvedLanguage);
   const consumedDiscardEpoch = useRef(discardEpoch);
   // One allowlisted field surface for every config field, retry included.
-  const retryResource =
-    variant === 'interval'
-      ? 'gateway/config/routing/retry/max-retry-interval'
-      : 'gateway/config/routing/retry/request-retry';
+  const retryResource = 'gateway/config/' + configFieldPath(variant).replace(/\./g, '/');
   const retryOperationResource = 'gateway/config/operations/';
   const testPrefix = variant === 'interval' ? 'retry-interval' : 'retry';
   const [view, setView] = useState<RetryView | null>(null);
@@ -432,7 +430,7 @@ function RetryScalarEditor({
     if (
       err instanceof PublicApiError &&
       err.status === 400 &&
-      err.code === 'invalid_retry_request'
+      err.code === 'invalid_config_field'
     ) {
       pendingIdRef.current = '';
       setPendingId('');
@@ -609,8 +607,7 @@ function RetryScalarEditor({
 
   useEffect(() => {
     if (!onDraftChange) return;
-    const path =
-      variant === 'interval' ? 'routing.retry.max-retry-interval' : 'routing.retry.request-retry';
+    const path = configFieldPath(variant);
     const label = r(variant === 'interval' ? 'interval' : 'count');
     const savedStr = view?.presence === 'present' && view.value !== null ? String(view.value) : '';
     const isDirty = dirtyRef.current && draft !== savedStr;
@@ -659,8 +656,7 @@ function RetryScalarEditor({
         : '';
   const lockReason = view ? lockReasonKey(view.reason, lockCode) : '';
   const Heading = compact ? 'h3' : 'h2';
-  const fieldPath =
-    variant === 'interval' ? 'routing.retry.max-retry-interval' : 'routing.retry.request-retry';
+  const fieldPath = configFieldPath(variant);
   const errorId = `${testPrefix}-input-error`;
   const hintId = `${testPrefix}-input-hint`;
 
