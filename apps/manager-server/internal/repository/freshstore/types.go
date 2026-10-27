@@ -4,6 +4,7 @@ package freshstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -37,8 +38,11 @@ type Record struct {
 	// Config holds one journal per allowlisted config field, keyed by the
 	// canonical CPA dotted path. ConfigInvalid records exactly which field has
 	// damaged bytes: a corrupted field locks that field only, never the record.
+	// ConfigDamaged keeps those exact bytes so a later write of another field
+	// rewrites them unchanged instead of discarding an unreadable original.
 	Config        map[string]*FieldJournal
 	ConfigInvalid map[string]bool
+	ConfigDamaged map[string]json.RawMessage
 }
 
 // FieldJournal is the Manager-side journal for ONE allowlisted config field. It

@@ -59,11 +59,11 @@ func load(ctx context.Context, q queryer) (Record, error) {
 			return Record{}, ErrNotFresh
 		}
 	}
-	config, configInvalid, err := loadConfigJournals(ctx, q)
+	config, configInvalid, configDamaged, err := loadConfigJournals(ctx, q)
 	if err != nil {
 		return Record{}, err
 	}
-	r.Config, r.ConfigInvalid = config, configInvalid
+	r.Config, r.ConfigInvalid, r.ConfigDamaged = config, configInvalid, configDamaged
 	// After installation, the existing Config service persists a compatibility
 	// setup row together with manager_config_v1. It does not replace the Fresh
 	// operation's ownership. Pending installations still reject that state.
@@ -292,6 +292,7 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	}
 	before := v
 	before.Config = cloneConfigJournals(v.Config)
+	before.ConfigDamaged = cloneRawMessages(v.ConfigDamaged)
 	before.Operation.Strategy.AdoptionDecisions = slices.Clone(v.Operation.Strategy.AdoptionDecisions)
 	before.Operation.Strategy.AdoptionResources = slices.Clone(v.Operation.Strategy.AdoptionResources)
 	if v.Admin != nil {
@@ -314,6 +315,10 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		if invalid != v.ConfigInvalid[path] || invalid && v.Config[path] != nil {
 			return Record{}, ErrConflict
 		}
+	}
+	// Damaged bytes are owned by the store: a callback may never rewrite them.
+	if !reflect.DeepEqual(before.ConfigDamaged, v.ConfigDamaged) {
+		return Record{}, ErrConflict
 	}
 	if v.Operation.Identity != id || v.Operation.Revision != revision || before.Admin != nil && !reflect.DeepEqual(before.Admin, v.Admin) || before.Operation.AdminInitialized && !v.Operation.AdminInitialized || before.Authority.ClaimClosed && !v.Authority.ClaimClosed || before.Operation.Routing.Committed && !v.Operation.Routing.Committed {
 		return Record{}, ErrConflict
@@ -359,7 +364,7 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		err = write(ctx, tx, "setup", setup)
 	}
 	if err == nil {
-		err = writeConfigJournals(ctx, tx, before.Config, v.Config)
+		err = writeConfigJournals(ctx, tx, before.Config, v.Config, v.ConfigDamaged)
 	}
 	if err != nil {
 		return Record{}, err

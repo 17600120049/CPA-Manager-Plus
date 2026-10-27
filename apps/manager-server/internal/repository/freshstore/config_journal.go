@@ -72,32 +72,40 @@ func ValidateLegacyConfigJournal(path string, data []byte) error {
 // ConfigJournalSettingKey is the settings row an admission checkpoint reads.
 func ConfigJournalSettingKey() string { return configJournalKey }
 
+// configJournalDoc keeps every field entry as raw bytes: an entry that cannot be
+// decoded is still kept verbatim so a later write of another field can never
+// erase it.
 type configJournalDoc struct {
-	Fields map[string]*FieldJournal `json:"fields"`
+	Fields map[string]json.RawMessage `json:"fields"`
 }
 
-// loadConfigJournals returns the per-field journals plus the fields whose bytes
-// are damaged. Damage is attributed per field so one corrupt journal locks only
-// its own field; a corrupt container cannot be attributed and is reported
-// separately by the caller.
-func loadConfigJournals(ctx context.Context, q queryer) (map[string]*FieldJournal, map[string]bool, error) {
+// loadConfigJournals returns the per-field journals, the fields whose bytes are
+// damaged and those exact bytes. Damage is attributed per field so one corrupt
+// journal locks only its own field; a corrupt container cannot be attributed and
+// is reported separately by the caller.
+func loadConfigJournals(ctx context.Context, q queryer) (map[string]*FieldJournal, map[string]bool, map[string]json.RawMessage, error) {
 	journals := map[string]*FieldJournal{}
 	invalid := map[string]bool{}
+	damaged := map[string]json.RawMessage{}
 	var data string
 	err := q.QueryRowContext(ctx, "select value from settings where key=?", configJournalKey).Scan(&data)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
-		return nil, nil, err
+		return nil, nil, nil, err
 	default:
 		var doc configJournalDoc
 		if json.Unmarshal([]byte(data), &doc) != nil {
-			return nil, nil, ErrNotFresh
+			return nil, nil, nil, ErrNotFresh
 		}
-		for path, journal := range doc.Fields {
-			normalizeFieldJournal(journal)
-			if !validFieldJournal(path, journal) {
+		for path, raw := range doc.Fields {
+			var journal *FieldJournal
+			if json.Unmarshal(raw, &journal) == nil {
+				normalizeFieldJournal(journal)
+			}
+			if journal == nil || !validFieldJournal(path, journal) {
 				invalid[path] = true
+				damaged[path] = raw
 				continue
 			}
 			journals[path] = journal
@@ -113,7 +121,7 @@ func loadConfigJournals(ctx context.Context, q queryer) (map[string]*FieldJourna
 			continue
 		}
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		var journal FieldJournal
 		if json.Unmarshal([]byte(raw), &journal) != nil {
@@ -133,7 +141,7 @@ func loadConfigJournals(ctx context.Context, q queryer) (map[string]*FieldJourna
 		}
 		journals[legacy.path] = &journal
 	}
-	return journals, invalid, nil
+	return journals, invalid, damaged, nil
 }
 
 // normalizeFieldJournal converts JSON numbers back into the exact scalar types
@@ -223,14 +231,19 @@ func validFieldJournal(path string, journal *FieldJournal) bool {
 
 // ValidateConfigJournals is the shared admission-checkpoint view: malformed
 // container bytes or any field whose original operation is still unknown blocks
-// a new claim. A damaged field entry is skipped here; the owning repository has
+// a new claim. Every field entry is decoded on its own, so a damaged one is
+// skipped here instead of hiding the healthy entries; the owning repository has
 // already isolated it to that field.
 func ValidateConfigJournals(data []byte) error {
 	var doc configJournalDoc
 	if json.Unmarshal(data, &doc) != nil {
 		return ErrConflict
 	}
-	for path, journal := range doc.Fields {
+	for path, raw := range doc.Fields {
+		var journal *FieldJournal
+		if json.Unmarshal(raw, &journal) != nil || journal == nil {
+			continue
+		}
 		normalizeFieldJournal(journal)
 		if !validFieldJournal(path, journal) {
 			continue
@@ -314,12 +327,37 @@ func validateConfigOperationUpdate(old, next ConfigOperation) error {
 	return nil
 }
 
-// writeConfigJournals persists the whole container only when it changed.
-func writeConfigJournals(ctx context.Context, tx *sql.Tx, before, after map[string]*FieldJournal) error {
+// writeConfigJournals persists the whole container only when it changed. Every
+// damaged field keeps its exact bytes: a save of another field must never discard
+// an original operation this store cannot read.
+func writeConfigJournals(ctx context.Context, tx *sql.Tx, before, after map[string]*FieldJournal, damaged map[string]json.RawMessage) error {
 	if reflect.DeepEqual(before, after) {
 		return nil
 	}
-	return write(ctx, tx, configJournalKey, configJournalDoc{Fields: after})
+	fields := make(map[string]json.RawMessage, len(after)+len(damaged))
+	for path, raw := range damaged {
+		fields[path] = raw
+	}
+	for path, journal := range after {
+		raw, err := json.Marshal(journal)
+		if err != nil {
+			return ErrConflict
+		}
+		fields[path] = raw
+	}
+	return write(ctx, tx, configJournalKey, configJournalDoc{Fields: fields})
+}
+
+// cloneRawMessages deep-copies a raw JSON map for a CAS before-image.
+func cloneRawMessages(source map[string]json.RawMessage) map[string]json.RawMessage {
+	if source == nil {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(source))
+	for key, raw := range source {
+		out[key] = append(json.RawMessage(nil), raw...)
+	}
+	return out
 }
 
 // cloneConfigJournals deep-copies the journal map so a CAS callback can never

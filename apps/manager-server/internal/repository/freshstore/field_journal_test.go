@@ -239,3 +239,104 @@ func TestLegacyRetryJournalsMigratePerField(t *testing.T) {
 		t.Fatal("migration not persisted", migrated)
 	}
 }
+
+// configJournalFields is the raw per-field map of the current container.
+func configJournalFields(t *testing.T, db *sql.DB) map[string]json.RawMessage {
+	t.Helper()
+	var raw string
+	if err := db.QueryRow("select value from settings where key=?", configJournalKey).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Fields map[string]json.RawMessage `json:"fields"`
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc.Fields
+}
+
+// writeConfigJournalFields replaces the container with exactly these field bytes.
+func writeConfigJournalFields(t *testing.T, db *sql.DB, fields map[string]json.RawMessage) {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{"fields": fields})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec("insert into settings(key,value,updated_at_ms) values(?,?,0) on conflict(key) do update set value=excluded.value", configJournalKey, string(data)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestUndecodableFieldEntryLocksOnlyItsField covers a field entry that does not
+// even decode as a journal: it must lock only that field, never the record.
+func TestUndecodableFieldEntryLocksOnlyItsField(t *testing.T) {
+	store, db, id := testStore(t)
+	good := h1FieldOperation("routing.retry.request-retry", 0)
+	saveJournal(t, store, id, "routing.retry.request-retry", good)
+	fields := configJournalFields(t, db)
+	fields["requests.passthrough-headers"] = json.RawMessage(`{"latest":5}`)
+	writeConfigJournalFields(t, db, fields)
+	r, err := store.Load(t.Context())
+	if err != nil {
+		t.Fatalf("one undecodable field failed the whole record: %v", err)
+	}
+	if !r.ConfigInvalid["requests.passthrough-headers"] {
+		t.Fatal("the undecodable field was not locked", r.ConfigInvalid)
+	}
+	if r.ConfigInvalid["routing.retry.request-retry"] || r.Config["routing.retry.request-retry"] == nil {
+		t.Fatal("a healthy field was locked with it", r.ConfigInvalid)
+	}
+	// The damaged entry is not a journal, so it can never be read or rewritten.
+	if _, err = store.Update(t.Context(), id, r.Operation.Revision, func(v *Record) error {
+		v.Config["requests.passthrough-headers"] = &FieldJournal{Latest: good.RequestID, Operations: map[string]ConfigOperation{good.RequestID: good}}
+		return nil
+	}); err != ErrConflict {
+		t.Fatal("a damaged field entry was repaired", err)
+	}
+}
+
+// TestDamagedFieldBytesSurviveAnotherFieldWrite is the "never discard or replay"
+// rule: saving a healthy field rewrites the container, and the damaged field's
+// bytes must be written back exactly as they were found.
+func TestDamagedFieldBytesSurviveAnotherFieldWrite(t *testing.T) {
+	store, db, id := testStore(t)
+	good := h1FieldOperation("routing.retry.request-retry", 0)
+	saveJournal(t, store, id, "routing.retry.request-retry", good)
+	damaged := json.RawMessage(`{"latest":5}`)
+	fields := configJournalFields(t, db)
+	fields["requests.passthrough-headers"] = damaged
+	writeConfigJournalFields(t, db, fields)
+	r, err := store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.ConfigInvalid["requests.passthrough-headers"] {
+		t.Fatal("damaged field not isolated", r.ConfigInvalid)
+	}
+	// Another field's save rewrites the container.
+	other := h1FieldOperation("requests.streaming.keepalive-seconds", 30)
+	if _, err = store.Update(t.Context(), id, r.Operation.Revision, func(v *Record) error {
+		v.Config["requests.streaming.keepalive-seconds"] = &FieldJournal{Latest: other.RequestID, Operations: map[string]ConfigOperation{other.RequestID: other}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after := configJournalFields(t, db)
+	if string(after["requests.passthrough-headers"]) != string(damaged) {
+		t.Fatalf("damaged bytes were rewritten: %s", after["requests.passthrough-headers"])
+	}
+	if j, ok := after["requests.streaming.keepalive-seconds"]; !ok || !strings.Contains(string(j), other.RequestID) {
+		t.Fatal("the healthy save was not written", string(j))
+	}
+	if before, ok := after["routing.retry.request-retry"]; !ok || !strings.Contains(string(before), good.RequestID) {
+		t.Fatal("the earlier healthy field was dropped", string(before))
+	}
+	// The damaged field is still locked and the others still work.
+	if r, err = store.Load(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !r.ConfigInvalid["requests.passthrough-headers"] || r.Config["requests.streaming.keepalive-seconds"] == nil {
+		t.Fatal("isolation lost after the save", r.ConfigInvalid)
+	}
+}
