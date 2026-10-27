@@ -112,7 +112,7 @@ func TestH1ManagerCrossDomainHandoffAndLostReplies(t *testing.T) {
 	for _, drop := range []string{"commit", "consume", "release"} {
 		t.Run(drop, func(t *testing.T) {
 			tr, h, m := h1Fixture(t)
-			i := H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "retry", Retry: 0}
+			i := H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "config-field", Path: "routing.retry.request-retry", Value: 0}
 			grantH1(m, i)
 			p, e := h.Claim(t.Context(), tr, i)
 			if e != nil {
@@ -169,7 +169,7 @@ func TestH1ManagerClaimOrphanAndTerminalSQLiteFailure(t *testing.T) {
 	for _, phase := range []string{"claim", "terminal"} {
 		t.Run(phase, func(t *testing.T) {
 			tr, h, m := h1Fixture(t)
-			i := H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "retry", Retry: 1}
+			i := H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "config-field", Path: "routing.retry.request-retry", Value: 1}
 			grantH1(m, i)
 			fail := func() {
 				t.Helper()
@@ -221,8 +221,7 @@ func TestH1KeySnapshotUsesRawAuthorityAndStrictCommittedProjection(t *testing.T)
 		t.Run(bad, func(t *testing.T) {
 			tr, h, m := h1Fixture(t)
 			_ = h
-			value := 0
-			m.v.CommittedRetry = &value
+			m.v.CommittedFields = map[string]json.RawMessage{"routing.retry.request-retry": json.RawMessage("0")}
 			root := strings.Replace(proofConfig, `"api-keys":[]`, `"api-keys":["`+testSecret()+`"]`, 1)
 			root = strings.TrimSuffix(root, "}") + `,"routing":{"retry":{"request-retry":0}}}`
 			if bad == "wrong-leaf" {
@@ -266,14 +265,14 @@ func TestH1KeySnapshotUsesRawAuthorityAndStrictCommittedProjection(t *testing.T)
 	}
 }
 
-func TestH1WrongProfileAndExactRetryDelegation(t *testing.T) {
+func TestH1WrongProfileAndExactFieldDelegation(t *testing.T) {
 	tr, h, m := h1Fixture(t)
 	tr.h1 = nil
 	if _, _, e := tr.configuration(t.Context(), "observe"); e == nil {
 		t.Fatal("standalone profile accepted combined authority")
 	}
 	tr.h1 = h
-	i := H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "retry", Retry: 0}
+	i := H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "config-field", Path: "routing.retry.request-retry", Value: 0}
 	grantH1(m, i)
 	p, e := h.Claim(t.Context(), tr, i)
 	if e != nil {
@@ -285,7 +284,7 @@ func TestH1WrongProfileAndExactRetryDelegation(t *testing.T) {
 	}
 	puts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "PUT" || r.URL.Path != retryPath {
+		if r.Method != "PUT" || r.URL.Path != "/v8/management/config/routing/retry/request-retry" {
 			t.Error("unbounded writer", r.Method, r.URL.Path)
 		}
 		puts++
@@ -294,16 +293,19 @@ func TestH1WrongProfileAndExactRetryDelegation(t *testing.T) {
 	defer server.Close()
 	tr.client = server.Client()
 	tr.endpoint = server.URL
-	if e = tr.WriteH1Retry(t.Context(), p.ID, s, testManagement(), 1); e == nil || puts != 0 {
+	if e = tr.WriteH1ConfigField(t.Context(), p.ID, s, testManagement(), "routing.retry.request-retry", 1); e == nil || puts != 0 {
 		t.Fatal("wrong value reached PUT", e, puts)
+	}
+	if e = tr.WriteH1ConfigField(t.Context(), p.ID, s, testManagement(), "requests.passthrough-headers", true); e == nil || puts != 0 {
+		t.Fatal("other field reached PUT", e, puts)
 	}
 	saved := *m.g.H1
 	m.g.H1.Intent.RequestID = strings.Repeat("3", 32)
-	if e = tr.WriteH1Retry(t.Context(), p.ID, s, testManagement(), 0); e == nil || puts != 0 {
+	if e = tr.WriteH1ConfigField(t.Context(), p.ID, s, testManagement(), "routing.retry.request-retry", 0); e == nil || puts != 0 {
 		t.Fatal("different request reached PUT", e, puts)
 	}
 	*m.g.H1 = saved
-	if e = tr.WriteH1Retry(t.Context(), p.ID, s, testManagement(), 0); e != nil || puts != 1 {
+	if e = tr.WriteH1ConfigField(t.Context(), p.ID, s, testManagement(), "routing.retry.request-retry", 0); e != nil || puts != 1 {
 		t.Fatal("exact zero delegation denied", e, puts)
 	}
 	if h.Free(t.Context(), tr) == nil {
@@ -340,7 +342,7 @@ func TestH1ManagerB2KeyB2AndRestartBetweenKeySteps(t *testing.T) {
 				if h.Free(t.Context(), tr) == nil {
 					t.Fatal("restart released Key parent between steps")
 				}
-				other := H1Intent{RequestID: strings.Repeat("9", 32), Domain: "config", Mode: "retry", Retry: 1}
+				other := H1Intent{RequestID: strings.Repeat("9", 32), Domain: "config", Mode: "config-field", Path: "requests.passthrough-headers", Value: true}
 				if _, e = h.Claim(t.Context(), tr, other); e == nil {
 					t.Fatal("B2 entered between Key steps")
 				}
@@ -350,9 +352,9 @@ func TestH1ManagerB2KeyB2AndRestartBetweenKeySteps(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	finish(H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "retry", Retry: 1})
+	finish(H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "config-field", Path: "routing.retry.request-retry", Value: 1})
 	finish(H1Intent{RequestID: strings.Repeat("3", 32), Domain: "key", Mode: "replace", TargetID: strings.Repeat("4", 32), KeeperID: strings.Repeat("5", 32), TargetSHA256: strings.Repeat("6", 64), KeeperSHA256: strings.Repeat("7", 64)})
-	finish(H1Intent{RequestID: strings.Repeat("8", 32), Domain: "config", Mode: "retry", Retry: 0})
+	finish(H1Intent{RequestID: strings.Repeat("8", 32), Domain: "config", Mode: "config-field", Path: "routing.retry.request-retry", Value: 0})
 	if m.calls["begin"] != 4 || m.calls["commit"] != 4 || h.Free(t.Context(), tr) != nil {
 		t.Fatal("handoff chain", m.calls)
 	}

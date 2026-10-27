@@ -76,22 +76,16 @@ func (r *Repository) H1Idle(ctx context.Context) error {
 	if k != nil && k.Outcome != "committed" {
 		return ErrConflict
 	}
-	for _, entry := range []struct {
-		key string
-		valid func(*freshstore.RetryJournal) bool
-	}{
-		{"fresh_config_retry_v1", freshstore.ValidateRetryJournal},
-		{"fresh_config_retry_interval_v1", freshstore.ValidateIntervalJournal},
-	} {
-		var raw string
-		e = r.db.QueryRowContext(ctx, "select value from settings where key=?", entry.key).Scan(&raw)
-		if errors.Is(e, sql.ErrNoRows) { continue }
-		if e != nil { return e }
-		var j freshstore.RetryJournal
-		if json.Unmarshal([]byte(raw), &j) != nil || !entry.valid(&j) { return ErrConflict }
-		for id, o := range j.Operations {
-			if id != o.RequestID || (o.State != "persisted" && o.State != "recovered") { return ErrConflict }
-		}
+	// Every allowlisted config field keeps its own journal entry. A new H1 claim
+	// is only safe when no field still holds an original unknown operation; a
+	// damaged field entry is skipped because the store already locks that field.
+	var raw string
+	e = r.db.QueryRowContext(ctx, "select value from settings where key=?", freshstore.ConfigJournalSettingKey()).Scan(&raw)
+	if errors.Is(e, sql.ErrNoRows) {
+		return nil
 	}
-	return nil
+	if e != nil {
+		return e
+	}
+	return freshstore.ValidateConfigJournals([]byte(raw))
 }

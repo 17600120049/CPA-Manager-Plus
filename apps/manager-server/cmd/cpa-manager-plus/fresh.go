@@ -296,8 +296,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	switch {
-	case resource == "gateway/retry/request-retry" || resource == "gateway/retry/max-retry-interval" || strings.HasPrefix(resource, "gateway/retry/operations/") || strings.HasPrefix(resource, "gateway/retry/interval-operations/"):
-		a.retryConfiguration(w, r, resource)
+	case strings.HasPrefix(resource, "gateway/config/"):
+		a.configFieldConfiguration(w, r, strings.TrimPrefix(resource, "gateway/config/"))
 	case resource == "settings/update-channel":
 		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):

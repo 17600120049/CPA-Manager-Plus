@@ -126,7 +126,9 @@ func (h *H1Coordinator) Claim(ctx context.Context, t *Transport, i H1Intent) (*H
 	}
 	q := configRequest{Action: "claim", SourceID: v.SourceID, Generation: v.Generation, ExpectedRevision: v.Revision, ExpectedSHA256: v.SHA256, H1: &H1Request{ParentID: i.parentID(), Intent: i, Anchor: cp.Anchor}}
 	got, e := t.configurationAuthority.call(ctx, q)
-	if e != nil || !got.Created || got.H1 == nil || got.H1.Parent == nil || got.H1.Parent.ID != i.parentID() || got.H1.Parent.Intent != i {
+	// Intent equality is digest equality: a scalar Value crosses the Runtime JSON
+	// boundary and must not be compared as a Go dynamic type.
+	if e != nil || !got.Created || got.H1 == nil || got.H1.Parent == nil || got.H1.Parent.ID != i.parentID() || h1Digest(got.H1.Parent.Intent) != h1Digest(i) {
 		return nil, ErrApplyUnknown
 	}
 	next := *cp
@@ -183,7 +185,7 @@ func (h *H1Coordinator) Reserved(ctx context.Context, t *Transport, parent strin
 	// Re-read Host authority immediately before PUT; expiration is not cancellation
 	// of an already issued request. Runtime retains the reservation in either case.
 	g, e := t.configurationAuthority.grant()
-	if e != nil || g.H1 == nil || g.H1.ParentID != parent || (!(g.H1.Action == "step" && g.H1.StepID == step.ID && g.H1.Revision+1 == step.BeginRevision && g.H1.SHA256 == step.BeforeSHA256) && !(p.Intent.Domain == "config" && g.H1.Action == "claim" && g.H1.Intent == p.Intent && g.H1.Revision+1 == p.ClaimRevision && g.H1.SHA256 == p.ClaimSHA256)) {
+	if e != nil || g.H1 == nil || g.H1.ParentID != parent || (!(g.H1.Action == "step" && g.H1.StepID == step.ID && g.H1.Revision+1 == step.BeginRevision && g.H1.SHA256 == step.BeforeSHA256) && !(p.Intent.Domain == "config" && g.H1.Action == "claim" && h1Digest(g.H1.Intent) == h1Digest(p.Intent) && g.H1.Revision+1 == p.ClaimRevision && g.H1.SHA256 == p.ClaimSHA256)) {
 		return ErrApplyUnknown
 	}
 	return nil

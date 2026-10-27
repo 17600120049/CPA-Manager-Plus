@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -32,16 +34,22 @@ func strictJSON(b []byte, v any) error {
 	return nil
 }
 
+// configOperation is the Runtime-side journal view. Path/Value carry the single
+// allowlisted field intent and are derived by the Runtime from its own record.
 type configOperation struct {
 	KeeperSHA256 string `json:"keeperSHA256,omitempty"`
 	ID           string `json:"id"`
 	Scope        string `json:"scope"`
 	KeySHA256    string `json:"keySHA256,omitempty"`
-	Retry        int    `json:"retry"`
-	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
-	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
 	Generation   string `json:"generation"`
 	State        string `json:"state"`
+	Path         string `json:"path,omitempty"`
+	Value        any    `json:"value,omitempty"`
+	// Retry and MaxRetryInterval appear only in observations of Runtime records
+	// reserved before the allowlist cutover; no request ever sends them.
+	Retry               int  `json:"retry,omitempty"`
+	MaxRetryInterval    int  `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
 }
 type configRequest struct {
 	H1               *H1Request `json:"h1,omitempty"`
@@ -53,22 +61,21 @@ type configRequest struct {
 	OperationID      string     `json:"operationId"`
 	Scope            string     `json:"scope"`
 	KeySHA256        string     `json:"keySHA256,omitempty"`
-	Retry            int        `json:"retry"`
-	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
-	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
+	Path             string     `json:"path,omitempty"`
+	Value            any        `json:"value,omitempty"`
 }
 type configObservation struct {
-	H1             *H1Record       `json:"h1,omitempty"`
-	SourceID       string          `json:"sourceId"`
-	Generation     string          `json:"generation"`
-	Revision       uint64          `json:"revision"`
-	SHA256         string          `json:"sha256"`
-	State          string          `json:"state"`
-	Installed      bool            `json:"installed"`
-	CommittedRetry *int `json:"committedRetry"`
-	CommittedMaxRetryInterval *int `json:"committedMaxRetryInterval,omitempty"`
-	Operation      configOperation `json:"operation"`
-	Created        bool            `json:"created"`
+	H1              *H1Record                  `json:"h1,omitempty"`
+	Destination     bool                       `json:"destination,omitempty"`
+	SourceID        string                     `json:"sourceId"`
+	Generation      string                     `json:"generation"`
+	Revision        uint64                     `json:"revision"`
+	SHA256          string                     `json:"sha256"`
+	State           string                     `json:"state"`
+	Installed       bool                       `json:"installed"`
+	CommittedFields map[string]json.RawMessage `json:"committedFields,omitempty"`
+	Operation       configOperation            `json:"operation"`
+	Created         bool                       `json:"created"`
 }
 type configGrant struct {
 	BootstrapRun      string   `json:"bootstrapRun,omitempty"`
@@ -242,33 +249,100 @@ func (t *Transport) postInstallProjection(ctx context.Context, body []byte) ([]b
 	if t.configurationAuthority == nil {
 		return body, nil
 	}
-	v, e := t.committedConfiguration(ctx)
-	if e != nil {
-		return nil, e
+	v, err := t.committedConfiguration(ctx)
+	if err != nil {
+		return nil, err
 	}
 	var root map[string]json.RawMessage
 	if json.Unmarshal(body, &root) != nil {
 		return nil, ErrSourceConflict
 	}
-	routing, exists := root["routing"]
-	if !exists {
-		if v.CommittedRetry != nil || v.CommittedMaxRetryInterval != nil {
+	committed := map[string]json.RawMessage{}
+	for path, raw := range v.CommittedFields {
+		if _, ok := LookupConfigField(path); !ok {
 			return nil, ErrSourceConflict
 		}
-		return body, nil
+		if _, err = ParseConfigFieldValue(path, raw); err != nil {
+			return nil, ErrSourceConflict
+		}
+		committed[path] = raw
 	}
-	if v.CommittedRetry == nil && v.CommittedMaxRetryInterval == nil {
+	for path, expected := range committed {
+		actual, ok := jsonPath(root, strings.Split(path, "."))
+		if !ok || !jsonEqualScalar(path, actual, expected) {
+			return nil, ErrSourceConflict
+		}
+	}
+	for path := range committed {
+		if !deleteJSONPath(root, strings.Split(path, ".")) {
+			return nil, ErrSourceConflict
+		}
+	}
+	// Every allowlisted leaf is either committed (verified and removed above) or
+	// uncommitted drift. Callers still compare the rest with the exact S1 seed.
+	for _, path := range ConfigFieldPaths() {
+		if _, ok := jsonPath(root, strings.Split(path, ".")); ok {
+			return nil, ErrSourceConflict
+		}
+	}
+	data, err := json.Marshal(root)
+	if err != nil {
 		return nil, ErrSourceConflict
 	}
-	var r, retry map[string]json.RawMessage
-	if json.Unmarshal(routing, &r) != nil || len(r) != 1 || json.Unmarshal(r["retry"], &retry) != nil || len(retry) != boolCount(v.CommittedRetry != nil, v.CommittedMaxRetryInterval != nil) { return nil, ErrSourceConflict }
-	for _, field := range []struct{name string; expected *int}{{"request-retry", v.CommittedRetry}, {"max-retry-interval", v.CommittedMaxRetryInterval}} {
-		if field.expected == nil { if _, ok := retry[field.name]; ok { return nil, ErrSourceConflict }; continue }
-		var n *int
-		if json.Unmarshal(retry[field.name], &n) != nil || n == nil || *n != *field.expected { return nil, ErrSourceConflict }
-	}
-	delete(root, "routing")
-	return json.Marshal(root)
+	return data, nil
 }
 
-func boolCount(xs ...bool) int { n := 0; for _, v := range xs { if v { n++ } }; return n }
+func jsonPath(root map[string]json.RawMessage, parts []string) (json.RawMessage, bool) {
+	if len(parts) == 0 {
+		return nil, false
+	}
+	value, ok := root[parts[0]]
+	if !ok {
+		return nil, false
+	}
+	if len(parts) == 1 {
+		return value, true
+	}
+	var child map[string]json.RawMessage
+	if json.Unmarshal(value, &child) != nil {
+		return nil, false
+	}
+	return jsonPath(child, parts[1:])
+}
+
+func deleteJSONPath(root map[string]json.RawMessage, parts []string) bool {
+	if len(parts) == 0 {
+		return false
+	}
+	if len(parts) == 1 {
+		if _, ok := root[parts[0]]; !ok {
+			return false
+		}
+		delete(root, parts[0])
+		return true
+	}
+	raw, ok := root[parts[0]]
+	if !ok {
+		return false
+	}
+	var child map[string]json.RawMessage
+	if json.Unmarshal(raw, &child) != nil || !deleteJSONPath(child, parts[1:]) {
+		return false
+	}
+	if len(child) == 0 {
+		delete(root, parts[0])
+	} else {
+		next, _ := json.Marshal(child)
+		root[parts[0]] = next
+	}
+	return true
+}
+
+func jsonEqualScalar(path string, actual, expected json.RawMessage) bool {
+	value, err := ParseConfigFieldValue(path, expected)
+	if err != nil {
+		return false
+	}
+	got, err := ParseConfigFieldValue(path, actual)
+	return err == nil && reflect.DeepEqual(value, got)
+}

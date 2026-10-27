@@ -12,21 +12,22 @@ import (
 
 func TestPrivateConfigurationRequiresCompleteCommittedFile(t *testing.T) {
 	raw := []byte("access: {api-keys: [private-key]}\nmanagement: {secret-key: protected}\n")
-	zero := 0
 	for _, tc := range []struct {
 		name  string
 		state string
 		hash  string
-		retry *int
+		retry json.RawMessage
 		body  string
 		want  bool
 	}{
-		{"committed recovered snapshot", "persisted", hashBytes(raw), &zero, `{"access":{},"routing":{"retry":{"request-retry":0}}}`, true},
-		{"wrong leaf", "persisted", hashBytes(raw), &zero, `{"routing":{"retry":{"request-retry":1}}}`, false},
+		{"committed recovered snapshot", "persisted", hashBytes(raw), json.RawMessage("0"), `{"access":{},"routing":{"retry":{"request-retry":0}}}`, true},
+		{"wrong leaf", "persisted", hashBytes(raw), json.RawMessage("0"), `{"routing":{"retry":{"request-retry":1}}}`, false},
 		{"uncommitted leaf", "persisted", hashBytes(raw), nil, `{"routing":{"retry":{"request-retry":0}}}`, false},
-		{"additional routing field", "persisted", hashBytes(raw), &zero, `{"routing":{"retry":{"request-retry":0},"extra":false}}`, false},
-		{"unknown", "unknown", hashBytes(raw), &zero, `{}`, false},
-		{"Runtime reports full-file drift", "unknown", strings.Repeat("0", 64), &zero, `{}`, false},
+		// Unrelated siblings are not this projection's decision: the exact S1 seed
+		// validator that consumes the result rejects them.
+		{"additional routing field", "persisted", hashBytes(raw), json.RawMessage("0"), `{"routing":{"retry":{"request-retry":0},"extra":false}}`, true},
+		{"unknown", "unknown", hashBytes(raw), json.RawMessage("0"), `{}`, false},
+		{"Runtime reports full-file drift", "unknown", strings.Repeat("0", 64), json.RawMessage("0"), `{}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,8 +45,12 @@ func TestPrivateConfigurationRequiresCompleteCommittedFile(t *testing.T) {
 					if q.Action != "observe" {
 						t.Fatal("unexpected mutation")
 					}
-					return configObservation{State: tc.state, Installed: true, SHA256: tc.hash, CommittedRetry: tc.retry,
-						Operation: configOperation{State: "recovered", Scope: "request-retry", Retry: 1}}, nil
+					committed := map[string]json.RawMessage{}
+					if len(tc.retry) != 0 {
+						committed["routing.retry.request-retry"] = tc.retry
+					}
+					return configObservation{State: tc.state, Installed: true, SHA256: tc.hash, CommittedFields: committed,
+						Operation: configOperation{State: "recovered", Scope: "routing.retry.request-retry", Path: "routing.retry.request-retry", Value: 1}}, nil
 				},
 			}}
 			got, e := tr.postInstallProjection(context.Background(), []byte(tc.body))
@@ -55,8 +60,12 @@ func TestPrivateConfigurationRequiresCompleteCommittedFile(t *testing.T) {
 			if e == nil {
 				var root map[string]any
 				json.Unmarshal(got, &root)
-				if _, ok := root["routing"]; ok {
-					t.Fatal("projection retained permitted retry")
+				if routing, ok := root["routing"].(map[string]any); ok {
+					if retry, ok := routing["retry"].(map[string]any); ok {
+						if _, ok = retry["request-retry"]; ok {
+							t.Fatal("projection retained the committed leaf")
+						}
+					}
 				}
 			}
 		})
