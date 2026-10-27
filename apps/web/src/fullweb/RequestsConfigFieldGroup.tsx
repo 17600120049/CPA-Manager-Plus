@@ -166,12 +166,6 @@ export function RequestsConfigFieldGroup({
     onDraft.current(diffs);
   }, [drafts, editable, views]);
 
-  const conflict = async (field: GatewayFieldMeta) => {
-    // A stale expectation is repaired by one group re-read; drafts are untouched.
-    await load(editable, false);
-    setErrors((current) => ({ ...current, [field.path]: 'write_failed' }));
-  };
-
   const reconcile = async (field: GatewayFieldMeta) => {
     const request = views[field.path]?.operation?.requestId;
     if (!request) return;
@@ -226,14 +220,19 @@ export function RequestsConfigFieldGroup({
           }
         }
       }
-      if (error instanceof PublicApiError && error.code === 'source_or_operation_conflict') {
-        await conflict(field);
-      } else {
-        setErrors((current) => ({
-          ...current,
-          [field.path]: error instanceof PublicApiError && error.code === 'invalid_config_field' ? 'invalid' : 'write_failed',
-        }));
-      }
+      // A stale expectation is repaired by re-reading every field of the group;
+      // any other failure only needs this field's expectation refreshed. Either
+      // way the draft the user is editing is left alone.
+      const staleExpectation =
+        error instanceof PublicApiError && error.code === 'source_or_operation_conflict';
+      await load(staleExpectation ? editable : [field], false);
+      setErrors((current) => ({
+        ...current,
+        [field.path]:
+          error instanceof PublicApiError && error.code === 'invalid_config_field'
+            ? 'invalid'
+            : 'write_failed',
+      }));
     } finally {
       setBusy((current) => ({ ...current, [field.path]: false }));
       onPending(false);

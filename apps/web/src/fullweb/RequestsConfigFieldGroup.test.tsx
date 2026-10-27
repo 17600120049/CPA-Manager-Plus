@@ -27,6 +27,7 @@ function gatewayFieldServer(paths: string[], initial: Record<string, unknown>) {
   // The global record revision an older Manager sent back to every field.
   let recordRevision = 2;
   let conflicts = 0;
+  let reject: null | string = null;
   const pathOf = (resource: string) => resource.split('/').slice(2).join('.');
   const fieldRevision = (path: string) => revision[path];
   const view = (path: string) => ({
@@ -59,6 +60,20 @@ function gatewayFieldServer(paths: string[], initial: Record<string, unknown>) {
         conflicts++;
         throw new PublicApiError('http', 409, undefined, 'source_or_operation_conflict');
       }
+      if (reject) {
+        const code = reject;
+        reject = null;
+        // The failed attempt is journaled, so the field's revision still moved.
+        recordRevision++;
+        revision[path] = recordRevision;
+        state[path] = { state: 'failed', requestId: payload.requestId, code };
+        throw new PublicApiError(
+          'http',
+          422,
+          { operation: state[path] },
+          'config_field_write_failed'
+        );
+      }
       values[path] = payload.value;
       recordRevision++;
       revision[path] = recordRevision;
@@ -90,6 +105,9 @@ function gatewayFieldServer(paths: string[], initial: Record<string, unknown>) {
       revision[path] = recordRevision;
     },
     conflicts: () => conflicts,
+    rejectNext(code: string) {
+      reject = code;
+    },
     // The project's TS lib predates Promise.withResolvers, so the gate uses the
     // executor form.
     holdWrites() {
@@ -258,6 +276,21 @@ describe('RequestsConfigFieldGroup', () => {
     expect(server.conflicts()).toBe(0);
     expect(server.values[BOOTSTRAP]).toBe(3);
     expect(server.puts[BOOTSTRAP]).toBe(1);
+  });
+
+  it('refreshes the expectation of a definitely rejected field without a reload', async () => {
+    const server = gatewayFieldServer(CATALOG_PATHS, { [KEEPALIVE]: 2, [BOOTSTRAP]: 0, [HEADERS]: false });
+    await mount(server.client);
+    await change(`config-input-${KEEPALIVE}`, '20');
+    server.rejectNext('write_rejected');
+    await click(`config-save-${KEEPALIVE}`);
+    expect(text()).toContain(c('fieldWriteFailed'));
+    // The draft is intact and the rejected attempt advanced the field revision.
+    expect(node(`config-input-${KEEPALIVE}`).props.value).toBe('20');
+    await click(`config-save-${KEEPALIVE}`);
+    expect(server.values[KEEPALIVE]).toBe(20);
+    expect(server.conflicts()).toBe(0);
+    expect(server.puts[KEEPALIVE]).toBe(2);
   });
 
   it('repairs stale expectations for the whole group after a conflict', async () => {
