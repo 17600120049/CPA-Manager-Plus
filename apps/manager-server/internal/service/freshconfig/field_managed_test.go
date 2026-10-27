@@ -2,11 +2,11 @@ package freshconfig
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"database/sql"
 	"path/filepath"
 	"strconv"
 	"strings"
