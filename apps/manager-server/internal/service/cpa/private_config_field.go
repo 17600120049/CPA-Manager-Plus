@@ -107,6 +107,59 @@ func sameConfigFieldSource(a, b ConfigFieldSource) bool {
 		a.OperationPath == b.OperationPath && reflect.DeepEqual(a.OperationValue, b.OperationValue)
 }
 
+// ReadConfigFieldValue reads one allowlisted field with the caller's management
+// authority. It is the read half of the managed profile, whose journal is owned
+// by the Manager; it never reaches CPA for a path outside the allowlist.
+func (t *Transport) ReadConfigFieldValue(ctx context.Context, management, path string) (string, any, error) {
+	endpoint, err := ConfigFieldEndpoint(path)
+	if err != nil {
+		return "unknown", nil, ErrProofUnavailable
+	}
+	code, body, err := t.request(ctx, http.MethodGet, endpoint, management, nil)
+	if err != nil {
+		return "unknown", nil, err
+	}
+	switch code {
+	case http.StatusNotFound:
+		return "missing", nil, nil
+	case http.StatusOK:
+		trimmed := bytes.TrimSpace(body)
+		if bytes.Equal(trimmed, []byte("null")) {
+			return "null", nil, nil
+		}
+		value, err := ParseConfigFieldValue(path, trimmed)
+		if err != nil {
+			return "unknown", nil, ErrSourceConflict
+		}
+		return "present", value, nil
+	default:
+		return "unknown", nil, ErrProofUnavailable
+	}
+}
+
+// WriteConfigFieldValue performs exactly one non-replayable PUT of one scalar.
+func (t *Transport) WriteConfigFieldValue(ctx context.Context, management, path string, value any) error {
+	endpoint, err := ConfigFieldEndpoint(path)
+	if err != nil {
+		return ErrProofUnavailable
+	}
+	payload, err := EncodeConfigFieldValue(path, value)
+	if err != nil {
+		return ErrProofUnavailable
+	}
+	code, _, err := t.request(ctx, http.MethodPut, endpoint, management, payload)
+	if err != nil || (code != http.StatusOK && code != http.StatusNoContent) {
+		return ErrApplyUnknown
+	}
+	return nil
+}
+
+// HasRuntimeJournal reports whether this Transport reserves through the private
+// runtime authority. Without it the Manager journal is the only reservation.
+func (t *Transport) HasRuntimeJournal() bool {
+	return t.configurationAuthority != nil || t.h1 != nil
+}
+
 // ConfigFieldSource reports the private source and the single H1 handoff state.
 // A private H1 profile must additionally prove its handoff is ready and free.
 func (t *Transport) ConfigFieldSource(ctx context.Context) (ConfigFieldSource, error) {

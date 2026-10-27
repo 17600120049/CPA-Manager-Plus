@@ -61,6 +61,9 @@ type fieldWire interface {
 	PutConfigField(context.Context, cpa.ConfigFieldSource, string, string, string, any) error
 	WriteH1ConfigField(context.Context, string, cpa.H1Step, string, string, any) error
 	ReconcileConfigField(context.Context, cpa.ConfigFieldSource, string, string, any) (cpa.ConfigFieldSource, error)
+	ReadConfigFieldValue(context.Context, string, string) (string, any, error)
+	WriteConfigFieldValue(context.Context, string, string, any) error
+	HasRuntimeJournal() bool
 }
 
 // Service serializes every field write in this process. Runtime remains the
@@ -99,8 +102,8 @@ func ValidateFieldRequest(path string, q FieldRequest) error {
 	if _, ok := cpa.LookupConfigField(path); !ok {
 		return ErrInvalid
 	}
-	if !freshkeys.ValidRequestID(q.RequestID) || len(q.Value) == 0 ||
-		q.Expected.SourceID == "" || q.Expected.Generation == "" || q.Expected.Revision == 0 || len(q.Expected.SHA256) != 64 {
+	if !freshkeys.ValidRequestID(q.RequestID) || len(q.Value) == 0 || q.Expected.Generation == "" ||
+		q.Expected.Revision == 0 || (len(q.Expected.SHA256) != 0 && len(q.Expected.SHA256) != 64) {
 		return ErrInvalid
 	}
 	if _, err := fieldValue(path, q.Value); err != nil {
@@ -169,7 +172,12 @@ func (s *Service) fieldOwner(ctx context.Context, path string) (freshstore.Recor
 	}
 	op := r.Operation
 	if s.target == nil || op.Strategy.Stage != "committed" || op.Strategy.Strategy != bootstrap.NewManaged ||
-		op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
+		op.Strategy.TargetGeneration == 0 {
+		return r, "", cpa.ErrProofUnavailable
+	}
+	// The private attested profile must name its exact runtime artifact; a managed
+	// install writes through the install-derived ConfigTarget instead.
+	if op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
 		return r, "", cpa.ErrProofUnavailable
 	}
 	management, err := s.target(ctx, op.Strategy.TargetGeneration)
@@ -187,6 +195,18 @@ func (s *Service) readOwner(ctx context.Context, path string) (freshstore.Record
 		return r, "", cpa.ErrSourceConflict
 	}
 	return r, management, nil
+}
+
+// managedSource is the Manager-owned journal view. It carries an installation
+// identity and the committed target generation, never a runtime reservation.
+func managedSource(r freshstore.Record) cpa.ConfigFieldSource {
+	return cpa.ConfigFieldSource{
+		SourceID:   r.Operation.Identity.InstallationID,
+		Generation: strconv.FormatUint(r.Operation.Strategy.TargetGeneration, 10),
+		Revision:   r.Operation.Revision,
+		State:      "persisted",
+		Installed:  true,
+	}
 }
 
 // ReadField reports presence, value and editability for one allowlisted field.
@@ -207,12 +227,24 @@ func (s *Service) ReadField(ctx context.Context, path string) (FieldView, error)
 		}
 		return v, nil
 	}
-	source, presence, value, err := s.wire.ReadConfigField(ctx, management, path)
-	if err != nil {
-		return v, err
-	}
-	if source.Generation != strconv.FormatUint(r.Operation.Strategy.TargetGeneration, 10) {
-		return v, cpa.ErrSourceConflict
+	var source cpa.ConfigFieldSource
+	var presence string
+	var value any
+	if s.wire.HasRuntimeJournal() {
+		source, presence, value, err = s.wire.ReadConfigField(ctx, management, path)
+		if err != nil {
+			return v, err
+		}
+		if source.Generation != strconv.FormatUint(r.Operation.Strategy.TargetGeneration, 10) {
+			return v, cpa.ErrSourceConflict
+		}
+	} else {
+		// Managed profile: the Manager journal is the source, CPA is only read.
+		source = managedSource(r)
+		presence, value, err = s.wire.ReadConfigFieldValue(ctx, management, path)
+		if err != nil {
+			return v, err
+		}
 	}
 	v.Presence, v.Value, v.Persisted = presence, value, source.State
 	expected := fieldExpected(source)
@@ -220,6 +252,9 @@ func (s *Service) ReadField(ctx context.Context, path string) (FieldView, error)
 	v.Editable = source.Installed && source.State == "persisted" && knownSource(r, source)
 	if source.H1 {
 		v.Editable = v.Editable && source.HandoffValid && source.ParentID == ""
+	}
+	if !s.wire.HasRuntimeJournal() {
+		v.Editable = true
 	}
 	if operation := fieldOperation(r, path); operation != nil {
 		v.Operation = operation
@@ -306,6 +341,9 @@ func (s *Service) reconcileOperation(ctx context.Context, path string, operation
 	}
 	if s.h1 != nil {
 		return s.reconcileH1(ctx, path, operation)
+	}
+	if !s.wire.HasRuntimeJournal() {
+		return s.reconcileManaged(ctx, path, operation)
 	}
 	return s.reconcileDirect(ctx, path, operation)
 }

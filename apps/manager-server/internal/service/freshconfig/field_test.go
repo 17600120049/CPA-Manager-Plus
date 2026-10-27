@@ -21,18 +21,22 @@ import (
 // fakeField models the Runtime private-configuration journal for one bounded
 // field: one reservation slot, one non-replayable PUT and a lost-reply mode.
 type fakeField struct {
-	mu         sync.Mutex
-	base       cpa.ConfigFieldSource
-	operation  cpa.ConfigFieldSource
-	value      any
-	present    bool
-	begins     int
-	puts       int
-	lostPut    bool
-	rejectPut  bool
-	lostCommit bool
-	failBegin  bool
-	applied    bool
+	mu          sync.Mutex
+	base        cpa.ConfigFieldSource
+	operation   cpa.ConfigFieldSource
+	value       any
+	present     bool
+	begins      int
+	puts        int
+	lostPut     bool
+	rejectPut   bool
+	lostCommit  bool
+	failBegin   bool
+	applied     bool
+	managed     bool
+	writes      int
+	reads       int
+	ignoreWrite bool
 }
 
 func (f *fakeField) source() cpa.ConfigFieldSource {
@@ -92,6 +96,28 @@ func (f *fakeField) PutConfigField(_ context.Context, _ cpa.ConfigFieldSource, _
 
 func (f *fakeField) WriteH1ConfigField(context.Context, string, cpa.H1Step, string, string, any) error {
 	return cpa.ErrProofUnavailable
+}
+
+func (f *fakeField) HasRuntimeJournal() bool { return !f.managed }
+
+func (f *fakeField) ReadConfigFieldValue(context.Context, string, string) (string, any, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads++
+	if !f.present {
+		return "missing", nil, nil
+	}
+	return "present", f.value, nil
+}
+
+func (f *fakeField) WriteConfigFieldValue(_ context.Context, _ string, _ string, value any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.writes++
+	if !f.ignoreWrite {
+		f.value, f.present, f.applied = value, true, true
+	}
+	return nil
 }
 
 func (f *fakeField) ReconcileConfigField(_ context.Context, source cpa.ConfigFieldSource, requestID, path string, value any) (cpa.ConfigFieldSource, error) {

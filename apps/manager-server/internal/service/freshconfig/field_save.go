@@ -56,6 +56,9 @@ func (s *Service) SaveField(ctx context.Context, path string, q FieldRequest) (f
 	if s.h1 != nil {
 		return s.saveH1(ctx, path, q, value, r, management, source)
 	}
+	if !s.wire.HasRuntimeJournal() {
+		return s.saveManaged(ctx, path, q, value, r, management)
+	}
 	return s.saveDirect(ctx, path, q, value, r, management, source)
 }
 
@@ -140,6 +143,57 @@ func (s *Service) saveH1(ctx context.Context, path string, q FieldRequest, value
 
 // appendOperation records the original intent under its own field journal. An
 // existing unknown operation or a replay of an existing request ID is refused.
+// saveManaged writes one allowlisted field on a manager-owned journal: durable
+// Manager intent, exactly one authenticated CPA PUT, then readback. There is no
+// host reservation, so the readback is the only effectiveness evidence.
+func (s *Service) saveManaged(ctx context.Context, path string, q FieldRequest, value any, r freshstore.Record, management string) (freshstore.ConfigOperation, error) {
+	source := managedSource(r)
+	presence, current, err := s.wire.ReadConfigFieldValue(ctx, management, path)
+	if err != nil {
+		return freshstore.ConfigOperation{}, err
+	}
+	if presence == "unknown" {
+		return freshstore.ConfigOperation{}, cpa.ErrSourceConflict
+	}
+	if fieldExpected(source) != q.Expected {
+		return freshstore.ConfigOperation{}, cpa.ErrSourceConflict
+	}
+	_ = current
+	operation := newOperation(path, q.RequestID, value, source)
+	if err = s.appendOperation(ctx, r.Operation.Identity, r.Operation.Revision, path, operation); err != nil {
+		return operation, err
+	}
+	if err = s.wire.WriteConfigFieldValue(ctx, management, path, value); err != nil {
+		return operation, cpa.ErrApplyUnknown
+	}
+	return s.reconcileManaged(ctx, path, operation)
+}
+
+// reconcileManaged verifies the written scalar by readback and only then records
+// the operation persisted. It never repeats the PUT.
+func (s *Service) reconcileManaged(ctx context.Context, path string, operation freshstore.ConfigOperation) (freshstore.ConfigOperation, error) {
+	if operation.State != "unknown" {
+		return operation, nil
+	}
+	_, management, err := s.fieldOwner(ctx, path)
+	if err != nil {
+		return operation, err
+	}
+	presence, value, err := s.wire.ReadConfigFieldValue(ctx, management, path)
+	if err != nil {
+		return operation, cpa.ErrApplyUnknown
+	}
+	if presence != "present" || !reflect.DeepEqual(value, operation.Value) {
+		return operation, cpa.ErrApplyUnknown
+	}
+	next := operation
+	next.State = "persisted"
+	if err = s.updateOperation(ctx, path, operation, next); err != nil {
+		return operation, err
+	}
+	return next, nil
+}
+
 func (s *Service) appendOperation(ctx context.Context, identity bootstrap.FreshIdentity, revision uint64, path string, operation freshstore.ConfigOperation) error {
 	_, err := s.store.Update(ctx, identity, revision, func(v *freshstore.Record) error {
 		if v.Config == nil {

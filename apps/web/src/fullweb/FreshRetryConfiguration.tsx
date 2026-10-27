@@ -302,10 +302,12 @@ function RetryScalarEditor({
   const t = (key: string) => translate('fullweb.' + key);
   const w = (key: Parameters<typeof workspaceText>[0]) => workspaceText(key, i18n.resolvedLanguage);
   const consumedDiscardEpoch = useRef(discardEpoch);
+  // One allowlisted field surface for every config field, retry included.
   const retryResource =
-    variant === 'interval' ? 'gateway/retry/max-retry-interval' : 'gateway/retry/request-retry';
-  const retryOperationResource =
-    variant === 'interval' ? 'gateway/retry/interval-operations/' : 'gateway/retry/operations/';
+    variant === 'interval'
+      ? 'gateway/config/routing/retry/max-retry-interval'
+      : 'gateway/config/routing/retry/request-retry';
+  const retryOperationResource = 'gateway/config/operations/';
   const testPrefix = variant === 'interval' ? 'retry-interval' : 'retry';
   const [view, setView] = useState<RetryView | null>(null);
   const [draft, setDraft] = useState('');

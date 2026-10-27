@@ -139,7 +139,7 @@ func validFieldJournal(path string, journal *FieldJournal) bool {
 	for id, operation := range journal.Operations {
 		if !hashHex(id, 16) || operation.RequestID != id || operation.Field != path ||
 			len(operation.SourceID) < 16 || operation.Generation == "" || operation.Revision == 0 ||
-			!hashHex(operation.SHA256, 32) {
+			(operation.SHA256 != "" && !hashHex(operation.SHA256, 32)) {
 			return false
 		}
 		switch operation.Value.(type) {

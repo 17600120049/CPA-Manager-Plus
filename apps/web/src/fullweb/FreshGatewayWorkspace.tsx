@@ -11,7 +11,8 @@ import {
   type GatewayOwnerMeta,
 } from './gatewayCatalog';
 import { FreshRetryConfiguration, type RetryDraftDiff } from './FreshRetryConfiguration';
-import type { createPublicApiClient } from './publicApi';
+import { RequestsConfigFieldGroup } from './RequestsConfigFieldGroup';
+import type { PublicApiClient } from './publicApi';
 import { configurationText as c } from '../i18n/configurationWorkspace';
 
 export type GatewayTabKey =
@@ -32,7 +33,7 @@ export function FreshGatewayWorkspace({
   onDirtyChange,
   navigationRequest = 0,
 }: {
-  client: ReturnType<typeof createPublicApiClient>;
+  client: PublicApiClient;
   credential: string;
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
@@ -99,11 +100,13 @@ export function FreshGatewayWorkspace({
   );
   const countVisible = visiblePaths.has(RETRY_COUNT_PATH);
   const intervalVisible = visiblePaths.has(RETRY_INTERVAL_PATH);
+  const requestsFields = sections.find((section) => section.id === 'requests')?.fields ?? [];
+  const requestsVisible = requestsFields.some((field) => visiblePaths.has(field.path));
   const referenceSections = filteredSections
     .map((section) => ({
       ...section,
       fields: section.fields.filter(
-        (field) => field.path !== RETRY_COUNT_PATH && field.path !== RETRY_INTERVAL_PATH
+        (field) => field.path !== RETRY_COUNT_PATH && field.path !== RETRY_INTERVAL_PATH && !field.editable
       ),
     }))
     .filter((section) => section.fields.length > 0);
@@ -377,6 +380,16 @@ export function FreshGatewayWorkspace({
               intervalVisible={intervalVisible}
             />
           </section>
+        </div>
+        <div hidden={!requestsVisible || showOverview || showOwners} data-testid="fresh-managed-requests">
+          <RequestsConfigFieldGroup
+            fields={requestsFields.filter((field) => visiblePaths.has(field.path))}
+            client={client}
+            credential={credential}
+            onUnauthorized={onUnauthorized}
+            onPending={onPending}
+            onDraftChange={(diffs) => setDraftDiffs((current) => [...current.filter((diff) => !diffs.some((next) => next.path === diff.path)), ...diffs])}
+          />
         </div>
         {!showOverview && !showOwners && (
           <div className="gateway-sections-list stack" style={{ marginTop: 18 }}>
