@@ -188,7 +188,30 @@ func valid(r Record) error {
 			return ErrNotFresh
 		}
 	}
-	if r.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
+	if r.Operation.Strategy.Strategy == bootstrap.NewManaged {
+		strategy := r.Operation.Strategy
+		if r.AdoptionCiphertext != "" && !security.IsValidProtectedEnvelope(r.AdoptionCiphertext) {
+			return ErrNotFresh
+		}
+		// Only a committed checkpoint may own the CPA connection staged for it.
+		if r.Connection != nil && strategy.Stage != "committed" {
+			return ErrNotFresh
+		}
+		if strategy.DestinationConnectionIdentity != "" {
+			// An installation that recorded its destination snapshot and then
+			// committed must also carry the verified connection; a half commit
+			// would leave the Manager without the authority it derives.
+			if strategy.Stage == "committed" && r.AdoptionCiphertext != "" && r.Connection == nil {
+				return ErrNotFresh
+			}
+			if r.Connection != nil {
+				digest := sha256.Sum256([]byte(r.Connection.CPABaseURL))
+				if strategy.DestinationConnectionIdentity != "managed:sha256:"+hex.EncodeToString(digest[:]) {
+					return ErrNotFresh
+				}
+			}
+		}
+	} else if r.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
 		if !security.IsValidProtectedEnvelope(r.AdoptionCiphertext) {
 			return ErrNotFresh
 		}
@@ -466,6 +489,15 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		disabled := false
 		cfg := model.ManagerConfig{CPAConnection: *v.Connection, Collector: model.ManagerCollectorConfig{Enabled: &disabled}, UpdatedAtMS: time.Now().UnixMilli()}
 		err = write(ctx, tx, "manager_config_v1", cfg)
+	}
+	if err == nil && v.Connection != nil && v.Operation.ProductComplete && (!before.Operation.ProductComplete || before.Connection == nil) {
+		// Fresh keeps pending installs free of the legacy setup row so an
+		// incomplete browser operation cannot activate historical Config
+		// readers. Once completion or a legacy-install migration commits the
+		// connection, mirror the protected authority for all compatibility
+		// consumers in the same transaction.
+		setup := model.Setup{CPAUpstreamURL: v.Connection.CPABaseURL, ManagementKey: v.Connection.ManagementKey}
+		err = write(ctx, tx, "setup", setup)
 	}
 	if err == nil && !reflect.DeepEqual(before.Retry, v.Retry) {
 		err = write(ctx, tx, retryKey, v.Retry)

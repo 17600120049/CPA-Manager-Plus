@@ -86,7 +86,7 @@ func operationFixture(t *testing.T) (*Service, *operationWire, string, string, s
 func grantStep(s *Service, id, step string) {
 	p, _ := s.permit()
 	grant := KeyPermit{OperationID: id, Step: step, RunID: p.RunID, Generation: p.Generation, SourceSHA256: strings.Repeat("a", 64), IssuedAtMS: time.Now().UnixMilli(), ExpiresAtMS: time.Now().Add(time.Minute).UnixMilli()}
-	s.keyPermit = func() (KeyPermit, error) { return grant, nil }
+	s.keyPermit = func(context.Context, string, string) (KeyPermit, error) { return grant, nil }
 }
 func mustPrepare(t *testing.T, s *Service, id, old, next, mode string) {
 	t.Helper()
@@ -180,9 +180,9 @@ func TestLostReplyAndRestartResumeOnlyUnattemptedStep(t *testing.T) {
 	if err != nil || r.NextStep != "revoke" || w.writes != 1 {
 		t.Fatal(r, err)
 	}
-	oldGrant, _ := s.keyPermit()
+	oldGrant, _ := s.keyPermit(t.Context(), id, "revoke")
 	oldGrant.IssuedAtMS = restarted.startedAtMS - 1
-	restarted.keyPermit = func() (KeyPermit, error) { return oldGrant, nil }
+	restarted.keyPermit = func(context.Context, string, string) (KeyPermit, error) { return oldGrant, nil }
 	if _, err = restarted.ContinueOperation(t.Context(), id, 7); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("old grant survived Manager restart", err)
 	}
@@ -360,7 +360,7 @@ func TestKeyOperationAuthorityAndGenerationFences(t *testing.T) {
 			id := strings.Repeat("7", 32)
 			mustPrepare(t, s, id, oldID, nextID, "replace")
 			grantStep(s, id, "add")
-			p, _ := s.keyPermit()
+			p, _ := s.keyPermit(t.Context(), id, "add")
 			switch scenario {
 			case "disabled":
 				s.keyOperations = false
@@ -381,7 +381,7 @@ func TestKeyOperationAuthorityAndGenerationFences(t *testing.T) {
 			case "old-manager-grant":
 				p.IssuedAtMS = s.startedAtMS - 1
 			}
-			s.keyPermit = func() (KeyPermit, error) { return p, nil }
+			s.keyPermit = func(context.Context, string, string) (KeyPermit, error) { return p, nil }
 			if _, err := s.ContinueOperation(t.Context(), id, 7); err == nil || w.writes != 0 {
 				t.Fatal("unsafe grant wrote", err)
 			}
@@ -435,12 +435,12 @@ func TestGenerationChangeAfterIntentKeepsAttemptWithoutSending(t *testing.T) {
 	grantStep(s, id, "add")
 	read := s.keyPermit
 	calls := 0
-	s.keyPermit = func() (KeyPermit, error) {
+	s.keyPermit = func(ctx context.Context, operationID, step string) (KeyPermit, error) {
 		calls++
 		if calls == 3 {
 			return KeyPermit{}, ErrUnavailable
 		}
-		return read()
+		return read(ctx, operationID, step)
 	}
 	if _, err := s.ContinueOperation(t.Context(), id, 7); err == nil || w.writes != 0 {
 		t.Fatal(err)

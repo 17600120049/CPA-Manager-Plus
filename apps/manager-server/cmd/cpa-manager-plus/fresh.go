@@ -4,13 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"time"
-
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityreconcile"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
@@ -40,6 +33,12 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/updatecheck"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/worker"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 )
 
 // initialize is a host-owned offline operation. It admits the actual store and
@@ -149,6 +148,13 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 			a.keyApply.EnableH1(h)
 			a.configRetry.EnableH1(h)
 		}
+	}
+	if a.keyApply == nil && runtime != nil && h1Valid {
+		// Default Compose installations derive CPA management authority from
+		// the committed destination and the protected Manager connection.
+		a.keyApply = freshkeyapply.NewManaged(keyrepo.New(opened.DB), a.keys, runtime, cfg.CPAUpstreamURL,
+			managedInstallSource(st, opened.Protector, cfg.CPAUpstreamURL))
+		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
@@ -454,7 +460,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		// it: a failed read is safe to retry. Only the final CAS may select the
 		// connection. Also recover old validated-only checkpoints in place.
 	}
-	if request.Strategy == bootstrap.AdoptExisting {
+	if request.Strategy == bootstrap.AdoptExisting || request.Strategy == bootstrap.NewManaged {
 		record, err := a.store.Load(r.Context())
 		if err != nil || record.Operation.Identity != op.Identity || record.Operation.Revision != op.Revision {
 			w.WriteHeader(http.StatusConflict)
@@ -468,6 +474,23 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 	}
 	result, err := a.strategy.Execute(r.Context(), executionOp, request.Request)
 	if err != nil {
+		// A terminally failed Supervisor stage or start is the only evidence that
+		// permits the next destination attempt. Retire it under the same revision
+		// CAS before reporting the blocker, so a browser retry derives a new
+		// operation ID instead of replaying the recorded failure forever.
+		var retry *freshstrategy.DestinationRetry
+		if errors.As(err, &retry) {
+			guard := func(record freshstore.Record) error {
+				if token, freshAuth := freshbootstrap.SessionToken(r); freshAuth {
+					return a.validateInstallationSession(record, token)
+				}
+				return nil
+			}
+			if retireErr := a.retireDestinationAttempt(r.Context(), op, retry.Checkpoint, guard); retireErr != nil {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+		}
 		writeFreshStrategyError(w, err)
 		return
 	}
@@ -524,6 +547,31 @@ func (a *freshApplication) validateInstallationSession(record freshstore.Record,
 		return a.authority.ValidateContinuation(record, token)
 	}
 	return a.authority.ValidateSession(record, token)
+}
+
+// retireDestinationAttempt commits the next managed destination attempt in the
+// same Fresh CAS as the terminal failure that made it necessary. It advances the
+// attempt by exactly one against the current revision, keeps every other
+// checkpoint field, and never rewrites a checkpoint that already published its
+// destination; a committed destination is not retryable by construction.
+func (a *freshApplication) retireDestinationAttempt(ctx context.Context, op bootstrap.FreshOperation, checkpoint bootstrap.FreshStrategyCheckpoint, guard func(freshstore.Record) error) error {
+	if checkpoint.Strategy != bootstrap.NewManaged || checkpoint.DestinationAttempt == 0 || checkpoint.DestinationConnectionIdentity != "" && checkpoint.Stage == "committed" {
+		return freshstore.ErrConflict
+	}
+	_, err := a.store.Update(ctx, op.Identity, op.Revision, func(record *freshstore.Record) error {
+		current := record.Operation.Strategy
+		if current.Strategy != bootstrap.NewManaged || current.DestinationConnectionIdentity != "" && current.Stage == "committed" || current.DestinationAttempt+1 != checkpoint.DestinationAttempt {
+			return freshstore.ErrConflict
+		}
+		if guard != nil {
+			if err := guard(*record); err != nil {
+				return err
+			}
+		}
+		record.Operation.Strategy = checkpoint
+		return nil
+	})
+	return err
 }
 
 func writeFreshJSON(w http.ResponseWriter, v any) {
@@ -587,8 +635,15 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 	}
 	app := newFreshApplication(opened, cfg, freshDriver(cfg))
 	h.SetFreshHandler(app)
-	if opened.Record.Operation.ProductComplete && app.collectorWorker != nil {
-		app.collectorWorker.Start(ctx)
+	if opened.Record.Operation.ProductComplete {
+		if err := app.migrateManagedDestination(ctx); err != nil {
+			// Migration is durable and idempotent; keep the completed Fresh
+			// server available while a typed blocker waits for the next startup.
+			log.Printf("Fresh managed destination migration unavailable: %v", err)
+		}
+		if app.collectorWorker != nil {
+			app.collectorWorker.Start(ctx)
+		}
 	}
 	if opened.Record.Operation.ProductComplete && app.identityWorker != nil {
 		go app.identityWorker.Run(ctx)
