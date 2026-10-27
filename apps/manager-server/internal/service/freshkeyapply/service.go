@@ -48,7 +48,9 @@ type Service struct {
 	keyPermit     func(context.Context, string, string) (KeyPermit, error)
 	source        ManagedSource
 	endpoint      string
-	managed       bool
+	// profile is the one installation authority this service was built for. It
+	// is set at construction and decides which durable checkpoint facts count.
+	profile       string
 	keyOperations bool
 	startedAtMS   int64
 }
@@ -56,6 +58,7 @@ type Service struct {
 func New(r *repo.Repository, keys *freshkeys.Service, runtime runtimeservice.RuntimeClient) *Service {
 	s := &Service{repo: r, keys: keys, runtime: runtime, wire: cpa.NewTransport(), permit: loadPermit,
 		keyPermit:     func(context.Context, string, string) (KeyPermit, error) { return loadKeyPermit() },
+		profile:       ProfilePrivate,
 		keyOperations: os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1", startedAtMS: time.Now().UnixMilli()}
 	if os.Getenv("CPAMP_PRIVATE_S2B_CHAT") == "1" {
 		s.wire = cpa.NewPrivateS2BTransport(func() (cpa.PrivateProviderSeed, error) { p, err := s.permit(); return p.S2B, err })
@@ -72,7 +75,7 @@ func (s *Service) keyGrantHeld(ctx context.Context, grant KeyPermit, operationID
 	if err != nil {
 		return false
 	}
-	if s.managed {
+	if s.profile == ProfileManaged {
 		return current.OperationID == grant.OperationID && current.Step == grant.Step &&
 			current.RunID == grant.RunID && current.Generation == grant.Generation &&
 			current.SourceSHA256 == grant.SourceSHA256

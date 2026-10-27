@@ -55,7 +55,7 @@ func gatewayStore(t *testing.T) (freshstore.Store, bootstrap.FreshIdentity) {
 
 func gatewayRealService(t *testing.T, store freshstore.Store, wire configWire) *Service {
 	t.Helper()
-	service := New(store, func(context.Context, uint64) (string, error) { return "management-test-only", nil })
+	service := New(store, func(context.Context, uint64) (string, error) { return "management-test-only", nil }, managedTargets)
 	service.wire = wire
 	service.transport = nil
 	service.managed = true

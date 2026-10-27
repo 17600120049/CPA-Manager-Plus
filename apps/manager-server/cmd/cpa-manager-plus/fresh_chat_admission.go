@@ -8,8 +8,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
-	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 )
 
@@ -41,8 +39,7 @@ func (a *freshApplication) privateChatAdmission(w http.ResponseWriter, r *http.R
 		return
 	}
 	op, err := a.current(r.Context())
-	if err != nil || op.Strategy.Stage != "committed" || op.Strategy.Strategy != bootstrap.NewManaged ||
-		op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
+	if err != nil || !a.keyApply.Targets(op) {
 		w.WriteHeader(503)
 		return
 	}

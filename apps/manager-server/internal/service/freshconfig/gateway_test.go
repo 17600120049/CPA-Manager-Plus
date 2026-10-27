@@ -13,6 +13,21 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 )
 
+// managedTargets is the page's own pin of the managed profile contract: a
+// committed NewManaged checkpoint bound to a managed destination. Production
+// passes the key authority's Targets here.
+func managedTargets(op bootstrap.FreshOperation) bool {
+	return op.Strategy.Strategy == bootstrap.NewManaged && op.Strategy.Stage == "committed" &&
+		strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:")
+}
+
+// privateTargets is the page's own pin of the private H1/direct contract: a
+// committed checkpoint naming the attested private runtime and artifact.
+func privateTargets(op bootstrap.FreshOperation) bool {
+	return op.Strategy.Stage == "committed" &&
+		op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID == cpa.PrivateKeyArtifact
+}
+
 // memoryStore is the Fresh CAS in miniature: one record, one revision, and the
 // same conflict semantics the SQLite store enforces.
 type memoryStore struct {
@@ -230,7 +245,7 @@ func managedRecord() freshstore.Record {
 func managedService(t *testing.T, wire *fakeWire) (*Service, *memoryStore) {
 	t.Helper()
 	store := &memoryStore{record: managedRecord()}
-	service := New(store, func(context.Context, uint64) (string, error) { return "management-test-only", nil })
+	service := New(store, func(context.Context, uint64) (string, error) { return "management-test-only", nil }, managedTargets)
 	service.wire = wire
 	service.transport = nil
 	service.managed = true
@@ -544,7 +559,7 @@ func TestExternalProfileWritesScalarsAndRefusesRuleFamilies(t *testing.T) {
 		Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1,
 	}
 	store.record.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: "https://external.test", ManagementKey: "cpamp_protected_envelope"}
-	service := New(store, nil)
+	service := New(store, nil, nil)
 	service.wire = wire
 	service.transport = nil
 	service.EnableExternal(func(context.Context) (string, string, error) {
@@ -599,7 +614,7 @@ func TestLegacyFieldOperationStaysReconcilableAndIsNeverWritten(t *testing.T) {
 			},
 		},
 	}
-	service := New(store, func(context.Context, uint64) (string, error) { return "management-test-only", nil })
+	service := New(store, func(context.Context, uint64) (string, error) { return "management-test-only", nil }, managedTargets)
 	service.wire = wire
 	service.transport = nil
 	service.managed = true
@@ -753,7 +768,7 @@ func TestExternalProfileRefusesAConnectionItNoLongerOwns(t *testing.T) {
 		Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1,
 	}
 	store.record.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: "https://committed.test", ManagementKey: "cpamp_protected_envelope"}
-	service := New(store, nil)
+	service := New(store, nil, nil)
 	service.wire = wire
 	service.transport = nil
 	service.EnableExternal(func(context.Context) (string, string, error) {
