@@ -702,6 +702,28 @@ func isConstraintConflict(err error) bool {
 		strings.Contains(lower, "constraint failed")
 }
 
+// stagedAPIKeyForSource returns the Canonical Key a staged Fresh client key
+// already owns for this secret hash. Only an active identity qualifies: a
+// superseded key is terminal history, so a re-appearing hash is a new source.
+// fresh_client_api_keys.secret_hash is unique, so the answer is unambiguous.
+func stagedAPIKeyForSource(ctx context.Context, tx *sql.Tx, hash string) (identity.APIKeyID, bool, error) {
+	var rawID string
+	err := tx.QueryRowContext(ctx, `select k.api_key_id
+		from fresh_client_api_keys k
+		join `+sqliterepo.GatewayAPIKeyIdentitiesTable+` i on i.id = k.api_key_id
+		where k.secret_hash = ? and i.lifecycle = 'active'`, hash).Scan(&rawID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if identity.APIKeyID(rawID).Validate() != nil {
+		return "", false, errors.New("invalid staged client key identity")
+	}
+	return identity.APIKeyID(rawID), true, nil
+}
+
 func (r *repository) SourceBindingRevision(ctx context.Context) (int64, error) {
 	var revision int64
 	if err := r.db.QueryRowContext(ctx, `select revision from gateway_source_binding_revision where id = 1`).Scan(&revision); err != nil {
@@ -918,18 +940,27 @@ func (r *repository) ApplyPassiveSnapshot(ctx context.Context, params ports.Reco
 				result.APIKeysRecovered++
 			}
 		} else {
-			// New source: create new Canonical ID + initial binding
-			newID, err := identity.NewAPIKeyID()
+			// A source hash that a staged Fresh Key already owns keeps that
+			// Canonical Key: passive synchronization must never mint a second
+			// identity for one secret, or the Key workspace would attribute one
+			// key's traffic to two canonical IDs.
+			freshID, staged, err := stagedAPIKeyForSource(ctx, tx, hash)
 			if err != nil {
-				return ports.ReconcileSnapshotResult{}, fmt.Errorf("generate api key id: %w", err)
+				return ports.ReconcileSnapshotResult{}, fmt.Errorf("resolve staged api key source: %w", err)
 			}
-			_, err = tx.ExecContext(ctx, `insert into `+sqliterepo.GatewayAPIKeyIdentitiesTable+` (
-				id, revision, lifecycle, created_at_ms, updated_at_ms
-			) values (?, ?, ?, ?, ?)`,
-				string(newID), int64(identity.InitialRevision), string(identity.LifecycleActive),
-				params.NowMS, params.NowMS)
-			if err != nil {
-				return ports.ReconcileSnapshotResult{}, fmt.Errorf("insert api key identity: %w", err)
+			newID := freshID
+			if !staged {
+				if newID, err = identity.NewAPIKeyID(); err != nil {
+					return ports.ReconcileSnapshotResult{}, fmt.Errorf("generate api key id: %w", err)
+				}
+				_, err = tx.ExecContext(ctx, `insert into `+sqliterepo.GatewayAPIKeyIdentitiesTable+` (
+					id, revision, lifecycle, created_at_ms, updated_at_ms
+				) values (?, ?, ?, ?, ?)`,
+					string(newID), int64(identity.InitialRevision), string(identity.LifecycleActive),
+					params.NowMS, params.NowMS)
+				if err != nil {
+					return ports.ReconcileSnapshotResult{}, fmt.Errorf("insert api key identity: %w", err)
+				}
 			}
 			_, err = tx.ExecContext(ctx, `insert into `+sqliterepo.GatewayAPIKeySourceBindingsTable+` (
 				api_key_id, runtime_identity, api_key_hash, observed_runtime_generation,
@@ -943,7 +974,11 @@ func (r *repository) ApplyPassiveSnapshot(ctx context.Context, params ports.Reco
 				}
 				return ports.ReconcileSnapshotResult{}, fmt.Errorf("insert api key source binding: %w", err)
 			}
-			result.APIKeysCreated++
+			if staged {
+				result.APIKeysBound++
+			} else {
+				result.APIKeysCreated++
+			}
 		}
 	}
 

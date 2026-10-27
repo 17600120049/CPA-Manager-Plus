@@ -205,7 +205,10 @@ type ReconcileSnapshotParams struct {
 
 // ReconcileSnapshotResult summarizes the mutations performed during snapshot reconciliation.
 type ReconcileSnapshotResult struct {
-	APIKeysCreated       int
+	APIKeysCreated int
+	// APIKeysBound counts observed sources attached to a Canonical Key that a
+	// staged Fresh Key already owns, instead of a newly created identity.
+	APIKeysBound         int
 	APIKeysRefreshed     int
 	APIKeysRecovered     int
 	APIKeysMissing       int
