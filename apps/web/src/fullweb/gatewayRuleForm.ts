@@ -1,6 +1,7 @@
 import { isRecord } from '../utils/helpers';
 import { configurationText as c } from '../i18n/configurationWorkspace';
 import type { GatewayFamilyMeta } from './gatewayCatalog';
+import { parseGatewayJSON, stringifyGatewayJSON } from './gatewayRuleJSON';
 
 export type RuleConditionKind = 'headers' | 'match' | 'not-match' | 'exist' | 'not-exist';
 export type RuleValueType = 'string' | 'number' | 'boolean' | 'null' | 'array' | 'object';
@@ -83,7 +84,7 @@ function typedValue(type: RuleValueType, raw: string): unknown | { issue: RuleIs
 function displayValue(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === null) return 'null';
-  return JSON.stringify(value);
+  return stringifyGatewayJSON(value);
 }
 
 function typeOfValue(value: unknown): RuleValueType {
@@ -239,7 +240,9 @@ export function formToRule(form: RuleForm, family: GatewayFamilyMeta): RuleResul
 export function parseRuleText(source: string, family: GatewayFamilyMeta): RuleResult {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(source);
+    // A rule parameter can be a 64-bit integer; the plain parser would round it
+    // and the page would PUT a different number than the user typed.
+    parsed = parseGatewayJSON(source);
   } catch {
     return { ok: false, issue: 'jsonInvalid' };
   }

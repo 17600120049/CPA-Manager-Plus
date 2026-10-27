@@ -265,9 +265,17 @@ export function FreshGatewayWorkspace({
     onDirtyChange?.(dirtyCount > 0);
   }, [dirtyCount, onDirtyChange]);
 
+  // A journaled unknown is still an unanswered write, so it keeps the exit lock
+  // exactly as the per-field editor's own unknown result did: leaving to a
+  // signed-out page would abandon an operation nobody can reconcile any more.
+  const unresolvedOperation = [
+    ...groups.map((group) => group.id),
+    ...families.map((family) => familyScope(family.family)),
+  ].some((scope) => needsReconcile(scope) && !!reconcileTarget(scope));
+
   useEffect(() => {
-    onPending(!!saving || !!reconciling);
-  }, [onPending, reconciling, saving]);
+    onPending(!!saving || !!reconciling || unresolvedOperation);
+  }, [onPending, reconciling, saving, unresolvedOperation]);
 
   useEffect(() => {
     if (!dirtyCount || typeof window === 'undefined' || typeof window.addEventListener !== 'function')
@@ -1180,35 +1188,7 @@ export function FreshGatewayWorkspace({
         {currentTab === 'owners' ? (
           <div className="owner-grid" data-testid="gateway-owners">
             {owners.map((owner) => (
-              <section className="card" key={owner.path}>
-                <header className="card-head">
-                  <h2>{r(owner.ownerKey)}</h2>
-                </header>
-                <code>{owner.path}</code>
-                <p className="detail">{c(owner.detailKey)}</p>
-                <details>
-                  <summary>{c('ownerDetail')}</summary>
-                  <ul>
-                    {owner.fields.map((field) => (
-                      <li key={field}>
-                        <code>{field}</code>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-                {owner.target ? (
-                  <OwnerTargetLink inRouter={inRouter} target={owner.target} />
-                ) : (
-                  <p className="detail">{c('ownerUnavailable')}</p>
-                )}
-              </section>
-            ))}
-          </div>
-        ) : null}
-        {currentTab === 'owners' ? (
-          <div className="owner-grid" data-testid="gateway-owners">
-            {owners.map((owner) => (
-              <section className="card" key={owner.path}>
+              <section className="card" key={owner.path} data-testid={`gateway-owner-${owner.path}`}>
                 <header className="card-head">
                   <h2>{r(owner.ownerKey)}</h2>
                 </header>

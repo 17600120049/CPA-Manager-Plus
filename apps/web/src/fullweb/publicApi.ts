@@ -1,4 +1,5 @@
 import { readRoutingContext, resolveRoutingContext, type RoutingContext } from './routingContext';
+import { parseGatewayJSON, stringifyGatewayJSON } from './gatewayRuleJSON';
 import { parseRuntimeJSON, runtimeRequestJSON } from './runtimeGeneration';
 
 export type PublicApiErrorKind = 'routing_unavailable' | 'network' | 'http' | 'authentication';
@@ -113,7 +114,17 @@ export function createPublicApiClient(
         method,
         headers,
         ...(body !== undefined
-          ? { body: resource === 'strategy' ? runtimeRequestJSON(body) : JSON.stringify(body) }
+          ? {
+              // A payload rule family is arbitrary JSON and may hold integers wider
+              // than a double: stringify keeps them exact instead of sending a
+              // rounded number back to the Manager.
+              body:
+                resource === 'strategy'
+                  ? runtimeRequestJSON(body)
+                  : resource.startsWith('gateway/config/rules/')
+                    ? stringifyGatewayJSON(body)
+                    : JSON.stringify(body),
+            }
           : {}),
         ...(controller ? { signal: controller.signal } : {}),
         mode: 'same-origin',
@@ -180,6 +191,9 @@ export function createPublicApiClient(
         }
         throw new PublicApiError('http', response.status, operationResult, code, field, detail);
       }
+      // The gateway projection carries family rules, whose wide integers must not
+      // be rounded on the way in either.
+      if (isGatewayConfigResource(resource)) return parseGatewayJSON(await response.text()) as T;
       return (
         ['operation', 'strategy', 'complete', 'installation/runtime'].includes(resource)
           ? parseRuntimeJSON(await response.text())

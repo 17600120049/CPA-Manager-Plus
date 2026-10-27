@@ -68,6 +68,7 @@ export function FreshManagedResources({
   const [locks, setLocks] = useState({ keys: false, retry: false });
 
   function reportPending(resource: 'keys' | 'retry', value: boolean) {
+    if (pending.current[resource] === value) return;
     pending.current[resource] = value;
     const next = pending.current.keys || pending.current.retry;
     setLocks({ ...pending.current });

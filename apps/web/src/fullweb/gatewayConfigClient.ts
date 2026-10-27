@@ -219,6 +219,8 @@ export function parseGatewayView(value: unknown): GatewayView {
       return {
         family: entry.family,
         path: text(entry.path),
+        // Rules arrive through the transport's lossless parser, so a parameter
+        // wider than 2^53 is a tagged value here and goes back out unchanged.
         rules: Array.isArray(entry.rules) ? entry.rules : null,
         baseline: text(entry.baseline),
         writable: entry.writable === true,

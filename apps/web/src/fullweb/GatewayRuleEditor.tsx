@@ -17,6 +17,7 @@ import {
   type RuleParamType,
   type RuleValueType,
 } from './gatewayRuleForm';
+import { stringifyGatewayJSON } from './gatewayRuleJSON';
 
 // One payload rule family editor. The structured form and the advanced JSON view
 // are two representations of the same draft; the structured form is authoritative
@@ -63,7 +64,7 @@ export function GatewayRuleEditor({
   function startEdit(index: number | null) {
     const target = index === null ? emptyRule(family) : list[index];
     setForm(ruleToForm(target, family));
-    setJsonText(JSON.stringify(target, null, 2));
+    setJsonText(stringifyGatewayJSON(target));
     setMode('structured');
     setIssue('');
     setEditing(index === null ? list.length : index);
@@ -90,7 +91,7 @@ export function GatewayRuleEditor({
     if (!form) return;
     if (next === 'json') {
       const result = formToRule(form, family);
-      if (result.ok) setJsonText(JSON.stringify(result.rule, null, 2));
+      if (result.ok) setJsonText(stringifyGatewayJSON(result.rule));
       setMode('json');
       return;
     }

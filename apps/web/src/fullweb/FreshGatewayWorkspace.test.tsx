@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
 import { configurationText as c } from '../i18n/configurationWorkspace';
-import { gatewayFamilies, gatewayGroups } from './gatewayCatalog';
+import { gatewayFamilies, gatewayGroups, gatewayOwners } from './gatewayCatalog';
 import type {
   GatewayFamilyView,
   GatewayFieldView,
@@ -784,6 +784,63 @@ describe('FreshGatewayWorkspace', () => {
       renderer.root.findAll((node) => node.props['data-testid'] === 'gateway-owner-link-/system/runtime')
     ).toHaveLength(1);
     void fake;
+  });
+
+  it('renders each ownership card exactly once', async () => {
+    const fake = fakeClient(buildView());
+    await mount(fake.client);
+    await openTab('owners');
+    // A duplicated block in this page once rendered all 13 cards twice and gave
+    // React duplicate keys; the tab is one grid of one card per owner.
+    const owners = gatewayOwners();
+    expect(owners.length).toBeGreaterThan(0);
+    const links = renderer.root.findAll((node) => node.props['data-testid'] === 'gateway-owner-link-/api-keys');
+    expect(links).toHaveLength(1);
+    const grids = renderer.root.findAllByProps({ 'data-testid': 'gateway-owners' });
+    expect(grids).toHaveLength(1);
+    for (const owner of owners) {
+      // One card per ownership record: a duplicated block would fail here with
+      // React's duplicate-key warning, not just a longer list.
+      expect(renderer.root.findAllByProps({ 'data-testid': `gateway-owner-${owner.path}` })).toHaveLength(1);
+    }
+  });
+
+  it('offers reconcile for a legacy field operation surfaced as the group operation', async () => {
+    // A managed install blocks a group whose pre-cutover field write is still
+    // unresolved. The group must carry that operation, or the page says
+    // "reconcile it" and has no request ID to reconcile with.
+    const view = buildView();
+    view.groups = view.groups.map((group) =>
+      group.id === 'retry'
+        ? {
+            ...group,
+            writable: false,
+            reason: 'legacy_operation_unresolved',
+            operation: {
+              requestId: 'c'.repeat(32),
+              group: 'retry',
+              target: 'group' as const,
+              state: 'unknown' as const,
+            },
+          }
+        : group
+    );
+    const fake = fakeClient(view);
+    await mount(fake.client);
+    await openTab('retry');
+    const reconcile = testId('gateway-group-reconcile-retry');
+    expect(reconcile).toBeDefined();
+    const button = reconcile.findByProps({ className: 'btn btn-secondary btn-sm' });
+    await act(async () => button.props.onClick());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Reconciling reads the journaled original, never this tab's memory.
+    expect(
+      fake.calls.some(
+        (call) => call.method === 'post' && call.resource === `gateway/config/operations/${'c'.repeat(32)}/reconcile`
+      )
+    ).toBe(true);
   });
 
   it('locks the private profile and never renders a save action', async () => {
