@@ -66,7 +66,6 @@ type configRequest struct {
 }
 type configObservation struct {
 	H1              *H1Record                  `json:"h1,omitempty"`
-	Destination     bool                       `json:"destination,omitempty"`
 	SourceID        string                     `json:"sourceId"`
 	Generation      string                     `json:"generation"`
 	Revision        uint64                     `json:"revision"`
