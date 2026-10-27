@@ -22,7 +22,6 @@ type Handler struct {
 	legacyGateway    func(context.Context) bool
 	gatewayAdmission func(context.Context) bool
 	chat             *privateChat
-	pahS0Guard       func(context.Context) bool
 }
 
 func NewFreshHandler(fresh *FreshRoutes, managerURL, gatewayURL *url.URL, logger *log.Logger, legacyGateway func(context.Context) bool) *Handler {
@@ -42,12 +41,6 @@ func NewHandler(classifier Classifier, managerURL, gatewayURL *url.URL, logger *
 	}
 }
 
-// EnablePAHS0 requires a live Manager-side guard for every resource dispatch.
-func (h *Handler) EnablePAHS0(guard func(context.Context) bool) {
-	h.classifier.pahS0 = true
-	h.pahS0Guard = guard
-}
-
 // EnableFreshGatewayAdmission admits Fresh client Gateway traffic only while
 // the private Manager answer for the live routing projection is positive. It is
 // the only way a Fresh installation opens the model Gateway; without it every
@@ -58,13 +51,6 @@ func (h *Handler) EnableFreshGatewayAdmission(admitted func(context.Context) boo
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	route := h.classifier.ClassifyRequest(r)
-	if h.classifier.pahS0 && route == RouteManager && pahS0ResourceCandidate(r.URL.Path) {
-		if h.pahS0Guard == nil || !h.pahS0Guard(r.Context()) {
-			w.Header().Set("Cache-Control", "no-store")
-			http.NotFound(w, r)
-			return
-		}
-	}
 	switch route {
 	case RouteManager:
 		w.Header().Set("X-CPAMP-Route-Owner", "manager")
