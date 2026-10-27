@@ -7,6 +7,8 @@ import { createPublicApiClient } from './publicApi';
 import { fullWebText as t } from '../i18n/fullweb';
 import i18n from '../i18n';
 import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
+import { configurationText as c } from '../i18n/configurationWorkspace';
+import { gatewayViewFixture } from './gatewayViewFixture';
 
 // Renderer tests exercise domain state; browser acceptance covers the shared
 // portal, focus, animation and close controls.
@@ -230,81 +232,114 @@ describe('Fresh resources within the original Console', () => {
     expect(transport).toHaveBeenCalledTimes(3);
   });
 
-  it('keeps an unresolved retry and its logout lock when another resource first loads', async () => {
-    const expected = {
-      sourceId: 'private-source',
-      generation: '7',
-      revision: 2,
-      sha256: 'a'.repeat(64),
-    };
+  it('keeps an in-flight gateway save and its logout lock when another resource first loads', async () => {
+    // The save never settles: the panel must keep its draft and its exit lock
+    // across a navigation that unmounts the route it was edited on.
     const transport = vi.fn<typeof fetch>().mockImplementation((url, init) => {
-      if (init?.method === 'PUT') return Promise.reject(new TypeError('reply lost'));
-      if (String(url).endsWith('/api-keys'))
+      if (init?.method === 'POST') return new Promise<Response>(() => {});
+      if (String(url).endsWith('/api-keys/usage-summary'))
         return Promise.resolve(
           Response.json({
-            keys: [],
-            gatewayPending: true,
-            revocationAvailable: false,
+            fromMs: 1,
+            toMs: 2,
+            coverage: { state: 'unknown', reason: 'usage_read_failed' },
+            items: [],
           })
         );
-      return Promise.resolve(
-        Response.json({
-          field: String(url).includes('max-retry-interval')
-            ? 'routing.retry.max-retry-interval'
-            : 'routing.retry.request-retry',
-          presence: 'present',
-          value: 2,
-          source: 'private-installation',
-          authority: 'host-runtime',
-          editable: true,
-          reason: '',
-          persisted: 'persisted',
-          effective: 'unknown',
-          concurrentProtection: 'host-exclusive-runtime-reservation',
-          expected,
-        })
-      );
+      if (String(url).endsWith('/api-keys'))
+        return Promise.resolve(
+          Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
+        );
+      return Promise.resolve(Response.json(gatewayViewFixture()));
     });
     await mount(transport);
     await navigate('/console/config');
     const node = (id: string) => renderer.root.findByProps({ 'data-testid': id });
-    await act(async () => node('retry-value').props.onChange({ target: { value: '3' } }));
-    await act(async () => node('retry-save').props.onClick());
-    const originalId = node('retry-operation-id').props.children;
-    expect(originalId).toBe('b'.repeat(32));
+    await act(async () => node('gateway-tab-retry').props.onClick());
+    const field = () => node('gateway-field-routing.retry.request-retry');
+    await act(async () => field().findByType('input').props.onChange({ target: { value: '3' } }));
+    await act(async () =>
+      node('gateway-group-retry')
+        .findAll((entry) => entry.type === 'button' && entry.props.children === c('groupSave'))[0]
+        .props.onClick()
+    );
+    // The write is in flight, so the exit lock is held.
     expect(pending).toHaveBeenLastCalledWith(true);
     await navigate('/console/api-keys');
     expect(panel('retry').props.hidden).toBe(true);
     expect(pending).toHaveBeenLastCalledWith(true);
     await navigate('/console/config');
-    expect(node('retry-operation-id').props.children).toBe(originalId);
-    expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+    // The draft outlived the route change and the write was never resent.
+    expect(field().findByType('input').props.value).toBe('3');
+    expect(transport.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+  });
+
+  it('keeps the exit lock for a save whose reply was lost, until it is reconciled', async () => {
+    const transport = vi.fn<typeof fetch>().mockImplementation((url, init) => {
+      if (init?.method === 'POST') return Promise.reject(new TypeError('reply lost'));
+      if (String(url).endsWith('/api-keys/usage-summary'))
+        return Promise.resolve(
+          Response.json({
+            fromMs: 1,
+            toMs: 2,
+            coverage: { state: 'unknown', reason: 'usage_read_failed' },
+            items: [],
+          })
+        );
+      if (String(url).endsWith('/api-keys'))
+        return Promise.resolve(
+          Response.json({ keys: [], gatewayPending: true, revocationAvailable: false })
+        );
+      return Promise.resolve(Response.json(gatewayViewFixture()));
+    });
+    await mount(transport);
+    await navigate('/console/config');
+    const node = (id: string) => renderer.root.findByProps({ 'data-testid': id });
+    await act(async () => node('gateway-tab-retry').props.onClick());
+    const field = () => node('gateway-field-routing.retry.request-retry');
+    await act(async () => field().findByType('input').props.onChange({ target: { value: '3' } }));
+    await act(async () =>
+      node('gateway-group-retry')
+        .findAll((entry) => entry.type === 'button' && entry.props.children === c('groupSave'))[0]
+        .props.onClick()
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Nothing proves the document unchanged, so the result is unknown and the
+    // group offers the original operation instead of a second save.
+    expect(node('gateway-group-error-retry').props.children).toBe(c('groupSaveUnknown'));
+    expect(node('gateway-group-reconcile-retry')).toBeDefined();
+    expect(field().findByType('input').props.value).toBe('3');
+    // Nobody could reconcile an abandoned operation from a signed-out page, so
+    // the exit lock stays held until it settles.
+    expect(pending).toHaveBeenLastCalledWith(true);
+    expect(transport.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+    // The unresolved original is product state, not route state: leaving the
+    // page and coming back must show the same reconcile action for the same
+    // request, and still must not resend the write.
+    await navigate('/console/api-keys');
+    expect(panel('retry').props.hidden).toBe(true);
+    expect(pending).toHaveBeenLastCalledWith(true);
+    await navigate('/console/config');
+    expect(node('gateway-group-error-retry').props.children).toBe(c('groupSaveUnknown'));
+    expect(node('gateway-group-reconcile-retry')).toBeDefined();
+    expect(field().findByType('input').props.value).toBe('3');
+    expect(pending).toHaveBeenLastCalledWith(true);
+    expect(transport.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 
   it('mounts gateway workspace on /console/gateway with preserved retained state', async () => {
-    const transport = vi.fn<typeof fetch>().mockResolvedValue(
-      Response.json({
-        field: 'routing.retry.request-retry',
-        presence: 'present',
-        value: 3,
-        source: 'private-embedded-cpa-v8.0.13',
-        authority: 'host-runtime',
-        editable: true,
-        reason: '',
-        persisted: 'persisted',
-        effective: 'unknown',
-        concurrentProtection: 'host-exclusive-runtime-reservation',
-        expected: {
-          sourceId: 'private-source',
-          generation: 'gen-1',
-          revision: 1,
-          sha256: 'a'.repeat(64),
-        },
-      })
-    );
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(Response.json(gatewayViewFixture())));
     await mount(transport);
     await navigate('/console/gateway');
     expect(panel('retry').props.hidden).toBe(false);
-    expect(renderer.root.findByProps({ 'data-testid': 'fresh-gateway-workspace' })).toBeDefined();
+    expect(renderer.root.findByProps({ 'data-testid': 'gateway-config-workspace' })).toBeDefined();
+    // One projection read, not one request per leaf.
+    expect(
+      transport.mock.calls.filter(([url]) => String(url).endsWith('/gateway/config'))
+    ).toHaveLength(1);
   });
 });

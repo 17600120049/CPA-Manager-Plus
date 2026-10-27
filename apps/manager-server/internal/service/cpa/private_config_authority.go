@@ -258,10 +258,10 @@ func (t *Transport) postInstallProjection(ctx context.Context, body []byte) ([]b
 	}
 	committed := map[string]json.RawMessage{}
 	for path, raw := range v.CommittedFields {
-		if _, ok := LookupConfigField(path); !ok {
+		if _, ok := LookupPrivateConfigLeaf(path); !ok {
 			return nil, ErrSourceConflict
 		}
-		if _, err = ParseConfigFieldValue(path, raw); err != nil {
+		if _, err = ParseConfigLeafValue(path, raw); err != nil {
 			return nil, ErrSourceConflict
 		}
 		committed[path] = raw
@@ -279,7 +279,7 @@ func (t *Transport) postInstallProjection(ctx context.Context, body []byte) ([]b
 	}
 	// Every allowlisted leaf is either committed (verified and removed above) or
 	// uncommitted drift. Callers still compare the rest with the exact S1 seed.
-	for _, path := range ConfigFieldPaths() {
+	for _, path := range PrivateConfigLeafPaths() {
 		if _, ok := jsonPath(root, strings.Split(path, ".")); ok {
 			return nil, ErrSourceConflict
 		}
@@ -338,10 +338,10 @@ func deleteJSONPath(root map[string]json.RawMessage, parts []string) bool {
 }
 
 func jsonEqualScalar(path string, actual, expected json.RawMessage) bool {
-	value, err := ParseConfigFieldValue(path, expected)
+	value, err := ParseConfigLeafValue(path, expected)
 	if err != nil {
 		return false
 	}
-	got, err := ParseConfigFieldValue(path, actual)
+	got, err := ParseConfigLeafValue(path, actual)
 	return err == nil && reflect.DeepEqual(value, got)
 }

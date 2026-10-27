@@ -100,9 +100,9 @@ Errors are bounded codes, without upstream messages or raw response bodies:
 404 `operation_not_found`, 405 wrong method, 415 unsupported content type or
 encoding, 409 `source_or_operation_conflict`, `private_source_not_authorized`,
 `config_key_writer_not_isolated`, `original_operation_unknown`, or
-503 `configuration_unavailable`. A definite upstream refusal, or a readback that
-disagrees with the intent, is reported as 422 `config_field_write_failed`: the
-original never landed, so it is a known failure rather than an unknown result.
+503 `configuration_unavailable`. A definite upstream refusal is reported as the
+journaled operation's own terminal state, not as a separate reply code: the
+operation records why the original never landed and the field is writable again.
 An unknown result retains the original operation ID; query/reconcile it, never
 submit a replacement to retry.
 

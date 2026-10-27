@@ -1,24 +1,50 @@
 import { readRoutingContext, resolveRoutingContext, type RoutingContext } from './routingContext';
+import { parseGatewayJSON, stringifyGatewayJSON } from './gatewayRuleJSON';
 import { parseRuntimeJSON, runtimeRequestJSON } from './runtimeGeneration';
 
 export type PublicApiErrorKind = 'routing_unavailable' | 'network' | 'http' | 'authentication';
 
-const configFieldErrorCodes = new Set([
-  'operation_not_found',
-  'source_or_operation_conflict',
-  'private_source_not_authorized',
-  'config_key_writer_not_isolated',
-  'original_operation_unknown',
-  'configuration_unavailable',
-  'invalid_config_field',
-]);
+// Stable codes the gateway configuration page can act on. Every other failure
+// stays a bare HTTP error: the page never guesses a cause from a status alone.
+const GATEWAY_CONFIG_ERROR_CODES: Record<string, true> = {
+  operation_not_found: true,
+  source_or_operation_conflict: true,
+  config_key_writer_not_isolated: true,
+  original_operation_unknown: true,
+  configuration_unavailable: true,
+  config_authority_unavailable: true,
+  gateway_config_read_only: true,
+  payload_rules_read_only: true,
+  invalid_config_request: true,
+  // A CPA refusal. The code is bounded, and the field and redacted diagnostic
+  // travel with it so the failure lands on the leaf the user must fix.
+  cpa_rejected_config: true,
+  // The browser read a different CPA target than the one it saves into.
+  generation_mismatch: true,
+  // A pre-cutover field operation still holds this group.
+  legacy_operation_unresolved: true,
+  // The remaining two are the Manager's own pre-CPA refusals. Neither is ever
+  // CPA's string: the Manager maps its refusals onto these codes.
+  //
+  // A proxy URL with inline credentials is rejected on requests.proxy-url.
+  proxy_url_credentials: true,
+  // A value outside the private profile's field range.
+  invalid_config: true,
+};
+
+// The gateway configuration surface is `gateway/config` plus its sub-resources.
+const isGatewayConfigResource = (resource: string) =>
+  resource === 'gateway/config' || resource.startsWith('gateway/config/');
 
 export class PublicApiError extends Error {
   constructor(
     readonly kind: PublicApiErrorKind,
     readonly status?: number,
     readonly operationResult?: unknown,
-    readonly code?: string
+    readonly code?: string,
+    // A CPA rejection names the field and the redacted diagnostic it refused.
+    readonly field?: string,
+    readonly detail?: string
   ) {
     super(`Public API ${kind}`);
     this.name = 'PublicApiError';
@@ -86,7 +112,7 @@ export function createPublicApiClient(
       resource.startsWith('runtime/operations/') ||
       resource.startsWith('api-keys/') ||
       resource === 'settings/update-channel' ||
-      resource.startsWith('gateway/config/')
+      isGatewayConfigResource(resource)
         ? new AbortController()
         : undefined;
     const timer = controller ? setTimeout(() => controller.abort(), 15000) : undefined;
@@ -95,7 +121,17 @@ export function createPublicApiClient(
         method,
         headers,
         ...(body !== undefined
-          ? { body: resource === 'strategy' ? runtimeRequestJSON(body) : JSON.stringify(body) }
+          ? {
+              // A payload rule family is arbitrary JSON and may hold integers wider
+              // than a double: stringify keeps them exact instead of sending a
+              // rounded number back to the Manager.
+              body:
+                resource === 'strategy'
+                  ? runtimeRequestJSON(body)
+                  : resource.startsWith('gateway/config/rules/')
+                    ? stringifyGatewayJSON(body)
+                    : JSON.stringify(body),
+            }
           : {}),
         ...(controller ? { signal: controller.signal } : {}),
         mode: 'same-origin',
@@ -111,7 +147,9 @@ export function createPublicApiClient(
         // retain their original 409/503 status and cannot authorize writes.
         let operationResult: unknown;
         let code: string | undefined;
-        const retryResource = resource.startsWith('gateway/config/');
+        let field: string | undefined;
+        let detail: string | undefined;
+        const retryResource = isGatewayConfigResource(resource);
         const operationResource = method === 'GET' && resource.startsWith('api-keys/operations/');
         if (
           (retryResource ||
@@ -119,15 +157,24 @@ export function createPublicApiClient(
             (resource === 'strategy' && response.status === 409)) &&
           (response.status === 409 ||
             response.status === 503 ||
-            (retryResource && response.status === 400))
+            (retryResource &&
+              (response.status === 400 || response.status === 422)))
         ) {
           try {
             const payload = (await response.json()) as Record<string, unknown>;
             if (retryResource) {
-              if (typeof payload.code === 'string' && configFieldErrorCodes.has(payload.code))
+              // Only a recognised code unlocks the diagnostic: an unrecognised
+              // upstream payload must not smuggle its message into the UI.
+              if (typeof payload.code === 'string' && GATEWAY_CONFIG_ERROR_CODES[payload.code] === true)
                 code = payload.code;
+              if (code) {
+                if (typeof payload.field === 'string') field = payload.field;
+                if (typeof payload.message === 'string') detail = payload.message;
+              }
+              // A 400 shape error and a 422 CPA rejection carry no journal; only a
+              // conflict or an unavailable authority can hold an operation.
               if (
-                response.status !== 400 &&
+                (response.status === 409 || response.status === 503) &&
                 'result' in payload &&
                 payload.result &&
                 typeof payload.result === 'object'
@@ -149,8 +196,11 @@ export function createPublicApiClient(
             // A malformed failed response does not provide a journal snapshot.
           }
         }
-        throw new PublicApiError('http', response.status, operationResult, code);
+        throw new PublicApiError('http', response.status, operationResult, code, field, detail);
       }
+      // The gateway projection carries family rules, whose wide integers must not
+      // be rounded on the way in either.
+      if (isGatewayConfigResource(resource)) return parseGatewayJSON(await response.text()) as T;
       return (
         ['operation', 'strategy', 'complete', 'installation/runtime'].includes(resource)
           ? parseRuntimeJSON(await response.text())

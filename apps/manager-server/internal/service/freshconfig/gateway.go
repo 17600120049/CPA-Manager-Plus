@@ -1,0 +1,732 @@
+// Package freshconfig owns the Manager-side write loop of the gateway
+// configuration page. The page never edits YAML: it projects the scoped leaves
+// of one CPA v8 configuration document, saves one page group at a time through
+// CPA's own management endpoints, and journals every attempt so an unknown
+// result is resolved by reading back and never by resending the write.
+package freshconfig
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
+)
+
+var (
+	// ErrInvalid rejects a request the page contract does not allow.
+	ErrInvalid = errors.New("invalid gateway config request")
+	// ErrNotFound reports an operation ID this Manager never journaled.
+	ErrNotFound = errors.New("config operation not found")
+	// ErrRulesReadOnly reports a payload rule write on a profile without an
+	// exclusive write window. External CPAs stay rule-read-only by design.
+	ErrRulesReadOnly = errors.New("payload rule families are read-only")
+	// ErrReadOnly reports a profile whose configuration scope is frozen.
+	ErrReadOnly = errors.New("gateway config is read-only")
+)
+
+// The bounded page codes this Manager owns. A page code is product knowledge
+// the browser branches on, so the set is closed: a string CPA chose is journaled
+// as evidence but is NEVER a page code.
+const (
+	// CodeCPARejected reports a write CPA parsed, validated and refused. The
+	// page shows CPA's redacted diagnostic instead of guessing from a status.
+	CodeCPARejected = "cpa_rejected_config"
+	// CodeProxyURLCredentials names a proxy URL carrying inline credentials.
+	CodeProxyURLCredentials = "proxy_url_credentials"
+	// CodeInvalidConfig names a value outside the private profile's range.
+	CodeInvalidConfig = "invalid_config"
+)
+
+// ManagerCode reports whether code is one of this Manager's own page codes. An
+// unknown code is never passed through: the reply falls back to a bounded one.
+func ManagerCode(code string) bool {
+	switch code {
+	case CodeProxyURLCredentials, CodeInvalidConfig:
+		return true
+	}
+	return false
+}
+
+// Rejection is a refusal this Manager decided before CPA was asked: the request
+// shape, a proxy URL with credentials, a private value outside its range. Its
+// Code is one of the Manager's own bounded page codes.
+type Rejection struct {
+	Code    string
+	Field   string
+	Message string
+}
+
+func (r Rejection) Error() string {
+	if r.Field != "" {
+		return r.Code + ":" + r.Field
+	}
+	return r.Code
+}
+
+// CPARejection is CPA's own verdict on a write: it parsed, validated and
+// refused, so the stored document is unchanged and the draft is still the
+// user's. Code is CPA's string and stays in the journal as evidence; the page
+// receives it as CodeCPARejected with the field and the redacted diagnostic.
+type CPARejection struct {
+	Code    string
+	Field   string
+	Message string
+}
+
+func (r CPARejection) Error() string {
+	if r.Field != "" {
+		return r.Code + ":" + r.Field
+	}
+	return r.Code
+}
+
+// Profile modes of one installation.
+const (
+	ModeManaged     = "managed"
+	ModeExternal    = "external"
+	ModePrivate     = "private"
+	ModeUnavailable = "unavailable"
+)
+
+// Reasons are stable codes the page translates; they never carry a value.
+const (
+	ReasonRulesExternal   = "external_rule_write_unproven"
+	ReasonPrivateFrozen   = "private_profile_scope_frozen"
+	ReasonUnavailable     = "config_authority_unavailable"
+	ReasonJournalInvalid  = "config_journal_invalid"
+	ReasonUnknownOriginal = "original_operation_unknown"
+	// ReasonLegacyUnresolved blocks a group whose pre-cutover field operation was
+	// never resolved. It is distinct from ReasonUnknownOriginal because the page
+	// has no group-level record to reconcile: the old field operation is settled
+	// through its own journal.
+	ReasonLegacyUnresolved = "legacy_operation_unresolved"
+	ReasonReadUnavailable  = "config_read_unavailable"
+	ReasonNotInstalled     = "installation_incomplete"
+)
+
+// ErrGenerationMismatch refuses a save the browser built against another CPA
+// target generation. It is a typed conflict so the page can re-read and keep the
+// draft instead of reporting a moved baseline.
+var ErrGenerationMismatch = errors.New("gateway config target generation mismatch")
+
+// ErrLegacyUnresolved refuses a save of a group that still carries a pre-cutover
+// field operation. Resolving that operation reads the document, so a newer write
+// would let it observe a value it never wrote.
+var ErrLegacyUnresolved = errors.New("legacy config operation is unresolved")
+
+// ProfileLimits is the write shape one profile accepts. The private H1 profile is
+// the only one that reserves a single leaf per operation and has no delete, so it
+// is the only profile that carries limits at all.
+type ProfileLimits struct {
+	// SingleEdit means a group save carries exactly one "set" edit.
+	SingleEdit bool `json:"single_edit"`
+	// UseDefault is whether "restore the CPA default" is offered.
+	UseDefault bool `json:"use_default"`
+}
+
+// Capability is what this installation may do with the page right now.
+type Capability struct {
+	Mode          string `json:"mode"`
+	Readable      bool   `json:"readable"`
+	Writable      bool   `json:"writable"`
+	RulesWritable bool   `json:"rulesWritable"`
+	Reason        string `json:"reason,omitempty"`
+}
+
+// FieldView is one projected leaf. It carries no YAML and no secret.
+type FieldView struct {
+	Path     string `json:"path"`
+	Type     string `json:"type"`
+	Kind     string `json:"kind"`
+	Group    string `json:"group"`
+	Presence string `json:"presence"`
+	Value    any    `json:"value"`
+	Editable bool   `json:"editable"`
+	// Inherit is the value CPA resolves while the key is absent, for the leaves
+	// where that is a third state rather than an implied false. The page renders
+	// inherit / on / off and never invents an off.
+	Inherit *bool  `json:"inherit,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// GroupView is one page group: its confirmed baseline and its latest operation.
+type GroupView struct {
+	ID        string                           `json:"id"`
+	Prefix    string                           `json:"prefix"`
+	Paths     []string                         `json:"paths"`
+	Baseline  string                           `json:"baseline"`
+	Writable  bool                             `json:"writable"`
+	Reason    string                           `json:"reason,omitempty"`
+	Persisted string                           `json:"persisted"`
+	Effective string                           `json:"effective"`
+	Operation *freshstore.ConfigGroupOperation `json:"operation,omitempty"`
+}
+
+// FamilyView is one whole payload rule family. Operation is the latest save of
+// the shared rules group, so a family whose write is still unknown survives a
+// page reload and can be reconciled from persisted state alone.
+type FamilyView struct {
+	Family    string                           `json:"family"`
+	Path      string                           `json:"path"`
+	Rules     any                              `json:"rules"`
+	Baseline  string                           `json:"baseline"`
+	Writable  bool                             `json:"writable"`
+	Reason    string                           `json:"reason,omitempty"`
+	ReadOnly  bool                             `json:"readOnly"`
+	Operation *freshstore.ConfigGroupOperation `json:"operation,omitempty"`
+}
+
+// View is the whole page read model for one installation.
+type View struct {
+	Capability Capability `json:"capability"`
+	// Generation is the CPA target generation this installation writes. The page
+	// echoes it back with every save so an operation is bound to one target.
+	Generation string `json:"generation"`
+	// ProfileLimits is the write shape this profile accepts. It is present only
+	// where the page must constrain itself (the private H1 profile); absence
+	// means the group contract applies unchanged.
+	ProfileLimits *ProfileLimits `json:"profile_limits,omitempty"`
+	Groups        []GroupView    `json:"groups"`
+	Fields        []FieldView    `json:"fields"`
+	Families      []FamilyView   `json:"families"`
+	// GroupsInvalid reports a group journal this store cannot prove. The page
+	// stays readable and refuses every write.
+	GroupsInvalid bool `json:"groupsInvalid"`
+}
+
+// configWire is the exact transport surface the page needs. Transport implements
+// it against CPA; tests supply fakes.
+type configWire interface {
+	ReadConfigDocument(context.Context, string) (map[string]any, error)
+	PatchConfigPath(context.Context, string, string, []byte) error
+	PutConfigValue(context.Context, string, string, []byte) error
+	DeleteConfigPath(context.Context, string, string) error
+	ReadConfigFieldValue(context.Context, string, string) (string, any, error)
+	ReconcileConfigField(context.Context, cpa.ConfigFieldSource, string, string, any) (cpa.ConfigFieldSource, error)
+	ConfigFieldSource(context.Context) (cpa.ConfigFieldSource, error)
+	HasRuntimeJournal() bool
+	// The private H1/direct profile writes one leaf per operation through the
+	// Host reservation protocol, not through the group PATCH path.
+	ReadConfigField(context.Context, string, string) (cpa.ConfigFieldSource, string, any, error)
+	BeginConfigField(context.Context, cpa.ConfigFieldSource, string, string, any) error
+	PutConfigField(context.Context, cpa.ConfigFieldSource, string, string, string, any) error
+	WriteH1ConfigField(context.Context, string, cpa.H1Step, string, string, any) error
+}
+
+// h1Wire is the H1 handoff bookkeeping the private profile and legacy
+// reconciliation need.
+type h1Wire interface {
+	Claim(context.Context, *cpa.Transport, cpa.H1Intent) (*cpa.H1Parent, error)
+	Begin(context.Context, *cpa.Transport, string, int) (cpa.H1Step, error)
+	Commit(context.Context, *cpa.Transport, string, int) (cpa.H1Step, error)
+	ParentRecord(context.Context, *cpa.Transport, string) (*cpa.H1Parent, error)
+	Finish(context.Context, *cpa.Transport, string, string) error
+}
+
+// Service serializes every page write in this process. CPA remains the only
+// validator and the only writer of its file.
+type Service struct {
+	mu        sync.Mutex
+	store     freshstore.Store
+	wire      configWire
+	transport *cpa.Transport
+	h1        h1Wire
+	target    func(context.Context, uint64) (string, error)
+	// managed marks the install-derived default profile; endpoint is the
+	// committed destination CPA the page writes.
+	managed  bool
+	endpoint string
+	// external resolves the Manager-configured connection of an External
+	// install. It is nil for every other profile.
+	external func(context.Context) (string, string, error)
+	// externalWire builds the transport of that connection; nil selects the
+	// CPA v8 transport.
+	externalWire func(string) configWire
+}
+
+// New builds the service over the Fresh CAS store and the private management
+// authority. The authority is the only source of a management credential.
+func New(st freshstore.Store, target func(context.Context, uint64) (string, error)) *Service {
+	transport := cpa.NewTransport()
+	return &Service{store: st, wire: transport, transport: transport, target: target}
+}
+
+// EnableH1 switches the service onto the Host H1 handoff journal. The private H1
+// profile keeps its frozen scope: its page is readable and never writable.
+func (s *Service) EnableH1(h *cpa.H1Coordinator) {
+	s.h1 = h
+	if s.transport != nil {
+		s.transport.UseH1(h)
+	}
+}
+
+// EnableManaged switches the service onto the install-derived managed authority:
+// the CPA it writes is the committed destination address, never the private
+// loopback one. NewTransport alone dials the private address, so a managed
+// installation MUST select its endpoint before serving.
+func (s *Service) EnableManaged(endpoint string) {
+	transport := cpa.NewTransportForEndpoint(endpoint)
+	s.transport = transport
+	s.wire = transport
+	s.managed = true
+	s.endpoint = strings.TrimRight(endpoint, "/")
+}
+
+// EnableExternal switches the service onto the Manager-configured connection of
+// an External install. External writes are best-effort scalars only: without an
+// exclusive write window a whole rule family is read-only.
+func (s *Service) EnableExternal(connection func(context.Context) (string, string, error)) {
+	s.external = connection
+}
+
+// authority is the resolved source of one page read or write.
+type authority struct {
+	mode     string
+	wire     configWire
+	secret   string
+	capable  Capability
+	readOnly string
+	// limits is the write shape this profile accepts; nil means the page's own
+	// group rules apply unchanged.
+	limits *ProfileLimits
+}
+
+// resolve proves the profile this service was constructed with and returns the
+// authority for exactly the committed target generation. A record that does not
+// match that authority is never a write path.
+func (s *Service) resolve(ctx context.Context, r freshstore.Record) (authority, error) {
+	op := r.Operation
+	if s.target == nil && s.external == nil {
+		return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
+	}
+	switch {
+	case s.managed:
+		if op.Strategy.Strategy != bootstrap.NewManaged || op.Strategy.Stage != "committed" ||
+			op.Strategy.TargetGeneration == 0 || !strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:") {
+			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
+		}
+		secret, err := s.target(ctx, op.Strategy.TargetGeneration)
+		if err != nil || secret == "" {
+			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
+		}
+		return authority{
+			mode:   ModeManaged,
+			wire:   s.wire,
+			secret: secret,
+			capable: Capability{
+				Mode: ModeManaged, Readable: true, Writable: true, RulesWritable: true,
+			},
+		}, nil
+	case s.external != nil:
+		if op.Strategy.Stage != "committed" || op.Strategy.Strategy != bootstrap.ConnectExternal || r.Connection == nil {
+			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
+		}
+		baseURL, secret, err := s.external(ctx)
+		if err != nil || baseURL == "" || secret == "" {
+			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
+		}
+		endpoint, err := cpa.NormalizeV8BaseURL(baseURL)
+		if err != nil {
+			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
+		}
+		// The live connection must still be the connection this installation
+		// committed. Reading settings alone proves nothing: a later edit would
+		// otherwise point the page at a CPA the installation does not own. The
+		// committed management key is a protected envelope, so the address is the
+		// comparable durable fact; the secret stays with the connection service.
+		if endpoint != strings.TrimRight(r.Connection.CPABaseURL, "/") {
+			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
+		}
+		wire := s.externalWire
+		var transport configWire
+		if wire != nil {
+			transport = wire(endpoint)
+		} else {
+			transport = cpa.NewTransportForEndpoint(endpoint)
+		}
+		return authority{
+			mode:   ModeExternal,
+			wire:   transport,
+			secret: secret,
+			// An External CPA may have other writers. Scalars are best-effort;
+			// a whole rule family needs an exclusive window this profile cannot
+			// prove.
+			capable: Capability{
+				Mode: ModeExternal, Readable: true, Writable: true, RulesWritable: false, Reason: ReasonRulesExternal,
+			},
+		}, nil
+	default:
+		// The private H1/direct profile keeps its frozen six-leaf scope and the
+		// Host reservation protocol: one leaf per operation, reserved by the
+		// Runtime, no delete. The rest of the page is readable and read-only.
+		if op.Strategy.Stage != "committed" || op.Strategy.TargetGeneration == 0 ||
+			op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
+			return authority{mode: ModePrivate, capable: Capability{Mode: ModePrivate, Readable: false, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
+		}
+		secret, err := s.target(ctx, op.Strategy.TargetGeneration)
+		if err != nil || secret == "" {
+			return authority{mode: ModePrivate, capable: Capability{Mode: ModePrivate, Readable: false, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
+		}
+		return authority{
+			mode:   ModePrivate,
+			wire:   s.wire,
+			secret: secret,
+			capable: Capability{
+				Mode: ModePrivate, Readable: true, Writable: true, RulesWritable: false,
+				Reason: ReasonPrivateFrozen,
+			},
+			limits: &ProfileLimits{SingleEdit: true, UseDefault: false},
+		}, nil
+	}
+}
+
+// Read projects the whole page.
+func (s *Service) Read(ctx context.Context) (View, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.store.Load(ctx)
+	if err != nil {
+		return View{}, err
+	}
+	view := View{
+		Capability:    Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable},
+		Generation:    strconv.FormatUint(r.Operation.Strategy.TargetGeneration, 10),
+		GroupsInvalid: r.ConfigGroupsInvalid,
+	}
+	auth, _ := s.resolve(ctx, r)
+	view.Capability = auth.capable
+	view.ProfileLimits = auth.limits
+	journal := r.ConfigGroups
+	if view.GroupsInvalid {
+		journal = nil
+	}
+	var document map[string]any
+	if auth.capable.Readable && auth.wire != nil {
+		document, err = auth.wire.ReadConfigDocument(ctx, auth.secret)
+		if err != nil {
+			view.Capability.Readable = false
+			view.Capability.Writable = false
+			view.Capability.RulesWritable = false
+			view.Capability.Reason = ReasonReadUnavailable
+			document = nil
+		}
+	}
+	// A group whose latest operation is still unknown blocks its own writes.
+	blocked := map[string]string{}
+	for id, entry := range journal {
+		if entry == nil {
+			continue
+		}
+		if operation, ok := entry.Operations[entry.Latest]; ok && operation.State == "unknown" {
+			blocked[id] = ReasonUnknownOriginal
+		}
+	}
+	// A pre-cutover field operation that was never resolved blocks its group. It
+	// has its own reason code because the page settles it through the field
+	// journal, not through a group operation. That journal operation is also
+	// surfaced AS the group's operation, on every profile: it carries the request
+	// ID and the unknown state the page reconciles from, so the group can be
+	// unlocked. Without it the page says "reconcile it" and has no way to.
+	private := auth.mode == ModePrivate
+	fieldOperations := map[string]*freshstore.ConfigGroupOperation{}
+	if private {
+		for _, id := range cpa.PrivateConfigGroups() {
+			group, ok := cpa.LookupPrivateConfigGroup(id)
+			if !ok {
+				continue
+			}
+			operation := newestPrivateOperation(r, group)
+			if operation == nil {
+				continue
+			}
+			fieldOperations[id] = operation
+			if operation.State == "unknown" {
+				blocked[id] = ReasonUnknownOriginal
+			}
+		}
+	} else {
+		for _, id := range cpa.ConfigGroupIDs() {
+			group, ok := cpa.LookupConfigGroup(id)
+			if !ok {
+				continue
+			}
+			// A group journal that already holds an unknown original owns this
+			// group's reconcile: its operation is the newer write, and the page
+			// must settle that one first.
+			if blocked[id] != "" {
+				continue
+			}
+			operation := newestUnresolvedFieldOperation(r, group)
+			if operation == nil {
+				continue
+			}
+			fieldOperations[id] = operation
+			blocked[id] = ReasonLegacyUnresolved
+		}
+	}
+	if !private && unresolvedLegacyField(r, cpa.ConfigRulesGroupID) && blocked[cpa.ConfigRulesGroupID] == "" {
+		blocked[cpa.ConfigRulesGroupID] = ReasonLegacyUnresolved
+	}
+	// A private-profile group is writable only if it holds a private leaf. Every
+	// other group of that profile stays readable and read-only.
+	groupIDs := cpa.ConfigGroupIDs()
+	if private {
+		groupIDs = cpa.PrivateConfigGroups()
+	}
+	for _, id := range groupIDs {
+		group, ok := cpa.LookupConfigGroup(id)
+		if private {
+			group, ok = cpa.LookupPrivateConfigGroup(id)
+		}
+		if !ok {
+			continue
+		}
+		entry := GroupView{
+			ID: group.ID, Prefix: group.Prefix, Paths: append([]string(nil), group.Leaves...),
+			Persisted: "unknown", Effective: "unknown",
+		}
+		if current, ok := journal[id]; ok && current != nil {
+			if operation, ok := current.Operations[current.Latest]; ok {
+				copied := operation.Clone()
+				entry.Operation = &copied
+				entry.Persisted = operation.State
+			}
+		}
+		if operation, ok := fieldOperations[id]; ok {
+			// A per-field journal holds no group entry, so its operation is what the
+			// page reconciles from after a reload — on the private profile, where it
+			// is also the live write path, and on managed/External installs, where it
+			// is a pre-cutover original the group must settle before it can be saved.
+			entry.Operation = operation
+			entry.Persisted = operation.State
+		}
+		if document != nil {
+			entry.Baseline = groupBaseline(document, group)
+		}
+		groupReason := auth.readOnly
+		if !auth.capable.Writable {
+			groupReason = firstReason(auth.capable.Reason, ReasonUnavailable)
+		}
+		if view.GroupsInvalid {
+			groupReason = ReasonJournalInvalid
+		}
+		if reason, ok := blocked[id]; ok {
+			groupReason = reason
+		}
+		entry.Reason = groupReason
+		entry.Writable = auth.capable.Writable && !view.GroupsInvalid && blocked[id] == ""
+		view.Groups = append(view.Groups, entry)
+	}
+	for _, path := range cpa.ConfigLeafPaths() {
+		leaf, _ := cpa.LookupConfigLeaf(path)
+		field := FieldView{Path: path, Type: string(leaf.Type), Kind: string(leaf.Kind), Group: leaf.Group, Presence: "unknown"}
+		if inherited, ok := cpa.ConfigLeafInheritable(path); ok {
+			field.Inherit = &inherited
+		}
+		if document != nil {
+			value, presence := cpa.LookupConfigValue(document, path)
+			field.Presence, field.Value = string(presence), value
+		}
+		field.Reason = auth.readOnly
+		if view.GroupsInvalid {
+			field.Reason = ReasonJournalInvalid
+		}
+		if reason, ok := blocked[leaf.Group]; ok {
+			field.Reason = reason
+		}
+		field.Editable = auth.capable.Writable && !view.GroupsInvalid && blocked[leaf.Group] == "" && document != nil
+		if private && field.Editable && !leaf.Private {
+			// The Host reservation protocol writes one private leaf per operation
+			// and nothing else, so the page must not offer the rest.
+			field.Editable = false
+			field.Reason = ReasonPrivateFrozen
+		}
+		if !field.Editable && field.Reason == "" {
+			field.Reason = firstReason(auth.capable.Reason, ReasonUnavailable)
+		}
+		view.Fields = append(view.Fields, field)
+	}
+	var rulesOperation *freshstore.ConfigGroupOperation
+	if entry := journal[cpa.ConfigRulesGroupID]; entry != nil {
+		if operation, ok := entry.Operations[entry.Latest]; ok {
+			copied := operation.Clone()
+			rulesOperation = &copied
+		}
+	}
+	for _, id := range cpa.ConfigRuleFamilyIDs() {
+		family, _ := cpa.LookupConfigRuleFamily(id)
+		item := FamilyView{Family: family.Family, Path: family.Path, ReadOnly: true, Operation: rulesOperation}
+		if document != nil {
+			if value, presence := cpa.LookupConfigValue(document, family.Path); presence == cpa.ConfigPresent {
+				if rules, ok := value.([]any); ok {
+					item.Rules = rules
+				}
+			}
+			item.Baseline = familyBaseline(document, family.Path)
+		}
+		item.Writable = auth.capable.RulesWritable && !view.GroupsInvalid && blocked[cpa.ConfigRulesGroupID] == ""
+		item.ReadOnly = !item.Writable
+		switch reason, isBlocked := blocked[cpa.ConfigRulesGroupID]; {
+		case view.GroupsInvalid:
+			item.Reason = ReasonJournalInvalid
+		case isBlocked:
+			item.Reason = reason
+		case !auth.capable.RulesWritable:
+			item.Reason = firstReason(auth.capable.Reason, ReasonUnavailable)
+		}
+		view.Families = append(view.Families, item)
+	}
+	return view, nil
+}
+
+// freshkeysValidRequestID keeps the request-ID contract of the retained field
+// journal and the new group journal identical.
+func freshkeysValidRequestID(id string) bool { return freshkeys.ValidRequestID(id) }
+
+// unresolvedLegacyField reports a pre-cutover field operation of this group that
+// was never resolved. Reconciling it reads the current document, so a newer save
+// would let the reconcile read a value it did not write.
+func unresolvedLegacyField(r freshstore.Record, group string) bool {
+	for path, entry := range r.Config {
+		if entry == nil || r.ConfigInvalid[path] || fieldGroup(path) != group {
+			continue
+		}
+		if operation, ok := entry.Operations[entry.Latest]; ok && operation.State == "unknown" {
+			return true
+		}
+	}
+	return false
+}
+
+func firstReason(reasons ...string) string {
+	for _, reason := range reasons {
+		if reason != "" {
+			return reason
+		}
+	}
+	return ""
+}
+
+// groupBaseline fingerprints every leaf of one group, presence included, so an
+// outside change to any of them is a conflict even when the user edited another.
+func groupBaseline(document map[string]any, group cpa.ConfigGroup) string {
+	snapshot := make(map[string]any, len(group.Leaves))
+	for _, path := range group.Leaves {
+		value, presence := cpa.LookupConfigValue(document, path)
+		if presence != cpa.ConfigPresent {
+			snapshot[path] = map[string]any{"presence": string(presence)}
+			continue
+		}
+		snapshot[path] = map[string]any{"presence": string(presence), "value": value}
+	}
+	return canonicalDigest(snapshot)
+}
+
+// familyBaseline fingerprints one whole rule family.
+func familyBaseline(document map[string]any, path string) string {
+	value, presence := cpa.LookupConfigValue(document, path)
+	if presence != cpa.ConfigPresent {
+		return canonicalDigest(map[string]any{"presence": string(presence)})
+	}
+	return canonicalDigest(map[string]any{"presence": string(presence), "value": value})
+}
+
+func canonicalDigest(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return sha256Hex(encoded)
+}
+
+// Operation returns the ORIGINAL operation of one request ID. Reconciliation is
+// explicit and read-only: an unknown operation is never replayed.
+func (s *Service) Operation(ctx context.Context, id string, reconcile bool) (freshstore.ConfigGroupOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !freshkeys.ValidRequestID(id) {
+		return freshstore.ConfigGroupOperation{}, ErrInvalid
+	}
+	r, err := s.store.Load(ctx)
+	if err != nil {
+		return freshstore.ConfigGroupOperation{}, err
+	}
+	for _, entry := range r.ConfigGroups {
+		if entry == nil {
+			continue
+		}
+		if operation, ok := entry.Operations[id]; ok {
+			if !reconcile || operation.State != "unknown" {
+				return operation, nil
+			}
+			auth, resolveErr := s.resolve(ctx, r)
+			if resolveErr != nil || !auth.capable.Readable {
+				return operation, cpa.ErrApplyUnknown
+			}
+			return s.reconcileGroup(ctx, r, auth, operation)
+		}
+	}
+	// A field operation journaled before the page became group-based is still
+	// readable and reconcilable; it is never writable again.
+	for _, path := range cpa.ConfigLeafPaths() {
+		entry := r.Config[path]
+		if entry == nil {
+			continue
+		}
+		operation, ok := entry.Operations[id]
+		if !ok {
+			continue
+		}
+		if !reconcile || operation.State != "unknown" {
+			return legacyView(operation), nil
+		}
+		auth, resolveErr := s.resolve(ctx, r)
+		if resolveErr != nil {
+			return legacyView(operation), cpa.ErrApplyUnknown
+		}
+		reconciled, reconcileErr := s.reconcileFieldOperation(ctx, r, auth, operation)
+		if reconcileErr != nil {
+			return legacyView(operation), reconcileErr
+		}
+		return legacyView(reconciled), nil
+	}
+	return freshstore.ConfigGroupOperation{}, ErrNotFound
+}
+
+// legacyView presents a pre-cutover field operation in the group operation
+// shape, so one client can read both without a second contract.
+func legacyView(operation freshstore.ConfigOperation) freshstore.ConfigGroupOperation {
+	edits := []freshstore.ConfigGroupEdit{}
+	if operation.Field != "" {
+		edits = append(edits, freshstore.ConfigGroupEdit{Path: operation.Field, Action: "set", Value: operation.Value})
+	}
+	sort.Slice(edits, func(i, j int) bool { return edits[i].Path < edits[j].Path })
+	return freshstore.ConfigGroupOperation{
+		SourceID:   operation.SourceID,
+		Generation: operation.Generation,
+		RequestID:  operation.RequestID,
+		Group:      fieldGroup(operation.Field),
+		Target:     "group",
+		Prefix:     operation.Field,
+		Baseline:   strings.Repeat("0", 64),
+		Edits:      edits,
+		Code:       operation.Code,
+		State:      operation.State,
+		HTTP200:    operation.HTTP200,
+	}
+}
+
+func fieldGroup(path string) string {
+	if leaf, ok := cpa.LookupConfigLeaf(path); ok {
+		return leaf.Group
+	}
+	return "legacy"
+}
