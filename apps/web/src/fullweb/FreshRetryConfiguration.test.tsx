@@ -38,6 +38,7 @@ function operation(
 ) {
   return {
     requestId,
+    field: 'routing.retry.request-retry',
     value,
     sourceId: expected.sourceId,
     generation: expected.generation,
@@ -73,16 +74,17 @@ describe('Full Web request retry editor', () => {
     await act(async () => {
       renderer = create(
         <FreshRetryConfiguration
-          client={createPublicApiClient(() => context, ((url, init) =>
-            (String(url).includes('/gateway/retry/max-retry-interval') ||
-              String(url).includes('/gateway/retry/interval-operations/'))
-              ? (intervalTransport
-                  ? intervalTransport(url, init)
-                  : Promise.resolve(Response.json(retryView({
-                      field: 'routing.retry.max-retry-interval',
-                      value: 0,
-                    }))))
-              : transport(url, init)) as typeof fetch)}
+          client={createPublicApiClient(() => context, ((url, init) => {
+            const target = String(url);
+            if (intervalTransport && (target.includes('/gateway/config/routing/retry/max-retry-interval') || target.includes('/gateway/config/operations/')))
+              return intervalTransport(url, init);
+            if (target.includes('/gateway/config/routing/retry/max-retry-interval'))
+              return Promise.resolve(Response.json(retryView({
+                field: 'routing.retry.max-retry-interval',
+                value: 0,
+              })));
+            return transport(url, init);
+          }) as typeof fetch)}
           credential={credential}
           onUnauthorized={vi.fn()}
           onPending={(value) => pendingEvents.push(value)}
@@ -135,7 +137,7 @@ describe('Full Web request retry editor', () => {
         field: 'routing.retry.max-retry-interval', presence: 'missing', value: null,
       })))
       .mockResolvedValueOnce(Response.json({ operation: {
-        ...operation('persisted', 300), field: 'max-retry-interval',
+        ...operation('persisted', 300), field: 'routing.retry.max-retry-interval',
       }, effective: 'unknown' }))
       .mockResolvedValueOnce(Response.json(retryView({
         field: 'routing.retry.max-retry-interval', value: 300,
@@ -157,7 +159,7 @@ describe('Full Web request retry editor', () => {
       })))
       .mockRejectedValueOnce(new Error('lost response'))
       .mockResolvedValueOnce(Response.json({ operation: {
-        ...operation('unknown', 5), field: 'max-retry-interval',
+        ...operation('unknown', 5), field: 'routing.retry.max-retry-interval',
       }, effective: 'unknown' }));
     await mount(b2, b3);
     const input = renderer.root.findByProps({'data-testid':'retry-interval-value'});
@@ -176,7 +178,7 @@ describe('Full Web request retry editor', () => {
     const id = 'ab'.repeat(16);
     const b2 = vi.fn<typeof fetch>().mockResolvedValue(Response.json(retryView()));
     const intervalOperation = (state: 'unknown' | 'persisted') => ({
-      operation: { ...operation(state, 5, id), field: 'max-retry-interval' },
+      operation: { ...operation(state, 5, id), field: 'routing.retry.max-retry-interval' },
       effective: 'unknown',
     });
     const b3 = vi.fn<typeof fetch>()
@@ -199,15 +201,40 @@ describe('Full Web request retry editor', () => {
     await click('retry-interval-reconcile');
     expect(renderer.root.findByProps({ 'data-testid': 'retry-interval-value' }).props.value).toBe('5');
     expect(pendingEvents[pendingEvents.length - 1]).toBe(false);
-    expect(b3.mock.calls.map(([url, init]) => [String(url).split('/gateway/retry/')[1], init?.method])).toEqual([
-      ['max-retry-interval', 'GET'],
-      ['max-retry-interval', 'PUT'],
-      [`interval-operations/${id}`, 'GET'],
-      [`interval-operations/${id}/reconcile`, 'POST'],
-      ['max-retry-interval', 'GET'],
+    expect(b3.mock.calls.map(([url, init]) => [String(url).split('/gateway/config/')[1], init?.method])).toEqual([
+      ['routing/retry/max-retry-interval', 'GET'],
+      ['routing/retry/max-retry-interval', 'PUT'],
+      [`operations/${id}`, 'GET'],
+      [`operations/${id}/reconcile`, 'POST'],
+      ['routing/retry/max-retry-interval', 'GET'],
     ]);
     expect(b2.mock.calls.every(([url]) => String(url).includes('/request-retry'))).toBe(true);
     expect(b3.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+    // One write, with the observed source, and the original request ID stays the
+    // only thing reconcile addresses.
+    const put = b3.mock.calls.find(([, init]) => init?.method === 'PUT');
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({ requestId: id, value: 5, expected });
+    expect(intervalOperation('persisted').operation.field).toBe('routing.retry.max-retry-interval');
+  });
+
+  it('refuses an operation reported for another allowlisted field', async () => {
+    const id = 'ab'.repeat(16);
+    const foreign = { ...operation('persisted', 5, id), field: 'requests.streaming.keepalive-seconds' };
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(retryView({ value: 2 })))
+      .mockRejectedValueOnce(new Error('lost PUT reply'))
+      .mockResolvedValueOnce(Response.json({ operation: foreign, effective: 'unknown' }));
+    await mount(transport);
+    await change('5');
+    await click('retry-save');
+    await click('retry-check-operation');
+    expect(renderer.root.findByProps({ 'data-testid': 'retry-operation-id' }).props.children).toBe(id);
+    expect(JSON.stringify(renderer.toJSON())).toContain(t('retryOperationNoPutReplay'));
+    expect(button('retry-operation').findAllByType('p')[1].children.join('')).toContain(
+      t('retryOperationUnknown')
+    );
+    expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
   });
 
   it.each([
@@ -337,7 +364,7 @@ describe('Full Web request retry editor', () => {
       .mockResolvedValueOnce(Response.json(retryView()))
       .mockResolvedValueOnce(
         Response.json(
-          { code: 'invalid_retry_request', message: 'private details' },
+          { code: 'invalid_config_field', message: 'private details' },
           { status: 400 }
         )
       );
@@ -360,7 +387,7 @@ describe('Full Web request retry editor', () => {
         .mockResolvedValueOnce(Response.json(retryView()))
         .mockResolvedValueOnce(
           Response.json(
-            { code: status === 400 ? 'private unknown code' : 'invalid_retry_request' },
+            { code: status === 400 ? 'private unknown code' : 'invalid_config_field' },
             { status }
           )
         );
@@ -531,7 +558,7 @@ describe('Full Web request retry editor', () => {
                 else
                   resolve(
                     Response.json(
-                      { code: failure === '400' ? 'invalid_retry_request' : 'journal_unknown' },
+                      { code: failure === '400' ? 'invalid_config_field' : 'journal_unknown' },
                       { status: Number(failure) }
                     )
                   );
@@ -581,12 +608,12 @@ describe('Full Web request retry editor', () => {
       await click('retry-check-operation');
       expect(button('retry-operation-id').props.children).toBe(secondId);
       expect(transport.mock.calls[4][0]).toBe(
-        `https://manager.example${context.apiBase}/gateway/retry/operations/${secondId}`
+        `https://manager.example${context.apiBase}/gateway/config/operations/${secondId}`
       );
       expect(transport.mock.calls[4][1]?.method).toBe('GET');
       await click('retry-reconcile');
       expect(transport.mock.calls[5][0]).toBe(
-        `https://manager.example${context.apiBase}/gateway/retry/operations/${secondId}/reconcile`
+        `https://manager.example${context.apiBase}/gateway/config/operations/${secondId}/reconcile`
       );
       expect(transport.mock.calls[5][1]?.method).toBe('POST');
       expect(transport.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(2);

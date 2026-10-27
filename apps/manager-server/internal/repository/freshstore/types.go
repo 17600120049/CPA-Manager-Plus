@@ -4,6 +4,7 @@ package freshstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -29,29 +30,34 @@ type Authority struct {
 }
 
 type Record struct {
-	Operation bootstrap.FreshOperation
-	Authority Authority
-	Admin     *model.AdminCredential
-	// Canonical server-owned connection. ManagementKey must be a Protector
-	// ciphertext at this repository boundary, never a plaintext journal field.
-	Connection *model.ManagerCPAConnectionConfig
-	// Same Fresh CAS authority; encrypted resource snapshot is never public.
+	Operation          bootstrap.FreshOperation
+	Authority          Authority
+	Admin              *model.AdminCredential
+	Connection         *model.ManagerCPAConnectionConfig
 	AdoptionCiphertext string
-	Retry              *RetryJournal
-	Interval           *RetryJournal
-	IntervalInvalid    bool
-	// Corrupt Config metadata locks only Config. Other Fresh domains must not
-	// erase it or lose their existing Administrator/read-only access.
-	RetryInvalid bool
+	// Config holds one journal per allowlisted config field, keyed by the
+	// canonical CPA dotted path. ConfigInvalid records exactly which field has
+	// damaged bytes: a corrupted field locks that field only, never the record.
+	// ConfigDamaged keeps those exact bytes so a later write of another field
+	// rewrites them unchanged instead of discarding an unreadable original.
+	Config        map[string]*FieldJournal
+	ConfigInvalid map[string]bool
+	ConfigDamaged map[string]json.RawMessage
 }
 
-// RetryJournal uses the existing Fresh CAS/store. It contains metadata only;
-// Runtime alone owns full-file recovery material and source reservations.
-type RetryJournal struct {
-	Latest     string                    `json:"latest"`
-	Operations map[string]RetryOperation `json:"operations"`
+// FieldJournal is the Manager-side journal for ONE allowlisted config field. It
+// uses the existing Fresh CAS/store and contains metadata only; Runtime alone
+// owns full-file recovery material and source reservations.
+type FieldJournal struct {
+	Latest     string                     `json:"latest"`
+	Operations map[string]ConfigOperation `json:"operations"`
 }
-type RetryOperation struct {
+
+// ConfigOperation is one single-field write attempt. RequestID is the Public API
+// request ID and the journal key; Field is the canonical path it writes. State
+// "failed" is terminal: the original write is known not to have landed, its Code
+// names why, and the field is writable again without ever resending it.
+type ConfigOperation struct {
 	ParentID      string `json:"parentId,omitempty"`
 	ClaimRevision uint64 `json:"claimRevision,omitempty"`
 	IntentDigest  string `json:"intentDigest,omitempty"`
@@ -60,8 +66,9 @@ type RetryOperation struct {
 	HTTP200       bool   `json:"http200,omitempty"`
 	Receipt       string `json:"receipt,omitempty"`
 	Field         string `json:"field,omitempty"`
+	Code          string `json:"code,omitempty"`
 	RequestID     string `json:"requestId"`
-	Value         int    `json:"value"`
+	Value         any    `json:"value"`
 	SourceID      string `json:"sourceId"`
 	Generation    string `json:"generation"`
 	Revision      uint64 `json:"revision"`

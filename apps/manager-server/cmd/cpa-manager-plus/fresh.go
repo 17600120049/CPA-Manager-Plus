@@ -155,6 +155,9 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		a.keyApply = freshkeyapply.NewManaged(keyrepo.New(opened.DB), a.keys, runtime, cfg.CPAUpstreamURL,
 			managedInstallSource(st, opened.Protector, cfg.CPAUpstreamURL))
 		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
+		// The destination address is the managed installation's own CPA, not the
+		// private loopback profile the default Transport dials.
+		a.configRetry.EnableManaged(cfg.CPAUpstreamURL)
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
@@ -283,8 +286,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	switch {
-	case resource == "gateway/retry/request-retry" || resource == "gateway/retry/max-retry-interval" || strings.HasPrefix(resource, "gateway/retry/operations/") || strings.HasPrefix(resource, "gateway/retry/interval-operations/"):
-		a.retryConfiguration(w, r, resource)
+	case strings.HasPrefix(resource, "gateway/config/"):
+		a.configFieldConfiguration(w, r, strings.TrimPrefix(resource, "gateway/config/"))
 	case resource == "settings/update-channel":
 		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { Modal } from '../components/ui/Modal';
@@ -11,7 +11,8 @@ import {
   type GatewayOwnerMeta,
 } from './gatewayCatalog';
 import { FreshRetryConfiguration, type RetryDraftDiff } from './FreshRetryConfiguration';
-import type { createPublicApiClient } from './publicApi';
+import { RequestsConfigFieldGroup } from './RequestsConfigFieldGroup';
+import type { PublicApiClient } from './publicApi';
 import { configurationText as c } from '../i18n/configurationWorkspace';
 
 export type GatewayTabKey =
@@ -32,7 +33,7 @@ export function FreshGatewayWorkspace({
   onDirtyChange,
   navigationRequest = 0,
 }: {
-  client: ReturnType<typeof createPublicApiClient>;
+  client: PublicApiClient;
   credential: string;
   onUnauthorized: () => void;
   onPending: (pending: boolean) => void;
@@ -40,7 +41,8 @@ export function FreshGatewayWorkspace({
   navigationRequest?: number;
 }) {
   // Subscribe to language changes just like the original Console pages.
-  useTranslation();
+  const { i18n } = useTranslation();
+  const language = i18n.resolvedLanguage;
   const [currentTab, setCurrentTab] = useState<GatewayTabKey>('overview');
   const [searchText, setSearchText] = useState('');
   const [changedOnly, setChangedOnly] = useState(false);
@@ -52,8 +54,12 @@ export function FreshGatewayWorkspace({
   const tabRefs = useRef<Partial<Record<GatewayTabKey, HTMLButtonElement | null>>>({});
   const dirtyDiffs = useMemo(() => draftDiffs.filter((d) => d.dirty), [draftDiffs]);
   const dirtyCount = dirtyDiffs.length;
-  const sections = gatewaySections();
-  const owners = gatewayOwners();
+  // The catalog resolves every label through the active language at call time,
+  // so the language itself is the only dependency that can change its strings.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sections = useMemo(() => gatewaySections(), [language]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const owners = useMemo(() => gatewayOwners(), [language]);
   const activeOwner = owners.find((owner) => owner.path === activeOwnerPath);
 
   useEffect(() => {
@@ -77,7 +83,7 @@ export function FreshGatewayWorkspace({
   const query = searchText.trim().toLowerCase();
   // Apply one predicate to the entire catalog, including the two retained editors.
   // A search is global, independent of the tab from which it was started.
-  const filteredSections = sections
+  const filteredSections = useMemo(() => sections
     .map((section) => ({
       ...section,
       fields: section.fields.filter((field) => {
@@ -93,17 +99,47 @@ export function FreshGatewayWorkspace({
           : section.tab === currentTab;
       }),
     }))
-    .filter((section) => section.fields.length > 0);
-  const visiblePaths = new Set(
-    filteredSections.flatMap((section) => section.fields.map((field) => field.path))
+    .filter((section) => section.fields.length > 0), [changedOnly, currentTab, dirtyDiffs, query, sections]);
+  const visiblePaths = useMemo(
+    () => new Set(filteredSections.flatMap((section) => section.fields.map((field) => field.path))),
+    [filteredSections]
   );
   const countVisible = visiblePaths.has(RETRY_COUNT_PATH);
   const intervalVisible = visiblePaths.has(RETRY_INTERVAL_PATH);
+  const requestsFields = useMemo(
+    () => sections.find((section) => section.id === 'requests')?.fields ?? [],
+    [sections]
+  );
+  const requestsVisible = requestsFields.some((field) => visiblePaths.has(field.path));
+  const mergeDraftDiffs = useCallback((diffs: RetryDraftDiff[]) => {
+    setDraftDiffs((current) => {
+      const next = [
+        ...current.filter((diff) => !diffs.some((item) => item.path === diff.path)),
+        ...diffs,
+      ];
+      // An unchanged report keeps the previous array so the catalog and every
+      // field group keep their identity instead of re-rendering each other.
+      const same =
+        next.length === current.length &&
+        next.every((diff, index) => {
+          const previous = current[index];
+          return (
+            previous.path === diff.path &&
+            previous.label === diff.label &&
+            previous.oldVal === diff.oldVal &&
+            previous.newVal === diff.newVal &&
+            previous.dirty === diff.dirty &&
+            previous.invalid === diff.invalid
+          );
+        });
+      return same ? current : next;
+    });
+  }, []);
   const referenceSections = filteredSections
     .map((section) => ({
       ...section,
       fields: section.fields.filter(
-        (field) => field.path !== RETRY_COUNT_PATH && field.path !== RETRY_INTERVAL_PATH
+        (field) => field.path !== RETRY_COUNT_PATH && field.path !== RETRY_INTERVAL_PATH && !field.editable
       ),
     }))
     .filter((section) => section.fields.length > 0);
@@ -372,11 +408,23 @@ export function FreshGatewayWorkspace({
               onPending={onPending}
               navigationRequest={navigationRequest}
               discardEpoch={discardEpoch}
-              onDraftChange={setDraftDiffs}
+              onDraftChange={mergeDraftDiffs}
               countVisible={countVisible}
               intervalVisible={intervalVisible}
             />
           </section>
+        </div>
+        <div hidden={!requestsVisible || showOverview || showOwners} data-testid="fresh-managed-requests">
+          <RequestsConfigFieldGroup
+            fields={requestsFields}
+            visiblePaths={visiblePaths}
+            discardEpoch={discardEpoch}
+            client={client}
+            credential={credential}
+            onUnauthorized={onUnauthorized}
+            onPending={onPending}
+            onDraftChange={mergeDraftDiffs}
+          />
         </div>
         {!showOverview && !showOwners && (
           <div className="gateway-sections-list stack" style={{ marginTop: 18 }}>

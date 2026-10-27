@@ -26,6 +26,9 @@ var (
 	ErrProofUnavailable = errors.New("private key application proof unavailable")
 	ErrSourceConflict   = errors.New("CPA key source is not the isolated empty proof seed")
 	ErrApplyUnknown     = errors.New("CPA key write result unknown; do not retry")
+	// ErrWriteRejected is a definite upstream refusal: CPA answered with a
+	// terminal 4xx, so nothing was written and nothing may be replayed.
+	ErrWriteRejected = errors.New("CPA rejected the config field write")
 )
 
 // TargetProof is a caller-observed runtime identity. The caller must separately
