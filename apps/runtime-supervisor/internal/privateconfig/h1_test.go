@@ -131,7 +131,11 @@ func keyIntent(mode string) H1Intent {
 	return H1Intent{RequestID: strings.Repeat("1", 32), Domain: "key", Mode: mode, TargetID: strings.Repeat("2", 32), KeeperID: strings.Repeat("3", 32), TargetSHA256: digest([]byte(oldH1Key)), KeeperSHA256: digest([]byte(newH1Key))}
 }
 func retryIntent(id string, n int) H1Intent {
-	return H1Intent{RequestID: strings.Repeat(id, 32), Domain: "config", Mode: "retry", Retry: n}
+	return fieldIntent(id, "routing.retry.request-retry", n)
+}
+
+func fieldIntent(id, path string, value any) H1Intent {
+	return H1Intent{RequestID: strings.Repeat(id, 32), Domain: "config", Mode: "config-field", Path: path, Value: value}
 }
 func TestH1ReplacementHoldsReceiptsThroughTerminalRelease(t *testing.T) {
 	f := h1Fresh(t)

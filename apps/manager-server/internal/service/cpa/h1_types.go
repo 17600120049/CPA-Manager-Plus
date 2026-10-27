@@ -8,27 +8,26 @@ import (
 
 // H1 is a bounded private protocol, not a general transaction service. Host
 // grants are root-owned files; none of these fields are Public API authority.
-//
+type H1Intent struct {
+	RequestID           string `json:"requestId"`
+	Domain              string `json:"domain"`
+	Mode                string `json:"mode"`
+	TargetID            string `json:"targetId"`
+	KeeperID            string `json:"keeperId"`
+	TargetSHA256        string `json:"targetSHA256"`
+	KeeperSHA256        string `json:"keeperSHA256"`
+	Path                string `json:"path,omitempty"`
+	Value               any    `json:"value,omitempty"`
+	Retry               int    `json:"retry"`
+	MaxRetryInterval    int    `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool   `json:"maxRetryIntervalSet,omitempty"`
+}
+
 // Config writes carry one allowlisted field intent: Mode "config-field" with the
 // canonical Path and scalar Value. Retry/MaxRetryInterval* are never written any
 // more; they only keep pre-allowlist H1 parents readable so an operation that was
 // already in flight before the cutover can still be reconciled.
-type H1Intent struct {
-	RequestID    string `json:"requestId"`
-	Domain       string `json:"domain"`
-	Mode         string `json:"mode"`
-	TargetID     string `json:"targetId"`
-	KeeperID     string `json:"keeperId"`
-	TargetSHA256 string `json:"targetSHA256"`
-	KeeperSHA256 string `json:"keeperSHA256"`
-	Path         string `json:"path,omitempty"`
-	Value        any    `json:"value,omitempty"`
-	// Legacy read-only intent fields.
-	Retry               int  `json:"retry"`
-	MaxRetryInterval    int  `json:"maxRetryInterval,omitempty"`
-	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
-}
-
+//
 // legacyConfigIntent maps a pre-allowlist config intent onto the field it wrote.
 func (i H1Intent) legacyConfigIntent() (string, any, bool) {
 	switch {

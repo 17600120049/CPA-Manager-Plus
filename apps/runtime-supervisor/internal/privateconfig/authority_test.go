@@ -80,9 +80,11 @@ func (f *fixture) begin(id, scope string, retry int) Request {
 	q.ExpectedSHA256 = v.SHA256
 	q.OperationID = id
 	q.Scope = scope
-	q.Retry = retry
 	if scope == "initial-key" {
 		q.KeySHA256 = digest([]byte("test-client-secret"))
+	} else {
+		q.Path = scope
+		q.Value = retry
 	}
 	v = f.do(q, true)
 	if !v.Created {
@@ -142,7 +144,7 @@ func TestSourceInstallRetryAndRestart(t *testing.T) {
 	if e := f.a.CheckStartup(); e != nil {
 		t.Fatal("installed key cannot restart:", e)
 	}
-	q := f.begin("retry-zero", "request-retry", 0)
+	q := f.begin("retry-zero", "routing.retry.request-retry", 0)
 	f.write(f.changed("routing", "retry", "request-retry"))
 	f.commit(q)
 	original := f.observe()
@@ -226,10 +228,10 @@ func TestLostResponseReconcilesButDoesNotReplay(t *testing.T) {
 func TestRecoveryRequiresStoppedWriterOriginalLeaseAndDamagedFingerprint(t *testing.T) {
 	f := fresh(t)
 	f.install()
-	prior := f.begin("committed-retry", "request-retry", 0)
+	prior := f.begin("committed-retry", "routing.retry.request-retry", 0)
 	f.write(f.changed("routing", "retry", "request-retry"))
 	f.commit(prior)
-	q := f.begin("retry-interrupted", "request-retry", 1)
+	q := f.begin("retry-interrupted", "routing.retry.request-retry", 1)
 	f.write([]byte("routing: ["))
 	q.Action = "recover"
 	q.ExpectedSHA256 = digest([]byte("routing: ["))
@@ -251,7 +253,7 @@ func TestRecoveryRequiresStoppedWriterOriginalLeaseAndDamagedFingerprint(t *test
 	if v.State != "persisted" || v.Operation.State != "recovered" || !v.Installed {
 		t.Fatal("recovery lost installed state")
 	}
-	if v.CommittedRetry == nil || *v.CommittedRetry != 0 {
+	if raw, ok := v.CommittedFields["routing.retry.request-retry"]; !ok || string(raw) != "0" {
 		t.Fatal("failed operation replaced the committed retry allowance")
 	}
 	if e := f.a.CheckStartup(); e != nil {

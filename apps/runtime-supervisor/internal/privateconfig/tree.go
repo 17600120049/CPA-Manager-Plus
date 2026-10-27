@@ -177,7 +177,9 @@ func validChange(before, after []byte, op Operation) bool {
 		}
 	case "max-retry-interval":
 		next := leaf(b, "routing", "retry", "max-retry-interval")
-		if !op.MaxRetryIntervalSet || next == nil || next.Tag != "!!int" || next.Value != strconv.Itoa(op.MaxRetryInterval) || set(a, next, "routing", "retry", "max-retry-interval") != nil { return false }
+		if !op.MaxRetryIntervalSet || next == nil || next.Tag != "!!int" || next.Value != strconv.Itoa(op.MaxRetryInterval) || set(a, next, "routing", "retry", "max-retry-interval") != nil {
+			return false
+		}
 	case "request-retry":
 		next := leaf(b, "routing", "retry", "request-retry")
 		if next == nil || next.Tag != "!!int" || next.Value != strconv.Itoa(op.Retry) ||
@@ -185,7 +187,24 @@ func validChange(before, after []byte, op Operation) bool {
 			return false
 		}
 	default:
-		return false
+		// One allowlisted field write: the reserved path exists in the new file as
+		// exactly the reserved scalar type and value; nothing else may differ.
+		path, value, ok := operationPath(op)
+		if !ok {
+			return false
+		}
+		parts, _, ok := fieldFor(path)
+		if !ok {
+			return false
+		}
+		tag, text, ok := fieldLeaf(path, value)
+		if !ok {
+			return false
+		}
+		next := leaf(b, parts...)
+		if next == nil || next.Tag != tag || next.Value != text || set(a, next, parts...) != nil {
+			return false
+		}
 	}
 	x, e := canonical(a)
 	if e != nil {
