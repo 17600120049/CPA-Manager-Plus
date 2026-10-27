@@ -18,6 +18,7 @@ import (
 	"time"
 
 	usageadapter "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/identityusage"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityprojection"
 	usageapp "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityusage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
@@ -381,6 +382,7 @@ func TestFreshCompleteStartsUsageOnceAndBackfillsStagedKeys(t *testing.T) {
 	defer func() { _ = opened.Close() }()
 	app := newFreshApplication(opened, config.Config{}, nil)
 	app.runCtx = ctx
+	quietProjection(app)
 	if _, err := app.store.Update(ctx, opened.Record.Operation.Identity, opened.Record.Operation.Revision, func(r *freshstore.Record) error {
 		r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: r.Operation.Identity.OperationID, Revision: 1, Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true}
 		return nil
@@ -511,6 +513,13 @@ func TestUsageCollectionNeverFallsBackToLegacyAuthority(t *testing.T) {
 	}
 }
 
+// quietProjection keeps the startup tests free of a background worker on the
+// temporary database: they assert the startup chain, not projection itself, and
+// a no-repo worker cannot write while the test database is closing.
+func quietProjection(app *freshApplication) {
+	app.usageProjection = identityprojection.NewWorker(nil)
+}
+
 // newUsageCompletionApplication builds a routed Fresh app whose usage workers
 // run on the caller's host lifetime.
 func newUsageCompletionApplication(t *testing.T, ctx context.Context, cfg config.Config) (*fresh.Opened, *freshApplication) {
@@ -525,6 +534,7 @@ func newUsageCompletionApplication(t *testing.T, ctx context.Context, cfg config
 	t.Cleanup(func() { _ = opened.Close() })
 	app := newFreshApplication(opened, cfg, nil)
 	app.runCtx = ctx
+	quietProjection(app)
 	if _, err = app.store.Update(ctx, opened.Record.Operation.Identity, opened.Record.Operation.Revision, func(r *freshstore.Record) error {
 		r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: r.Operation.Identity.OperationID, Revision: 1, Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true}
 		return nil
