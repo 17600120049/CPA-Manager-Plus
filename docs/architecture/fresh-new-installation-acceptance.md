@@ -168,13 +168,14 @@ Differences from the 2026-10-20 record:
   service identity after the Fresh store takeover.
 - A CPA data-layer step (one management read through the `cpamp/` bridge, one
   Client Key creation plus initial install, one model request that must
-  authenticate the installed Client Key) is present. It currently reports
-  `DEFAULT AUTHORITY MISSING` because the default installation carries no CPA
-  management authority until lane P lands. That gap is opt-in
-  (`CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1`) and pinned to the exact
-  `auth-files → 428` / `initial-install → 409` pair this base returns; without
-  the flag, or with any other status, the smoke fails. The model-request check
-  proves Client Key authentication only (non-401) — real Provider model success
-  is NOT RUN, since no Provider fixture exists in the disposable installation.
-- The managed retry configuration layout check is `NOT RUN` while the gateway
-  allowlist exposes no retry field.
+  authenticate the installed Client Key) is present. The observed run below
+  predates the default New Managed management authority, so its data-layer rows
+  are recorded as `DEFAULT AUTHORITY MISSING`. That gap is closed on the current
+  tree: the committed default Managed destination is the install-derived
+  authority, the smoke has no opt-in tolerance, and any bridge or install status
+  other than the expected one fails the run. The model-request check proves
+  Client Key authentication only (non-401) — real Provider model success is NOT
+  RUN, since no Provider fixture exists in the disposable installation.
+- The managed retry configuration layout check now runs whenever the config
+  catalog exposes a retry count or interval field; it is `NOT RUN` only when the
+  catalog omits both.

@@ -4,7 +4,9 @@ Outcome: **PASS** for the local `linux/amd64` candidate build, its structural
 verification, the local load identity check and the disposable Fresh New smoke
 on exactly those images. The CPA data layer is reported as
 `DEFAULT AUTHORITY MISSING`: a labelled known gap (lane P), not a pass and not a
-tool failure.
+tool failure. That gap is closed on the merged v2 tree — the committed default
+New Managed destination is the install-derived authority — so the smoke now
+requires the data layer and a re-run must record it as PASS.
 
 This is local-only evidence. It is **not** a signed production receipt, not a
 registry readback, and not a Beta/Release or public-Gateway qualification. No
@@ -18,13 +20,15 @@ changed:
 - `CPA accepts one real model request with the installed Client Key` is now
   `CPA authenticates the installed Client Key on a model request (non-401)`, and
   real Provider model success is listed as NOT RUN instead of implied.
-- The broad `403/404/409/428/502/503` tolerance is gone. The lane P gap is
-  opt-in (`CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1`) and pinned to exactly
-  `auth-files → 428` and `initial-install → 409` (empty code); every other status
-  fails, with or without the flag.
-- `Ingress Gateway stays Pending with an installed Client Key` flips to
-  `Ingress Gateway admits the installed Client Key (lane G)` when
-  `CPAMP_SMOKE_MODEL_TARGET` points at the Ingress.
+- The broad `403/404/409/428/502/503` tolerance is gone. The lane P gap was first
+  made opt-in and pinned to exactly `auth-files → 428` and
+  `initial-install → 409` (empty code); with lanes P and G merged the gate was
+  then removed entirely, so the data layer is a hard requirement and any other
+  status fails the run.
+- `Ingress Gateway stays Pending with an installed Client Key` is now the
+  zero-key negative control. With lane G merged, an installed Client Key is
+  admitted at the Ingress, and a restarted Runtime generation withdraws
+  admission again.
 
 ## Source identity
 
@@ -146,26 +150,29 @@ completion, routing, `data.key` and the saved setting intact.
 | Ingress Gateway stays Pending with an installed Client Key | DEFAULT AUTHORITY MISSING | not attempted |
 
 The default Fresh New Managed installation still has no installation-derived CPA
-management authority (lane P), so the bridge answers `428` and the Client Key
-install answers `409` with an empty code. These rows must become PASS after P
-merges; they are labelled, recorded in `report.authority` / `report.expectedGaps`,
-and never counted as a pass.
+management authority at the tested base (lane P), so the bridge answers `428` and
+the Client Key install answers `409` with an empty code. These rows must become
+PASS after P merges; on this base they are labelled, recorded in
+`report.authority` / `report.expectedGaps`, and never counted as a pass.
 
-The gap is **opt-in and pinned**. The smoke only accepts those two exact
-`status`/`code` pairs when `CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1` is set; without
-the flag any non-200 is a FAIL, and with the flag any other status — a `502`
-bridge failure for example — is also a FAIL instead of being absorbed as a known
-gap. The recorded run above predates that pinning and used the earlier broad
-tolerance; the observed `428` / `409` pair is exactly what the pin now encodes.
+The gap gate is **retired**. While the base lacked the authority the smoke
+accepted only those two exact `status`/`code` pairs behind
+`CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1`; with P and G merged the committed default
+New Managed destination is the install-derived authority, no flag remains, and
+any bridge or install status other than the expected one fails the run. The
+recorded run above predates both the pinning and the removal and used the earlier
+broad tolerance.
 
 The model-request check proves **Client Key authentication only**: CPA without a
 Provider fixture answers a non-401 status (often `500`/`503`), so this row must
 never be read as a real model success. Real Provider model success stays NOT RUN.
 The target is configurable (`CPAMP_SMOKE_MODEL_TARGET`); this run used the default
-`http://cpamp-runtime:8317` on the Compose network, where CPA stays on Runtime
-loopback, so an anonymous peer is `unreachable` rather than readable. When the
-target is the Ingress Gateway (`cpamp-ingress` or port `18317`), lane G flips the
-last row to expect admission instead of the Pending `503`.
+`http://cpamp-runtime:8317` on the Compose network, where CPA was on Runtime
+loopback, so an anonymous peer was `unreachable` rather than readable. The
+committed default Managed destination binds CPA to the Compose network, and with
+lane G merged the Ingress admits an installed Client Key, so a re-run records
+admission instead of the Pending `503`; the zero-key phase stays the negative
+control.
 
 ## NOT VERIFIED
 
@@ -175,19 +182,22 @@ last row to expect admission instead of the Pending `503`.
   this disposable installation. The model-request check proves that CPA
   authenticates the installed Client Key (non-401); it does not prove a completed
   model response.
-- Real Provider/model traffic, public Gateway admission, arm64, Native/External/
-  Adopt/Upgrade journeys, power-loss and production rollback.
+- Real Provider/model traffic, arm64, Native/External/Adopt/Upgrade journeys,
+  power-loss and production rollback.
 - Natural ten-minute claim expiry (the fixture injects an expired server
   timestamp into a stopped, disposable Manager).
-- Managed retry configuration layout (reported NOT RUN while the gateway
-  allowlist exposes no retry field; it returns with lane C2).
+- Managed retry configuration layout (reported NOT RUN in this run; the
+  config-field workspace merged afterwards, so a re-run exercises the panel
+  whenever the config catalog exposes a retry count or interval field).
 - Non-Chinese locale layouts, other browser engines, manual UI walkthrough.
 - Registry readback, signed producer identity, Beta/Release qualification.
-- Data-layer success on the default installation (blocked on lane P).
+- Data-layer success on the default installation (this run predates the lane P
+  authority; the current smoke requires it, so a re-run must record PASS).
 
 ## Re-run on a new HEAD
 
-From a clean worktree of the new HEAD (P and G stacked branch later):
+From a clean worktree of the new HEAD (this branch merged with the P/G/C2 v2
+tree):
 
 ```sh
 git status --porcelain            # must be empty: the builder refuses a dirty tree
@@ -197,27 +207,27 @@ CPAMP_CANDIDATE_LOAD=1 bash bin/release/build-embedded-candidate.sh /tmp/cpamp-r
 
 PLAYWRIGHT_MODULE=/absolute/path/to/node_modules/playwright \
 PLAYWRIGHT_CHANNEL=chrome \
-CPAMP_SMOKE_MODEL_TARGET=http://cpamp-runtime:8317 \
-CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1 \
+CPAMP_SMOKE_MODEL_TARGET=http://cpamp-ingress:18317 \
 node bin/ci/fresh-new-installation.mjs \
   cpamp-r1-runtime:candidate cpamp-r1-manager:candidate cpamp-r1-ingress:candidate \
   /tmp/cpamp-fresh-new-$(date +%s)
 ```
 
-`CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1` is required only while the v2 base still has
-no installation-derived CPA management authority. It pins exactly
-`auth-files → 428` and `initial-install → 409` (empty code); drop it after lane P
-merges, when any non-200 must fail. Once lane G admits model traffic at the
-Ingress, point `CPAMP_SMOKE_MODEL_TARGET` at `http://cpamp-ingress:18317` and the
-last data-layer row expects admission instead of the Pending `503`.
+The pre-authority gap gate is gone: the committed default New Managed
+destination is the installation-derived management authority, so the `cpamp/`
+bridge read and the Client Key initial install are hard requirements and any
+other status fails the run. Point `CPAMP_SMOKE_MODEL_TARGET` at
+`http://cpamp-ingress:18317` to send the model request through the public
+Ingress listener; the default `http://cpamp-runtime:8317` still reaches CPA on
+the Compose network.
 
 Expect `PASS` with the three `LOAD PASS` lines and the same three digests in
-`candidate-evidence.json`, `load-evidence.json` and `report.json`. After P
-merges, the six `DEFAULT AUTHORITY MISSING` rows must become PASS; point
-`CPAMP_SMOKE_MODEL_TARGET` at the published Ingress Gateway once lane G admits
-model traffic there. `npm run test:repo` and
-`python3 tests/embedded_candidate_contract_test.py` stay offline and must pass
-before any build.
+`candidate-evidence.json`, `load-evidence.json` and `report.json`. The six rows
+this run recorded as `DEFAULT AUTHORITY MISSING` must now be PASS, and the
+Gateway row must show admission for the installed Client Key instead of the
+Pending `503` the zero-key phase keeps as its negative control. `npm run
+test:repo` and `python3 tests/embedded_candidate_contract_test.py` stay offline
+and must pass before any build.
 
 ## Limits of this record
 

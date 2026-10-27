@@ -163,17 +163,17 @@ authentication, not a real Provider response; real Provider model success is
 reported NOT RUN because no Provider fixture exists in the disposable install).
 `CPAMP_SMOKE_MODEL_TARGET` selects where that request is sent: the default
 `http://cpamp-runtime:8317` reaches CPA on the Compose network, and
-`http://cpamp-ingress:18317` is used once lane G admits model traffic there, at
-which point the Gateway row expects admission instead of the Pending `503`.
-
-Until the default installation carries a CPA management authority, the data-layer
-checks are reported as `DEFAULT AUTHORITY MISSING` — a labelled known gap, never a
-silent pass and never a tool failure. That tolerance is opt-in
-(`CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1`) and pinned to the exact statuses this base
-returns (`auth-files → 428`, `initial-install → 409` with an empty code); without
-the flag, or with any other status such as a `502` bridge failure, the smoke
-fails. The managed retry layout check is reported `NOT RUN` while the gateway
-allowlist exposes no retry field.
+`http://cpamp-ingress:18317` reaches it through the public Ingress listener. The
+data layer has no tolerance: the committed default New Managed destination is the
+installation-derived CPA management authority, so a bridge or install status
+other than the expected one fails the run. Before the first Client Key exists
+every tested Gateway path answers the Pending `503`; once one is installed the
+Ingress admits it, and any status other than Pending on that path means admission
+was granted. A restarted Runtime reports a new generation, which withdraws
+admission until a new completion binds it, so the post-restart Gateway path is
+asserted closed again. The managed retry layout check runs when the config
+catalog exposes a retry count or interval field, and is reported `NOT RUN` only
+when the catalog omits both.
 
 The expiry case explicitly edits only the claim expiry timestamp in this
 disposable, stopped Manager fixture; natural ten-minute wall-clock expiry is

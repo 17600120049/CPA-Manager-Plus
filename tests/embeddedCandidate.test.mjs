@@ -183,7 +183,7 @@ describe('Fresh New automated smoke contracts', () => {
     expect(missing).toEqual([]);
   });
 
-  it('asserts the CPA data layer with an opt-in, pinned pre-authority gap', () => {
+  it('asserts the CPA data layer and Gateway admission as hard requirements', () => {
     expect(smoke).toContain("'/console/api/v2/cpamp/v0/management/auth-files'");
     expect(smoke).toMatch(/api-keys\/' \+ createdKey\.key\.id \+ '\/initial-install'/);
     expect(smoke).toContain(
@@ -193,28 +193,27 @@ describe('Fresh New automated smoke contracts', () => {
     expect(smoke).toContain("target+'/v1/chat/completions'");
     expect(smoke).toContain('report.modelTarget = modelTarget');
     expect(smoke).toContain('CPAMP_SMOKE_MODEL_TARGET must be an http(s) origin');
-    // The lane P gap is opt-in and pinned to the exact statuses this base
-    // returns; a broad status set would absorb a real regression as a gap.
-    expect(smoke).toContain("process.env.CPAMP_SMOKE_EXPECT_AUTHORITY_GAP === '1'");
-    expect(smoke).toContain('authFiles: { status: 428 }');
-    expect(smoke).toContain("initialInstall: { status: 409, code: '' }");
-    expect(smoke).toContain('expectAuthorityGap && expected.status === status');
-    expect(smoke).not.toContain('new Set([403, 404, 409, 428, 502, 503])');
-    expect(smoke).toContain("'DEFAULT AUTHORITY MISSING'");
-    expect(smoke).toContain("report.authority = 'DEFAULT AUTHORITY MISSING'");
-    // Any other status is a hard failure, with or without the opt-in.
-    expect(smoke).toContain('throw unexpectedStatus(');
-    expect(smoke).toContain('set CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1 only on a base without');
+    // The committed default Managed authority closes the pre-authority gap, so
+    // the data layer keeps no tolerance that could absorb a real regression.
+    expect(smoke).not.toContain('CPAMP_SMOKE_EXPECT_AUTHORITY_GAP');
+    expect(smoke).not.toContain('DEFAULT AUTHORITY MISSING');
+    expect(smoke).toContain(
+      'cpamp/ bridge must read CPA /auth-files through the committed managed authority'
+    );
+    expect(smoke).toContain('Client Key initial install must configure the managed CPA');
     // The model-request check proves Client Key authentication only.
     expect(smoke).toContain(
       "'CPA authenticates the installed Client Key on a model request (non-401)'"
     );
     expect(smoke).toContain('Real Provider model success');
-    // Lane G flips the Ingress expectation instead of inverting the assertion.
+    // Ingress admits an installed Client Key and keeps the zero-key negative
+    // control closed; the probe origin is still reported.
     expect(smoke).toContain("parsed.port === '18317'");
-    expect(smoke).toContain("'Ingress Gateway admits the installed Client Key (lane G)'");
-    expect(smoke).toContain("'Ingress Gateway stays Pending with an installed Client Key'");
+    expect(smoke).toContain("'Ingress Gateway admits the installed Client Key'");
     expect(smoke).toContain("'gateway pending configuration'");
+    expect(smoke).toContain(
+      'an admitted Gateway must still have CPA reject a missing Client Key'
+    );
     // The anonymous peer may only be closed or 401.
     expect(smoke).toContain("['unreachable', '401'].includes(peerVerdict)");
   });
