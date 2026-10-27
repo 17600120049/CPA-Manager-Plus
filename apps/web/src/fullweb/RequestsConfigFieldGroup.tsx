@@ -270,6 +270,7 @@ export function RequestsConfigFieldGroup({
         const invalid = invalidDraft(field, draft);
         const unknown = view?.operation?.state === 'unknown';
         const failed = view?.operation?.state === 'failed';
+        const superseded = !failed && view?.operation?.code === 'superseded';
         const reason = view?.reason ? fieldReasonText[view.reason] : undefined;
         return (
           <div className="config-field" key={field.path} data-testid={`config-field-${field.path}`}>
@@ -281,7 +282,9 @@ export function RequestsConfigFieldGroup({
                   ? c('fieldOperationUnknown')
                   : failed
                     ? c('fieldWriteNotApplied')
-                    : view?.presence === 'unknown'
+                    : superseded
+                      ? c('fieldValueSuperseded')
+                      : view?.presence === 'unknown'
                       ? c('fieldValueUnknown')
                       : reason
                         ? c(reason)

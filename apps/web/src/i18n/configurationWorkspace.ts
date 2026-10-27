@@ -379,6 +379,12 @@ const messages = {
   ],
   fieldSave: ['Save', '保存', '儲存', 'Сохранить'],
   fieldReconcile: ['Reconcile', '核对', '核對', 'Сверить'],
+  fieldValueSuperseded: [
+    'Saved, then changed by another writer: reload to see the current value.',
+    '已保存，但随后被其他写入方修改：请刷新查看当前值。',
+    '已儲存，但隨後被其他寫入方修改：請重新整理查看目前值。',
+    'Сохранено, затем изменено другим писателем: обновите, чтобы увидеть текущее значение.',
+  ],
   fieldWriteNotApplied: [
     'The write did not land: save again when ready.',
     '写入未生效：确认后可重新保存。',

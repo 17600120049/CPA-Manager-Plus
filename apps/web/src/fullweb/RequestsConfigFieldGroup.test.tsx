@@ -28,6 +28,8 @@ function gatewayFieldServer(paths: string[], initial: Record<string, unknown>) {
   let recordRevision = 2;
   let conflicts = 0;
   let reject: null | string = null;
+  // ackCode is carried by the persisted operation a successful PUT returns.
+  let ackCode: string | undefined;
   const pathOf = (resource: string) => resource.split('/').slice(2).join('.');
   const fieldRevision = (path: string) => revision[path];
   const view = (path: string) => ({
@@ -78,7 +80,7 @@ function gatewayFieldServer(paths: string[], initial: Record<string, unknown>) {
       recordRevision++;
       revision[path] = recordRevision;
       void recordRevision;
-      state[path] = { state: 'persisted', requestId: payload.requestId };
+      state[path] = { state: 'persisted', requestId: payload.requestId, ...(ackCode ? { code: ackCode } : {}) };
       return { operation: state[path] } as T;
     },
     post: async <T,>(resource: string, _body: unknown, _credential: FullWebCredential) => {
@@ -107,6 +109,9 @@ function gatewayFieldServer(paths: string[], initial: Record<string, unknown>) {
     conflicts: () => conflicts,
     rejectNext(code: string) {
       reject = code;
+    },
+    acknowledge(code: string) {
+      ackCode = code;
     },
     // The project's TS lib predates Promise.withResolvers, so the gate uses the
     // executor form.
@@ -316,6 +321,17 @@ describe('RequestsConfigFieldGroup', () => {
     await click(`config-save-${BOOTSTRAP}`);
     expect(server.conflicts()).toBe(1);
     expect(server.values[BOOTSTRAP]).toBe(4);
+  });
+
+  it('shows an acknowledged write another writer moved as superseded', async () => {
+    const server = gatewayFieldServer(CATALOG_PATHS, { [KEEPALIVE]: 45, [BOOTSTRAP]: 0, [HEADERS]: false });
+    await mount(server.client);
+    server.acknowledge('superseded');
+    await change(`config-input-${KEEPALIVE}`, '20');
+    await click(`config-save-${KEEPALIVE}`);
+    expect(text()).toContain(c('fieldValueSuperseded'));
+    expect(text()).not.toContain('superseded');
+    expect(node(`config-input-${KEEPALIVE}`).props.disabled).toBe(false);
   });
 
   it('renders a translated reason instead of the raw server code', async () => {

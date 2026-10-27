@@ -202,7 +202,13 @@ func validFieldJournal(path string, journal *FieldJournal) bool {
 			if operation.Receipt != "" || operation.Code != "" {
 				return false
 			}
-		case "persisted", "recovered":
+		case "persisted":
+			// `superseded` records an acknowledged write whose scalar another
+			// writer already changed: persisted, with the reason kept as evidence.
+			if operation.Code != "" && operation.Code != "superseded" {
+				return false
+			}
+		case "recovered":
 			if operation.Code != "" {
 				return false
 			}
@@ -334,8 +340,12 @@ func validateConfigOperationUpdate(old, next ConfigOperation) error {
 		}
 	}
 	if next.Code != old.Code {
-		// A code is only ever attached by the transition to a definite failure.
-		if old.State != "unknown" || next.State != "failed" || next.Code == "" {
+		// A code is only ever attached when an unknown original is resolved, either
+		// as a definite failure or as an acknowledged write another writer moved.
+		if old.State != "unknown" || next.Code == "" {
+			return ErrConflict
+		}
+		if next.State != "failed" && !(next.State == "persisted" && next.Code == "superseded") {
 			return ErrConflict
 		}
 	}

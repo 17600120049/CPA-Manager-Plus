@@ -174,7 +174,9 @@ func (s *Service) saveManaged(ctx context.Context, path string, q FieldRequest, 
 		}
 		return operation, cpa.ErrApplyUnknown
 	}
-	return s.reconcileManaged(ctx, path, operation)
+	// CPA acknowledged the write above, so a different scalar now means another
+	// writer moved it afterwards, not that the original failed.
+	return s.resolveManagedOperation(ctx, path, operation, true)
 }
 
 // failManagedOperation records a definite terminal failure of the ORIGINAL
@@ -188,10 +190,17 @@ func (s *Service) failManagedOperation(ctx context.Context, path string, operati
 	return next, ErrWriteFailed
 }
 
-// reconcileManaged resolves an unknown managed write by reading the scalar back:
-// an identical value is the persisted original, and a different value proves the
-// write never landed, which is a terminal failure. It never repeats the PUT.
+// reconcileManaged resolves an unknown managed write that was never acknowledged.
+// It never repeats the PUT.
 func (s *Service) reconcileManaged(ctx context.Context, path string, operation freshstore.ConfigOperation) (freshstore.ConfigOperation, error) {
+	return s.resolveManagedOperation(ctx, path, operation, false)
+}
+
+// resolveManagedOperation records what a readback proves. An identical scalar is
+// the persisted original. A different scalar is a terminal `write_not_applied`
+// only when no PUT was acknowledged; after an acknowledged write it is the
+// `superseded` outcome of a value another writer changed legitimately.
+func (s *Service) resolveManagedOperation(ctx context.Context, path string, operation freshstore.ConfigOperation, acknowledged bool) (freshstore.ConfigOperation, error) {
 	if operation.State != "unknown" {
 		return operation, nil
 	}
@@ -212,7 +221,15 @@ func (s *Service) reconcileManaged(ctx context.Context, path string, operation f
 		}
 		return next, nil
 	case presence == "present", presence == "missing", presence == "null":
-		// The scalar is not what was written, so the original never landed.
+		if acknowledged {
+			next := operation
+			next.State, next.Code = "persisted", "superseded"
+			if err = s.updateOperation(ctx, path, operation, next); err != nil {
+				return operation, err
+			}
+			return next, nil
+		}
+		// No acknowledged PUT and the scalar is not ours: it never landed.
 		return s.failManagedOperation(ctx, path, operation, "write_not_applied")
 	default:
 		// An unreadable scalar is still unknown: nothing here proves either way.

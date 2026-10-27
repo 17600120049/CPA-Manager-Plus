@@ -51,6 +51,10 @@ type managedFieldCPA struct {
 	rejectStatus int
 	// failStatus answers with a 5xx and stores nothing: the write never landed.
 	failStatus int
+	// stored holds the value a 200 actually left behind, modelling another writer
+	// that changed the scalar between the write and the readback.
+	stored    any
+	storedSet bool
 }
 
 func newManagedFieldCPA(management string) *managedFieldCPA {
@@ -106,7 +110,11 @@ func (m *managedFieldCPA) serve(t *testing.T) *httptest.Server {
 			m.puts[path]++
 			status, reject, fail := m.putStatus, m.rejectStatus, m.failStatus
 			if reject == 0 && fail == 0 {
-				m.values[path] = value
+				if m.storedSet {
+					m.values[path] = m.stored
+				} else {
+					m.values[path] = value
+				}
 			}
 			m.mu.Unlock()
 			if reject != 0 {
@@ -822,5 +830,51 @@ func TestManagedConfigFieldCrossFieldExpectedStaysValid(t *testing.T) {
 	}
 	if n := destination.writes(second); n != 1 {
 		t.Fatalf("%d writes for the second field, want one", n)
+	}
+}
+
+// TestManagedConfigFieldAcknowledgedWriteIsSuperseded proves the managed profile
+// never calls an acknowledged write failed: without a Runtime reservation another
+// writer may legitimately change the scalar after CPA accepted the PUT, so the
+// original is persisted with the `superseded` code and is never resent.
+func TestManagedConfigFieldAcknowledgedWriteIsSuperseded(t *testing.T) {
+	s, destination, st, _, _, _, _ := managedFieldFixture(t)
+	path := "requests.streaming.keepalive-seconds"
+	destination.mu.Lock()
+	destination.stored, destination.storedSet = 45, true
+	destination.mu.Unlock()
+	id := strings.Repeat("e6", 16)
+	operation, err := managedFieldRequest(t, s, path, id, "20")
+	if err != nil {
+		t.Fatalf("an acknowledged write reported %v", err)
+	}
+	if operation.State != "persisted" || operation.Code != "superseded" {
+		t.Fatalf("acknowledged write recorded %+v, want persisted/superseded", operation)
+	}
+	if n := destination.writes(path); n != 1 {
+		t.Fatalf("%d attempts for an acknowledged write, want one", n)
+	}
+	journal := fieldJournalOf(t, st, path)
+	if journal == nil || journal.Operations[id].State != "persisted" || journal.Operations[id].Code != "superseded" {
+		t.Fatalf("journal %+v, want a persisted superseded original", journal)
+	}
+	// The field is editable and a new write is allowed; the superseded original is
+	// never replayed.
+	view, err := s.ReadField(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !view.Editable || view.Reason != "" {
+		t.Fatalf("a superseded write locked the field: %+v", view)
+	}
+	destination.mu.Lock()
+	destination.storedSet = false
+	destination.mu.Unlock()
+	next, err := managedFieldRequest(t, s, path, strings.Repeat("e7", 16), "21")
+	if err != nil || next.State != "persisted" || next.Code != "" {
+		t.Fatalf("write after a superseded original: %+v %v", next, err)
+	}
+	if n := destination.writes(path); n != 2 {
+		t.Fatalf("%d attempts, want two", n)
 	}
 }
