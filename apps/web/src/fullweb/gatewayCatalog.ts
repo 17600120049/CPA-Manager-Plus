@@ -2,10 +2,15 @@ import { configurationText as c } from '../i18n/configurationWorkspace';
 import { referenceText as r, type ReferenceTextKey } from '../i18n/configurationReference';
 
 // Ownership reference only, never a snapshot of an installation's values.
+export type GatewayFieldType = 'integer' | 'boolean' | 'text';
 export interface GatewayFieldMeta {
   path: string;
   label: string;
   risk?: boolean;
+  editable?: boolean;
+  type?: GatewayFieldType;
+  min?: number;
+  max?: number;
 }
 export interface GatewaySectionMeta {
   id: string;
@@ -35,11 +40,12 @@ export const COMMON_GATEWAY_PATHS = new Set([
 ]);
 
 export function gatewaySections(): GatewaySectionMeta[] {
-  const field = (path: string, label: ReferenceTextKey, risk = false): GatewayFieldMeta => ({
-    path,
-    label: r(label),
-    risk,
-  });
+  const field = (
+    path: string,
+    label: ReferenceTextKey,
+    risk = false,
+    editor?: Pick<GatewayFieldMeta, 'editable' | 'type' | 'min' | 'max'>
+  ): GatewayFieldMeta => ({ path, label: r(label), risk, ...editor });
   return [
     {
       id: 'routing',
@@ -75,10 +81,10 @@ export function gatewaySections(): GatewaySectionMeta[] {
       description: c('requestsHelp'),
       fields: [
         field('requests.proxy-url', 'proxy'),
-        field('requests.passthrough-headers', 'headers'),
-        field('requests.nonstream-keepalive-interval', 'keepalive'),
-        field('requests.streaming.keepalive-seconds', 'sse'),
-        field('requests.streaming.bootstrap-retries', 'bootstrap'),
+        field('requests.passthrough-headers', 'headers', false, { editable: true, type: 'boolean' }),
+        field('requests.nonstream-keepalive-interval', 'keepalive', false, { editable: true, type: 'integer', min: 0, max: 300 }),
+        field('requests.streaming.keepalive-seconds', 'sse', false, { editable: true, type: 'integer', min: 0, max: 300 }),
+        field('requests.streaming.bootstrap-retries', 'bootstrap', false, { editable: true, type: 'integer', min: 0, max: 10 }),
       ],
     },
     {

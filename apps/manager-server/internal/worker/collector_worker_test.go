@@ -5,13 +5,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	collectorpkg "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/collector"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	collectorservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/collector"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshstrategy"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
 )
 
 func TestCollectorWorkerDoesNotStartWhenMonitoringDisabled(t *testing.T) {
@@ -149,4 +157,94 @@ func workerTestConfig(t *testing.T) config.Config {
 		BatchSize:     100,
 		PollInterval:  time.Hour,
 	}
+}
+
+type collectorRuntimeConfigCapture struct {
+	updates chan collectorpkg.RuntimeConfig
+}
+
+func (c collectorRuntimeConfigCapture) HandleUsageEvents(context.Context, collectorpkg.RuntimeConfig, []usage.Event) {
+}
+
+func (c collectorRuntimeConfigCapture) UpdateRuntimeConfig(_ context.Context, cfg collectorpkg.RuntimeConfig) {
+	select {
+	case c.updates <- cfg:
+	default:
+	}
+}
+
+func TestCollectorWorkerUsesCompletedManagedConnectionMirror(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	path := filepath.Join(t.TempDir(), "manager.sqlite")
+	db, err := sqlite.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	fresh := freshstore.New(db)
+	id := bootstrap.FreshIdentity{AdmissionID: "admission", InstallationID: "installation", Generation: "generation", OperationID: "operation", DatabasePath: path}
+	admin, err := security.NewAdminCredential("Cpamp_Collector_Mirror_Admin_839216", "host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := fresh.Create(ctx, id, &admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protector, err := security.NewProtector([]byte("collector mirror data key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const baseURL = "http://cpamp-runtime:8317"
+	const managementKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	ciphertext, err := protector.ProtectString(managementKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: "committed", TargetIdentity: "runtime", TargetGeneration: 7, TargetArtifactID: "sha256:" + strings.Repeat("a", 64), DestinationConnectionIdentity: freshstrategy.ManagedDestinationIdentity(baseURL)}
+	connection := &model.ManagerCPAConnectionConfig{CPABaseURL: baseURL, ManagementKey: ciphertext}
+	pending, err := fresh.Update(ctx, id, record.Operation.Revision, func(r *freshstore.Record) error {
+		r.Operation.Strategy = checkpoint
+		r.Connection = connection
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = fresh.Update(ctx, id, pending.Operation.Revision, func(r *freshstore.Record) error {
+		r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: id.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}
+		r.Operation.ProductComplete = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	managerStore := store.New(db, protector)
+	managerCfg, ok, err := managerStore.LoadManagerConfig(ctx)
+	if err != nil || !ok {
+		t.Fatalf("manager config mirror unavailable: ok=%v err=%v", ok, err)
+	}
+	if managerCfg.CPAConnection.CPABaseURL != baseURL || managerCfg.CPAConnection.ManagementKey != managementKey {
+		t.Fatalf("manager config mirror = %#v", managerCfg.CPAConnection)
+	}
+	enabled := true
+	managerCfg.Collector.Enabled = &enabled
+	if err := managerStore.SaveManagerConfigAndSetup(ctx, managerCfg, model.Setup{CPAUpstreamURL: baseURL, ManagementKey: managementKey}); err != nil {
+		t.Fatal(err)
+	}
+	base := config.Config{CollectorMode: "poll", Queue: "queue", PopSide: "left", PollInterval: time.Second, BatchSize: 1}
+	manager := collectorpkg.NewManager(base, managerStore)
+	capture := collectorRuntimeConfigCapture{updates: make(chan collectorpkg.RuntimeConfig, 1)}
+	manager.SetUsageEventHandler(capture)
+	worker := NewCollectorWorker(base, managerStore, collectorservice.New(manager))
+	worker.Start(ctx)
+	select {
+	case got := <-capture.updates:
+		if got.CPAUpstreamURL != baseURL || got.ManagementKey != managementKey {
+			t.Fatalf("collector received base=%q key=%q", got.CPAUpstreamURL, got.ManagementKey)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("collector did not receive the completed managed connection")
+	}
+	worker.Stop(context.Background())
 }

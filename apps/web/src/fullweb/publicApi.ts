@@ -3,14 +3,14 @@ import { parseRuntimeJSON, runtimeRequestJSON } from './runtimeGeneration';
 
 export type PublicApiErrorKind = 'routing_unavailable' | 'network' | 'http' | 'authentication';
 
-const retryErrorCodes = new Set([
-  'invalid_retry_request',
+const configFieldErrorCodes = new Set([
   'operation_not_found',
   'source_or_operation_conflict',
   'private_source_not_authorized',
   'config_key_writer_not_isolated',
   'original_operation_unknown',
   'configuration_unavailable',
+  'invalid_config_field',
 ]);
 
 export class PublicApiError extends Error {
@@ -86,7 +86,7 @@ export function createPublicApiClient(
       resource.startsWith('runtime/operations/') ||
       resource.startsWith('api-keys/') ||
       resource === 'settings/update-channel' ||
-      resource.startsWith('gateway/retry/')
+      resource.startsWith('gateway/config/')
         ? new AbortController()
         : undefined;
     const timer = controller ? setTimeout(() => controller.abort(), 15000) : undefined;
@@ -111,7 +111,7 @@ export function createPublicApiClient(
         // retain their original 409/503 status and cannot authorize writes.
         let operationResult: unknown;
         let code: string | undefined;
-        const retryResource = resource.startsWith('gateway/retry/');
+        const retryResource = resource.startsWith('gateway/config/');
         const operationResource = method === 'GET' && resource.startsWith('api-keys/operations/');
         if (
           (retryResource ||
@@ -124,7 +124,7 @@ export function createPublicApiClient(
           try {
             const payload = (await response.json()) as Record<string, unknown>;
             if (retryResource) {
-              if (typeof payload.code === 'string' && retryErrorCodes.has(payload.code))
+              if (typeof payload.code === 'string' && configFieldErrorCodes.has(payload.code))
                 code = payload.code;
               if (
                 response.status !== 400 &&
@@ -163,7 +163,7 @@ export function createPublicApiClient(
       if (timer !== undefined) clearTimeout(timer);
     }
   }
-  const client: PublicApiClient = {
+  const api: PublicApiClient = {
     get: <T = unknown>(resource: string, credential?: FullWebCredential) =>
       request<T>(resource, credential),
     post: <T = unknown>(resource: string, body: unknown, credential: FullWebCredential) =>
@@ -171,5 +171,5 @@ export function createPublicApiClient(
     put: <T = unknown>(resource: string, body: unknown, credential: FullWebCredential) =>
       request<T>(resource, credential, body, 'PUT'),
   };
-  return client;
+  return api;
 }

@@ -76,21 +76,36 @@ func (r *Repository) H1Idle(ctx context.Context) error {
 	if k != nil && k.Outcome != "committed" {
 		return ErrConflict
 	}
-	for _, entry := range []struct {
-		key string
-		valid func(*freshstore.RetryJournal) bool
-	}{
-		{"fresh_config_retry_v1", freshstore.ValidateRetryJournal},
-		{"fresh_config_retry_interval_v1", freshstore.ValidateIntervalJournal},
-	} {
-		var raw string
-		e = r.db.QueryRowContext(ctx, "select value from settings where key=?", entry.key).Scan(&raw)
-		if errors.Is(e, sql.ErrNoRows) { continue }
-		if e != nil { return e }
-		var j freshstore.RetryJournal
-		if json.Unmarshal([]byte(raw), &j) != nil || !entry.valid(&j) { return ErrConflict }
-		for id, o := range j.Operations {
-			if id != o.RequestID || (o.State != "persisted" && o.State != "recovered") { return ErrConflict }
+	// Every allowlisted config field keeps its own journal entry. A new H1 claim
+	// is only safe when no field still holds an original unknown operation; a
+	// damaged field entry is skipped because the store already locks that field.
+	var raw string
+	owned := map[string]bool{}
+	e = r.db.QueryRowContext(ctx, "select value from settings where key=?", freshstore.ConfigJournalSettingKey()).Scan(&raw)
+	if e == nil {
+		if err := freshstore.ValidateConfigJournals([]byte(raw)); err != nil {
+			return err
+		}
+		owned = freshstore.ConfigJournalOwnedPaths([]byte(raw))
+	} else if !errors.Is(e, sql.ErrNoRows) {
+		return e
+	}
+	// The pre-allowlist rows are read-only but still owned: an interrupted legacy
+	// write must block a new claim exactly like a current one. Once the current
+	// container owns that field the row is folded in, so it is no longer evidence.
+	for _, legacy := range freshstore.LegacyConfigJournalKeys() {
+		if owned[legacy.Path] {
+			continue
+		}
+		e = r.db.QueryRowContext(ctx, "select value from settings where key=?", legacy.Key).Scan(&raw)
+		if errors.Is(e, sql.ErrNoRows) {
+			continue
+		}
+		if e != nil {
+			return e
+		}
+		if freshstore.ValidateLegacyConfigJournal(legacy.Path, []byte(raw)) != nil {
+			return ErrConflict
 		}
 	}
 	return nil

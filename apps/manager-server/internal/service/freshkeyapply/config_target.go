@@ -3,6 +3,7 @@ package freshkeyapply
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 )
@@ -12,6 +13,13 @@ import (
 func (s *Service) ConfigTarget(ctx context.Context, generation uint64) (string, error) {
 	if s == nil {
 		return "", ErrUnavailable
+	}
+	if s.managed {
+		p, err := s.operationTarget(ctx, generation)
+		if err != nil {
+			return "", err
+		}
+		return p.ManagementKey, nil
 	}
 	if s.h1 != nil {
 		p, e := s.operationTarget(ctx, generation)
@@ -43,4 +51,43 @@ func (s *Service) ConfigTarget(ctx context.Context, generation uint64) (string, 
 		return "", e
 	}
 	return p.ManagementKey, nil
+}
+
+// DefaultInstallCPAAuthorityProven is the Manager-internal admission predicate
+// exposed for Gateway admission. It requires, in this order, that
+//
+//  1. this Manager was constructed with the install-derived default profile;
+//  2. the committed New Managed checkpoint and the protected Manager
+//     connection still decrypt to one credential for the configured address;
+//  3. the authenticated Runtime status matches the recorded identity,
+//     generation, artifact and ready state;
+//  4. the destination CPA still presents the managed template posture; and
+//  5. client authentication is on, proven by at least one installed client key
+//     (a CPA with no client key accepts unauthenticated Gateway traffic).
+//
+// It intentionally returns only a boolean and never a credential. A Gateway
+// that needs the authority itself must call the same profile through ConfigTarget
+// and must not copy this predicate's observations.
+func (s *Service) DefaultInstallCPAAuthorityProven(ctx context.Context) bool {
+	if s == nil || !s.managed {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	p, err := s.permit()
+	if err != nil {
+		return false
+	}
+	if _, err = s.target(ctx, p); err != nil {
+		return false
+	}
+	// KeySnapshot re-reads the destination config, proves the managed posture
+	// with an empty client set, and then requires the same non-empty client
+	// set from the canonical access projection.
+	w, ok := s.wire.(keyWire)
+	if !ok {
+		return false
+	}
+	_, err = w.KeySnapshot(ctx, p.ManagementKey)
+	return err == nil
 }

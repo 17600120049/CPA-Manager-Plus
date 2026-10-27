@@ -461,12 +461,13 @@ func (s *Service) ContinueOperation(ctx context.Context, id string, generation u
 	if err != nil {
 		return r, err
 	}
-	grant, err := s.keyPermit()
+	step := o.Steps[index].Name
+	grant, err := s.keyPermit(ctx, o.ID, step)
 	if err != nil {
 		return r, ErrUnavailable
 	}
 	now := time.Now().UnixMilli()
-	if grant.OperationID != id || grant.Step != o.Steps[index].Name || grant.RunID != o.RunID || grant.Generation != o.Generation || grant.IssuedAtMS < s.startedAtMS || grant.IssuedAtMS < o.CreatedAtMS || grant.IssuedAtMS > now || grant.ExpiresAtMS <= now || grant.ExpiresAtMS-grant.IssuedAtMS > 60000 || !identity.IsValidSHA256Hex(grant.SourceSHA256) {
+	if grant.OperationID != o.ID || grant.Step != step || grant.RunID != o.RunID || grant.Generation != o.Generation || grant.IssuedAtMS < s.startedAtMS || grant.IssuedAtMS < o.CreatedAtMS || grant.IssuedAtMS > now || grant.ExpiresAtMS <= now || grant.ExpiresAtMS-grant.IssuedAtMS > 60000 || !identity.IsValidSHA256Hex(grant.SourceSHA256) {
 		return r, ErrUnavailable
 	}
 	w, ok := s.wire.(keyWire)
@@ -492,8 +493,7 @@ func (s *Service) ContinueOperation(ctx context.Context, id string, generation u
 		if !ok {
 			return cpa.ErrSourceConflict
 		}
-		current, e := s.keyPermit()
-		if e != nil || current != grant {
+		if !s.keyGrantHeld(ctx, grant, o.ID, step) {
 			return ErrUnavailable
 		}
 		if _, e = s.target(ctx, p); e != nil {
@@ -513,8 +513,7 @@ func (s *Service) ContinueOperation(ctx context.Context, id string, generation u
 		}
 		o.Revision++
 		// Recheck authority after intent, immediately before the single PUT.
-		current, e = s.keyPermit()
-		if e != nil || current != grant || time.Now().UnixMilli() >= grant.ExpiresAtMS {
+		if !s.keyGrantHeld(ctx, grant, o.ID, step) || time.Now().UnixMilli() >= grant.ExpiresAtMS {
 			return ErrUnavailable
 		}
 		if _, e = s.target(ctx, p); e != nil {

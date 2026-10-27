@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,31 +35,36 @@ type Grant struct {
 	RecoverySHA256    string   `json:"recoverySHA256,omitempty"`
 }
 type Operation struct {
-	KeeperSHA256 string `json:"keeperSHA256,omitempty"`
-	ID           string `json:"id"`
-	Scope        string `json:"scope"`
-	KeySHA256    string `json:"keySHA256,omitempty"`
-	Retry        int    `json:"retry"`
-	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
-	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
-	Generation   string `json:"generation"`
-	State        string `json:"state"`
+	KeeperSHA256        string `json:"keeperSHA256,omitempty"`
+	ID                  string `json:"id"`
+	Scope               string `json:"scope"`
+	KeySHA256           string `json:"keySHA256,omitempty"`
+	Retry               int    `json:"retry"`
+	MaxRetryInterval    int    `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool   `json:"maxRetryIntervalSet,omitempty"`
+	Generation          string `json:"generation"`
+	State               string `json:"state"`
+	// Config-field reservation. Appended so a pre-allowlist record keeps its exact
+	// JSON and therefore its exact transition digests.
+	Path  string `json:"path,omitempty"`
+	Value any    `json:"value,omitempty"`
 }
 type record struct {
-	BootstrapRun   string    `json:"bootstrapRun,omitempty"`
-	H1             *H1Record `json:"h1,omitempty"`
-	Version        int       `json:"version"`
-	SourceID       string    `json:"sourceId"`
-	SeedSHA256     string    `json:"seedSHA256"`
-	Device         uint64    `json:"device"`
-	Inode          uint64    `json:"inode"`
-	Revision       uint64    `json:"revision"`
-	Installed      bool      `json:"installed"`
-	CommittedRetry *int `json:"committedRetry"`
-	CommittedMaxRetryInterval *int `json:"committedMaxRetryInterval,omitempty"`
-	LastGood       []byte    `json:"lastGood"`
-	LastGoodSHA256 string    `json:"lastGoodSHA256"`
-	Operation      Operation `json:"operation"`
+	BootstrapRun              string                     `json:"bootstrapRun,omitempty"`
+	H1                        *H1Record                  `json:"h1,omitempty"`
+	Version                   int                        `json:"version"`
+	SourceID                  string                     `json:"sourceId"`
+	SeedSHA256                string                     `json:"seedSHA256"`
+	Device                    uint64                     `json:"device"`
+	Inode                     uint64                     `json:"inode"`
+	Revision                  uint64                     `json:"revision"`
+	Installed                 bool                       `json:"installed"`
+	CommittedRetry            *int                       `json:"committedRetry"`
+	CommittedMaxRetryInterval *int                       `json:"committedMaxRetryInterval,omitempty"`
+	CommittedFields           map[string]json.RawMessage `json:"committedFields,omitempty"`
+	LastGood                  []byte                     `json:"lastGood"`
+	LastGoodSHA256            string                     `json:"lastGoodSHA256"`
+	Operation                 Operation                  `json:"operation"`
 }
 type Request struct {
 	H1               *H1Request `json:"h1,omitempty"`
@@ -70,24 +76,22 @@ type Request struct {
 	OperationID      string     `json:"operationId"`
 	Scope            string     `json:"scope"`
 	KeySHA256        string     `json:"keySHA256,omitempty"`
-	Retry            int        `json:"retry"`
-	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
-	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
+	Path             string     `json:"path,omitempty"`
+	Value            any        `json:"value,omitempty"`
 }
 
 // Result contains no raw configuration, Key or recovery material.
 type Result struct {
-	H1             *H1Record `json:"h1,omitempty"`
-	SourceID       string    `json:"sourceId"`
-	Generation     string    `json:"generation"`
-	Revision       uint64    `json:"revision"`
-	SHA256         string    `json:"sha256"`
-	State          string    `json:"state"`
-	Installed      bool      `json:"installed"`
-	CommittedRetry *int `json:"committedRetry"`
-	CommittedMaxRetryInterval *int `json:"committedMaxRetryInterval,omitempty"`
-	Operation      Operation `json:"operation"`
-	Created        bool      `json:"created"`
+	H1              *H1Record                  `json:"h1,omitempty"`
+	SourceID        string                     `json:"sourceId"`
+	Generation      string                     `json:"generation"`
+	Revision        uint64                     `json:"revision"`
+	SHA256          string                     `json:"sha256"`
+	State           string                     `json:"state"`
+	Installed       bool                       `json:"installed"`
+	CommittedFields map[string]json.RawMessage `json:"committedFields"`
+	Operation       Operation                  `json:"operation"`
+	Created         bool                       `json:"created"`
 }
 type Authority struct {
 	mu                             sync.Mutex
@@ -162,16 +166,25 @@ func (a *Authority) load(g Grant) (*record, error) {
 	if (r.Version == 2 && !validH1Record(&r)) || (r.Version == 1 && r.H1 != nil) {
 		return nil, ErrStop
 	}
-	if r.CommittedMaxRetryInterval != nil {
-		n, _ := tree(r.LastGood)
-		v := leaf(n, "routing", "retry", "max-retry-interval")
-		if !r.Installed || *r.CommittedMaxRetryInterval < 0 || *r.CommittedMaxRetryInterval > 300 || v == nil || v.Tag != "!!int" || v.Value != strconv.Itoa(*r.CommittedMaxRetryInterval) { return nil, ErrStop }
-	}
-	if r.CommittedRetry != nil {
-		n, _ := tree(r.LastGood)
-		v := leaf(n, "routing", "retry", "request-retry")
-		if !r.Installed || *r.CommittedRetry < 0 || *r.CommittedRetry > 10 || v == nil || v.Tag != "!!int" || v.Value != strconv.Itoa(*r.CommittedRetry) {
-			return nil, ErrStop
+	// A pre-allowlist committed scalar becomes an ordinary committed field before
+	// any check runs, so LastGood validation and the result surface never see a
+	// stale legacy copy next to the field that replaced it.
+	migrateCommittedFields(&r)
+	if len(r.CommittedFields) > 0 {
+		node, e := tree(r.LastGood)
+		if e != nil {
+			return nil, e
+		}
+		for path, raw := range r.CommittedFields {
+			var value any
+			if json.Unmarshal(raw, &value) != nil || !validFieldValue(path, value) {
+				return nil, ErrStop
+			}
+			tag, text, _ := fieldLeaf(path, value)
+			v := leaf(node, strings.Split(path, ".")...)
+			if !r.Installed || v == nil || v.Tag != tag || v.Value != text {
+				return nil, ErrStop
+			}
 		}
 	}
 	switch r.Operation.State {
@@ -180,8 +193,7 @@ func (a *Authority) load(g Grant) (*record, error) {
 			return nil, ErrStop
 		}
 	case "unknown", "persisted", "recovered":
-		if r.Operation.ID == "" || r.Operation.Generation == "" ||
-			(r.Operation.Scope != "initial-key" && r.Operation.Scope != "request-retry" && !(r.Version == 2 && (r.Operation.Scope == "key-add" || r.Operation.Scope == "key-revoke" || r.Operation.Scope == "max-retry-interval"))) {
+		if !validOperation(&r) {
 			return nil, ErrStop
 		}
 	default:
@@ -275,13 +287,18 @@ func (a *Authority) Do(q Request, running bool) (Result, error) {
 			return Result{}, ErrStop
 		}
 		if q.Scope == "initial-key" {
-			if r.Installed || !hashValid(q.KeySHA256) {
+			if r.Installed || !hashValid(q.KeySHA256) || q.Path != "" || q.Value != nil {
 				return Result{}, ErrStop
 			}
-		} else if q.Scope != "request-retry" || !r.Installed || q.KeySHA256 != "" || q.Retry < 0 || q.Retry > 10 {
-			return Result{}, ErrStop
+			r.Operation = Operation{ID: q.OperationID, Scope: q.Scope, KeySHA256: q.KeySHA256, Generation: g.Generation, State: "unknown"}
+		} else {
+			// One allowlisted field is reserved at a time; the path, its type and its
+			// bounds are re-validated here, never trusted from the Manager.
+			if !r.Installed || q.KeySHA256 != "" || q.Path != q.Scope || !validFieldValue(q.Scope, q.Value) {
+				return Result{}, ErrStop
+			}
+			r.Operation = Operation{ID: q.OperationID, Scope: q.Scope, Path: q.Path, Value: normalizeFieldValue(q.Value), Generation: g.Generation, State: "unknown"}
 		}
-		r.Operation = Operation{ID: q.OperationID, Scope: q.Scope, KeySHA256: q.KeySHA256, Retry: q.Retry, Generation: g.Generation, State: "unknown"}
 		// LastGood is already durable; persist intention before any CPA bytes.
 		r.Revision++
 		if e := a.save(r); e != nil {
@@ -309,13 +326,15 @@ func (a *Authority) Do(q Request, running bool) (Result, error) {
 			return Result{}, e
 		}
 		r.Installed = true
-		if r.Operation.Scope == "max-retry-interval" {
-			value := r.Operation.MaxRetryInterval
-			r.CommittedMaxRetryInterval = &value
-		}
-		if r.Operation.Scope == "request-retry" {
-			value := r.Operation.Retry
-			r.CommittedRetry = &value
+		if path, value, ok := operationPath(r.Operation); ok {
+			raw, e := json.Marshal(value)
+			if e != nil {
+				return Result{}, ErrStop
+			}
+			if r.CommittedFields == nil {
+				r.CommittedFields = map[string]json.RawMessage{}
+			}
+			r.CommittedFields[path] = raw
 		}
 		r.LastGood = b
 		r.LastGoodSHA256 = sha
@@ -355,5 +374,9 @@ func (a *Authority) result(r *record, sha string, created bool) Result {
 	if sha != r.LastGoodSHA256 || r.Operation.State == "unknown" {
 		state = "unknown"
 	}
-	return Result{H1: r.H1, SourceID: r.SourceID, Generation: a.generation, Revision: r.Revision, SHA256: sha, State: state, Installed: r.Installed, CommittedRetry: r.CommittedRetry, CommittedMaxRetryInterval: r.CommittedMaxRetryInterval, Operation: r.Operation, Created: created}
+	op := r.Operation
+	if path, value, ok := operationPath(op); ok {
+		op.Path, op.Value = path, value
+	}
+	return Result{H1: r.H1, SourceID: r.SourceID, Generation: a.generation, Revision: r.Revision, SHA256: sha, State: state, Installed: r.Installed, CommittedFields: committedFieldValues(r), Operation: op, Created: created}
 }

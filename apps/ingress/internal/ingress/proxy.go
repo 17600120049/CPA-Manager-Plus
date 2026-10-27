@@ -15,13 +15,14 @@ import (
 const proxyBufferSize = 32 << 10
 
 type Handler struct {
-	classifier    Classifier
-	manager       http.Handler
-	gateway       http.Handler
-	fresh         *FreshRoutes
-	legacyGateway func(context.Context) bool
-	chat          *privateChat
-	pahS0Guard    func(context.Context) bool
+	classifier       Classifier
+	manager          http.Handler
+	gateway          http.Handler
+	fresh            *FreshRoutes
+	legacyGateway    func(context.Context) bool
+	gatewayAdmission func(context.Context) bool
+	chat             *privateChat
+	pahS0Guard       func(context.Context) bool
 }
 
 func NewFreshHandler(fresh *FreshRoutes, managerURL, gatewayURL *url.URL, logger *log.Logger, legacyGateway func(context.Context) bool) *Handler {
@@ -47,6 +48,14 @@ func (h *Handler) EnablePAHS0(guard func(context.Context) bool) {
 	h.pahS0Guard = guard
 }
 
+// EnableFreshGatewayAdmission admits Fresh client Gateway traffic only while
+// the private Manager answer for the live routing projection is positive. It is
+// the only way a Fresh installation opens the model Gateway; without it every
+// Fresh Gateway request stays 503.
+func (h *Handler) EnableFreshGatewayAdmission(admitted func(context.Context) bool) {
+	h.gatewayAdmission = admitted
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	route := h.classifier.ClassifyRequest(r)
 	if h.classifier.pahS0 && route == RouteManager && pahS0ResourceCandidate(r.URL.Path) {
@@ -70,12 +79,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.chat.ServeHTTP(w, r)
 			return
 		}
-		// Fresh routing projections establish Control ownership only. Neither
-		// an absent projection (including after an Ingress restart) nor a
-		// committed one proves Gateway client-auth/effective-config safety.
+		if h.fresh != nil && h.fresh.Active() {
+			// A Fresh routing projection establishes Control ownership only.
+			// Gateway traffic is admitted solely by a current positive private
+			// Manager answer bound to that same installation, generation and
+			// committed projection. Absence, error, expiry-without-reconfirmation
+			// and mismatch all stay closed.
+			if h.gatewayAdmission == nil || !h.gatewayAdmission(r.Context()) {
+				http.Error(w, "gateway pending configuration", http.StatusServiceUnavailable)
+				return
+			}
+			h.gateway.ServeHTTP(w, r)
+			return
+		}
 		// Only a positive legacy-mode reply from the private Manager authority
-		// preserves the separate pre-Fresh passthrough contract.
-		if h.fresh != nil && (h.fresh.Active() || h.legacyGateway == nil || !h.legacyGateway(r.Context())) {
+		// preserves the separate pre-Fresh passthrough contract. A handler
+		// without Fresh routing keeps its plain classifier-to-Gateway behavior.
+		if h.fresh != nil && (h.legacyGateway == nil || !h.legacyGateway(r.Context())) {
 			http.Error(w, "gateway pending configuration", http.StatusServiceUnavailable)
 			return
 		}

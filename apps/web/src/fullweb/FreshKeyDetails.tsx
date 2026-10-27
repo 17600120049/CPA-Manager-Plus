@@ -4,8 +4,9 @@ import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
 import { FullWebIcon } from './FullWebIcon';
 import './freshKeys.css';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
-import { validKey, type Key } from './freshKeyMetadata';
+import { parseKeyUsage, usageCountText, usageCoveragePill, usageReasonText, usageStateText, usageTimeText, type KeyUsage, type UsageState } from './freshKeyUsage';
 import { FreshKeyInstallation } from './FreshKeyInstallation';
+import { validKey, type Key } from './freshKeyMetadata';
 import { Drawer } from '../components/ui/Drawer';
 import { Modal } from '../components/ui/Modal';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
@@ -47,6 +48,8 @@ export function FreshKeyDetails({
   open?: boolean;
 }) {
   const [record, setRecord] = useState<Key | null>(null);
+  const [usage, setUsage] = useState<KeyUsage | null>(null);
+  const [usageFailed, setUsageFailed] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [unknown, setUnknown] = useState(false);
@@ -61,6 +64,8 @@ export function FreshKeyDetails({
   const auth = { kind: 'admin' as const, value: credential };
   const resource = 'api-keys/' + id;
   const dirty = rejectedDraft || (record !== null && name.trim() !== record.name);
+  const usageCoverage = usage?.coverage ?? { state: 'unknown' as UsageState, reason: 'usage_read_failed' };
+  const usageStateClass = usageCoveragePill(usageCoverage.state);
 
   // Each mounted record/session owns its replies. The parent keys this view by
   // canonical ID and unmounts the entire key page when authentication is cleared.
@@ -68,6 +73,7 @@ export function FreshKeyDetails({
     active.current = true;
     const previous = typeof document !== 'undefined' ? document.activeElement : null;
     void read();
+    void readUsage();
     return () => {
       active.current = false;
       if (
@@ -111,6 +117,24 @@ export function FreshKeyDetails({
     } finally {
       inFlight.current = false;
       if (active.current) setBusy(false);
+    }
+  }
+
+  async function readUsage() {
+    try {
+      const parsed = parseKeyUsage(await client.get<unknown>(resource + '/usage', auth), id);
+      if (!parsed) throw new Error('Invalid usage response');
+      if (!active.current) return;
+      setUsage(parsed);
+      setUsageFailed(false);
+    } catch (err) {
+      if (!active.current) return;
+      if (err instanceof PublicApiError && err.kind === 'authentication') {
+        onUnauthorized();
+        return;
+      }
+      setUsage(null);
+      setUsageFailed(true);
     }
   }
   async function save(event: FormEvent) {
@@ -333,9 +357,65 @@ export function FreshKeyDetails({
                     </details>
                   </div>
                 </section>
-                <p className="key-field-help" data-testid="key-detail-usage-policy">
-                  {k('usageUnavailableDetail')} {k('policyGlobalHelp')}
-                </p>
+                <section className="key-detail-section" data-testid="key-detail-usage-policy">
+                  <header>
+                    <FullWebIcon name="dashboard" />
+                    <h4>{k('usageSectionTitle')}</h4>
+                  </header>
+                  <div className="key-detail-section-body">
+                    {!usage && !usageFailed ? (
+                      <p className="key-detail-description" role="status">{k('usageReading')}</p>
+                    ) : (
+                      <>
+                        <div className="key-usage-coverage" data-testid="key-usage-state">
+                          <div>
+                            <span className="key-field-label">{k('usageCoverageLabel')}</span>
+                            <span className={'key-state-pill ' + usageStateClass}>{usageStateText(usageCoverage.state)}</span>
+                          </div>
+                          <p data-testid="key-usage-reason">{usageReasonText(usageCoverage.reason)}</p>
+                        </div>
+                        {usage && usage.totals && (
+                          <>
+                            <p className="key-field-help">
+                              <strong>{k('usageWindowLabel')}:</strong>{' '}
+                              {detailTime(usage.fromMs).label} — {detailTime(usage.toMs).label}
+                              <br />{k('usageWindowHelp')}
+                            </p>
+                            <dl className="key-detail-meta-grid key-usage-totals" data-testid="key-usage-totals">
+                              <div><dt>{k('usageCalls')}</dt><dd>{usageCountText(usage.totals.calls, usage.coverage.state)}</dd></div>
+                              <div><dt>{k('usageSuccess')}</dt><dd>{usageCountText(usage.totals.success, usage.coverage.state)}</dd></div>
+                              <div><dt>{k('usageFailure')}</dt><dd>{usageCountText(usage.totals.failure, usage.coverage.state)}</dd></div>
+                              <div><dt>{k('usageTotalTokens')}</dt><dd>{usageCountText(usage.totals.totalTokens, usage.coverage.state)}</dd></div>
+                              <div><dt>{k('usageInputTokens')}</dt><dd>{usageCountText(usage.totals.inputTokens, usage.coverage.state)}</dd></div>
+                              <div><dt>{k('usageOutputTokens')}</dt><dd>{usageCountText(usage.totals.outputTokens, usage.coverage.state)}</dd></div>
+                              <div>
+                                <dt>{k('usageLastUsed')}</dt>
+                                <dd>{usageTimeText(usage.totals.lastUsedAtMs) ?? '—'}</dd>
+                              </div>
+                            </dl>
+                            {usage.series.length > 0 ? (
+                              <div className="key-usage-series" data-testid="key-usage-series">
+                                <span className="key-field-label">{k('usageSeriesTitle')}</span>
+                                <ul>
+                                  {usage.series.map((point) => (
+                                    <li key={point.bucketMs}>
+                                      <time dateTime={detailTime(point.bucketMs).iso}>{detailTime(point.bucketMs).label}</time>
+                                      <span>{usageCountText(point.calls, usage.coverage.state)} {k('usageCalls')}</span>
+                                      <span>{usageCountText(point.totalTokens, usage.coverage.state)} {k('usageTotalTokens')}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : usage.coverage.state === 'complete' ? (
+                              <p className="key-detail-description">{k('usageNoCalls')}</p>
+                            ) : null}
+                          </>
+                        )}
+                      </>
+                    )}
+                    <p className="key-field-help">{k('policyGlobalHelp')}</p>
+                  </div>
+                </section>
               </div>
             </>
           )}
@@ -353,7 +433,10 @@ export function FreshKeyDetails({
               className="btn btn-secondary"
               aria-label={t('keysReadDetails')}
               disabled={busy || installationPending}
-              onClick={() => void read()}
+              onClick={() => {
+                void read();
+                void readUsage();
+              }}
             >
               <FullWebIcon name="refresh" />
               {t('keysReadDetails')}

@@ -9,16 +9,18 @@ import (
 // H1 is a bounded private protocol, not a general transaction service. Host
 // grants are root-owned files; none of these fields are Public API authority.
 type H1Intent struct {
-	RequestID    string `json:"requestId"`
-	Domain       string `json:"domain"`
-	Mode         string `json:"mode"`
-	TargetID     string `json:"targetId"`
-	KeeperID     string `json:"keeperId"`
-	TargetSHA256 string `json:"targetSHA256"`
-	KeeperSHA256 string `json:"keeperSHA256"`
-	Retry        int    `json:"retry"`
-	MaxRetryInterval int `json:"maxRetryInterval,omitempty"`
-	MaxRetryIntervalSet bool `json:"maxRetryIntervalSet,omitempty"`
+	RequestID           string `json:"requestId"`
+	Domain              string `json:"domain"`
+	Mode                string `json:"mode"`
+	TargetID            string `json:"targetId"`
+	KeeperID            string `json:"keeperId"`
+	TargetSHA256        string `json:"targetSHA256"`
+	KeeperSHA256        string `json:"keeperSHA256"`
+	Path                string `json:"path,omitempty"`
+	Value               any    `json:"value,omitempty"`
+	Retry               int    `json:"retry"`
+	MaxRetryInterval    int    `json:"maxRetryInterval,omitempty"`
+	MaxRetryIntervalSet bool   `json:"maxRetryIntervalSet,omitempty"`
 }
 
 func (i H1Intent) parentID() string {
@@ -29,7 +31,12 @@ func (i H1Intent) parentID() string {
 }
 func (i H1Intent) scopes() []string {
 	if i.Domain == "config" {
-		if i.Mode == "interval" { return []string{"max-retry-interval"} }
+		if i.Mode == "config-field" {
+			return []string{i.Path}
+		}
+		if i.Mode == "interval" {
+			return []string{"max-retry-interval"}
+		}
 		return []string{"request-retry"}
 	}
 	if i.Mode == "replace" {
@@ -37,6 +44,39 @@ func (i H1Intent) scopes() []string {
 	}
 	return []string{"key-revoke"}
 }
+
+// fieldIntent resolves the field an intent writes, including pre-allowlist ones.
+func (i H1Intent) fieldIntent() (string, any, bool) {
+	if i.Domain != "config" {
+		return "", nil, false
+	}
+	if i.Mode == "config-field" {
+		return i.Path, normalizeFieldValue(i.Value), validFieldValue(i.Path, i.Value)
+	}
+	if i.Mode == "retry" && !i.MaxRetryIntervalSet && i.MaxRetryInterval == 0 {
+		return "routing.retry.request-retry", i.Retry, validFieldValue("routing.retry.request-retry", i.Retry)
+	}
+	if i.Mode == "interval" && i.Retry == 0 && i.MaxRetryIntervalSet {
+		return "routing.retry.max-retry-interval", i.MaxRetryInterval, validFieldValue("routing.retry.max-retry-interval", i.MaxRetryInterval)
+	}
+	return "", nil, false
+}
+
+// intentOperation is the exact journal operation one H1 step reserves. Legacy
+// intents keep populating the legacy scalars so their JSON, and every digest
+// derived from it, is byte-identical to the pre-allowlist build.
+func intentOperation(i H1Intent, id, scope, generation string) Operation {
+	op := Operation{ID: id, Scope: scope, Generation: generation, State: "unknown", KeySHA256: i.TargetSHA256, KeeperSHA256: i.KeeperSHA256}
+	if i.Domain == "config" {
+		if i.Mode == "config-field" {
+			op.Path, op.Value = i.Path, normalizeFieldValue(i.Value)
+			return op
+		}
+		op.Retry, op.MaxRetryInterval, op.MaxRetryIntervalSet = i.Retry, i.MaxRetryInterval, i.MaxRetryIntervalSet
+	}
+	return op
+}
+
 func h1ID(s string) bool {
 	b, e := hex.DecodeString(s)
 	return e == nil && len(b) == 16 && hex.EncodeToString(b) == s
@@ -46,9 +86,16 @@ func (i H1Intent) valid() bool {
 		return false
 	}
 	if i.Domain == "config" {
-		return i.TargetID == "" && i.KeeperID == "" && i.TargetSHA256 == "" && i.KeeperSHA256 == "" && ((i.Mode == "retry" && !i.MaxRetryIntervalSet && i.MaxRetryInterval == 0 && i.Retry >= 0 && i.Retry <= 10) || (i.Mode == "interval" && i.Retry == 0 && i.MaxRetryIntervalSet && i.MaxRetryInterval >= 0 && i.MaxRetryInterval <= 300))
+		if i.TargetID != "" || i.KeeperID != "" || i.TargetSHA256 != "" || i.KeeperSHA256 != "" {
+			return false
+		}
+		if i.Mode == "config-field" {
+			return i.Retry == 0 && i.MaxRetryInterval == 0 && !i.MaxRetryIntervalSet && validFieldValue(i.Path, i.Value)
+		}
+		path, value, ok := i.fieldIntent()
+		return ok && validFieldValue(path, value)
 	}
-	return i.Domain == "key" && (i.Mode == "replace" || i.Mode == "revoke") && h1ID(i.TargetID) && h1ID(i.KeeperID) && i.TargetID != i.KeeperID && hashValid(i.TargetSHA256) && hashValid(i.KeeperSHA256) && i.TargetSHA256 != i.KeeperSHA256 && i.Retry == 0 && i.MaxRetryInterval == 0 && !i.MaxRetryIntervalSet
+	return i.Domain == "key" && (i.Mode == "replace" || i.Mode == "revoke") && h1ID(i.TargetID) && h1ID(i.KeeperID) && i.TargetID != i.KeeperID && hashValid(i.TargetSHA256) && hashValid(i.KeeperSHA256) && i.TargetSHA256 != i.KeeperSHA256 && i.Retry == 0 && i.MaxRetryInterval == 0 && !i.MaxRetryIntervalSet && i.Path == "" && i.Value == nil
 }
 func h1StepID(i H1Intent, n int) string {
 	name := i.scopes()[n]
@@ -151,7 +198,7 @@ func validH1Record(r *record) bool {
 		if s.BeforeSHA256 != lastSHA || s.BeginRevision <= lastRev {
 			return false
 		}
-		op := Operation{ID: s.ID, Scope: s.Scope, Generation: p.Generation, State: "unknown", Retry: p.Intent.Retry, MaxRetryInterval: p.Intent.MaxRetryInterval, MaxRetryIntervalSet: p.Intent.MaxRetryIntervalSet, KeySHA256: p.Intent.TargetSHA256, KeeperSHA256: p.Intent.KeeperSHA256}
+		op := intentOperation(p.Intent, s.ID, s.Scope, p.Generation)
 		if s.TransitionDigest != h1Digest(op) {
 			return false
 		}
@@ -256,7 +303,7 @@ func (a *Authority) doH1(q Request, g Grant, r *record, b []byte, running bool) 
 	h := r.H1
 	p := h.Parent
 	if q.Action == "claim" {
-		if p != nil || h.Released.ParentID == x.ParentID || !running || hg.Action != "claim" || !x.Intent.valid() || x.Intent != hg.Intent || x.ParentID != x.Intent.parentID() || hg.ParentID != x.ParentID || x.Anchor != h1Digest(h.Released) || q.ExpectedRevision != r.Revision || hg.Revision != r.Revision || sha != r.LastGoodSHA256 || q.ExpectedSHA256 != sha || hg.SHA256 != sha {
+		if p != nil || h.Released.ParentID == x.ParentID || !running || hg.Action != "claim" || !x.Intent.valid() || h1Digest(x.Intent) != h1Digest(hg.Intent) || x.ParentID != x.Intent.parentID() || hg.ParentID != x.ParentID || x.Anchor != h1Digest(h.Released) || q.ExpectedRevision != r.Revision || hg.Revision != r.Revision || sha != r.LastGoodSHA256 || q.ExpectedSHA256 != sha || hg.SHA256 != sha {
 			return fail()
 		}
 		r.Revision++
@@ -287,12 +334,12 @@ func (a *Authority) doH1(q Request, g Grant, r *record, b []byte, running bool) 
 		scope := p.Intent.scopes()[n]
 		// Config's exact claim grant also delegates its ONLY scalar step, without
 		// adding a Public prepare endpoint. Key steps always need fresh step grants.
-		configClaim := p.Intent.Domain == "config" && hg.Action == "claim" && hg.Intent == p.Intent && hg.Revision+1 == p.ClaimRevision && hg.SHA256 == p.ClaimSHA256
+		configClaim := p.Intent.Domain == "config" && hg.Action == "claim" && h1Digest(hg.Intent) == h1Digest(p.Intent) && hg.Revision+1 == p.ClaimRevision && hg.SHA256 == p.ClaimSHA256
 		stepGrant := hg.Action == "step" && hg.StepID == id && hg.Revision == r.Revision && hg.SHA256 == sha
 		if (!configClaim && !stepGrant) || x.StepID != id || q.OperationID != id || q.Scope != scope {
 			return fail()
 		}
-		op := Operation{ID: id, Scope: scope, Generation: g.Generation, State: "unknown", Retry: p.Intent.Retry, MaxRetryInterval: p.Intent.MaxRetryInterval, MaxRetryIntervalSet: p.Intent.MaxRetryIntervalSet, KeySHA256: p.Intent.TargetSHA256, KeeperSHA256: p.Intent.KeeperSHA256}
+		op := intentOperation(p.Intent, id, scope, g.Generation)
 		r.Revision++
 		p.Steps = append(p.Steps, H1Step{ParentID: p.ID, SourceID: p.SourceID, Generation: p.Generation, ID: id, Scope: scope, State: "unknown", BeforeSHA256: sha, BeginRevision: r.Revision, TransitionDigest: h1Digest(op)})
 		r.Operation = op
@@ -338,13 +385,15 @@ func (a *Authority) doH1(q Request, g Grant, r *record, b []byte, running bool) 
 		r.Operation.State = "persisted"
 		r.LastGood = b
 		r.LastGoodSHA256 = sha
-		if s.Scope == "max-retry-interval" {
-			n := p.Intent.MaxRetryInterval
-			r.CommittedMaxRetryInterval = &n
-		}
-		if s.Scope == "request-retry" {
-			n := p.Intent.Retry
-			r.CommittedRetry = &n
+		if path, value, ok := operationPath(r.Operation); ok {
+			raw, e := json.Marshal(value)
+			if e != nil {
+				return Result{}, ErrStop
+			}
+			if r.CommittedFields == nil {
+				r.CommittedFields = map[string]json.RawMessage{}
+			}
+			r.CommittedFields[path] = raw
 		}
 	} else if q.Action == "consume" {
 		if !h1TerminalGrant(hg, p) || !h1Complete(p) || !hashValid(x.TerminalDigest) || sha != r.LastGoodSHA256 {
@@ -378,7 +427,7 @@ func (a *Authority) doH1(q Request, g Grant, r *record, b []byte, running bool) 
 	return a.result(r, sha, false), nil
 }
 func h1TerminalGrant(g *H1Grant, p *H1Parent) bool {
-	return g.Action == "reconcile" || (p.Intent.Domain == "config" && g.Action == "claim" && g.Intent == p.Intent) || (g.Action == "step" && len(p.Steps) > 0 && g.StepID == p.Steps[len(p.Steps)-1].ID)
+	return g.Action == "reconcile" || (p.Intent.Domain == "config" && g.Action == "claim" && h1Digest(g.Intent) == h1Digest(p.Intent)) || (g.Action == "step" && len(p.Steps) > 0 && g.StepID == p.Steps[len(p.Steps)-1].ID)
 }
 func (a *Authority) h1Recover(q Request, g Grant, r *record, sha string) (Result, error) {
 	p := r.H1.Parent

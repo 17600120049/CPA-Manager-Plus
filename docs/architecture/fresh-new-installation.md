@@ -93,8 +93,10 @@ After signing in, the installation wizard continues the same durable operation:
 
 Installation completion requires a committed Fresh New checkpoint and a real
 Runtime observation of **ready**, matching the original identity, generation
-and official artifact. It does not open the model Gateway: `gatewayPending`
-remains true, including with zero Client Keys. Diagnostics are available in
+and official artifact. It does not open the model Gateway by itself:
+`gatewayPending` remains true and Ingress keeps answering 503 until a Client
+Key is installed and Manager proves the admission posture in
+[Gateway admission](#gateway-admission-ingress). Diagnostics are available in
 expandable details instead of the normal user workflow.
 
 ## Restart and recovery
@@ -157,3 +159,181 @@ aborting browser delivery. Source tests, real Docker execution and interactive
 browser results must be reported separately. See the
 [acceptance record](fresh-new-installation-acceptance.md) for actual observed
 outcomes and the remaining limits.
+
+## Default New Managed CPA authority
+
+The default Compose installation uses the Runtime `new_managed` destination.
+`freshstrategy.newManaged` generates a random 256-bit management key, stores
+the protected destination snapshot in the Fresh CAS checkpoint, stages and
+starts the destination, then requires an authenticated CPA v8 config read-back
+before committing `manager_config_v1`. The runtime template binds CPA to
+`0.0.0.0`, enables remote management and usage statistics, and disables the
+control panel. The key is never returned to the browser, Runtime journal,
+operation response, or logs.
+
+After commit, `freshkeyapply.Service.DefaultInstallCPAAuthorityProven` in
+`apps/manager-server/internal/service/freshkeyapply/config_target.go` is the
+Manager-internal predicate exposed for Gateway admission. It requires the
+committed New Managed connection and an authenticated Runtime status matching
+the recorded identity, generation, and artifact. Private attested installs
+continue to use their explicit host-permit profile.
+
+### Trust boundary and durable authority
+
+The managed profile is selected by the server-owned Fresh checkpoint, not by a
+browser field or an environment variable. A `new_managed` checkpoint is bound
+to the authenticated Runtime identity, generation and active CPA artifact. Its
+destination identity is `managed:sha256:<sha256(normalized CPA base URL)>`.
+The checkpoint's protected snapshot contains the Supervisor operation ID,
+expected Runtime facts, source discriminator and randomly generated 256-bit
+management secret. The plaintext secret is used only while staging and reading
+the destination; it is never serialized to a response, journal, log or browser
+state.
+
+The first strategy call only returns this protected snapshot. The caller writes
+it through the Fresh CAS before `StageDestination` or `Start` is attempted.
+The next call reuses the same child operation ID, verifies the Runtime facts,
+stages the `new_managed` destination, starts it and authenticates
+`GET /v8/management/config`. Only after that read succeeds does the CAS store
+the protected Manager connection. Completing the Fresh routing/product CAS
+also mirrors that connection to `manager_config_v1` and the compatibility
+`setup` row; both rows contain the protected envelope and are decrypted only by
+Manager-owned repositories.
+
+Key install, revoke, replace and retry configuration use this connection as
+the default authority. `DefaultInstallCPAAuthorityProven` is the boolean
+admission predicate at
+`apps/manager-server/internal/service/freshkeyapply/config_target.go`; it
+requires the exact committed Runtime facts, managed CPA posture and at least
+one installed Client Key, so a CPA with client authentication off is not
+admitted. The private profile remains separately discriminated and continues
+to require the short-lived host permit.
+
+### Failed stage or start
+
+The Supervisor journal never resumes a terminal operation, so a stage or start
+recorded as `failed` can only ever be replayed. The checkpoint therefore
+carries a durable `destinationAttempt`: stage/start operation IDs are derived
+from it (`<base>` for attempt zero, `<base>:attempt-<n>` afterwards) and it
+advances by exactly one, in the same revision-guarded Fresh CAS, only after the
+Supervisor reports a terminal `failed`. An unresolved outcome (transport
+error, `accepted`, `running`) keeps the attempt, so a retry replays the
+operation that may still be running rather than racing a second one, and two
+browser retries at the same revision cannot fork attempts. The legacy
+migration uses the same counter.
+
+The Runtime admits a replacement stage only under a new operation ID, only for
+the identical destination, and only with terminal evidence that the superseded
+attempt never owned a child. Its stage operation must be terminal, and its Start
+operation must be absent or terminally failed; an accepted, running or
+successful Start, a content change, or a live owned child stays a conflict. A
+stage that succeeded always needs its Start terminally failed, because that
+attempt may own the child the retry would replant. A stage may publish its live
+root and still be recorded as failed, because the final directory sync runs
+after the rename; that is why `Start` refuses any destination whose stage
+operation is not `succeeded`, and why absence of Start evidence is the only
+proof that such a root is free. The superseded directory is renamed to a
+content-addressed `.destination-retired-<digest>` sibling, never deleted and
+never left as the live destination; a retry that fails to publish restores it,
+so a retry can neither orphan nor displace the previous attempt.
+
+### Gateway admission (Ingress)
+
+Ingress keeps every Fresh client Gateway route closed with
+`503 gateway pending configuration` until Manager answers the private
+`/internal/routing/fresh-authority` read with an admission posture that is
+consistent with the installation:
+
+- the Fresh install is committed (`committed: true`) and the reply repeats the
+  installation, generation, operation, revision and target that Ingress
+  already holds in its routing projection;
+- `gatewayAdmission.installationId` and `gatewayAdmission.generation` are the
+  same installation generation;
+- `gatewayAdmission.admitted` is true, which Manager sets only while
+  `DefaultInstallCPAAuthorityProven` is true for the default New Managed
+  profile (committed destination, authenticated Runtime status, managed CPA
+  posture and at least one installed Client Key).
+
+Manager computes the posture on every read and never persists it; the reply
+carries no key, management secret or destination address, and a Manager that
+does not send the field (an older Manager) never admits. Ingress caches one
+positive answer for 15s and one negative answer for 1s, re-reads Manager after
+that TTL, and withdraws a cached positive answer immediately when its routing
+projection changes or disappears. A restarted Ingress has no cached answer, so
+it stays closed until Manager re-publishes the projection (the existing
+`restoreFreshRouting` loop runs every 2s) and admits again. Any Manager error,
+timeout, non-200 reply, legacy `204`, unknown field, trailing data or mismatch
+keeps the Gateway closed.
+
+Client authentication is enforced by requiring at least one installed Client
+Key, not by reacting to its removal. Three facts form the safety chain:
+
+1. admission requires at least one installed key, so Manager never admits a
+   destination whose client set is empty;
+2. the product cannot empty that set: a managed revoke of the last effective
+   key is refused with `ErrLastKey` (HTTP 409 `last_effective_key`), and
+   replace installs the successor before the old key is dropped;
+3. if the destination's key set or managed posture is changed out of band
+   (outside Manager), the predicate returns false on the next read and Ingress
+   withdraws admission at that read.
+
+"Revoke every Client Key" is therefore not a reachable product state and does
+not itself withdraw admission. The residual window is out-of-band only: a
+positive answer already held by Ingress stays effective for at most 15 s, and
+CPA v8 with zero configured client keys does not enforce client
+authentication, so anonymous Gateway requests during that window are not
+rejected by CPA. With at least one installed key, a missing or wrong client
+credential is forwarded to CPA, which answers `401`.
+
+The public Ingress listener never proxies CPA management paths:
+`/v8/management` is denied at the transport edge, `/v0/management` keeps its
+Manager ownership, and the private `/internal/...` namespaces are denied before
+either upstream. Legacy deployments keep the existing `204` authority contract
+unchanged.
+
+### Existing-install migration
+
+On Manager startup, a completed legacy default record with a committed
+`new_managed` checkpoint but no destination identity or connection enters one
+one-time migration. Manager requires the Runtime to be authenticated and CPA
+offline, CAS-persists a protected migration snapshot, then reconciles the
+stable `:managed-migration-destination` Supervisor journal through stage,
+start and config read-back. A generation/checkpoint mismatch is a conflict and
+never silently rebinds. If `/runtime/gateway/auth` is non-empty, the Runtime
+returns `managed_gateway_auth_present`; Manager leaves the durable snapshot in
+place and fails closed. A completed connection makes subsequent startup passes
+no-ops.
+
+### Beta acceptance (D)
+
+After the candidate is re-accepted and the three qualification pins are
+updated by the authorized maintainer, D runs the default Compose acceptance in
+this document and verifies, in order:
+
+1. Fresh New Managed completes with the destination identity, generation and
+   artifact recorded; `manager_config_v1` and `setup` resolve to the same base
+   URL and management authority without exposing it.
+2. Create a Client Key and send a real model request through the public
+   Ingress listener by setting
+   `CPAMP_SMOKE_MODEL_TARGET=http://cpamp-ingress:18317` for the smoke run;
+   observe CPA acceptance. Replace the key and observe the old key rejected
+   while the new key works; revoking the last effective key must return 409
+   `last_effective_key`. Before the first Client Key exists the same request
+   returns 503; with a key installed, a wrong or missing credential returns
+   401 from CPA. A restart of Ingress must not forward before it has
+   reconfirmed admission.
+3. Read and write each accepted Gateway retry/streaming field, then read it
+   back and compare the CPA v8 config. Interrupt one write, query its operation
+   and resume it; the journal must not duplicate the PUT.
+4. Read `/auth-files` and the resource bridge through `cpamp/`; verify the
+   collector/identity consumers resolve the managed base URL and credential
+   from the completion mirrors.
+5. Repeat after Manager restart. For a legacy fixture, verify migration is
+   idempotent and refuses a non-empty bootstrap auth directory or generation
+   drift. Capture only secret-free evidence.
+
+Before re-acceptance, any pin-gated step is `NOT RUN`. The two build-bound
+pins and the observation bytes they bind were recomputed/re-emitted on
+maintainer decision, ahead of independent re-acceptance; writing an acceptance
+record is not part of this implementation lane, and the retained independent
+review is unchanged.

@@ -33,7 +33,7 @@ type config struct {
 	managerURL  *url.URL
 	gatewayURL  *url.URL
 	controlAddr string
-	pahS0     bool
+	pahS0       bool
 }
 
 func main() {
@@ -45,6 +45,9 @@ func main() {
 	fresh := &ingress.FreshRoutes{}
 	authority := managerFreshAuthority(cfg.managerURL)
 	handler := ingress.NewFreshHandler(fresh, cfg.managerURL, cfg.gatewayURL, logger, managerLegacyGateway(authority))
+	// Fresh Gateway traffic opens only on a current, consistently bound private
+	// Manager admission answer. Legacy 204 passthrough above is unchanged.
+	handler.EnableFreshGatewayAdmission(ingress.NewGatewayAdmitter(fresh, authority, ingress.DefaultGatewayAdmissionTTL).Admitted)
 	// The existing Legacy fallback stays unchanged outside the paired
 	// private proof profile; P-S0 ownership is enabled only by its binary.
 	if cfg.pahS0 {
@@ -60,7 +63,7 @@ func main() {
 	if s2a {
 		handler.EnablePrivateChat(cfg.managerURL, cfg.gatewayURL)
 	}
-	control := &http.Server{Addr: cfg.controlAddr, Handler: fresh.ControlHandler(authority), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 16}
+	control := &http.Server{Addr: cfg.controlAddr, Handler: fresh.ControlHandler(freshRoutingOnly(authority)), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 1 << 16}
 	server := &http.Server{
 		Addr:              cfg.addr,
 		Handler:           handler,
@@ -140,7 +143,7 @@ var errLegacyManager = errors.New("Manager is serving the legacy application")
 // Retain this process-local mode observation for legacy Manager-outage continuity;
 // an Ingress restart must obtain it again. Fresh admission cannot replace an
 // initialized legacy store through normal startup.
-func managerLegacyGateway(authority func(context.Context) (ingress.FreshRouteState, error)) func(context.Context) bool {
+func managerLegacyGateway(authority func(context.Context) (ingress.FreshAuthority, error)) func(context.Context) bool {
 	var confirmed atomic.Bool
 	return func(ctx context.Context) bool {
 		if !confirmed.Load() {
@@ -153,7 +156,17 @@ func managerLegacyGateway(authority func(context.Context) (ingress.FreshRouteSta
 	}
 }
 
-func managerFreshAuthority(managerURL *url.URL) func(context.Context) (ingress.FreshRouteState, error) {
+// freshRoutingOnly narrows the private authority client to the durable routing
+// projection. Gateway admission is a read-only posture and never enters a
+// routing write or the control listener.
+func freshRoutingOnly(authority func(context.Context) (ingress.FreshAuthority, error)) func(context.Context) (ingress.FreshRouteState, error) {
+	return func(ctx context.Context) (ingress.FreshRouteState, error) {
+		reply, err := authority(ctx)
+		return reply.FreshRouteState, err
+	}
+}
+
+func managerFreshAuthority(managerURL *url.URL) func(context.Context) (ingress.FreshAuthority, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	client := &http.Client{
@@ -168,34 +181,34 @@ func managerFreshAuthority(managerURL *url.URL) func(context.Context) (ingress.F
 	endpoint.RawPath = ""
 	endpoint.RawQuery = ""
 	endpoint.Fragment = ""
-	return func(ctx context.Context) (ingress.FreshRouteState, error) {
-		var state ingress.FreshRouteState
+	return func(ctx context.Context) (ingress.FreshAuthority, error) {
+		var reply ingress.FreshAuthority
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 		if err != nil {
-			return state, err
+			return reply, err
 		}
 		req.Header.Set("Cache-Control", "no-store")
 		res, err := client.Do(req)
 		if err != nil {
-			return state, err
+			return reply, err
 		}
 		defer res.Body.Close()
 		if res.StatusCode == http.StatusNoContent {
-			return state, errLegacyManager
+			return reply, errLegacyManager
 		}
 		if res.StatusCode != http.StatusOK {
-			return state, fmt.Errorf("Manager routing authority unavailable: status %d", res.StatusCode)
+			return reply, fmt.Errorf("Manager routing authority unavailable: status %d", res.StatusCode)
 		}
 		decoder := json.NewDecoder(io.LimitReader(res.Body, 8192))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&state); err != nil {
-			return ingress.FreshRouteState{}, err
+		if err := decoder.Decode(&reply); err != nil {
+			return ingress.FreshAuthority{}, err
 		}
 		var trailing any
 		if decoder.Decode(&trailing) != io.EOF {
-			return ingress.FreshRouteState{}, errors.New("Manager routing authority returned trailing data")
+			return ingress.FreshAuthority{}, errors.New("Manager routing authority returned trailing data")
 		}
-		return state, nil
+		return reply, nil
 	}
 }
 

@@ -21,12 +21,12 @@ func (s *Service) continueH1(ctx context.Context, o *repo.Operation, n int, gene
 	if e != nil {
 		return r, e
 	}
-	grant, e := s.keyPermit()
+	now := time.Now().UnixMilli()
+	step := o.Steps[n]
+	grant, e := s.keyPermit(ctx, o.ID, step.Name)
 	if e != nil {
 		return r, e
 	}
-	now := time.Now().UnixMilli()
-	step := o.Steps[n]
 	if grant.Version != 2 || grant.OperationID != o.ID || grant.ParentID != o.ParentID || grant.StepID != step.RuntimeID || grant.Step != step.Name || grant.RunID != o.RunID || grant.SourceID != o.SourceID || grant.Generation != o.Generation || grant.IssuedAtMS < s.startedAtMS || grant.IssuedAtMS < o.CreatedAtMS || grant.IssuedAtMS > now || grant.ExpiresAtMS <= now || grant.ExpiresAtMS-grant.IssuedAtMS > 60000 {
 		return r, ErrUnavailable
 	}
@@ -62,8 +62,7 @@ func (s *Service) continueH1(ctx context.Context, o *repo.Operation, n int, gene
 				return ErrLastKey
 			}
 		}
-		current, err := s.keyPermit()
-		if err != nil || current != grant || time.Now().UnixMilli() >= grant.ExpiresAtMS {
+		if !s.keyGrantHeld(ctx, grant, o.ID, step.Name) || time.Now().UnixMilli() >= grant.ExpiresAtMS {
 			return ErrUnavailable
 		}
 		if _, err = s.target(ctx, p); err != nil {
@@ -84,8 +83,7 @@ func (s *Service) continueH1(ctx context.Context, o *repo.Operation, n int, gene
 			return err
 		}
 		o.Steps[n].BeginRevision = reserved.BeginRevision
-		current, err = s.keyPermit()
-		if err != nil || current != grant || time.Now().UnixMilli() >= grant.ExpiresAtMS {
+		if !s.keyGrantHeld(ctx, grant, o.ID, step.Name) || time.Now().UnixMilli() >= grant.ExpiresAtMS {
 			return ErrUnavailable
 		}
 		if err = s.h1.Reserved(ctx, t, o.ParentID, reserved); err != nil {

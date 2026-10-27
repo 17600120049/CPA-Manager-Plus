@@ -199,6 +199,15 @@ again after its own restart. Fresh/pending/error/404 replies cannot authorize th
 passthrough. Public Ingress still denies the authority namespace. This is a
 legacy startup-mode acknowledgement, not a Fresh qualification or safety grant.
 
+The later default-install authority and admission lanes add one narrow Fresh
+grant without changing that contract: a committed default New Managed
+installation whose install-derived predicate is proven (including at least one
+installed Client Key) answers the same private endpoint with an
+installation/generation-bound `gatewayAdmission` posture, and Ingress forwards
+client Gateway traffic only while that answer is positive and consistent with
+its routing projection. Private attested profiles still never admit; see
+[Gateway admission](fresh-new-installation.md#gateway-admission-ingress).
+
 The Fresh store rejects a committed External checkpoint unless its encrypted
 connection exists and its persisted normalized URL hashes to the checkpoint's
 target identity. This cross-check applies on both transactional writes and reads,

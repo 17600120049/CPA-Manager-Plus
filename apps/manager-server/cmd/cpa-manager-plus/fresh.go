@@ -4,15 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"time"
-
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/identityusage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityprojection"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityreconcile"
+	usageapp "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityusage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/collector"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
@@ -40,7 +36,15 @@ import (
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/updatecheck"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/usage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/worker"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+	"time"
 )
 
 // initialize is a host-owned offline operation. It admits the actual store and
@@ -79,6 +83,7 @@ func freshPaths(cfg config.Config) (sqliterepo.InspectionPaths, error) {
 var errFreshExternalPermitRevoked = errors.New("fresh external host permit revoked")
 
 type freshApplication struct {
+	cfg             config.Config
 	store           freshstore.Store
 	authority       *fresh.Service
 	routing         *freshrouting.Service
@@ -90,39 +95,69 @@ type freshApplication struct {
 	externalPermit  func(bootstrap.FreshOperation, uint64, string, string, string) bool
 	protector       *security.Protector
 	fixed           http.Handler
+	keyRepo         *keyrepo.Repository
 	keys            *freshkeys.Service
 	keyApply        *freshkeyapply.Service
 	updates         *updatecheck.Service
 	configRetry     *freshconfig.Service
 	legacy          http.Handler
+	legacyCollector *collectorservice.Service
 	collectorWorker *worker.CollectorWorker
 	identityWorker  *identityreconcile.Worker
-	pahS0           bool
+	// Usage chain: staged keys own source bindings, Collector events feed the
+	// canonical identity projection, and the workspace reads attributed usage.
+	managedSource   freshkeyapply.ManagedSource
+	usageProjection *identityprojection.Worker
+	usage           *usageapp.Service
+	// usageStartMu serializes post-completion startup attempts and guards the
+	// two success flags below. Only a fully successful attempt is recorded, so a
+	// failed start is retried by a completion replay or a later trigger.
+	usageStartMu          sync.Mutex
+	usageStarted          bool
+	usageWorkersStarted   bool
+	usageCollectorStarted bool
+	// runCtx is the host lifetime of this application. Workers started after an
+	// in-process ProductComplete must outlive the request that triggered them.
+	runCtx context.Context
+	// privateCollector is the host-supplied Collector authority of the explicit
+	// private profile. It stays nil for Managed and External installs, which may
+	// never fall back to the legacy manager/setup authority.
+	privateCollector func(context.Context) bool
+	// startIdentityWorker starts the Embedded identity reconciliation loop; a
+	// field so the completion path can be proven to start it once.
+	startIdentityWorker func(context.Context)
+	pahS0               bool
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
 	st := freshstore.New(opened.DB)
 	settings := setting.New(opened.DB, opened.Protector)
 	a := &freshApplication{
-		store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver),
+		cfg: cfg, store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver),
 		protector: opened.Protector, pahS0: cfg.PAHS0Enabled,
 		runtimeSettings: settings, runtimeJournal: newFreshRuntimeJournal(opened.DB),
 	}
 	// Fresh owns the SQLite admission and keeps the old app bootstrap bypassed,
-	// but the already-built CPAMP services remain the source of truth for
-	// Full Web's shared Dashboard/Config/System resources. This context reuses
-	// the admitted connection and starts no collector until a user explicitly
-	// saves a supported Manager configuration.
+	// but the already-built CPAMP services remain the source of truth for Full
+	// Web's shared Dashboard/Config/System resources. This context reuses the
+	// admitted connection. The Collector it builds starts only after
+	// ProductComplete, when the committed install-derived CPA authority exists;
+	// pending installs cannot start collection through an old host route.
 	legacyStore := store.New(opened.DB, opened.Protector)
 	legacyCollector := collector.NewManager(cfg, legacyStore)
 	legacyCollectorService := collectorservice.New(legacyCollector)
 	legacyContext := app.FromExistingWithModelsDev(cfg, legacyStore, legacyCollector, time.Now().UnixMilli(), nil, nil, nil, nil, "cpa-manager-plus")
-	// Fresh startup deliberately bypasses the historical app bootstrap. Keep
-	// the existing collector lifecycle, but restore it only from the persisted
-	// completed Manager Config after ProductComplete; pending installs remain
-	// unable to start collection through an old route.
+	a.legacyCollector = legacyCollectorService
 	a.collectorWorker = worker.NewCollectorWorker(cfg, legacyStore, legacyCollectorService)
-	a.keys = freshkeys.New(keyrepo.New(opened.DB), opened.Protector)
+	// The Collector is the only writer of Fresh usage events, so its inserts are
+	// exactly what the canonical identity projection must attribute.
+	a.usageProjection = identityprojection.NewWorker(legacyStore.IdentityProjections)
+	legacyCollector.SetUsageEventHandler(collector.UsageEventHandlerFunc(func(ctx context.Context, _ collector.RuntimeConfig, events []usage.Event) {
+		a.usageProjection.HandleUsageEvents(ctx, events)
+	}))
+	a.usage = usageapp.New(identityusage.New(opened.DB), a.collectionPhase)
+	a.keyRepo = keyrepo.New(opened.DB)
+	a.keys = freshkeys.New(a.keyRepo, opened.Protector, freshkeys.WithSourceRuntime(a.installedRuntimeIdentity))
 	// Reuse the existing settings authority without opening a Legacy app,
 	// collector, CPA client, or second SQLite connection.
 	a.updates = updatecheck.New(store.New(opened.DB), buildinfo.Version, buildinfo.SourceCommit, os.Getenv("CPAMP_UPDATE_CHECK_ENABLED") != "false")
@@ -154,6 +189,8 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		a.identityWorker, err = newFreshIdentityReconcileWorker(legacyContext, identityWiring)
 		if err != nil {
 			log.Printf("Fresh identity reconciliation unavailable: %v", err)
+		} else if worker := a.identityWorker; worker != nil {
+			a.startIdentityWorker = func(ctx context.Context) { go worker.Run(ctx) }
 		}
 	}
 	// An unavailable Embedded writer must not remove unrelated Console reads,
@@ -165,13 +202,33 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	h1Mode := os.Getenv("CPAMP_PRIVATE_H1")
 	h1Valid := h1Mode == "" || (h1Mode == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1")
 	if h1Valid && os.Getenv("CPAMP_PRIVATE_S1_PERMIT") == freshkeyapply.PermitPath && cfg.RuntimeURL == "http://127.0.0.1:9081" && cfg.CPAUpstreamURL == "http://127.0.0.1:8317" {
-		a.keyApply = freshkeyapply.New(keyrepo.New(opened.DB), a.keys, runtime)
+		a.keyApply = freshkeyapply.New(a.keyRepo, a.keys, runtime)
 		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
+		// The explicit private profile keeps its own host-supplied Collector
+		// authority. Managed and External installs never reach this branch and
+		// therefore never fall back to it.
+		a.privateCollector = func(ctx context.Context) bool {
+			if a.collectorWorker == nil {
+				return false
+			}
+			a.collectorWorker.Start(ctx)
+			return a.collectionPhase() != usageapp.PhaseStopped
+		}
 		if os.Getenv("CPAMP_PRIVATE_H1") == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1" {
 			h := cpa.NewH1Coordinator(opened.DB)
 			a.keyApply.EnableH1(h)
 			a.configRetry.EnableH1(h)
 		}
+	}
+	if a.keyApply == nil && runtime != nil && h1Valid {
+		// Default Compose installations derive CPA management authority from
+		// the committed destination and the protected Manager connection.
+		a.managedSource = managedInstallSource(st, opened.Protector, cfg.CPAUpstreamURL)
+		a.keyApply = freshkeyapply.NewManaged(a.keyRepo, a.keys, runtime, cfg.CPAUpstreamURL, a.managedSource)
+		a.configRetry = freshconfig.New(st, a.keyApply.ConfigTarget)
+		// The destination address is the managed installation's own CPA, not the
+		// private loopback profile the default Transport dials.
+		a.configRetry.EnableManaged(cfg.CPAUpstreamURL)
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers.
@@ -222,7 +279,7 @@ func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r != nil && r.URL != nil && r.URL.Path == freshrouting.AuthorityPath && r.URL.EscapedPath() == r.URL.Path && r.URL.RawQuery == "" {
-		a.routingAuthority(w, r)
+		a.freshAuthority(w, r)
 		return
 	}
 	if r != nil && r.URL != nil && r.URL.Path == privateStagedKeyProofPath {
@@ -231,19 +288,6 @@ func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	protect := routing.ProtectFixedBootstrap(http.HandlerFunc(a.canonical), a.fixed)
 	httpapi.ProtectBrandResources(protect).ServeHTTP(w, r)
-}
-
-func (a *freshApplication) routingAuthority(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	op, err := a.current(r.Context())
-	if err != nil || op.Routing.Target == "" || op.Routing.OperationID == "" {
-		http.NotFound(w, r)
-		return
-	}
-	writeFreshJSON(w, freshrouting.StateFor(op))
 }
 
 func (a *freshApplication) canonical(w http.ResponseWriter, r *http.Request) {
@@ -313,8 +357,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	switch {
-	case resource == "gateway/retry/request-retry" || resource == "gateway/retry/max-retry-interval" || strings.HasPrefix(resource, "gateway/retry/operations/") || strings.HasPrefix(resource, "gateway/retry/interval-operations/"):
-		a.retryConfiguration(w, r, resource)
+	case strings.HasPrefix(resource, "gateway/config/"):
+		a.configFieldConfiguration(w, r, strings.TrimPrefix(resource, "gateway/config/"))
 	case resource == "settings/update-channel":
 		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):
@@ -337,6 +381,10 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if op.ProductComplete {
+			// A replay is also the retry trigger for a completion whose usage
+			// startup failed (for example while the Collector authority was
+			// temporarily unavailable). The attempt is idempotent.
+			a.startUsageCollection(op)
 			writeFreshJSON(w, op)
 			return
 		}
@@ -372,6 +420,11 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
+		// Completion is the moment the install-derived CPA authority exists, so
+		// the same idempotent startup path as a resumed install runs now: it
+		// backfills keys staged before completion and starts collection,
+		// projection and identity reconciliation exactly once.
+		a.startUsageCollection(next.Operation)
 		writeFreshJSON(w, next.Operation)
 	default:
 		http.NotFound(w, r)
@@ -481,7 +534,7 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		// it: a failed read is safe to retry. Only the final CAS may select the
 		// connection. Also recover old validated-only checkpoints in place.
 	}
-	if request.Strategy == bootstrap.AdoptExisting {
+	if request.Strategy == bootstrap.AdoptExisting || request.Strategy == bootstrap.NewManaged {
 		record, err := a.store.Load(r.Context())
 		if err != nil || record.Operation.Identity != op.Identity || record.Operation.Revision != op.Revision {
 			w.WriteHeader(http.StatusConflict)
@@ -495,6 +548,23 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 	}
 	result, err := a.strategy.Execute(r.Context(), executionOp, request.Request)
 	if err != nil {
+		// A terminally failed Supervisor stage or start is the only evidence that
+		// permits the next destination attempt. Retire it under the same revision
+		// CAS before reporting the blocker, so a browser retry derives a new
+		// operation ID instead of replaying the recorded failure forever.
+		var retry *freshstrategy.DestinationRetry
+		if errors.As(err, &retry) {
+			guard := func(record freshstore.Record) error {
+				if token, freshAuth := freshbootstrap.SessionToken(r); freshAuth {
+					return a.validateInstallationSession(record, token)
+				}
+				return nil
+			}
+			if retireErr := a.retireDestinationAttempt(r.Context(), op, retry.Checkpoint, guard); retireErr != nil {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+		}
 		writeFreshStrategyError(w, err)
 		return
 	}
@@ -551,6 +621,31 @@ func (a *freshApplication) validateInstallationSession(record freshstore.Record,
 		return a.authority.ValidateContinuation(record, token)
 	}
 	return a.authority.ValidateSession(record, token)
+}
+
+// retireDestinationAttempt commits the next managed destination attempt in the
+// same Fresh CAS as the terminal failure that made it necessary. It advances the
+// attempt by exactly one against the current revision, keeps every other
+// checkpoint field, and never rewrites a checkpoint that already published its
+// destination; a committed destination is not retryable by construction.
+func (a *freshApplication) retireDestinationAttempt(ctx context.Context, op bootstrap.FreshOperation, checkpoint bootstrap.FreshStrategyCheckpoint, guard func(freshstore.Record) error) error {
+	if checkpoint.Strategy != bootstrap.NewManaged || checkpoint.DestinationAttempt == 0 || checkpoint.DestinationConnectionIdentity != "" && checkpoint.Stage == "committed" {
+		return freshstore.ErrConflict
+	}
+	_, err := a.store.Update(ctx, op.Identity, op.Revision, func(record *freshstore.Record) error {
+		current := record.Operation.Strategy
+		if current.Strategy != bootstrap.NewManaged || current.DestinationConnectionIdentity != "" && current.Stage == "committed" || current.DestinationAttempt+1 != checkpoint.DestinationAttempt {
+			return freshstore.ErrConflict
+		}
+		if guard != nil {
+			if err := guard(*record); err != nil {
+				return err
+			}
+		}
+		record.Operation.Strategy = checkpoint
+		return nil
+	})
+	return err
 }
 
 func writeFreshJSON(w http.ResponseWriter, v any) {
@@ -613,16 +708,21 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 		}
 	}
 	app := newFreshApplication(opened, cfg, freshDriver(cfg))
+	// Workers started by an in-process completion must use the host lifetime,
+	// not the request that triggered them.
+	app.runCtx = ctx
 	h.SetFreshHandler(app)
 	if app.runtimeExternal == nil && app.runtime != nil && app.runtimeSettings != nil {
 		reconciler := runtimeservice.NewReconciler(app.runtime, app.runtimeSettings, runtimeservice.DefaultReconcileInterval, log.Printf)
 		go reconciler.Run(ctx)
 	}
-	if opened.Record.Operation.ProductComplete && app.collectorWorker != nil {
-		app.collectorWorker.Start(ctx)
-	}
-	if opened.Record.Operation.ProductComplete && app.identityWorker != nil {
-		go app.identityWorker.Run(ctx)
+	if opened.Record.Operation.ProductComplete {
+		if err := app.migrateManagedDestination(ctx); err != nil {
+			// Migration is durable and idempotent; keep the completed Fresh
+			// server available while a typed blocker waits for the next startup.
+			log.Printf("Fresh managed destination migration unavailable: %v", err)
+		}
+		app.startUsageCollection(opened.Record.Operation)
 	}
 	go restoreFreshRouting(ctx, app.routing)
 	go app.runFreshUpdateChecks(ctx)

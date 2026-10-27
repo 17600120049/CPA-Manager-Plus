@@ -20,6 +20,10 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 	switch {
 	case strings.HasPrefix(resource, "api-keys/operations/"):
 		a.clientKeyOperation(w, r, op, resource)
+	case resource == "api-keys/usage-summary" && r.Method == http.MethodGet:
+		a.keyUsageSummary(w, r, op)
+	case strings.HasSuffix(resource, "/usage") && strings.Count(resource, "/") == 2 && r.Method == http.MethodGet:
+		a.keyUsage(w, r, op, strings.TrimSuffix(strings.TrimPrefix(resource, "api-keys/"), "/usage"))
 	case strings.HasSuffix(resource, "/revocation") && strings.Count(resource, "/") == 2:
 		a.prepareClientKeyOperation(w, r, op, strings.TrimSuffix(strings.TrimPrefix(resource, "api-keys/"), "/revocation"))
 	case strings.HasSuffix(resource, "/initial-install") && strings.Count(resource, "/") == 2:
@@ -114,6 +118,9 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 		w.Header().Set("Content-Type", "application/json")
 		if created {
 			w.WriteHeader(http.StatusCreated)
+			if a.usageProjection != nil {
+				a.usageProjection.Wake()
+			}
 		}
 		writeFreshJSON(w, result)
 	default:

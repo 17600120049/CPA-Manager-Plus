@@ -44,7 +44,7 @@ func validFreshState(s FreshRouteState) bool {
 	if s.InstallationID == "" || s.Generation == "" || s.OperationID == "" || s.Revision == 0 || !freshTarget.MatchString(s.Target) || s.Target == "/" || path.Clean(s.Target) != s.Target || strings.Contains(s.Target, "//") {
 		return false
 	}
-	for _, reserved := range []string{FixedBootstrapDiscoveryPath, "/favicon.ico", "/apple-touch-icon.png", "/health", "/management.html", "/models", "/setup", "/status", "/v0", "/v1", "/usage-service", FreshRoutingControlPath, FreshRoutingAuthorityPath} {
+	for _, reserved := range []string{FixedBootstrapDiscoveryPath, "/favicon.ico", "/apple-touch-icon.png", "/health", "/management.html", "/models", "/setup", "/status", "/v0", "/v1", "/v8/management", "/usage-service", FreshRoutingControlPath, FreshRoutingAuthorityPath} {
 		if s.Target == reserved || strings.HasPrefix(s.Target, reserved+"/") || strings.HasPrefix(reserved, s.Target+"/") {
 			return false
 		}

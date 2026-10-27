@@ -281,10 +281,51 @@ describe('FreshGatewayWorkspace component', () => {
     await mount();
     await click('gateway-tab-' + tab);
     await change('gateway-search-input', 'bootstrap');
+    // The field is editable, so the grouped editor is where a global search
+    // surfaces it; the reference row only carries non-editable paths.
     expect(
-      renderer.root.findAllByProps({ id: 'field-requests.streaming.bootstrap-retries' })
+      renderer.root.findAllByProps({ id: 'config-input-requests.streaming.bootstrap-retries' })
     ).toHaveLength(1);
     expect(node('fresh-managed-retry').props.hidden).toBe(true);
+  });
+  it('keeps an edited requests draft and never re-reads its group while typing', async () => {
+    await mount();
+    await click('gateway-tab-requests');
+    const kept = `config-input-requests.streaming.keepalive-seconds`;
+    const reads = () =>
+      transport.mock.calls.filter(
+        ([url, init]) => !init?.method && String(url).includes('requests/streaming/keepalive-seconds')
+      ).length;
+    const before = reads();
+    expect(node(kept).props.value).toBe('2');
+    // Two keystrokes are two draft updates: neither may restart the group loader.
+    await change(kept, '4');
+    await change(kept, '45');
+    expect(node(kept).props.value).toBe('45');
+    expect(reads()).toBe(before);
+    expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
+  });
+  it('keeps a requests draft when the retry draft is edited and reverted', async () => {
+    await mount();
+    await click('gateway-tab-requests');
+    await change('config-input-requests.streaming.keepalive-seconds', '45');
+    expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
+    await click('gateway-tab-retry');
+    await change('retry-value', '4');
+    await change('retry-value', '2');
+    // The retry card reports only its own path: the requests draft must survive it.
+    await click('gateway-tab-requests');
+    expect(node('config-input-requests.streaming.keepalive-seconds').props.value).toBe('45');
+    expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
+  });
+  it('discards a requests draft with the same action as every other draft', async () => {
+    await mount();
+    await click('gateway-tab-requests');
+    await change('config-input-requests.streaming.keepalive-seconds', '45');
+    expect(node('gateway-dirty-count').props.children).toBe(c('unsaved', 1));
+    await discard();
+    expect(node('config-input-requests.streaming.keepalive-seconds').props.value).toBe('2');
+    expect(node('gateway-dirty-count').props.children).toBe(c('noDrafts'));
   });
   it('filters actual dirty paths rather than their entire category', async () => {
     await mount();

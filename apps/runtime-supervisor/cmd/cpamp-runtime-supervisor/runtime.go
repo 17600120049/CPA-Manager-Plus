@@ -139,8 +139,10 @@ func newRuntimeHandler(ctx context.Context, cfg config) (*runtimeHandler, error)
 		settings.Start = runtime.executor
 		// The currently qualified destination artifact is Linux-only. Other
 		// platforms retain existing lifecycle support without advertising Adopt.
+		// The bootstrap Gateway shares the Supervisor's parent Runtime root.
 		if goruntime.GOOS == "linux" {
-			if err := runtime.executor.EnableDestination(filepath.Join(supervisorRoot, "destination"), cfg.cpaAddr, cfg.cpaIdentity); err != nil {
+			gatewayAuth := filepath.Join(filepath.Dir(supervisorRoot), "gateway", "auth")
+			if err := runtime.executor.EnableDestination(filepath.Join(supervisorRoot, "destination"), gatewayAuth, cfg.cpaAddr, cfg.cpaIdentity); err != nil {
 				return nil, errors.Join(err, runtime.executor.Close())
 			}
 			settings.Destination = runtime.executor
