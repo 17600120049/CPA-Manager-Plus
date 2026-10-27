@@ -93,10 +93,10 @@ func (i H1Intent) valid() bool {
 		}
 		if i.Mode == "config-field" {
 			return i.Retry == 0 && i.MaxRetryInterval == 0 && !i.MaxRetryIntervalSet &&
-				ValidateConfigFieldValue(i.Path, NormalizeConfigValue(i.Value)) == nil
+				ValidatePrivateConfigLeafValue(i.Path, NormalizeConfigValue(i.Value)) == nil
 		}
 		path, value, ok := i.legacyConfigIntent()
-		return ok && ValidateConfigFieldValue(path, value) == nil
+		return ok && ValidatePrivateConfigLeafValue(path, value) == nil
 	}
 	return i.Domain == "key" && (i.Mode == "replace" || i.Mode == "revoke") && h1ID(i.TargetID) && h1ID(i.KeeperID) && i.TargetID != i.KeeperID && validHex(i.TargetSHA256) && validHex(i.KeeperSHA256) && i.TargetSHA256 != i.KeeperSHA256 && i.Retry == 0 && i.MaxRetryInterval == 0 && !i.MaxRetryIntervalSet && i.Path == "" && i.Value == nil
 }

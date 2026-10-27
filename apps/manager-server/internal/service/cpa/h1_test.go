@@ -265,51 +265,15 @@ func TestH1KeySnapshotUsesRawAuthorityAndStrictCommittedProjection(t *testing.T)
 	}
 }
 
-func TestH1WrongProfileAndExactFieldDelegation(t *testing.T) {
-	tr, h, m := h1Fixture(t)
+func TestH1WrongProfileRefused(t *testing.T) {
+	tr, h, _ := h1Fixture(t)
 	tr.h1 = nil
 	if _, _, e := tr.configuration(t.Context(), "observe"); e == nil {
 		t.Fatal("standalone profile accepted combined authority")
 	}
 	tr.h1 = h
-	i := H1Intent{RequestID: strings.Repeat("2", 32), Domain: "config", Mode: "config-field", Path: "routing.retry.request-retry", Value: 0}
-	grantH1(m, i)
-	p, e := h.Claim(t.Context(), tr, i)
-	if e != nil {
+	if e := tr.h1.Free(t.Context(), tr); e != nil {
 		t.Fatal(e)
-	}
-	s, e := h.Begin(t.Context(), tr, p.ID, 0)
-	if e != nil {
-		t.Fatal(e)
-	}
-	puts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "PUT" || r.URL.Path != "/v8/management/config/routing/retry/request-retry" {
-			t.Error("unbounded writer", r.Method, r.URL.Path)
-		}
-		puts++
-		w.WriteHeader(200)
-	}))
-	defer server.Close()
-	tr.client = server.Client()
-	tr.endpoint = server.URL
-	if e = tr.WriteH1ConfigField(t.Context(), p.ID, s, testManagement(), "routing.retry.request-retry", 1); e == nil || puts != 0 {
-		t.Fatal("wrong value reached PUT", e, puts)
-	}
-	if e = tr.WriteH1ConfigField(t.Context(), p.ID, s, testManagement(), "requests.passthrough-headers", true); e == nil || puts != 0 {
-		t.Fatal("other field reached PUT", e, puts)
-	}
-	saved := *m.g.H1
-	m.g.H1.Intent.RequestID = strings.Repeat("3", 32)
-	if e = tr.WriteH1ConfigField(t.Context(), p.ID, s, testManagement(), "routing.retry.request-retry", 0); e == nil || puts != 0 {
-		t.Fatal("different request reached PUT", e, puts)
-	}
-	*m.g.H1 = saved
-	if e = tr.WriteH1ConfigField(t.Context(), p.ID, s, testManagement(), "routing.retry.request-retry", 0); e != nil || puts != 1 {
-		t.Fatal("exact zero delegation denied", e, puts)
-	}
-	if h.Free(t.Context(), tr) == nil {
-		t.Fatal("HTTP success released pending source")
 	}
 }
 

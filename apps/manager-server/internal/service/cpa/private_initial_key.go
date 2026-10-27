@@ -102,7 +102,7 @@ func (t *Transport) request(ctx context.Context, method, path, managementKey str
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Encoding", "identity")
 	req.Header.Set("Cache-Control", "no-store")
-	if method == http.MethodPut {
+	if len(payload) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := t.client.Do(req)

@@ -1,0 +1,491 @@
+package cpa
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+// ErrInvalidConfigPath rejects anything outside the gateway configuration path
+// table: unknown paths, wrong value shapes and rule families that are not part
+// of the accepted scope. Value bounds are never copied here: CPA validates its
+// own schema and answers 400/422 for a value it will not persist
+// (internal/api/handlers/management/config_v8.go:118-186, v8.0.13).
+var ErrInvalidConfigPath = errors.New("invalid config path")
+
+// ConfigLeafType is the JSON shape CPA accepts for one leaf. It is a shape, not
+// a range: an integer stays an integer, a switch stays a boolean and a text
+// leaf stays a string.
+type ConfigLeafType string
+
+const (
+	ConfigLeafInt       ConfigLeafType = "int"
+	ConfigLeafBool      ConfigLeafType = "bool"
+	ConfigLeafString    ConfigLeafType = "string"
+	ConfigLeafImageMode ConfigLeafType = "image-mode"
+)
+
+// ConfigLeafKind is presentation metadata only: the page renders a control for
+// the kind and never derives a bound from it.
+type ConfigLeafKind string
+
+const (
+	ConfigKindNumber   ConfigLeafKind = "number"
+	ConfigKindBool     ConfigLeafKind = "bool"
+	ConfigKindText     ConfigLeafKind = "text"
+	ConfigKindDuration ConfigLeafKind = "duration"
+	ConfigKindURL      ConfigLeafKind = "url"
+	ConfigKindSelect   ConfigLeafKind = "select"
+)
+
+// ConfigLeaf is one writable CPA YAML leaf of the gateway page.
+//
+// Every path below exists in CPA v8.0.13 (tag d7914af) and is addressed through
+// its canonical v8 name: internal/config/config_v8.go builds the same alias
+// projection the management GET/PATCH endpoints apply before serving a path.
+type ConfigLeaf struct {
+	Path string
+	Type ConfigLeafType
+	Kind ConfigLeafKind
+	// Group is the page group this leaf belongs to; one save writes exactly one
+	// group.
+	Group string
+	// Private marks the frozen private H1 profile subset. That profile keeps its
+	// existing six leaves and the Host reservation protocol; it is never widened
+	// to the full table.
+	Private bool
+}
+
+// ConfigGroup is one page group: a single PATCH prefix plus its ordered leaves.
+// Saving a group sends one PATCH below Prefix with only the edited leaves, and
+// one DELETE per leaf restored to its default.
+type ConfigGroup struct {
+	ID     string
+	Prefix string
+	Leaves []string
+}
+
+// gatewayLeaves is the single writable scope of the gateway configuration page.
+// It is generated from the accepted r3 field inventory and verified leaf by leaf
+// against the CPA v8.0.13 schema; the page never edits a path outside it.
+//
+//	internal/config/config_types.go:352-374   routing strategy/affinity/force-model-prefix
+//	internal/config/config.go:86-103          routing retry and cooldown
+//	internal/config/sdk_config.go:35-109      requests, streaming, multimedia
+//	internal/config/config_types.go:126-155   upstream claude header defaults, xai
+//	internal/config/config.go:234             client codex compatibility
+//	internal/config/config_types.go:60-100    upstream codex compatibility
+var gatewayLeaves = []ConfigLeaf{
+	{Path: "routing.strategy", Type: ConfigLeafString, Kind: ConfigKindSelect, Group: "routing"},
+	{Path: "routing.session-affinity", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "routing"},
+	{Path: "routing.session-affinity-ttl", Type: ConfigLeafString, Kind: ConfigKindDuration, Group: "routing"},
+	{Path: "routing.session-affinity-subagents", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "routing"},
+	{Path: "routing.force-model-prefix", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "routing"},
+
+	{Path: "routing.retry.request-retry", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "retry", Private: true},
+	{Path: "routing.retry.max-retry-credentials", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "retry"},
+	{Path: "routing.retry.max-retry-interval", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "retry", Private: true},
+
+	{Path: "routing.cooldown.disable-cooling", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "cooldown"},
+	{Path: "routing.cooldown.save-cooldown-status", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "cooldown"},
+	{Path: "routing.cooldown.transient-error-cooldown-seconds", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "cooldown"},
+
+	{Path: "requests.proxy-url", Type: ConfigLeafString, Kind: ConfigKindURL, Group: "request"},
+	{Path: "requests.passthrough-headers", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "request", Private: true},
+	{Path: "requests.nonstream-keepalive-interval", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "request", Private: true},
+
+	{Path: "requests.streaming.keepalive-seconds", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "streaming", Private: true},
+	{Path: "requests.streaming.bootstrap-retries", Type: ConfigLeafInt, Kind: ConfigKindNumber, Group: "streaming", Private: true},
+
+	{Path: "multimedia.disable-image-generation", Type: ConfigLeafImageMode, Kind: ConfigKindSelect, Group: "media"},
+	{Path: "multimedia.gpt-image-2-base-model", Type: ConfigLeafString, Kind: ConfigKindText, Group: "media"},
+	{Path: "multimedia.video-result-auth-cache-ttl", Type: ConfigLeafString, Kind: ConfigKindDuration, Group: "media"},
+
+	{Path: "client.codex.enable-apply-patch", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "client"},
+	{Path: "client.codex.optimize-multi-agent-v2", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "client"},
+
+	{Path: "upstream.codex.response-steering", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "codex"},
+	{Path: "upstream.codex.disable-codex-cloaking", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "codex"},
+	{Path: "upstream.codex.stream-bootstrap-buffering", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "codex"},
+	{Path: "upstream.codex.stream-bootstrap-timeout", Type: ConfigLeafString, Kind: ConfigKindDuration, Group: "codex"},
+	{Path: "upstream.codex.orphan-delegation-compatibility", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "codex"},
+	{Path: "upstream.codex.model-level-cooling", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "codex"},
+
+	{Path: "upstream.claude.model-level-cooling", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "claude"},
+	{Path: "upstream.claude.disable-claude-cloak-mode", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "claude"},
+	{Path: "upstream.claude.disable-cloaking-model-list", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "claude"},
+
+	{Path: "upstream.claude.header-defaults.user-agent", Type: ConfigLeafString, Kind: ConfigKindText, Group: "headers"},
+	{Path: "upstream.claude.header-defaults.package-version", Type: ConfigLeafString, Kind: ConfigKindText, Group: "headers"},
+	{Path: "upstream.claude.header-defaults.runtime-version", Type: ConfigLeafString, Kind: ConfigKindText, Group: "headers"},
+	{Path: "upstream.claude.header-defaults.os", Type: ConfigLeafString, Kind: ConfigKindText, Group: "headers"},
+	{Path: "upstream.claude.header-defaults.arch", Type: ConfigLeafString, Kind: ConfigKindText, Group: "headers"},
+	{Path: "upstream.claude.header-defaults.timeout", Type: ConfigLeafString, Kind: ConfigKindText, Group: "headers"},
+	{Path: "upstream.claude.header-defaults.timezone", Type: ConfigLeafString, Kind: ConfigKindText, Group: "headers"},
+	{Path: "upstream.claude.header-defaults.stabilize-device-profile", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "headers"},
+
+	{Path: "upstream.xai.inject-x-search", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "xai"},
+}
+
+// imageModeValues is the v8.0.13 accepted spelling of disable-image-generation
+// (internal/config/disable_image_generation_mode.go). "passthrough" postdates the
+// r3 inventory snapshot: it is accepted as an existing value and never offered as
+// a new draft, so the page cannot coerce a value CPA already persists.
+var imageModeValues = map[string]bool{"true": true, "false": true, "chat": true, "passthrough": true}
+
+// ConfigRuleFamily is one whole-family payload rule list. A family is always
+// written with one PUT; it is never patched leaf by leaf.
+type ConfigRuleFamily struct {
+	Family string
+	Path   string
+	// Raw families keep every parameter value as a JSON document encoded in a
+	// string; filter families hold a path array instead of a parameter object.
+	Raw    bool
+	Filter bool
+}
+
+var gatewayRuleFamilies = []ConfigRuleFamily{
+	{Family: "default", Path: "requests.payload.default"},
+	{Family: "default-raw", Path: "requests.payload.default-raw", Raw: true},
+	{Family: "override", Path: "requests.payload.override"},
+	{Family: "override-raw", Path: "requests.payload.override-raw", Raw: true},
+	{Family: "filter", Path: "requests.payload.filter", Filter: true},
+}
+
+// ConfigRulesGroupID is the page group of the whole payload rule lists.
+const ConfigRulesGroupID = "rules"
+
+var gatewayGroups = []ConfigGroup{
+	{ID: "routing", Prefix: "routing", Leaves: []string{
+		"routing.strategy", "routing.session-affinity", "routing.session-affinity-ttl",
+		"routing.session-affinity-subagents", "routing.force-model-prefix",
+	}},
+	{ID: "retry", Prefix: "routing.retry", Leaves: []string{
+		"routing.retry.request-retry", "routing.retry.max-retry-credentials", "routing.retry.max-retry-interval",
+	}},
+	{ID: "cooldown", Prefix: "routing.cooldown", Leaves: []string{
+		"routing.cooldown.disable-cooling", "routing.cooldown.save-cooldown-status",
+		"routing.cooldown.transient-error-cooldown-seconds",
+	}},
+	{ID: "request", Prefix: "requests", Leaves: []string{
+		"requests.proxy-url", "requests.passthrough-headers", "requests.nonstream-keepalive-interval",
+	}},
+	{ID: "streaming", Prefix: "requests.streaming", Leaves: []string{
+		"requests.streaming.keepalive-seconds", "requests.streaming.bootstrap-retries",
+	}},
+	{ID: "media", Prefix: "multimedia", Leaves: []string{
+		"multimedia.disable-image-generation", "multimedia.gpt-image-2-base-model",
+		"multimedia.video-result-auth-cache-ttl",
+	}},
+	{ID: "client", Prefix: "client.codex", Leaves: []string{
+		"client.codex.enable-apply-patch", "client.codex.optimize-multi-agent-v2",
+	}},
+	{ID: "codex", Prefix: "upstream.codex", Leaves: []string{
+		"upstream.codex.response-steering", "upstream.codex.disable-codex-cloaking",
+		"upstream.codex.stream-bootstrap-buffering", "upstream.codex.stream-bootstrap-timeout",
+		"upstream.codex.orphan-delegation-compatibility", "upstream.codex.model-level-cooling",
+	}},
+	{ID: "claude", Prefix: "upstream.claude", Leaves: []string{
+		"upstream.claude.model-level-cooling", "upstream.claude.disable-claude-cloak-mode",
+		"upstream.claude.disable-cloaking-model-list",
+	}},
+	{ID: "headers", Prefix: "upstream.claude.header-defaults", Leaves: []string{
+		"upstream.claude.header-defaults.user-agent", "upstream.claude.header-defaults.package-version",
+		"upstream.claude.header-defaults.runtime-version", "upstream.claude.header-defaults.os",
+		"upstream.claude.header-defaults.arch", "upstream.claude.header-defaults.timeout",
+		"upstream.claude.header-defaults.timezone", "upstream.claude.header-defaults.stabilize-device-profile",
+	}},
+	{ID: "xai", Prefix: "upstream.xai", Leaves: []string{"upstream.xai.inject-x-search"}},
+}
+
+var (
+	gatewayLeafIndex    = buildLeafIndex()
+	gatewayGroupIndex   = buildGroupIndex()
+	gatewayFamilyIndex  = buildFamilyIndex()
+	privateConfigLeaves = buildPrivateLeaves()
+)
+
+func buildLeafIndex() map[string]ConfigLeaf {
+	index := make(map[string]ConfigLeaf, len(gatewayLeaves))
+	for _, leaf := range gatewayLeaves {
+		index[leaf.Path] = leaf
+	}
+	return index
+}
+
+func buildGroupIndex() map[string]ConfigGroup {
+	index := make(map[string]ConfigGroup, len(gatewayGroups))
+	for _, group := range gatewayGroups {
+		index[group.ID] = group
+	}
+	return index
+}
+
+func buildFamilyIndex() map[string]ConfigRuleFamily {
+	index := make(map[string]ConfigRuleFamily, len(gatewayRuleFamilies))
+	for _, family := range gatewayRuleFamilies {
+		index[family.Family] = family
+	}
+	return index
+}
+
+// buildPrivateLeaves freezes the private H1 profile subset. The Host keeps the
+// same six leaves, so widening the page table can never widen that profile.
+func buildPrivateLeaves() []string {
+	var paths []string
+	for _, leaf := range gatewayLeaves {
+		if leaf.Private {
+			paths = append(paths, leaf.Path)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+// LookupConfigLeaf is the single membership test for the gateway path table.
+func LookupConfigLeaf(path string) (ConfigLeaf, bool) {
+	leaf, ok := gatewayLeafIndex[path]
+	return leaf, ok
+}
+
+// LookupPrivateConfigLeaf is the membership test of the frozen private H1
+// profile. An intent outside it is never a private Host operation.
+func LookupPrivateConfigLeaf(path string) (ConfigLeaf, bool) {
+	leaf, ok := gatewayLeafIndex[path]
+	return leaf, ok && leaf.Private
+}
+
+// ConfigLeafPaths returns every writable leaf in page order.
+func ConfigLeafPaths() []string {
+	paths := make([]string, 0, len(gatewayLeaves))
+	for _, leaf := range gatewayLeaves {
+		paths = append(paths, leaf.Path)
+	}
+	return paths
+}
+
+// PrivateConfigLeafPaths returns the frozen private H1 profile subset.
+func PrivateConfigLeafPaths() []string {
+	return append([]string(nil), privateConfigLeaves...)
+}
+
+// ConfigGroupIDs returns the page groups in order.
+func ConfigGroupIDs() []string {
+	ids := make([]string, 0, len(gatewayGroups))
+	for _, group := range gatewayGroups {
+		ids = append(ids, group.ID)
+	}
+	return ids
+}
+
+// LookupConfigGroup returns one page group and its leaves.
+func LookupConfigGroup(id string) (ConfigGroup, bool) {
+	group, ok := gatewayGroupIndex[id]
+	return group, ok
+}
+
+// LookupConfigRuleFamily returns one payload rule family.
+func LookupConfigRuleFamily(family string) (ConfigRuleFamily, bool) {
+	entry, ok := gatewayFamilyIndex[family]
+	return entry, ok
+}
+
+// ConfigRuleFamilyIDs returns every rule family identifier in page order.
+func ConfigRuleFamilyIDs() []string {
+	ids := make([]string, 0, len(gatewayRuleFamilies))
+	for _, family := range gatewayRuleFamilies {
+		ids = append(ids, family.Family)
+	}
+	return ids
+}
+
+// ConfigRuleFamilyPaths returns every rule family path in page order.
+func ConfigRuleFamilyPaths() []string {
+	paths := make([]string, 0, len(gatewayRuleFamilies))
+	for _, family := range gatewayRuleFamilies {
+		paths = append(paths, family.Path)
+	}
+	return paths
+}
+
+// ConfigGroupPrefix resolves the single PATCH prefix of a page group.
+func ConfigGroupPrefix(id string) (string, error) {
+	group, ok := gatewayGroupIndex[id]
+	if !ok {
+		return "", ErrInvalidConfigPath
+	}
+	return group.Prefix, nil
+}
+
+// ConfigLeafEndpoint is the management endpoint of one leaf. CPA answers 404 for
+// a missing key, 400 for an unknown path and 422 for a value it refuses.
+func ConfigLeafEndpoint(path string) (string, error) {
+	if _, ok := gatewayLeafIndex[path]; !ok {
+		return "", ErrInvalidConfigPath
+	}
+	return configPathEndpoint(path), nil
+}
+
+// ConfigValueEndpoint is the management endpoint of a whole payload rule family.
+func ConfigValueEndpoint(family string) (string, error) {
+	entry, ok := gatewayFamilyIndex[family]
+	if !ok {
+		return "", ErrInvalidConfigPath
+	}
+	return configPathEndpoint(entry.Path), nil
+}
+
+func configPathEndpoint(path string) string {
+	return "/v8/management/config/" + strings.ReplaceAll(path, ".", "/")
+}
+
+// ConfigPathResource is the Public API resource suffix of one dotted CPA path.
+func ConfigPathResource(path string) string {
+	return strings.ReplaceAll(path, ".", "/")
+}
+
+// ValidateConfigLeafValue accepts only the leaf's JSON shape. Bounds belong to
+// CPA; CPAMP never restates them.
+func ValidateConfigLeafValue(path string, value any) error {
+	leaf, ok := gatewayLeafIndex[path]
+	if !ok {
+		return ErrInvalidConfigPath
+	}
+	switch leaf.Type {
+	case ConfigLeafInt:
+		if _, ok := value.(int); !ok {
+			return ErrInvalidConfigPath
+		}
+	case ConfigLeafBool:
+		if _, ok := value.(bool); !ok {
+			return ErrInvalidConfigPath
+		}
+	case ConfigLeafString:
+		if _, ok := value.(string); !ok {
+			return ErrInvalidConfigPath
+		}
+	case ConfigLeafImageMode:
+		switch typed := value.(type) {
+		case bool:
+		case string:
+			if !imageModeValues[typed] {
+				return ErrInvalidConfigPath
+			}
+		default:
+			return ErrInvalidConfigPath
+		}
+	default:
+		return ErrInvalidConfigPath
+	}
+	return nil
+}
+
+// ValidatePrivateConfigLeafValue accepts a value for the frozen private H1
+// profile only. It exists so widening the page table cannot widen the private
+// Host contract.
+func ValidatePrivateConfigLeafValue(path string, value any) error {
+	if _, ok := LookupPrivateConfigLeaf(path); !ok {
+		return ErrInvalidConfigPath
+	}
+	return ValidateConfigLeafValue(path, value)
+}
+
+// NormalizeConfigValue converts an integral JSON number back into the exact Go
+// scalar the table uses, so a value that crossed a JSON boundary still compares
+// and validates identically. Non-integral numbers are kept and then rejected.
+func NormalizeConfigValue(value any) any {
+	if number, ok := value.(float64); ok && number == float64(int(number)) {
+		return int(number)
+	}
+	return value
+}
+
+// ParseConfigLeafValue decodes one exact JSON value of a leaf. Null, composite
+// values and trailing data are rejected; presence is reported separately.
+func ParseConfigLeafValue(path string, raw json.RawMessage) (any, error) {
+	leaf, ok := gatewayLeafIndex[path]
+	if !ok || len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, ErrInvalidConfigPath
+	}
+	switch leaf.Type {
+	case ConfigLeafInt:
+		var number int
+		if json.Unmarshal(raw, &number) != nil {
+			return nil, ErrInvalidConfigPath
+		}
+		return number, nil
+	case ConfigLeafBool:
+		var flag bool
+		if json.Unmarshal(raw, &flag) != nil {
+			return nil, ErrInvalidConfigPath
+		}
+		return flag, nil
+	case ConfigLeafString:
+		var text string
+		if json.Unmarshal(raw, &text) != nil {
+			return nil, ErrInvalidConfigPath
+		}
+		return text, nil
+	case ConfigLeafImageMode:
+		var flag bool
+		if json.Unmarshal(raw, &flag) == nil {
+			return flag, nil
+		}
+		var text string
+		if json.Unmarshal(raw, &text) != nil || !imageModeValues[text] {
+			return nil, ErrInvalidConfigPath
+		}
+		return text, nil
+	default:
+		return nil, ErrInvalidConfigPath
+	}
+}
+
+// EncodeConfigLeafValue renders the exact JSON scalar CPA accepts.
+func EncodeConfigLeafValue(path string, value any) ([]byte, error) {
+	if err := ValidateConfigLeafValue(path, value); err != nil {
+		return nil, err
+	}
+	switch typed := value.(type) {
+	case int:
+		return []byte(strconv.Itoa(typed)), nil
+	case bool:
+		if typed {
+			return []byte("true"), nil
+		}
+		return []byte("false"), nil
+	case string:
+		return json.Marshal(typed)
+	default:
+		return nil, ErrInvalidConfigPath
+	}
+}
+
+// ValidateProxyURL is one of the two product rules CPAMP owns: the page refuses a
+// proxy URL that embeds credentials, because no safe reference design exists yet.
+// Scheme support, reachability and every other property stay CPA's business.
+func ValidateProxyURL(value any) error {
+	text, ok := value.(string)
+	if !ok {
+		return ErrInvalidConfigPath
+	}
+	if text != strings.TrimSpace(text) || text == "" {
+		return ErrInvalidConfigPath
+	}
+	lower := strings.ToLower(text)
+	scheme, rest, found := strings.Cut(lower, "://")
+	if !found || (scheme != "http" && scheme != "https" && scheme != "socks5" && scheme != "socks5h") {
+		return ErrInvalidConfigPath
+	}
+	authority := rest
+	if slash := strings.IndexByte(authority, '/'); slash >= 0 {
+		authority = authority[:slash]
+	}
+	if strings.Contains(authority, "@") {
+		return ErrInvalidConfigPath
+	}
+	return nil
+}

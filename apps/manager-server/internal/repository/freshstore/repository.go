@@ -59,11 +59,12 @@ func load(ctx context.Context, q queryer) (Record, error) {
 			return Record{}, ErrNotFresh
 		}
 	}
-	config, configInvalid, configDamaged, err := loadConfigJournals(ctx, q)
+	config, configInvalid, configDamaged, configGroups, configGroupsInvalid, err := loadConfigJournals(ctx, q)
 	if err != nil {
 		return Record{}, err
 	}
 	r.Config, r.ConfigInvalid, r.ConfigDamaged = config, configInvalid, configDamaged
+	r.ConfigGroups, r.ConfigGroupsInvalid = configGroups, configGroupsInvalid
 	// After installation, the existing Config service persists a compatibility
 	// setup row together with manager_config_v1. It does not replace the Fresh
 	// operation's ownership. Pending installations still reject that state.
@@ -90,8 +91,17 @@ func load(ctx context.Context, q queryer) (Record, error) {
 	return r, nil
 }
 func valid(r Record) error {
-	if r.Config == nil || r.ConfigInvalid == nil {
+	if r.Config == nil || r.ConfigInvalid == nil || r.ConfigGroups == nil {
 		return ErrNotFresh
+	}
+	if r.ConfigGroupsInvalid {
+		// The page refuses writes, but the record itself stays readable.
+		return nil
+	}
+	for group, journal := range r.ConfigGroups {
+		if !validConfigGroupJournal(group, journal) {
+			return ErrNotFresh
+		}
 	}
 	for path, journal := range r.Config {
 		if r.ConfigInvalid[path] || !validFieldJournal(path, journal) {
@@ -292,6 +302,7 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 	}
 	before := v
 	before.Config = cloneConfigJournals(v.Config)
+	before.ConfigGroups = cloneConfigGroupJournals(v.ConfigGroups)
 	before.ConfigDamaged = cloneRawMessages(v.ConfigDamaged)
 	before.Operation.Strategy.AdoptionDecisions = slices.Clone(v.Operation.Strategy.AdoptionDecisions)
 	before.Operation.Strategy.AdoptionResources = slices.Clone(v.Operation.Strategy.AdoptionResources)
@@ -307,6 +318,12 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		return Record{}, err
 	}
 	if err = validateConfigJournalUpdate(before.Config, v.Config); err != nil {
+		return Record{}, err
+	}
+	if before.ConfigGroupsInvalid != v.ConfigGroupsInvalid || v.ConfigGroupsInvalid && len(v.ConfigGroups) != 0 {
+		return Record{}, ErrConflict
+	}
+	if err = validateConfigGroupJournalUpdate(before.ConfigGroups, v.ConfigGroups); err != nil {
 		return Record{}, err
 	}
 	// A corrupt field remains isolated: callbacks may not erase or repair it, and
@@ -364,7 +381,7 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		err = write(ctx, tx, "setup", setup)
 	}
 	if err == nil {
-		err = writeConfigJournals(ctx, tx, before.Config, v.Config, v.ConfigDamaged)
+		err = writeConfigJournals(ctx, tx, before.Config, v.Config, v.ConfigDamaged, before.ConfigGroups, v.ConfigGroups)
 	}
 	if err != nil {
 		return Record{}, err
