@@ -81,13 +81,27 @@ describe('Canonical key detail and rename', () => {
     renderer.root
       .findAllByType('button')
       .find((item) => item.props['aria-label'] === text || item.props.children === text)!;
-  async function mount(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>, id = key.id) {
+  async function mount(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>, id = key.id, usageResponse?: unknown) {
+    const routedFetch = vi.fn<typeof fetch>((input, init) => {
+      if (String(input).endsWith('/api-keys/' + id + '/usage')) {
+        return Promise.resolve(Response.json(usageResponse ?? {
+          keyId: id,
+          fromMs: 1,
+          toMs: 2,
+          bucketMs: 1,
+          coverage: { state: 'unknown', reason: 'usage_read_failed', collectingSinceMs: 0, lastProcessedEventId: 0, targetEventId: 0 },
+          totals: null,
+          series: [],
+        }));
+      }
+      return fetchMock(input, init);
+    });
     await act(async () => {
       renderer = create(
         <FreshKeyDetails
           id={id}
           key={id}
-          client={createPublicApiClient(() => context, fetchMock)}
+          client={createPublicApiClient(() => context, routedFetch)}
           credential="admin-memory"
           onUnauthorized={unauthorized}
           onPending={pending}
@@ -489,5 +503,52 @@ describe('Canonical key detail and rename', () => {
       renderer.root.findByProps({ 'data-testid': 'detail-replace-key' }).props.onClick()
     );
     expect(onRequestOperation).toHaveBeenCalledWith('replace');
+  });
+  it('renders complete totals and hides zeroes for partial coverage', async () => {
+    const completeUsage = {
+      keyId: key.id,
+      fromMs: 1,
+      toMs: 2,
+      bucketMs: 1,
+      coverage: { state: 'complete', reason: 'observed', collectingSinceMs: 1, lastProcessedEventId: 2, targetEventId: 2 },
+      totals: { calls: 3, success: 2, failure: 1, inputTokens: 30, outputTokens: 15, totalTokens: 45, lastUsedAtMs: 2 },
+      series: [{ bucketMs: 1, calls: 3, failure: 1, totalTokens: 45 }],
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(key));
+    await mount(fetchMock, key.id, completeUsage);
+    expect(view()).toContain(k('usageStateComplete'));
+    expect(view()).toContain(k('usageCalls'));
+    expect(view()).toContain('3');
+    expect(renderer.root.findAllByProps({ 'data-testid': 'key-usage-series' })).toHaveLength(1);
+
+    await act(async () => renderer.unmount());
+    const partialFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(key));
+    await mount(partialFetch, key.id, {
+      ...completeUsage,
+      coverage: { ...completeUsage.coverage, state: 'partial', reason: 'raw_deleted' },
+      totals: { ...completeUsage.totals, calls: 0, success: 0, failure: 0 },
+      series: [],
+    });
+    renderer.root.findByProps({ 'data-testid': 'key-usage-totals' });
+    expect(view()).toContain('—');
+    expect(view()).toContain(k('usageStatePartial'));
+  });
+  it('publishes no totals when coverage cannot prove the window', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(key));
+    await mount(fetchMock, key.id, {
+      keyId: key.id,
+      fromMs: 1,
+      toMs: 2,
+      bucketMs: 1,
+      coverage: { state: 'unknown', reason: 'collection_unproven', collectingSinceMs: 0, lastProcessedEventId: 0, targetEventId: 0 },
+      totals: null,
+      series: [],
+    });
+    expect(view()).toContain(k('usageStateUnknown'));
+    expect(renderer.root.findByProps({ 'data-testid': 'key-usage-reason' }).props.children).toBe(
+      k('usageReasonCollectionUnproven')
+    );
+    expect(renderer.root.findAllByProps({ 'data-testid': 'key-usage-totals' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ 'data-testid': 'key-usage-series' })).toHaveLength(0);
   });
 });

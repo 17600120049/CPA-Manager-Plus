@@ -92,12 +92,25 @@ describe('Fresh client key persistence UI', () => {
       .find((item) => item.props['aria-label'] === text || item.props.children === text)!;
   async function mount(
     fetchMock: ReturnType<typeof vi.fn<typeof fetch>>,
-    onCreationPending = vi.fn()
+    onCreationPending = vi.fn(),
+    usageResponse: unknown = {
+      fromMs: 1,
+      toMs: 2,
+      coverage: { state: 'unknown', reason: 'usage_read_failed' },
+      items: [],
+    }
   ) {
+    const routedFetch = vi.fn<typeof fetch>((input, init) => {
+      if (String(input).endsWith('/api-keys/usage-summary'))
+        return Promise.resolve(
+          usageResponse instanceof Response ? usageResponse : Response.json(usageResponse)
+        );
+      return fetchMock(input, init);
+    });
     await act(async () => {
       renderer = create(
         <FreshApiKeys
-          client={createPublicApiClient(() => context, fetchMock)}
+          client={createPublicApiClient(() => context, routedFetch)}
           credential="admin-test-only"
           onUnauthorized={unauthorized}
           onCreationPending={onCreationPending}
@@ -785,5 +798,56 @@ describe('Fresh client key persistence UI', () => {
     expect(selects[0].props.value).toBe(activeA.id);
     expect(selects[1].props.value).toBe(activeB.id);
     expect(selects[2].props.value).toBe('replace');
+  });
+  it('renders the usage column with lower-bound and unknown states instead of fake zeroes', async () => {
+    const lastUsedAtMs = Date.UTC(2026, 0, 2, 3, 4);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({
+      keys: [key],
+      gatewayPending: true,
+      revocationAvailable: false,
+    }));
+    await mount(fetchMock, vi.fn(), {
+      fromMs: 1,
+      toMs: 2,
+      coverage: { state: 'partial', reason: 'projection_catching_up' },
+      items: [{ keyId: key.id, calls: 3, lastUsedAtMs, coverage: { state: 'partial', reason: 'projection_catching_up' } }],
+    });
+    expect(view()).toContain(k('usageColumn'));
+    renderer.root.findByProps({ 'data-testid': 'key-usage-' + key.id });
+    expect(view()).toContain('≥3');
+    expect(view()).toContain(k('usageStatePartial'));
+    // The last-used instant comes from this key's summary item.
+    expect(view()).toContain(String(new Date(lastUsedAtMs).getFullYear()));
+    expect(view()).toContain(k('usageLastUsed'));
+
+    await act(async () => {
+      renderer.unmount();
+    });
+    const unknownFetch = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({
+      keys: [key],
+      gatewayPending: true,
+      revocationAvailable: false,
+    }));
+    await mount(unknownFetch, vi.fn(), {
+      fromMs: 1,
+      toMs: 2,
+      coverage: { state: 'unavailable', reason: 'binding_missing' },
+      items: [{ keyId: key.id, calls: 0, lastUsedAtMs: null, coverage: { state: 'unavailable', reason: 'binding_missing' } }],
+    });
+    renderer.root.findByProps({ 'data-testid': 'key-usage-' + key.id });
+    expect(view()).toContain('—');
+    expect(view()).toContain(k('usageStateUnavailable'));
+  });
+  it('keeps the key list usable when the usage read fails', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({
+      keys: [key],
+      gatewayPending: true,
+      revocationAvailable: false,
+    }));
+    await mount(fetchMock, vi.fn(), new Response('failed', { status: 503 }));
+    expect(view()).toContain(key.id);
+    expect(view()).toContain(k('summaryUsageValue'));
+    expect(view()).toContain(k('usageStateUnknown'));
+    expect(view()).not.toContain('≥');
   });
 });

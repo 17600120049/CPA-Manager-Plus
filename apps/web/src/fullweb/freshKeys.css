@@ -421,6 +421,53 @@
 .key-detail-description {
   margin: 0 0 16px;
 }
+/* Usage attribution: the count, its coverage and its last use travel together. */
+.key-usage-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.key-usage-cell strong {
+  font-size: 13px;
+}
+.key-usage-cell small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.key-usage-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.key-usage-coverage p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+.key-usage-totals {
+  margin: 0 0 12px;
+}
+.key-usage-series ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.key-usage-series li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.key-usage-series time {
+  color: var(--text-tertiary);
+}
 .key-readonly-field {
   display: flex;
   align-items: center;
