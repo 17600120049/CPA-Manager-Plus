@@ -36,6 +36,8 @@ func (h BootstrapHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == bootstrap.FixedBootstrapUIPath {
 		index = bytes.ReplaceAll(index, []byte("__CPAMP_ROUTING_CONTEXT__"), []byte(`{"state":"bootstrap","bootstrap":true}`))
 		index = bytes.ReplaceAll(index, []byte(`"./assets/`), []byte(`"`+bootstrap.FixedBootstrapAssetsPath))
+		index, policy := applyAdminDocumentCSP(index)
+		w.Header().Set("Content-Security-Policy", policy)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(index))
 		return
