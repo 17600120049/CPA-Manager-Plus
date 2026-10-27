@@ -29,6 +29,7 @@ const report = {
   screenshots: [],
   pageErrors: [],
   notRun: [
+    'Real Provider model success (no Provider fixture or credential exists in this disposable installation; the model-request check proves Client Key authentication only)',
     'Real Provider/model traffic, public Gateway, other four journeys, arm64, power-loss and production rollback',
     'Natural ten-minute claim expiry (expired server timestamp is injected offline only in this disposable fixture)',
     'Non-Chinese locale layouts, other browser engines',
@@ -987,7 +988,9 @@ except OSError:print('unreachable')`;
   const cpaChecks = [
     'CPA model API accepts the installed Client Key',
     'CPA rejects an unknown Client Key',
-    'CPA accepts one real model request with the installed Client Key',
+    // Proves Client Key authentication only: without a Provider fixture CPA may
+    // answer 500/503, so this must never be reported as a real model success.
+    'CPA authenticates the installed Client Key on a model request (non-401)',
     'Ingress Gateway stays Pending with an installed Client Key',
   ];
   if (keyEffective) {
@@ -1005,7 +1008,7 @@ except OSError:print('unreachable')`;
     const modelStatus = cpaProbe(chatProbe, createdKey.createdSecret);
     assert(
       /^[1-5][0-9]{2}$/.test(modelStatus) && modelStatus !== '401',
-      'CPA must accept the installed Client Key for one model request: ' + modelStatus
+      'CPA must authenticate the installed Client Key on one model request: ' + modelStatus
     );
     recordDataLayer(cpaChecks[2], 'PASS', { status: Number(modelStatus) });
     const pendingResponse = await fetch(origin + '/v1/chat/completions', {

@@ -205,6 +205,12 @@ describe('Fresh New automated smoke contracts', () => {
     // Any other status is a hard failure, with or without the opt-in.
     expect(smoke).toContain('throw unexpectedStatus(');
     expect(smoke).toContain('set CPAMP_SMOKE_EXPECT_AUTHORITY_GAP=1 only on a base without');
+    // The model-request check proves Client Key authentication only.
+    expect(smoke).toContain(
+      "'CPA authenticates the installed Client Key on a model request (non-401)'"
+    );
+    expect(smoke).toContain('Real Provider model success');
+    expect(smoke).not.toContain("'CPA accepts one real model request with the installed Client Key'");
     // The Ingress Gateway stays pending by design; CPA acceptance is proven on
     // the Compose network, and the anonymous peer may only be closed or 401.
     expect(smoke).toContain("['unreachable', '401'].includes(peerVerdict)");
