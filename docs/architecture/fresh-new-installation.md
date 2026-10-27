@@ -150,7 +150,30 @@ installed Playwright Chromium. Use a new output directory per run. The script
 pins the supplied images by local image ID, creates a random Compose project,
 binds a random loopback port and removes only its own project/volumes afterward.
 It retains a secret-free JSON report and masked screenshots. It never logs
-Handoff or Admin/Runtime tokens, and injects no Provider or Client Key.
+Handoff or Admin/Runtime tokens. The data-layer step creates one Client Key and
+sends one model request inside the disposable installation.
+
+The script asserts `/health` is `503` before Host initialize and `200` with the
+Manager service identity after the Fresh store takeover, then drives the whole
+setup wizard (administrator key, one installation submission, public route) and
+checks the CPA data layer through the `cpamp/` resource bridge: one CPA
+management read, one Client Key creation plus initial install, and one model
+request that must authenticate the installed Client Key (non-401 — it proves
+authentication, not a real Provider response; real Provider model success is
+reported NOT RUN because no Provider fixture exists in the disposable install).
+`CPAMP_SMOKE_MODEL_TARGET` selects where that request is sent: the default
+`http://cpamp-runtime:8317` reaches CPA on the Compose network, and
+`http://cpamp-ingress:18317` reaches it through the public Ingress listener. The
+data layer has no tolerance: the committed default New Managed destination is the
+installation-derived CPA management authority, so a bridge or install status
+other than the expected one fails the run. Before the first Client Key exists
+every tested Gateway path answers the Pending `503`; once one is installed the
+Ingress admits it, and any status other than Pending on that path means admission
+was granted. A restarted Runtime reports a new generation, which withdraws
+admission until a new completion binds it, so the post-restart Gateway path is
+asserted closed again. The managed retry layout check runs when the config
+catalog exposes a retry count or interval field, and is reported `NOT RUN` only
+when the catalog omits both.
 
 The expiry case explicitly edits only the claim expiry timestamp in this
 disposable, stopped Manager fixture; natural ten-minute wall-clock expiry is
@@ -160,6 +183,42 @@ browser results must be reported separately. See the
 [acceptance record](fresh-new-installation-acceptance.md) for actual observed
 outcomes and the remaining limits.
 
+## Candidate build, load and smoke
+
+The release lane builds the three `linux/amd64` candidate images once. The OCI
+archives stay the verified evidence artifact, and the verifier still runs on
+them. The local engine cannot load an OCI layout archive, so the **same** buildx
+invocation also exports a docker-format tar per role. That tar is a load
+transport for the very same build result — not a second candidate and not a
+rebuild.
+
+```sh
+export CPAMP_CANDIDATE_BUILDER=cpamp-r1-local
+docker buildx create --name "$CPAMP_CANDIDATE_BUILDER" --driver docker-container --bootstrap
+CPAMP_CANDIDATE_LOAD=1 bash bin/release/build-embedded-candidate.sh /tmp/cpamp-r1-unique
+
+PLAYWRIGHT_MODULE=/absolute/path/to/node_modules/playwright \
+PLAYWRIGHT_CHANNEL=chrome \
+node bin/ci/fresh-new-installation.mjs \
+  cpamp-r1-runtime:candidate cpamp-r1-manager:candidate cpamp-r1-ingress:candidate \
+  /tmp/cpamp-fresh-new-unique-result
+```
+
+A container-driver builder is required: the `docker` driver cannot export an OCI
+layout, so the builder script refuses it and asks for
+`CPAMP_CANDIDATE_BUILDER=<name>` instead of silently producing another format.
+`CPAMP_CANDIDATE_LOAD=1` loads each transport archive and asserts the loaded
+image ID equals the verified `imageConfigDigest`, plus config and layer blob
+equality with the OCI archive. Any mismatch stops the run with no fallback build.
+The reference `cpamp-r1-<role>:candidate` comes from the same buildx `--tag`, so
+no separate `docker tag` step exists. `load-evidence.json` records the loaded IDs
+and digest comparisons next to `candidate-evidence.json`; the transport note is
+repeated in both files.
+
+The three images are local-only evidence: they are not signed producer receipts,
+not a registry readback and not a Beta/Release qualification. The candidate
+inventory still records `NOTICE` as `NOT_VERIFIED` (third-party LICENSE/NOTICE
+legal sufficiency is out of scope).
 ## Default New Managed CPA authority
 
 The default Compose installation uses the Runtime `new_managed` destination.

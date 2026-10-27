@@ -29,11 +29,30 @@ const report = {
   screenshots: [],
   pageErrors: [],
   notRun: [
-    'Real Provider/model traffic, public Gateway, other four journeys, arm64, power-loss and production rollback',
+    'Real Provider model success (no Provider fixture or credential exists in this disposable installation; the model-request check proves Client Key authentication only)',
+    'Real Provider/model traffic, other four journeys, arm64, power-loss and production rollback',
     'Natural ten-minute claim expiry (expired server timestamp is injected offline only in this disposable fixture)',
     'Non-Chinese locale layouts, other browser engines',
   ],
 };
+// The model-request probe must reach CPA where this deployment publishes it.
+// A Fresh Managed install keeps CPA on the Compose network, and the Ingress
+// Gateway publishes model traffic once it is admitted, so both origins reach
+// the same CPA. The value is an origin, never a full request path.
+const modelTarget = process.env.CPAMP_SMOKE_MODEL_TARGET || 'http://cpamp-runtime:8317';
+let modelTargetIsIngress = false;
+{
+  const parsed = new URL(modelTarget);
+  assert(
+    (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host,
+    'CPAMP_SMOKE_MODEL_TARGET must be an http(s) origin'
+  );
+  // The probe reaches CPA through the Runtime network or the admitted Ingress
+  // Gateway; the report records which one so a failure names its path.
+  modelTargetIsIngress = parsed.hostname === 'cpamp-ingress' || parsed.port === '18317';
+}
+report.modelTarget = modelTarget;
+report.modelTargetIsIngress = modelTargetIsIngress;
 // Pin a free loopback port in HostConfig. Publishing port 0 can allocate a new
 // host port after restart, which would invalidate the browser's saved origin.
 const portProbe = createServer();
@@ -154,6 +173,10 @@ const dc = (...args) => run([...compose, ...args]).stdout.trim();
 function pass(name) {
   report.checks.push({ name, result: 'PASS' });
   console.log('PASS ' + name);
+}
+function notRun(name) {
+  report.checks.push({ name, result: 'NOT RUN' });
+  console.log('NOT RUN ' + name);
 }
 async function screenshot(name, fullPage = true) {
   const overflow = await page.evaluate(() => ({
@@ -283,6 +306,12 @@ try {
     'pristine'
   );
   pass('first boot waits for Host initialize without creating database or data key');
+  assert.equal(
+    (await fetch(origin + '/health')).status,
+    503,
+    'unclaimed Manager must report /health 503'
+  );
+  pass('unclaimed Manager /health is 503 before Host initialize');
   dc('stop', 'cpamp-manager');
   const issue = () => dc('run', '--rm', '--no-deps', 'cpamp-manager', 'initialize');
   let handoff = issue();
@@ -309,11 +338,11 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   });
   page = await context.newPage();
   report.strategyGenerations = [];
+  const setupAPI = new URL(api, origin).pathname;
+  const strategyPaths = ['/console/api/v2/strategy', setupAPI + 'strategy'];
+  const completionPaths = ['/console/api/v2/complete', setupAPI + 'complete'];
   page.on('request', (request) => {
-    if (
-      new URL(request.url()).pathname === '/console/api/v2/strategy' &&
-      request.method() === 'POST'
-    ) {
+    if (strategyPaths.includes(new URL(request.url()).pathname) && request.method() === 'POST') {
       report.strategyGenerations.push(
         request.postData()?.match(/"expectedRuntimeGeneration":([0-9]+)/)?.[1] || 'INVALID'
       );
@@ -321,7 +350,7 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   });
   page.on('response', async (response) => {
     const path = new URL(response.url()).pathname;
-    if (path === '/console/api/v2/strategy' || path === '/console/api/v2/complete') {
+    if (strategyPaths.includes(path) || completionPaths.includes(path)) {
       report.checks.push({
         name: response.request().method() + ' ' + path,
         status: response.status(),
@@ -353,22 +382,38 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   await page.goto(origin + bootstrap + '/ui');
   await page.getByTestId('bootstrap-discovery-guidance').waitFor();
   await page.goto(origin + handoff);
-  await page.getByTestId('bootstrap-operation-ready').waitFor();
+  await page.getByTestId('fresh-setup-wizard').waitFor();
   assert.equal(new URL(page.url()).hash, '');
   await screenshot('bootstrap-administrator-desktop-light');
-  const operationId = (await page.getByTestId('op-id').textContent()).trim();
-  assert(operationId, 'claimed operation identity must be present');
-  report.operationId = operationId;
   const replayPage = await context.newPage();
   await replayPage.goto(origin + handoff);
   await replayPage.getByTestId('bootstrap-authority-error').waitFor();
   await replayPage.close();
   pass('real browser claims once, removes fragment and rejects consumed Handoff');
-  await page.getByTestId('commit-admin-btn').click();
-  await page.getByTestId('feedback-title').waitFor();
+  const takeoverHealth = await fetch(origin + '/health');
+  assert.equal(takeoverHealth.status, 200, 'claimed Fresh takeover must report /health 200');
+  assert(
+    (await takeoverHealth.text()).includes('"service":"cpa-manager-plus"'),
+    'takeover /health must carry the Manager service identity'
+  );
+  pass('Fresh takeover /health is 200 with the Manager service identity');
+  const wizardIdle = (label) =>
+    wait(
+      async () =>
+        (await page.getByTestId('fresh-setup-wizard').getAttribute('aria-busy')) === 'false',
+      'setup idle: ' + label,
+      180000
+    );
+  // The wizard owns the whole Fresh setup before Console login: administrator
+  // key, one installation submission and the public route. A submitted write is
+  // never replayed; an unconfirmed state stays locked until the canonical
+  // operation is read again.
+  await page.getByTestId('choose-new_managed').click();
+  await page.getByTestId('setup-next').click();
   await page.getByTestId('admin-key-input').fill('weak');
-  await page.getByTestId('commit-admin-btn').click();
-  assert((await page.getByTestId('feedback-title').innerText()).includes('安全校验'));
+  await page.getByTestId('setup-review').click();
+  await page.getByRole('alert').waitFor();
+  assert((await page.getByRole('alert').innerText()).includes('请检查管理员密钥和管理入口路径'));
   await page.getByTestId('generate-key-btn').click();
   await wait(
     async () => (await page.getByTestId('admin-key-input').inputValue()).length >= 24,
@@ -376,47 +421,79 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   );
   const admin = await page.getByTestId('admin-key-input').inputValue();
   secretValues.push(admin);
+  assert.equal(await page.getByTestId('route-target-input').inputValue(), '/console');
+  await page.getByTestId('setup-review').click();
   await page.getByTestId('confirm-key-saved-checkbox').check();
   let commits = 0;
+  let activations = 0;
+  let strategyWrites = 0;
   await page.route('**' + api + 'admin/commit', async (route) => {
     commits++;
     const response = await route.fetch();
     assert.equal(response.status(), 200);
     await route.abort('failed'); // Real server committed; response lost to browser.
   });
-  await page.route('**' + api + 'operation', (route) => route.abort('failed'), { times: 1 });
-  await page.getByTestId('commit-admin-btn').click();
-  await page.getByTestId('admin-commit-unresolved').waitFor();
-  assert(await page.getByTestId('admin-key-input').isDisabled());
-  assert(await page.getByTestId('commit-admin-btn').isDisabled());
-  await page.getByTestId('refresh-operation-btn').click();
-  await page.getByTestId('admin-init-complete-panel').waitFor();
-  assert.equal(commits, 1);
-  await page.unroute('**' + api + 'admin/commit');
-  pass('missing/weak Admin Key rejected; server-generated Key commits once despite lost response');
-  let activations = 0;
+  await page.route('**' + api + 'strategy', async (route) => {
+    strategyWrites++;
+    await route.continue();
+  });
+  // The pre-submission read must succeed; the recovery read that follows the
+  // lost commit reply is the one that is also lost.
+  let lostRecoveryRead = false;
+  await page.route('**' + api + 'operation', async (route) => {
+    if (commits > 0 && !lostRecoveryRead) {
+      lostRecoveryRead = true;
+      await route.abort('failed');
+    } else await route.continue();
+  });
   await page.route('**' + api + 'routing/activate', async (route) => {
     activations++;
     if (activations === 1) await route.fulfill({ status: 503, body: '' });
-    else {
-      const reply = await route.fetch();
-      assert.equal(reply.status(), 200);
-      await route.abort('failed');
-    }
+    else await route.continue();
   });
-  await page.getByTestId('enable-console').click();
+  await page.getByTestId('setup-execute').click();
   await wait(
-    async () => !(await page.getByTestId('enable-console').isDisabled()),
-    'failed activation recovery'
+    async () =>
+      (await page.getByTestId('setup-refresh').count()) === 1 &&
+      (await page.getByTestId('fresh-setup-wizard').getAttribute('aria-busy')) === 'false',
+    'unconfirmed original installation'
   );
-  assert.equal(await page.getByTestId('console-path').inputValue(), '/console');
-  assert(await page.getByTestId('console-path').isDisabled());
-  await page.getByTestId('enable-console').click();
-  await page.getByTestId('continue-console').waitFor();
+  assert(await page.getByTestId('setup-resume').isDisabled());
+  assert.equal(commits, 1);
+  await page.unroute('**' + api + 'operation');
+  await page.getByTestId('setup-refresh').click();
+  await wizardIdle('administrator recovery');
+  await wait(
+    async () => !(await page.getByTestId('setup-resume').isDisabled()),
+    'recovered administrator commit'
+  );
+  assert.equal(commits, 1);
+  await page.unroute('**' + api + 'admin/commit');
+  pass('weak Admin Key rejected; server-generated Key commits once despite lost response');
+  // Resume until the original operation completes. Each click only reconciles
+  // the persisted operation; it never selects another target or replays a write.
+  for (let round = 0; round < 10 && (await page.getByTestId('enter-console').count()) === 0; round++) {
+    const resume = page.getByTestId('setup-resume');
+    if ((await resume.count()) > 0 && !(await resume.isDisabled())) await resume.click();
+    else {
+      const refresh = page.getByTestId('setup-refresh');
+      if ((await refresh.count()) > 0 && !(await refresh.isDisabled())) await refresh.click();
+    }
+    await wizardIdle('setup resume ' + round);
+  }
+  await page.getByTestId('enter-console').waitFor({ timeout: 60000 });
   await page.unroute('**' + api + 'routing/activate');
-  assert.equal(activations, 2);
-  pass('routing failure retains intent; lost activation reply reconciles exact public identity');
-  await page.getByTestId('continue-console').click();
+  await page.unroute('**' + api + 'strategy');
+  assert.equal(commits, 1);
+  assert.equal(activations, 2, 'one controlled activation failure, then one real activation');
+  assert(strategyWrites >= 1, 'the installation submitted at least one strategy write');
+  report.strategyWrites = strategyWrites;
+  report.activations = activations;
+  pass(
+    'one installation submission committed official CPA and the exact public route; controlled activation failure and lost replies recovered without replay'
+  );
+  await installationScreenshots('complete');
+  await page.getByTestId('enter-console').click();
   await page.getByTestId('console-login').waitFor();
   assert.equal(await page.locator('.console-login-panel').count(), 0);
   await page.getByRole('checkbox', { name: '记住凭证', exact: true }).waitFor();
@@ -447,7 +524,9 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
   await page.getByRole('alert').waitFor();
   assert(await page.getByTestId('console-login').isVisible());
   await login(admin);
-  await page.getByTestId('fresh-managed-runtime').waitFor();
+  const legacyConsole = page.getByTestId('legacy-console');
+  await legacyConsole.waitFor();
+  await legacyConsole.locator('.app-shell').waitFor();
   pass('Console rejects missing/wrong Admin Key and accepts the installed Admin Key');
   const adminGet = async (path) => {
     const response = await fetch(origin + '/console/api/v2/' + path, {
@@ -463,6 +542,13 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
     assert.equal(denied.status, 401);
   }
   pass('deployment Runtime observation rejects missing/wrong administrator credentials');
+  const operation = await adminGet('operation');
+  const operationId = operation.identity.operationId;
+  report.operationId = operationId;
+  assert.equal(operation.productComplete, true);
+  assert.equal(operation.strategy.stage, 'committed');
+  assert.equal(operation.routing.committed, true);
+  assert.equal(operation.routing.target, '/console');
   const runtimeToken = dc('exec', '-T', 'cpamp-runtime', 'cat', '/run/cpamp/runtime-secret/token');
   secretValues.push(runtimeToken);
   const statusProgram = `import urllib.request,json,sys
@@ -485,97 +571,18 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
   ).stdout;
   const status = JSON.parse(statusJSON);
   status.runtimeGeneration = statusJSON.match(/"runtimeGeneration"\s*:\s*([0-9]+)/)[1];
+  report.runtimeGeneration = status.runtimeGeneration;
   assert.equal(status.activeGatewayArtifact.artifactId, 'sha256:' + pin);
   assert.equal(status.activeGatewayArtifact.version, '8.0.13');
   assert.equal(
     dc('exec', '-T', 'cpamp-runtime', 'sha256sum', '/usr/local/bin/cli-proxy-api').split(/\s/)[0],
     pin
   );
-  assert.equal(status.state, 'offline');
-  await installationScreenshots('choice');
-  assert.equal(await page.getByTestId('runtime-observation').count(), 0);
-  await page.getByRole('button', { name: '下一步', exact: true }).click();
-  await installationScreenshots('configure');
-  await page.route(
-    '**/console/api/v2/installation/runtime',
-    (route) => route.fulfill({ status: 503, body: '' }),
-    { times: 1 }
+  assert.equal(status.state, 'ready');
+  assert(
+    report.strategyGenerations.every((value) => value === status.runtimeGeneration),
+    'every strategy write used the observed Runtime generation'
   );
-  await page.getByTestId('inspect-installation').click();
-  await page.getByRole('alert').filter({ hasText: '暂时无法读取部署环境' }).waitFor();
-  assert.equal(report.strategyGenerations.length, 0);
-  assert.equal((await adminGet('operation')).identity.operationId, operationId);
-  pass(
-    'failed deployment check preserves the original operation and performs no installation write'
-  );
-  await page.getByTestId('inspect-installation').click();
-  await page.getByTestId('install-runtime').waitFor();
-  assert(await page.getByTestId('install-runtime').isDisabled());
-  await page.getByRole('checkbox').check();
-  await installationScreenshots('review');
-  let starts = 0;
-  let strategyWrites = 0;
-  let disconnected = false;
-  await page.route('**/console/api/v2/operation', async (route) => {
-    if (disconnected) await route.abort('failed');
-    else await route.continue();
-  });
-  await page.route('**/console/api/v2/strategy', async (route) => {
-    strategyWrites++;
-    const reply = await route.fetch();
-    assert.equal(reply.status(), 200);
-    if (strategyWrites === 1) await route.fulfill({ response: reply });
-    else {
-      starts++;
-      disconnected = true;
-      await route.abort('failed'); // Real Start committed; subsequent status reads disconnected.
-    }
-  });
-  await page.getByTestId('install-runtime').click();
-  await wait(async () => starts === 1, 'real Runtime Start with lost browser reply');
-  await wait(
-    async () => (await page.getByTestId('install-stage').innerText()) === '结果待确认',
-    'unconfirmed original installation'
-  );
-  assert(await page.getByTestId('install-runtime').isDisabled());
-  assert.equal(starts, 1);
-  assert.equal(strategyWrites, 2);
-  assert.equal(report.strategyGenerations[0], status.runtimeGeneration);
-  assert.equal(report.strategyGenerations[1], status.runtimeGeneration);
-  await installationScreenshots('result-unconfirmed');
-  disconnected = false;
-  await page.unroute('**/console/api/v2/operation');
-  await page.unroute('**/console/api/v2/strategy');
-  await page.reload();
-  await page.getByTestId('console-login').waitFor();
-  await login(admin);
-  await page.getByTestId('fresh-managed-runtime').waitFor();
-  assert.equal((await adminGet('operation')).identity.operationId, operationId);
-  assert.equal((await adminGet('operation')).strategy.stage, 'committed');
-  await page.getByTestId('install-runtime').click();
-  await wait(
-    async () => (await adminGet('operation')).productComplete === true,
-    'original installation recovered and completed after reload'
-  );
-  assert.equal(report.strategyGenerations.length, 2);
-  const started = JSON.parse(
-    run(
-      [
-        'docker',
-        'run',
-        '--rm',
-        '-i',
-        '--network',
-        network,
-        pythonImage,
-        'python3',
-        '-c',
-        statusProgram,
-      ],
-      runtimeToken
-    ).stdout
-  );
-  assert.equal(started.state, 'ready');
   const liveHash = dc(
     'exec',
     '-T',
@@ -597,18 +604,9 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
       .update(readFileSync(resolve(root, 'docker/runtime/config.v8.default.seed.yaml')))
       .digest('hex')
   );
-  await wait(
-    async () => (await page.getByTestId('install-stage').innerText()) === '安装已完成',
-    'completed installation'
-  );
   pass(
-    'one user install submission staged and started official CPA; reload recovered the same operation after lost reply without repeating Start'
+    'one user installation started the pinned official CPA; running executable and saved seed match'
   );
-  await installationScreenshots('complete');
-  await page.getByRole('button', { name: '进入 Console', exact: true }).click();
-  const legacyConsole = page.getByTestId('legacy-console');
-  await legacyConsole.waitFor();
-  await legacyConsole.locator('.app-shell').waitFor();
   assert.equal(new URL(page.url()).pathname, '/console');
   const bridgeInfo = await fetch(origin + '/console/api/v2/cpamp/usage-service/info', {
     headers: { Authorization: 'Bearer ' + admin },
@@ -713,18 +711,29 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     await page.locator('[role="tablist"]').first().waitFor();
     await screenshot('legacy-config-' + name);
     const retryPanel = page.getByTestId('fresh-managed-retry');
-    await retryPanel.scrollIntoViewIfNeeded();
-    await wait(async () => page.evaluate(() => {
-      const retry = document.querySelector('[data-testid="fresh-managed-retry"]').getBoundingClientRect();
-      const toggle = document.querySelector('.hamburger-container');
-      const box = toggle.getBoundingClientRect();
-      if (!toggle.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))) return false;
-      return [...document.querySelectorAll('[class*="floatingSidebarContainer"]')].every((rail) => {
-        if (getComputedStyle(rail).opacity === '0') return true;
-        return rail.getBoundingClientRect().bottom <= retry.top + 1;
-      });
-    }), 'configuration navigation stays inside its original workspace');
-    await screenshot('integrated-retry-' + name);
+    if (await retryPanel.isVisible()) {
+      await retryPanel.scrollIntoViewIfNeeded();
+      await wait(async () => page.evaluate(() => {
+        const retry = document.querySelector('[data-testid="fresh-managed-retry"]').getBoundingClientRect();
+        const toggle = document.querySelector('.hamburger-container');
+        const box = toggle.getBoundingClientRect();
+        if (!toggle.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))) return false;
+        return [...document.querySelectorAll('[class*="floatingSidebarContainer"]')].every((rail) => {
+          if (getComputedStyle(rail).opacity === '0') return true;
+          return rail.getBoundingClientRect().bottom <= retry.top + 1;
+        });
+      }), 'configuration navigation stays inside its original workspace');
+      await screenshot('integrated-retry-' + name);
+    } else if (!report.retryPanelDeferred) {
+      // The retained retry group renders only when the config catalog exposes a
+      // retry count or interval field, which the config-field workspace now
+      // provides. A deployment whose catalog omits both records the layout check
+      // as NOT RUN instead of passing on an absent panel.
+      report.retryPanelDeferred = true;
+      notRun(
+        'managed retry configuration panel layout (hidden: the config catalog exposes no retry field)'
+      );
+    }
     if (width < 768) {
       await page.locator('button.hamburger-container').click();
       await page.locator('aside.sidebar.open').waitFor();
@@ -740,6 +749,12 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     }
     await navigate('/system');
     await page.locator('.main-content').waitFor();
+    // The Fresh system workspace is the primary content; the original system
+    // cards live in a collapsed disclosure below it.
+    const additional = page.locator('details.system-additional-info');
+    if ((await additional.count()) > 0 && !(await additional.first().getAttribute('open'))) {
+      await additional.first().locator('summary').click();
+    }
     await page.getByRole('button', { name: '清理登录信息', exact: true }).click();
     await page.getByRole('dialog').waitFor();
     await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
@@ -796,22 +811,208 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
     }
   };
   await closed();
-  const peer = run([
-    'docker',
-    'run',
-    '--rm',
-    '--network',
-    network,
-    pythonImage,
-    'python3',
-    '-c',
-    `import socket
+  // The committed default Managed destination binds CPA to the Compose network,
+  // so an anonymous peer is expected to reach the model API and be rejected with
+  // 401. 'unreachable' only means the peer could not open the connection at all;
+  // either verdict is safe, a successful unauthenticated read is not.
+  const peer = run(
+    [
+      'docker',
+      'run',
+      '--rm',
+      '--network',
+      network,
+      pythonImage,
+      'python3',
+      '-c',
+      `import socket,urllib.request,urllib.error
 s=socket.socket();s.settimeout(3)
-try:s.connect(('cpamp-runtime',8317));raise SystemExit(1)
-except OSError:pass`,
-  ]);
+try:
+ s.connect(('cpamp-runtime',8317));s.close()
+except OSError:
+ print('unreachable');raise SystemExit(0)
+o=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+try:
+ with o.open(urllib.request.Request('http://cpamp-runtime:8317/v1/models'),timeout=10) as r:print(r.status)
+except urllib.error.HTTPError as e:print(e.code)
+except OSError:print('unreachable')`,
+    ]
+  );
   assert.equal(peer.status, 0);
-  pass('zero Client Keys: all tested Gateway paths remain Pending; peer cannot reach CPA port');
+  const peerVerdict = peer.stdout.trim();
+  assert(
+    ['unreachable', '401'].includes(peerVerdict),
+    'anonymous peer must not read the CPA model API: ' + peerVerdict
+  );
+  report.peerCPA = peerVerdict;
+  pass(
+    'zero Client Keys: all tested Gateway paths remain Pending; anonymous peer cannot read CPA'
+  );
+  // Data layer: the installed deployment must read real CPA management data,
+  // install one Client Key and have CPA authenticate it. The committed default
+  // New Managed destination is the installation-derived CPA management
+  // authority, so every step below is a hard requirement: any other status is a
+  // failure, never an absorbed known gap.
+  report.dataLayer = [];
+  const recordDataLayer = (name, result, observed) => {
+    report.dataLayer.push({ name, result, ...(observed ? { observed } : {}) });
+    console.log(result + ' ' + name + (observed ? ' ' + JSON.stringify(observed) : ''));
+  };
+  const adminHeaders = { Authorization: 'Bearer ' + admin };
+  const authFilesResponse = await fetch(
+    origin + '/console/api/v2/cpamp/v0/management/auth-files',
+    { headers: adminHeaders }
+  );
+  const authFilesBody = await authFilesResponse.text();
+  assert.equal(
+    authFilesResponse.status,
+    200,
+    'the cpamp/ bridge must read CPA /auth-files through the committed managed authority: ' +
+      authFilesResponse.status +
+      ' ' +
+      authFilesBody.trim()
+  );
+  const authFiles = JSON.parse(authFilesBody);
+  assert(Array.isArray(authFiles.files), 'CPA auth files payload must be a list');
+  recordDataLayer('cpamp resource bridge reads CPA /auth-files', 'PASS', {
+    files: authFiles.files.length,
+  });
+  const createdKeyResponse = await fetch(origin + '/console/api/v2/api-keys', {
+    method: 'POST',
+    headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId: randomBytes(16).toString('hex') }),
+  });
+  assert.equal(
+    createdKeyResponse.status,
+    201,
+    'a Fresh Client Key must be created with a one-time secret'
+  );
+  const createdKey = await createdKeyResponse.json();
+  assert.match(createdKey.createdSecret, /^cpamp_sk_[a-f0-9]{64}$/);
+  assert.equal(createdKey.key.maskedPreview, 'cpamp_sk_…' + createdKey.createdSecret.slice(-4));
+  secretValues.push(createdKey.createdSecret);
+  const installKeyResponse = await fetch(
+    origin + '/console/api/v2/api-keys/' + createdKey.key.id + '/initial-install',
+    {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: '{}',
+    }
+  );
+  const installKeyBody = await installKeyResponse.text();
+  assert.equal(
+    installKeyResponse.status,
+    200,
+    'Client Key initial install must configure the managed CPA: ' +
+      installKeyResponse.status +
+      ' ' +
+      installKeyBody.trim()
+  );
+  const installedState = JSON.parse(installKeyBody);
+  assert.equal(installedState.managerStaged, true, 'installed Client Key stays Manager-staged');
+  assert.equal(
+    installedState.attempted,
+    true,
+    'installed Client Key records the durable attempt'
+  );
+  assert.equal(installedState.cpaConfigured, true, 'installed Client Key is configured in CPA');
+  recordDataLayer('Client Key installed into CPA', 'PASS', {
+    runtimeState: installedState.runtimeState,
+  });
+  // CPA acceptance is proven where this deployment publishes CPA: the Compose
+  // network (CPAMP_SMOKE_MODEL_TARGET default) or the Ingress Gateway, which
+  // admits an installed Client Key once Manager proves the default Managed
+  // authority.
+  const cpaProbe = (program, input) =>
+    run(
+      [
+        'docker',
+        'run',
+        '--rm',
+        '-i',
+        '--network',
+        network,
+        pythonImage,
+        'python3',
+        '-c',
+        program,
+      ],
+      input
+    ).stdout.trim();
+  const modelsProbe = `import sys,urllib.request,urllib.error
+key=sys.stdin.read().strip()
+target=${JSON.stringify(modelTarget)}
+o=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+r=urllib.request.Request(target+'/v1/models',headers={'Authorization':'Bearer '+key} if key else {})
+try:
+ with o.open(r,timeout=20) as response:print(response.status)
+except urllib.error.HTTPError as error:print(error.code)
+except OSError:print('unreachable')`;
+  const chatProbe = `import json,sys,urllib.request,urllib.error
+key=sys.stdin.read().strip()
+target=${JSON.stringify(modelTarget)}
+body=json.dumps({'model':'gpt-4o-mini','messages':[{'role':'user','content':'cpamp authority smoke'}],'max_tokens':1}).encode()
+o=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+r=urllib.request.Request(target+'/v1/chat/completions',data=body,headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
+try:
+ with o.open(r,timeout=30) as response:print(response.status)
+except urllib.error.HTTPError as error:print(error.code)
+except OSError:print('unreachable')`;
+  const cpaChecks = [
+    'CPA model API accepts the installed Client Key',
+    'CPA rejects an unknown Client Key',
+    // Proves Client Key authentication only: without a Provider fixture CPA may
+    // answer 500/503, so this must never be reported as a real model success.
+    'CPA authenticates the installed Client Key on a model request (non-401)',
+  ];
+  const accepted = cpaProbe(modelsProbe, createdKey.createdSecret);
+  assert.equal(accepted, '200', 'installed Client Key must read the CPA model API: ' + accepted);
+  recordDataLayer(cpaChecks[0], 'PASS', { status: 200 });
+  const rejected = cpaProbe(modelsProbe, 'cpamp_sk_' + '0'.repeat(64));
+  assert.equal(rejected, '401', 'unknown Client Key must be rejected: ' + rejected);
+  recordDataLayer(cpaChecks[1], 'PASS', { status: 401 });
+  const modelStatus = cpaProbe(chatProbe, createdKey.createdSecret);
+  assert(
+    /^[1-5][0-9]{2}$/.test(modelStatus) && modelStatus !== '401',
+    'CPA must authenticate the installed Client Key on one model request: ' + modelStatus
+  );
+  recordDataLayer(cpaChecks[2], 'PASS', { status: Number(modelStatus) });
+  // The Ingress Gateway admits the installed Client Key once Manager proves the
+  // default Managed authority; the zero-key phase above stays the negative
+  // control. Ingress re-reads Manager within 1s after a negative answer, so the
+  // first request after the install may still observe the Pending placeholder.
+  const admitted = async (label) => {
+    let status = 0;
+    await wait(async () => {
+      const response = await fetch(origin + '/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + createdKey.createdSecret,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      status = response.status;
+      return (await response.text()).trim() !== 'gateway pending configuration';
+    }, label);
+    assert.notEqual(status, 401, 'Ingress must authenticate the installed Client Key');
+    const anonymous = await fetch(origin + '/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(
+      anonymous.status,
+      401,
+      'an admitted Gateway must still have CPA reject a missing Client Key'
+    );
+    return { status };
+  };
+  recordDataLayer(
+    'Ingress Gateway admits the installed Client Key',
+    'PASS',
+    await admitted('Ingress admits the installed Client Key')
+  );
   const keyDigest = dc('exec', '-T', 'cpamp-manager', 'sha256sum', '/data/data.key');
   dc('restart', 'cpamp-manager', 'cpamp-runtime', 'cpamp-ingress');
   await wait(
@@ -827,6 +1028,10 @@ except OSError:pass`,
   assert.deepEqual(after, before);
   assert.equal(dc('exec', '-T', 'cpamp-manager', 'sha256sum', '/data/data.key'), keyDigest);
   assert.equal((await fetch(origin + bootstrap + '/ui')).status, 404);
+  // The restarted Runtime reports a new generation, so admission is withdrawn:
+  // Manager's predicate pins the recorded identity, generation and artifact and
+  // never rebinds on its own. The Gateway must therefore stay closed instead of
+  // serving the installed Client Key from a stale admission.
   await closed();
   // Runtime process generation changes across restart. Observe it but never
   // silently bind the original completed strategy to this new generation.

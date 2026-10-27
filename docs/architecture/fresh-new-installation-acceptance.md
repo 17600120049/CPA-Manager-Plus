@@ -146,3 +146,36 @@ No further confirmed issue remains in the tested slice after these passes.
 ![Completed Console, desktop dark](evidence/fresh-new-installation/desktop-dark.png)
 
 ![Completed Console, mobile light](evidence/fresh-new-installation/mobile-light.png)
+
+## Candidate refresh — 2026-10-27
+
+The embedded candidate lane re-ran this journey on three locally built
+`linux/amd64` candidate images from `v2@49579583` plus the tooling commits on
+`build/v2-candidate-smoke-refresh` (tested HEAD
+`4eee135cb23579f15a22b8d9ab15e1e2f4ccdaa9`). Build, structural verification,
+`docker load` identity check and the disposable smoke all passed on exactly those
+images; see
+[candidate-smoke-20261027.md](evidence/fresh-new-installation/candidate-smoke-20261027.md)
+for digests, per-check results and re-run commands. That record is local-only
+evidence, not a Beta/Release qualification.
+
+Differences from the 2026-10-20 record:
+
+- The Fresh setup now finishes in the Bootstrap wizard before Console login, so
+  the automated journey drives that wizard instead of the retired claim page and
+  Console-side installation wizard.
+- `/health` is asserted `503` before Host initialize and `200` with the Manager
+  service identity after the Fresh store takeover.
+- A CPA data-layer step (one management read through the `cpamp/` bridge, one
+  Client Key creation plus initial install, one model request that must
+  authenticate the installed Client Key) is present. The observed run below
+  predates the default New Managed management authority, so its data-layer rows
+  are recorded as `DEFAULT AUTHORITY MISSING`. That gap is closed on the current
+  tree: the committed default Managed destination is the install-derived
+  authority, the smoke has no opt-in tolerance, and any bridge or install status
+  other than the expected one fails the run. The model-request check proves
+  Client Key authentication only (non-401) — real Provider model success is NOT
+  RUN, since no Provider fixture exists in the disposable installation.
+- The managed retry configuration layout check now runs whenever the config
+  catalog exposes a retry count or interval field; it is `NOT RUN` only when the
+  catalog omits both.
