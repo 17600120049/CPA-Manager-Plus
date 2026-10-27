@@ -20,9 +20,21 @@ import (
 
 const freshRuntimeJournalKey = "fresh_runtime_operations_v1"
 
-// freshRuntimeJournalTerminalRetention bounds the durable journal to the most
-// recent terminal operations. Every non-terminal entry is always retained.
-const freshRuntimeJournalTerminalRetention = 50
+const (
+	// freshRuntimeJournalTerminalRetention bounds the durable journal to the most
+	// recent terminal operations. Every non-terminal entry is always retained.
+	freshRuntimeJournalTerminalRetention = 50
+	// A lifecycle mutation can outlive the Manager's HTTP request budget: the
+	// Supervisor explicitly drains accepted execution after the caller's
+	// deadline. An entry younger than this window is treated as still in flight
+	// and is never resolved behind the submitter's back.
+	freshRuntimeOperationSettleWindow = 45 * time.Second
+	// Runtime Protocol v1 exposes no lifecycle operation lookup and this resource
+	// must never resend a mutation, so an entry that is still non-terminal after
+	// this window can no longer be confirmed. The bounded rule makes it terminal
+	// so a lost result can never lock the lifecycle out permanently.
+	freshRuntimeOperationUnknownBound = 2 * time.Minute
+)
 
 // Journal states mirror the Runtime Protocol operation vocabulary plus the
 // Manager-local `unknown` result of a mutation whose response was lost.
@@ -95,6 +107,29 @@ func (j *freshRuntimeJournal) save(ctx context.Context, data freshRuntimeJournal
 	return err
 }
 
+func (j *freshRuntimeJournal) setLast(status *freshRuntimeStatusResponse, observedAt time.Time) {
+	if j == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.last = status
+	j.lastTime = observedAt
+}
+
+func (j *freshRuntimeJournal) lastStatus() (*freshRuntimeStatusResponse, time.Time) {
+	if j == nil {
+		return nil, time.Time{}
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.last == nil {
+		return nil, time.Time{}
+	}
+	snapshot := *j.last
+	return &snapshot, j.lastTime
+}
+
 func freshRuntimeOperationTerminal(operation freshRuntimeOperation) bool {
 	return operation.State == freshRuntimeStateSucceeded || operation.State == freshRuntimeStateFailed
 }
@@ -136,27 +171,151 @@ func freshRuntimeBoundOperations(data freshRuntimeJournalData) freshRuntimeJourn
 	return bounded
 }
 
-func (j *freshRuntimeJournal) setLast(status *freshRuntimeStatusResponse, observedAt time.Time) {
-	if j == nil {
-		return
+// freshRuntimeOperationBlocks reports whether a non-terminal entry still owns
+// the lifecycle. Only entries younger than the unknown bound may block: an older
+// entry is abandoned by the bounded resolution rule and must not keep a
+// different action out forever.
+func freshRuntimeOperationBlocks(data freshRuntimeJournalData, candidate freshRuntimeOperation) bool {
+	for _, existing := range data.Operations {
+		if freshRuntimeOperationTerminal(existing) || existing.Action == candidate.Action {
+			continue
+		}
+		if candidate.CreatedAt.Sub(existing.UpdatedAt) >= freshRuntimeOperationUnknownBound {
+			continue
+		}
+		return true
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.last = status
-	j.lastTime = observedAt
+	return false
 }
 
-func (j *freshRuntimeJournal) lastStatus() (*freshRuntimeStatusResponse, time.Time) {
-	if j == nil {
-		return nil, time.Time{}
+// freshRuntimeResolveOperation advances one non-terminal entry from a Runtime
+// observation. It never resubmits the mutation; resolution requires either an
+// observation that distinguishes the outcome or the bounded expiry rule.
+func freshRuntimeResolveOperation(
+	operation freshRuntimeOperation,
+	observed model.RuntimeObservedStatus,
+	observedOK bool,
+	now time.Time,
+) (freshRuntimeOperation, bool) {
+	if freshRuntimeOperationTerminal(operation) {
+		return operation, false
 	}
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if j.last == nil {
-		return nil, time.Time{}
+	age := now.Sub(operation.UpdatedAt)
+	if age < freshRuntimeOperationSettleWindow {
+		return operation, false
 	}
-	copy := *j.last
-	return &copy, j.lastTime
+	expire := func(code string) (freshRuntimeOperation, bool) {
+		operation.State = freshRuntimeStateFailed
+		operation.FailureCode = code
+		operation.UpdatedAt = now
+		return operation, true
+	}
+	succeed := func() (freshRuntimeOperation, bool) {
+		operation.State = freshRuntimeStateSucceeded
+		operation.FailureCode = ""
+		operation.UpdatedAt = now
+		return operation, true
+	}
+	if !observedOK {
+		if age >= freshRuntimeOperationUnknownBound {
+			return expire("unknown_expired")
+		}
+		return operation, false
+	}
+	// A different Runtime identity means this Manager can no longer see the
+	// Supervisor that accepted the operation.
+	if operation.RuntimeIdentity != "" && observed.Identity != "" && string(observed.Identity) != operation.RuntimeIdentity {
+		return expire("runtime_identity_changed")
+	}
+	switch operation.Action {
+	case string(model.RuntimeOperationStop):
+		if observed.State == model.RuntimeStateOffline {
+			return succeed()
+		}
+	case string(model.RuntimeOperationStart):
+		if observed.State == model.RuntimeStateReady || observed.State == model.RuntimeStateStarting {
+			return succeed()
+		}
+	}
+	// A lost Restart result restores the lifecycle it started from, so no
+	// observation can distinguish it; it expires below instead.
+	if age >= freshRuntimeOperationUnknownBound {
+		return expire("unknown_expired")
+	}
+	return operation, false
+}
+
+// runtimeStatusClient returns the read-only observation client. External is
+// status-only and never fills a.runtime, so the status surface falls back to it
+// here.
+func (a *freshApplication) runtimeStatusClient() runtimeservice.RuntimeClient {
+	if a.runtime != nil {
+		return a.runtime
+	}
+	if a.runtimeExternal != nil {
+		return a.runtimeExternal
+	}
+	return nil
+}
+
+// refreshRuntimeOperations resolves abandoned journal entries from one
+// observation and returns the resulting journal. The observation and the journal
+// read both happen outside the journal mutex; only the merge and write are
+// serialized, so polling never waits on a Runtime network call.
+func (a *freshApplication) refreshRuntimeOperations(
+	ctx context.Context,
+	observed *model.RuntimeObservedStatus,
+) (freshRuntimeJournalData, error) {
+	data, err := a.runtimeJournal.load(ctx)
+	if err != nil {
+		return data, err
+	}
+	if !freshRuntimeOperationsPending(data) {
+		return data, nil
+	}
+	var status model.RuntimeObservedStatus
+	observedOK := false
+	if observed != nil {
+		status, observedOK = *observed, true
+	} else if client := a.runtimeStatusClient(); client != nil {
+		status, err = client.Status(ctx)
+		observedOK = err == nil
+	}
+	now := time.Now().UTC()
+	transitions := make(map[string][2]freshRuntimeOperation)
+	for requestID, operation := range data.Operations {
+		next, changed := freshRuntimeResolveOperation(operation, status, observedOK, now)
+		if !changed {
+			continue
+		}
+		transitions[requestID] = [2]freshRuntimeOperation{operation, next}
+	}
+	if len(transitions) == 0 {
+		return data, nil
+	}
+	a.runtimeJournal.mu.Lock()
+	defer a.runtimeJournal.mu.Unlock()
+	latest, err := a.runtimeJournal.load(ctx)
+	if err != nil {
+		return data, err
+	}
+	applied := false
+	for requestID, transition := range transitions {
+		stored, found := latest.Operations[requestID]
+		// Only apply a transition to the exact entry it was derived from, so a
+		// concurrent submitter is never overwritten.
+		if !found || stored.State != transition[0].State || !stored.UpdatedAt.Equal(transition[0].UpdatedAt) {
+			continue
+		}
+		latest.Operations[requestID] = transition[1]
+		applied = true
+	}
+	if applied {
+		if err := a.runtimeJournal.save(ctx, latest); err != nil {
+			return data, err
+		}
+	}
+	return latest, nil
 }
 
 type freshRuntimeStatusResponse struct {
@@ -221,13 +380,10 @@ func (a *freshApplication) runtimeStatus(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	mode := string(model.RuntimeModeExternal)
-	statusClient := a.runtime
-	if a.runtimeExternal == nil && statusClient != nil {
+	if a.runtime != nil && a.runtimeExternal == nil {
 		mode = string(model.RuntimeModeEmbedded)
 	}
-	if statusClient == nil && a.runtimeExternal != nil {
-		statusClient = a.runtimeExternal
-	}
+	statusClient := a.runtimeStatusClient()
 	if statusClient == nil {
 		writeFreshJSON(w, freshRuntimeUnknownResponse(mode, "runtime_unavailable", a.runtimeJournal))
 		return
@@ -314,12 +470,18 @@ func (a *freshApplication) runtimeOperations(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
-	a.runtimeJournal.mu.Lock()
-	defer a.runtimeJournal.mu.Unlock()
 	data, err := a.runtimeJournal.load(r.Context())
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
+	}
+	// A page reopened after a Manager interruption must be able to learn the
+	// outcome of the operation it started. Resolution only observes; this route
+	// never resends the mutation.
+	if freshRuntimeOperationsPending(data) {
+		if resolved, resolveErr := a.refreshRuntimeOperations(r.Context(), nil); resolveErr == nil {
+			data = resolved
+		}
 	}
 	operation, found := data.Operations[identifier]
 	if !found {
@@ -360,27 +522,12 @@ func (a *freshApplication) submitRuntimeOperation(w http.ResponseWriter, r *http
 		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "operation_journal_unavailable")
 		return
 	}
-	a.runtimeJournal.mu.Lock()
-	defer a.runtimeJournal.mu.Unlock()
-	data, err := a.runtimeJournal.load(r.Context())
-	if err != nil {
-		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "operation_journal_unavailable")
+	if a.runtimeSettings == nil {
+		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "desired_lifecycle_unavailable")
 		return
 	}
-	if existing, found := data.Operations[request.RequestID]; found {
-		if existing.Action != request.Action {
-			freshRuntimeOperationError(w, http.StatusConflict, "operation_id_conflict")
-			return
-		}
-		writeFreshJSON(w, existing.response())
-		return
-	}
-	for _, existing := range data.Operations {
-		if (existing.State == "accepted" || existing.State == "running" || existing.State == "unknown") && existing.Action != request.Action {
-			freshRuntimeOperationError(w, http.StatusConflict, "operation_conflict")
-			return
-		}
-	}
+	// One observation fences the submission and resolves abandoned journal
+	// entries, so no second Runtime call is needed.
 	observed, err := a.runtime.Status(r.Context())
 	if err != nil {
 		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "runtime_unreachable")
@@ -391,83 +538,163 @@ func (a *freshApplication) submitRuntimeOperation(w http.ResponseWriter, r *http
 		return
 	}
 	operationType := model.RuntimeOperationType(request.Action)
-	capability := model.RuntimeCapability(request.Action)
-	if !observed.Capabilities.Supports(capability) {
+	if !observed.Capabilities.Supports(model.RuntimeCapability(request.Action)) {
 		freshRuntimeOperationError(w, http.StatusConflict, "capability_not_supported")
 		return
 	}
-	if a.runtimeSettings == nil {
+	// Entries that can no longer be confirmed must not keep blocking a different
+	// action, so the journal is resolved before the conflict gate.
+	if _, err := a.refreshRuntimeOperations(r.Context(), &observed); err != nil {
+		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "operation_journal_unavailable")
+		return
+	}
+	now := time.Now().UTC()
+	reserved := freshRuntimeOperation{
+		RequestID: request.RequestID, Action: request.Action,
+		OperationID: "runtime-ui/v1:" + request.RequestID,
+		State:       freshRuntimeStateAccepted,
+		RuntimeIdentity: string(observed.Identity), RuntimeGeneration: uint64(observed.Generation),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	replayed, code := a.reserveRuntimeOperation(r.Context(), reserved)
+	switch code {
+	case "":
+	case "operation_journal_unavailable":
+		freshRuntimeOperationError(w, http.StatusServiceUnavailable, code)
+		return
+	default:
+		freshRuntimeOperationError(w, http.StatusConflict, code)
+		return
+	}
+	if replayed != nil {
+		writeFreshJSON(w, replayed.response())
+		return
+	}
+	var expectedArtifact model.RuntimeArtifactID
+	if operationType == model.RuntimeOperationStart && observed.ActiveGatewayArtifact != nil {
+		expectedArtifact = observed.ActiveGatewayArtifact.ArtifactID
+	}
+	if err := a.applyRuntimeDesiredLifecycle(r.Context(), operationType); err != nil {
 		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "desired_lifecycle_unavailable")
 		return
 	}
+	// The mutation runs without the journal mutex: operation polling must stay
+	// responsive while a lifecycle call (a restart included) is in flight.
+	result, mutationErr := a.submitRuntimeMutation(r.Context(), operationType, model.RuntimeMutationRequest{
+		OperationID: reserved.OperationID, ExpectedRuntimeIdentity: observed.Identity,
+		ExpectedRuntimeGeneration: observed.Generation, ExpectedActiveArtifactID: expectedArtifact,
+	})
+	if conflictCode := runtimeMutationConflictCode(mutationErr); conflictCode != "" {
+		freshRuntimeOperationError(w, http.StatusConflict, conflictCode)
+		return
+	}
+	outcome := reserved
+	outcome.UpdatedAt = time.Now().UTC()
+	switch {
+	case mutationErr == nil && result.Validate() == nil:
+		outcome.State = string(result.State)
+		if result.Failure != nil {
+			outcome.FailureCode = result.Failure.Code
+		}
+	default:
+		outcome.State = freshRuntimeStateUnknown
+		outcome.FailureCode = "runtime_result_unknown"
+	}
+	if err := a.finalizeRuntimeOperation(r.Context(), outcome); err != nil {
+		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "operation_journal_unavailable")
+		return
+	}
+	if outcome.State == freshRuntimeStateUnknown {
+		w.WriteHeader(http.StatusAccepted)
+	}
+	writeFreshJSON(w, outcome.response())
+}
+
+// reserveRuntimeOperation durably records the in-flight operation while holding
+// the journal mutex. It returns the previously recorded entry for an idempotent
+// replay, or a stable error code when the action is refused.
+func (a *freshApplication) reserveRuntimeOperation(ctx context.Context, operation freshRuntimeOperation) (*freshRuntimeOperation, string) {
+	a.runtimeJournal.mu.Lock()
+	defer a.runtimeJournal.mu.Unlock()
+	data, err := a.runtimeJournal.load(ctx)
+	if err != nil {
+		return nil, "operation_journal_unavailable"
+	}
+	if existing, found := data.Operations[operation.RequestID]; found {
+		if existing.Action != operation.Action {
+			return nil, "operation_id_conflict"
+		}
+		previous := existing
+		return &previous, ""
+	}
+	if freshRuntimeOperationBlocks(data, operation) {
+		return nil, "operation_conflict"
+	}
+	data.Operations[operation.RequestID] = operation
+	if err := a.runtimeJournal.save(ctx, data); err != nil {
+		return nil, "operation_journal_unavailable"
+	}
+	return nil, ""
+}
+
+// finalizeRuntimeOperation persists the outcome of an operation this request
+// reserved. An entry already made terminal elsewhere is retained as-is.
+func (a *freshApplication) finalizeRuntimeOperation(ctx context.Context, operation freshRuntimeOperation) error {
+	a.runtimeJournal.mu.Lock()
+	defer a.runtimeJournal.mu.Unlock()
+	data, err := a.runtimeJournal.load(ctx)
+	if err != nil {
+		return err
+	}
+	if stored, found := data.Operations[operation.RequestID]; found && freshRuntimeOperationTerminal(stored) {
+		return nil
+	}
+	data.Operations[operation.RequestID] = operation
+	return a.runtimeJournal.save(ctx, data)
+}
+
+func (a *freshApplication) submitRuntimeMutation(
+	ctx context.Context,
+	operationType model.RuntimeOperationType,
+	request model.RuntimeMutationRequest,
+) (model.RuntimeOperationResult, error) {
+	switch operationType {
+	case model.RuntimeOperationStart:
+		return a.runtime.Start(ctx, request)
+	case model.RuntimeOperationStop:
+		return a.runtime.Stop(ctx, request)
+	case model.RuntimeOperationRestart:
+		return a.runtime.Restart(ctx, request)
+	}
+	return model.RuntimeOperationResult{}, errors.New("unsupported runtime lifecycle operation")
+}
+
+// applyRuntimeDesiredLifecycle is the single Manager-owned writer of the
+// desired lifecycle for a submitted operation. It is never called for a rejected
+// mutation, so a Supervisor conflict cannot leave the lifecycle flipped.
+func (a *freshApplication) applyRuntimeDesiredLifecycle(ctx context.Context, operationType model.RuntimeOperationType) error {
 	desired := model.EmbeddedRuntimeDesiredRunning
 	if operationType == model.RuntimeOperationStop {
 		desired = model.EmbeddedRuntimeDesiredStopped
 	}
-	if _, err := a.runtimeSettings.SetEmbeddedRuntimeDesiredLifecycle(r.Context(), desired); err != nil {
-		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "desired_lifecycle_unavailable")
-		return
+	_, err := a.runtimeSettings.SetEmbeddedRuntimeDesiredLifecycle(ctx, desired)
+	return err
+}
+
+// runtimeMutationConflictCode maps the Supervisor rejections that guarantee no
+// side effect. Every other error leaves the result unknown.
+func runtimeMutationConflictCode(err error) string {
+	code, ok := runtimeservice.ErrorCode(err)
+	if !ok {
+		return ""
 	}
-	now := time.Now().UTC()
-	operation := freshRuntimeOperation{
-		RequestID: request.RequestID, Action: request.Action,
-		OperationID: "runtime-ui/v1:" + request.RequestID,
-		State:       "accepted", RuntimeIdentity: string(observed.Identity),
-		RuntimeGeneration: uint64(observed.Generation), CreatedAt: now, UpdatedAt: now,
+	switch code {
+	case runtimeservice.ProtocolErrorOperationIDConflict:
+		return "operation_id_conflict"
+	case runtimeservice.ProtocolErrorOperationStateConflict:
+		return "operation_conflict"
 	}
-	data.Operations[request.RequestID] = operation
-	if err := a.runtimeJournal.save(r.Context(), data); err != nil {
-		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "operation_journal_unavailable")
-		return
-	}
-	mutationRequest := model.RuntimeMutationRequest{
-		OperationID: operation.OperationID, ExpectedRuntimeIdentity: observed.Identity,
-		ExpectedRuntimeGeneration: observed.Generation,
-	}
-	if operationType == model.RuntimeOperationStart && observed.ActiveGatewayArtifact != nil {
-		mutationRequest.ExpectedActiveArtifactID = observed.ActiveGatewayArtifact.ArtifactID
-	}
-	var result model.RuntimeOperationResult
-	switch operationType {
-	case model.RuntimeOperationStart:
-		result, err = a.runtime.Start(r.Context(), mutationRequest)
-	case model.RuntimeOperationStop:
-		result, err = a.runtime.Stop(r.Context(), mutationRequest)
-	case model.RuntimeOperationRestart:
-		result, err = a.runtime.Restart(r.Context(), mutationRequest)
-	}
-	if err != nil {
-		if code, ok := runtimeservice.ErrorCode(err); ok {
-			switch code {
-			case runtimeservice.ProtocolErrorOperationIDConflict:
-				freshRuntimeOperationError(w, http.StatusConflict, "operation_id_conflict")
-				return
-			case runtimeservice.ProtocolErrorOperationStateConflict:
-				freshRuntimeOperationError(w, http.StatusConflict, "operation_conflict")
-				return
-			}
-		}
-		operation.State = "unknown"
-		operation.FailureCode = "runtime_result_unknown"
-	} else {
-		operation.State = string(result.State)
-		if result.Failure != nil {
-			operation.FailureCode = result.Failure.Code
-		}
-		if operation.State == "" {
-			operation.State = "unknown"
-		}
-	}
-	operation.UpdatedAt = time.Now().UTC()
-	data.Operations[request.RequestID] = operation
-	if err := a.runtimeJournal.save(r.Context(), data); err != nil {
-		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "operation_journal_unavailable")
-		return
-	}
-	if operation.State == "unknown" {
-		w.WriteHeader(http.StatusAccepted)
-	}
-	writeFreshJSON(w, operation.response())
+	return ""
 }
 
 func freshRuntimeOperationError(w http.ResponseWriter, status int, code string) {

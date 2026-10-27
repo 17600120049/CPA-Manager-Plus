@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -284,5 +285,203 @@ func TestFreshRuntimeExternalConstructionKeepsRuntimeStatusOnly(t *testing.T) {
 	app.runtimeOperations(submit, freshRuntimeRequest(t, "start", "external-1"), op, "runtime/operations")
 	if submit.Code != http.StatusConflict {
 		t.Fatalf("External start = %d body=%s", submit.Code, submit.Body.String())
+	}
+}
+
+func freshRuntimeJournalOperation(t *testing.T, app *freshApplication, requestID string) freshRuntimeOperation {
+	t.Helper()
+	data, err := app.runtimeJournal.load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, found := data.Operations[requestID]
+	if !found {
+		t.Fatalf("runtime journal entry %q is missing", requestID)
+	}
+	return operation
+}
+
+// ageFreshRuntimeOperation simulates a Manager interruption: the entry was
+// reserved in the past and no submitter is waiting on its own Runtime call.
+func ageFreshRuntimeOperation(t *testing.T, app *freshApplication, requestID string, age time.Duration) {
+	t.Helper()
+	data, err := app.runtimeJournal.load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, found := data.Operations[requestID]
+	if !found {
+		t.Fatalf("runtime journal entry %q is missing", requestID)
+	}
+	operation.CreatedAt = operation.CreatedAt.Add(-age)
+	operation.UpdatedAt = operation.UpdatedAt.Add(-age)
+	data.Operations[requestID] = operation
+	if err := app.runtimeJournal.save(t.Context(), data); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func freshRuntimeGetOperation(app *freshApplication, op bootstrap.FreshOperation, operationID string) *httptest.ResponseRecorder {
+	resource := "runtime/operations/" + operationID
+	response := httptest.NewRecorder()
+	app.runtimeOperations(response, httptest.NewRequest(http.MethodGet, "/"+resource, nil), op, resource)
+	return response
+}
+
+// An UNKNOWN stop must recover from observation after a Manager interruption:
+// the entry becomes terminal, the page reports the outcome, and the next Start
+// is no longer locked out. The mutation itself is never resent.
+func TestFreshRuntimeUnknownStopResolvesAndUnlocksStart(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	client := &freshRuntimeTestClient{
+		status:  freshRuntimeReadyStatus(model.RuntimeCapabilityStart, model.RuntimeCapabilityStop),
+		stopErr: errors.New("transport interrupted after acceptance"),
+	}
+	app.runtime = client
+	app.runtimeExternal = nil
+	op := freshRuntimeProductCompleteOperation(t, app)
+
+	stop := httptest.NewRecorder()
+	app.runtimeOperations(stop, freshRuntimeRequest(t, "stop", "stop-unknown-1"), op, "runtime/operations")
+	if stop.Code != http.StatusAccepted {
+		t.Fatalf("unknown stop = %d body=%s", stop.Code, stop.Body.String())
+	}
+	if entry := freshRuntimeJournalOperation(t, app, "stop-unknown-1"); entry.State != freshRuntimeStateUnknown {
+		t.Fatalf("unknown stop entry = %+v", entry)
+	}
+	// A lost response must still adopt the lifecycle the user asked for so the
+	// reconciler can converge on it.
+	desired, found, err := app.runtimeSettings.LoadEmbeddedRuntimeDesiredState(t.Context())
+	if err != nil || !found || desired.DesiredLifecycle != model.EmbeddedRuntimeDesiredStopped {
+		t.Fatalf("unknown stop desired lifecycle = %+v found=%v err=%v", desired, found, err)
+	}
+
+	blocked := httptest.NewRecorder()
+	app.runtimeOperations(blocked, freshRuntimeRequest(t, "start", "start-blocked"), op, "runtime/operations")
+	if blocked.Code != http.StatusConflict || client.starts != 0 {
+		t.Fatalf("in-flight stop did not gate a start: %d starts=%d", blocked.Code, client.starts)
+	}
+
+	// The Supervisor finished the stop while the Manager was interrupted.
+	ageFreshRuntimeOperation(t, app, "stop-unknown-1", freshRuntimeOperationUnknownBound/2)
+	offline := freshRuntimeReadyStatus(model.RuntimeCapabilityStart, model.RuntimeCapabilityStop)
+	offline.State = model.RuntimeStateOffline
+	client.status = offline
+
+	queried := freshRuntimeGetOperation(app, op, "runtime-ui/v1:stop-unknown-1")
+	if queried.Code != http.StatusOK || !strings.Contains(queried.Body.String(), `"state":"succeeded"`) || client.stops != 1 {
+		t.Fatalf("resolved stop = %d stops=%d body=%s", queried.Code, client.stops, queried.Body.String())
+	}
+	if entry := freshRuntimeJournalOperation(t, app, "stop-unknown-1"); entry.State != freshRuntimeStateSucceeded {
+		t.Fatalf("resolved stop entry = %+v", entry)
+	}
+
+	start := httptest.NewRecorder()
+	app.runtimeOperations(start, freshRuntimeRequest(t, "start", "start-after-unknown"), op, "runtime/operations")
+	if start.Code != http.StatusOK || client.starts != 1 {
+		t.Fatalf("start after an unknown stop = %d starts=%d body=%s", start.Code, client.starts, start.Body.String())
+	}
+}
+
+// A lost Restart result restores the lifecycle it started from, so observation
+// cannot confirm it: the bounded rule must expire it instead of blocking every
+// other action forever.
+func TestFreshRuntimeAbandonedRestartExpiresAtTheBound(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	client := &freshRuntimeTestClient{
+		status:     freshRuntimeReadyStatus(model.RuntimeCapabilityStart, model.RuntimeCapabilityStop, model.RuntimeCapabilityRestart),
+		restartErr: errors.New("transport interrupted after acceptance"),
+	}
+	app.runtime = client
+	app.runtimeExternal = nil
+	op := freshRuntimeProductCompleteOperation(t, app)
+
+	restart := httptest.NewRecorder()
+	app.runtimeOperations(restart, freshRuntimeRequest(t, "restart", "restart-unknown-1"), op, "runtime/operations")
+	if restart.Code != http.StatusAccepted {
+		t.Fatalf("unknown restart = %d body=%s", restart.Code, restart.Body.String())
+	}
+	ageFreshRuntimeOperation(t, app, "restart-unknown-1", freshRuntimeOperationUnknownBound)
+
+	queried := freshRuntimeGetOperation(app, op, "runtime-ui/v1:restart-unknown-1")
+	if queried.Code != http.StatusOK || !strings.Contains(queried.Body.String(), `"state":"failed"`) ||
+		!strings.Contains(queried.Body.String(), `"failureCode":"unknown_expired"`) {
+		t.Fatalf("expired restart = %d body=%s", queried.Code, queried.Body.String())
+	}
+	stop := httptest.NewRecorder()
+	app.runtimeOperations(stop, freshRuntimeRequest(t, "stop", "stop-after-expiry"), op, "runtime/operations")
+	if stop.Code != http.StatusOK || client.stops != 1 {
+		t.Fatalf("stop after an expired restart = %d stops=%d body=%s", stop.Code, client.stops, stop.Body.String())
+	}
+}
+
+type freshRuntimeBlockingClient struct {
+	*freshRuntimeTestClient
+	started chan struct{}
+	release chan struct{}
+}
+
+func (c *freshRuntimeBlockingClient) Start(_ context.Context, request model.RuntimeMutationRequest) (model.RuntimeOperationResult, error) {
+	close(c.started)
+	<-c.release
+	return freshRuntimeResult(request, model.RuntimeOperationStart, model.RuntimeOperationSucceeded), nil
+}
+
+// Operation polling must answer while a lifecycle mutation is in flight: the
+// journal mutex is never held across the Runtime network call.
+func TestFreshRuntimePollAnswersWhileMutationIsInFlight(t *testing.T) {
+	app, closeApp := newA3TestApp(t)
+	defer closeApp()
+	client := &freshRuntimeBlockingClient{
+		freshRuntimeTestClient: &freshRuntimeTestClient{status: freshRuntimeReadyStatus(model.RuntimeCapabilityStart, model.RuntimeCapabilityStop)},
+		started:                make(chan struct{}),
+		release:                make(chan struct{}),
+	}
+	app.runtime = client
+	app.runtimeExternal = nil
+	op := freshRuntimeProductCompleteOperation(t, app)
+	submitRequest := freshRuntimeRequest(t, "start", "start-slow")
+
+	submitted := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		app.runtimeOperations(response, submitRequest, op, "runtime/operations")
+		submitted <- response
+	}()
+	select {
+	case <-client.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("start mutation never reached the Runtime client")
+	}
+
+	polled := make(chan *httptest.ResponseRecorder, 1)
+	go func() { polled <- freshRuntimeGetOperation(app, op, "runtime-ui/v1:start-slow") }()
+	select {
+	case response := <-polled:
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"state":"accepted"`) {
+			t.Fatalf("in-flight poll = %d body=%s", response.Code, response.Body.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("operation poll blocked while the lifecycle mutation was in flight")
+	}
+	select {
+	case <-submitted:
+		t.Fatal("the mutation returned before the test released it")
+	default:
+	}
+
+	close(client.release)
+	select {
+	case response := <-submitted:
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"state":"succeeded"`) {
+			t.Fatalf("released start = %d body=%s", response.Code, response.Body.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("start mutation never completed")
+	}
+	if entry := freshRuntimeJournalOperation(t, app, "start-slow"); entry.State != freshRuntimeStateSucceeded {
+		t.Fatalf("final entry = %+v", entry)
 	}
 }
