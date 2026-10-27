@@ -40,11 +40,6 @@ var (
 	// ErrStaleSnapshot means source bindings changed while an inventory was read.
 	ErrStaleSnapshot = errors.New("canonical source bindings changed during inventory capture")
 
-	// ErrStagedSourceTerminal means an observed source hash still belongs to a
-	// terminal Fresh staged key. Manager fails closed instead of minting a second
-	// canonical identity that would split the key's recorded history.
-	ErrStagedSourceTerminal = errors.New("staged canonical key source is terminal")
-
 	ErrPendingAPIKeyMutation   = errors.New("API-key mutation already pending for runtime")
 	ErrPendingCredentialDelete = errors.New("credential delete already pending for physical file")
 )
@@ -213,12 +208,16 @@ type ReconcileSnapshotResult struct {
 	APIKeysCreated int
 	// APIKeysBound counts observed sources attached to a Canonical Key that a
 	// staged Fresh Key already owns, instead of a newly created identity.
-	APIKeysBound         int
-	APIKeysRefreshed     int
-	APIKeysRecovered     int
-	APIKeysMissing       int
-	CredentialsCreated   int
-	CredentialsRefreshed int
-	CredentialsRecovered int
-	CredentialsMissing   int
+	APIKeysBound int
+	// APIKeysTerminalSkipped counts observed sources whose hash belongs to a
+	// revoked or replaced Fresh staged key. They are skipped individually: no
+	// second identity is minted and the rest of the batch still applies.
+	APIKeysTerminalSkipped int
+	APIKeysRefreshed       int
+	APIKeysRecovered       int
+	APIKeysMissing         int
+	CredentialsCreated     int
+	CredentialsRefreshed   int
+	CredentialsRecovered   int
+	CredentialsMissing     int
 }

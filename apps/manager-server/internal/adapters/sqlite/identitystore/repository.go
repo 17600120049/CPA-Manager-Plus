@@ -950,11 +950,31 @@ func (r *repository) ApplyPassiveSnapshot(ctx context.Context, params ports.Reco
 			if err != nil {
 				return ports.ReconcileSnapshotResult{}, fmt.Errorf("resolve staged api key source: %w", err)
 			}
-			if staged && lifecycle != identity.LifecycleActive {
-				// A terminal staged key already owns this hash and its recorded
-				// history. Refuse the snapshot rather than minting a second
-				// canonical ID that would split that history.
-				return ports.ReconcileSnapshotResult{}, fmt.Errorf("%w: %s", ports.ErrStagedSourceTerminal, freshID)
+			if staged && lifecycle == identity.LifecycleSuperseded {
+				// A revoked or replaced staged key already owns this hash and its
+				// recorded history. Skip this hash: never mint a second canonical
+				// ID, never write another binding, and never block the other keys
+				// in the same snapshot. A missing staged key is recoverable and
+				// binds normally.
+				result.APIKeysTerminalSkipped++
+				continue
+			}
+			if staged && lifecycle == identity.LifecycleMissing {
+				// The source reappeared: recover the staged key before binding it,
+				// so the next snapshot sees a consistent active identity. This
+				// mirrors the active-binding recovery path above.
+				res, err := tx.ExecContext(ctx, `update `+sqliterepo.GatewayAPIKeyIdentitiesTable+`
+					set revision = revision + 1, lifecycle = ?, updated_at_ms = case when updated_at_ms >= ? then updated_at_ms + 1 else ? end
+					where id = ? and lifecycle = ? and revision < ?`,
+					string(identity.LifecycleActive), params.NowMS, params.NowMS,
+					string(freshID), string(identity.LifecycleMissing), int64(math.MaxInt64))
+				if err != nil {
+					return ports.ReconcileSnapshotResult{}, fmt.Errorf("recover missing staged api key: %w", err)
+				}
+				if ra, err := res.RowsAffected(); err != nil || ra != 1 {
+					return ports.ReconcileSnapshotResult{}, fmt.Errorf("%w: missing staged api key recovery conflict", ports.ErrRevisionConflict)
+				}
+				result.APIKeysRecovered++
 			}
 			newID := freshID
 			if !staged {

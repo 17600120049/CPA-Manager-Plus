@@ -125,11 +125,13 @@ summary.
   installation's runtime identity. The window opens at the key's own creation
   instant. One secret hash has exactly one active binding, so passive identity
   synchronization binds the staged Canonical Key instead of minting a second
-  one. A hash that already belongs to any staged key — including a revoked,
-  replaced or otherwise superseded one — refuses the snapshot
-  (`staged_source_terminal`), so lagging inventory evidence can never split a
-  key's recorded history; a hash actively bound to another identity fails
-  closed too (`binding_conflict`).
+  one. A hash that belongs to a revoked or replaced (superseded) staged key is
+  skipped for that hash alone: no second canonical ID is minted, no binding is
+  written, and the rest of the snapshot still applies. Lagging inventory
+  evidence therefore can never split a key's recorded history. A missing staged
+  key is recoverable: its returning source is recovered and bound to the same
+  canonical ID. A hash actively bound to another identity fails closed too
+  (`binding_conflict`).
 - **Collection:** after `ProductComplete` the Fresh startup binds staged keys,
   starts the Collector with the install-derived CPA authority, feeds its events
   to the canonical identity projection worker, and records the first proven
@@ -175,9 +177,10 @@ reconciliation, same-request retry, authentication failure and one-time display.
 Usage tests use real temporary SQLite too: same-transaction binding, replay and
 backfill idempotency, completion inside the running process starting the chain
 exactly once, superseded-window closure, staged-identity reuse in passive
-synchronization and fail-closed rejection of terminal staged hashes, per-key
-aggregation with a fake Collector phase, batching beyond one statement, every
-coverage state, and responses free of hashes, secrets and credentials. Web tests
+synchronization with per-key skipping of terminal staged hashes and recovery of
+missing ones, per-key aggregation with a fake Collector phase, batching beyond
+one statement, every coverage state, and responses free of hashes, secrets and
+credentials. Web tests
 cover the usage column, the detail section, unknown/partial/lower-bound rendering
 and a failed usage read. Real numbers on a built default candidate remain a NOT
 RUN item until the

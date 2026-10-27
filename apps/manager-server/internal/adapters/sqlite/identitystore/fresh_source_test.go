@@ -2,7 +2,6 @@ package identitystore_test
 
 import (
 	"database/sql"
-	"errors"
 	"testing"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
@@ -71,7 +70,7 @@ func TestApplyPassiveSnapshotBindsStagedFreshKeyInsteadOfCreatingSecondIdentity(
 	}
 }
 
-func TestApplyPassiveSnapshotFailsClosedForTerminalStagedKey(t *testing.T) {
+func TestApplyPassiveSnapshotSkipsTerminalStagedHashPerKey(t *testing.T) {
 	ctx := t.Context()
 	db, repo := setupTestDB(t)
 	stagedID := "a1b2c3d4e5f60718293a4b5c6d7e8f90"
@@ -88,15 +87,18 @@ func TestApplyPassiveSnapshotFailsClosedForTerminalStagedKey(t *testing.T) {
 	}
 
 	// A lagging snapshot that still reports the revoked hash must never mint a
-	// second Canonical ID for it: attribution history stays with the staged key.
-	_, err := repo.ApplyPassiveSnapshot(ctx, ports.ReconcileSnapshotParams{
+	// second Canonical ID for it, and the refusal must not abort the snapshot.
+	result, err := repo.ApplyPassiveSnapshot(ctx, ports.ReconcileSnapshotParams{
 		RuntimeIdentity:           "runtime-managed-1",
 		ObservedRuntimeGeneration: 3,
 		APIKeys:                   []ports.APIKeySnapshotItem{{APIKeyHash: hash}},
 		NowMS:                     5000,
 	})
-	if !errors.Is(err, ports.ErrStagedSourceTerminal) {
-		t.Fatalf("superseded staged hash error = %v, want ErrStagedSourceTerminal", err)
+	if err != nil {
+		t.Fatalf("apply snapshot: %v", err)
+	}
+	if result.APIKeysTerminalSkipped != 1 || result.APIKeysBound != 0 || result.APIKeysCreated != 0 {
+		t.Fatalf("result = %+v, want one skipped terminal hash", result)
 	}
 	if identities := countAPIKeyIdentities(t, db); identities != 1 {
 		t.Fatalf("identities = %d, want exactly the staged one", identities)
@@ -106,29 +108,81 @@ func TestApplyPassiveSnapshotFailsClosedForTerminalStagedKey(t *testing.T) {
 		t.Fatalf("count active bindings: %v", err)
 	}
 	if bindings != 0 {
-		t.Fatalf("active bindings = %d, want none after the refused snapshot", bindings)
+		t.Fatalf("active bindings = %d, want none for a terminal hash", bindings)
 	}
 	if _, err := repo.LoadAPIKeyByID(ctx, identity.APIKeyID(stagedID)); err != nil {
 		t.Fatalf("staged history lost: %v", err)
 	}
 }
 
-// A superseded staged key that was never bound (it was revoked before the
-// installation committed) owns the hash just the same: fail closed, never mint.
-func TestApplyPassiveSnapshotFailsClosedForUnboundSupersededStagedKey(t *testing.T) {
+// A superseded staged key that was never bound (revoked before the installation
+// committed) owns the hash just the same, and a mixed batch still applies every
+// other key.
+func TestApplyPassiveSnapshotSkippedTerminalHashDoesNotBlockTheBatch(t *testing.T) {
 	ctx := t.Context()
 	db, repo := setupTestDB(t)
-	stagedID := "b1b2c3d4e5f60718293a4b5c6d7e8f91"
-	hash := sha256Hex("revoked-before-binding")
-	seedStagedFreshKey(t, db, stagedID, hash, "superseded")
+	stagedActive := "b1b2c3d4e5f60718293a4b5c6d7e8f91"
+	stagedTerminal := "c1b2c3d4e5f60718293a4b5c6d7e8f92"
+	activeHash := sha256Hex("staged-active-secret")
+	terminalHash := sha256Hex("revoked-before-binding")
+	freshHash := sha256Hex("brand-new-secret")
+	seedStagedFreshKey(t, db, stagedActive, activeHash, "active")
+	seedStagedFreshKey(t, db, stagedTerminal, terminalHash, "superseded")
 
-	if _, err := repo.ApplyPassiveSnapshot(ctx, ports.ReconcileSnapshotParams{
+	result, err := repo.ApplyPassiveSnapshot(ctx, ports.ReconcileSnapshotParams{
+		RuntimeIdentity:           "runtime-managed-1",
+		ObservedRuntimeGeneration: 3,
+		APIKeys: []ports.APIKeySnapshotItem{
+			{APIKeyHash: activeHash}, {APIKeyHash: terminalHash}, {APIKeyHash: freshHash},
+		},
+		NowMS: 5000,
+	})
+	if err != nil {
+		t.Fatalf("mixed snapshot: %v", err)
+	}
+	if result.APIKeysBound != 1 || result.APIKeysCreated != 1 || result.APIKeysTerminalSkipped != 1 {
+		t.Fatalf("result = %+v, want one bound, one created and one skipped", result)
+	}
+	bound, _, err := repo.FindActiveAPIKeyBySource(ctx, "runtime-managed-1", activeHash)
+	if err != nil || string(bound.ID) != stagedActive {
+		t.Fatalf("active staged source = %v err = %v", bound.ID, err)
+	}
+	created, _, err := repo.FindActiveAPIKeyBySource(ctx, "runtime-managed-1", freshHash)
+	if err != nil || string(created.ID) == stagedTerminal {
+		t.Fatalf("new source = %v err = %v", created.ID, err)
+	}
+	if _, _, err := repo.FindActiveAPIKeyBySource(ctx, "runtime-managed-1", terminalHash); err == nil {
+		t.Fatal("terminal hash gained an active binding")
+	}
+	if identities := countAPIKeyIdentities(t, db); identities != 3 {
+		t.Fatalf("identities = %d, want the two staged keys plus one new", identities)
+	}
+}
+
+// A missing staged key is recoverable, not terminal: a returning hash binds to
+// the existing Canonical Key instead of minting a new identity.
+func TestApplyPassiveSnapshotBindsMissingStagedKey(t *testing.T) {
+	ctx := t.Context()
+	db, repo := setupTestDB(t)
+	stagedID := "d1b2c3d4e5f60718293a4b5c6d7e8f93"
+	hash := sha256Hex("missing-client-secret")
+	seedStagedFreshKey(t, db, stagedID, hash, "missing")
+
+	result, err := repo.ApplyPassiveSnapshot(ctx, ports.ReconcileSnapshotParams{
 		RuntimeIdentity:           "runtime-managed-1",
 		ObservedRuntimeGeneration: 3,
 		APIKeys:                   []ports.APIKeySnapshotItem{{APIKeyHash: hash}},
 		NowMS:                     5000,
-	}); !errors.Is(err, ports.ErrStagedSourceTerminal) {
-		t.Fatalf("unbound superseded staged hash error = %v, want ErrStagedSourceTerminal", err)
+	})
+	if err != nil {
+		t.Fatalf("apply snapshot: %v", err)
+	}
+	if result.APIKeysBound != 1 || result.APIKeysCreated != 0 || result.APIKeysTerminalSkipped != 0 || result.APIKeysRecovered != 1 {
+		t.Fatalf("result = %+v, want the missing staged key recovered and bound", result)
+	}
+	entity, _, err := repo.FindActiveAPIKeyBySource(ctx, "runtime-managed-1", hash)
+	if err != nil || string(entity.ID) != stagedID {
+		t.Fatalf("missing staged source = %v err = %v", entity.ID, err)
 	}
 	if identities := countAPIKeyIdentities(t, db); identities != 1 {
 		t.Fatalf("identities = %d, want exactly the staged one", identities)
