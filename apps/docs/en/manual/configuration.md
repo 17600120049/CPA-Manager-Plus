@@ -49,6 +49,21 @@ Use the visual editor for normal operations. Use source mode when you need to:
 
 Before saving source configuration, check indentation, arrays, and quoted strings. If a saved change does not appear to take effect, check whether CPA supports hot reload or needs a restart.
 
+## Saving Semantics On The Gateway Page
+
+The gateway page edits CPA's own `config.yaml` and always saves one group at a time:
+
+- One save is one group: only the leaves you changed are sent in a single PATCH, and untouched leaves are not rewritten.
+- "Use default" does not write a default number; it removes the key and lets CPA decide its own default.
+- The payload rule lists (fill when missing, force override, remove parameters) are written a whole list at a time, and a duplicated path inside one model is rejected by the editor.
+- The page re-reads the configuration before saving. If the same group changed while you were editing, it reports a conflict, keeps your draft, and lets you compare before saving again.
+- A lost connection or a 5xx is an unknown result. An unknown result is resolved by reading the original operation back; the write is never resent automatically.
+- Saved and effective are reported separately. CPA reloads asynchronously, so effectiveness needs a read-back confirmation.
+
+The proxy URL refuses a URL that embeds credentials. Every other bound stays CPA's business; the page checks types and its own product rules only.
+
+The read-only ownership area lists configuration owned by the API key, provider, account, log and system workspaces. Do not re-edit those fields here.
+
 ## Weighted Round-Robin Routing
 
 To distribute requests proportionally across credentials in the same priority tier, select Weighted Round Robin in Visual Configuration. The equivalent source configuration is:

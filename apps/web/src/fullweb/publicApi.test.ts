@@ -57,13 +57,13 @@ describe('canonical Full Web Public API transport', () => {
   });
 
   it.each([
-    ['gateway/config/routing/retry/request-retry', 'invalid_config_field', 'invalid_config_field'],
+    ['gateway/config/groups/retry', 'invalid_config_request', 'invalid_config_request'],
     [
       'gateway/config/operations/' + 'a'.repeat(32) + '/reconcile',
-      'invalid_config_field',
-      'invalid_config_field',
+      'original_operation_unknown',
+      'original_operation_unknown',
     ],
-    ['gateway/config/routing/retry/request-retry', 'raw upstream secret', undefined],
+    ['gateway/config/groups/retry', 'raw upstream secret', undefined],
     ['api-keys', 'invalid_config_field', undefined],
   ])('bounds HTTP 400 parsing for %s (%s)', async (resource, code, expectedCode) => {
     browserOrigin();
@@ -76,7 +76,7 @@ describe('canonical Full Web Public API transport', () => {
         )
       );
     const error = await createPublicApiClient(() => context, transport)
-      .put(resource, {}, credential)
+      .post(resource, {}, credential)
       .catch((value: unknown) => value);
     expect(error).toMatchObject({
       kind: 'http',
@@ -86,7 +86,45 @@ describe('canonical Full Web Public API transport', () => {
       message: 'Public API http',
     });
     expect(transport).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(error)).not.toContain('secret');
+    // The unbounded `result` blob never reaches the page; a recognised code may
+    // still expose the Manager-authored diagnostic that names what was refused.
+    expect(JSON.stringify(error)).not.toContain('hidden');
+    expect(JSON.stringify(error)).not.toContain('"result"');
+    if (expectedCode === undefined) expect((error as { detail?: string }).detail).toBeUndefined();
+  });
+
+  // A CPA rejection is the only 422 the page maps: it names the group or field and
+  // carries the redacted diagnostic the Manager already stripped of values.
+  it('retains a bounded CPA rejection with its field and diagnostic', async () => {
+    browserOrigin();
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          code: 'cpa_rejected_config',
+          field: 'routing.retry.request-retry',
+          message: 'yaml: unmarshal errors: line 3: cannot unmarshal !!str into int',
+          result: { secret: 'hidden' },
+        },
+        { status: 422 }
+      )
+    );
+    const error = (await createPublicApiClient(() => context, transport)
+      .post('gateway/config/groups/retry', {}, credential)
+      .catch((value) => value)) as Error & {
+      code?: string;
+      field?: string;
+      detail?: string;
+      operationResult?: unknown;
+    };
+    expect(error).toMatchObject({
+      kind: 'http',
+      status: 422,
+      code: 'cpa_rejected_config',
+      field: 'routing.retry.request-retry',
+      detail: 'yaml: unmarshal errors: line 3: cannot unmarshal !!str into int',
+      operationResult: undefined,
+    });
+    expect(JSON.stringify(error)).not.toContain('hidden');
   });
 
   it.each(['GET', 'PUT', 'operation'])('bounds setting/operation %s without retries', async (method) => {
@@ -152,7 +190,7 @@ describe('canonical Full Web Public API transport', () => {
           })
       );
       const pending = createPublicApiClient(() => context, transport).get(
-        'gateway/config/routing/retry/request-retry',
+        'gateway/config',
         credential
       );
       const assertion = expect(pending).rejects.toMatchObject({
@@ -189,7 +227,7 @@ describe('canonical Full Web Public API transport', () => {
       )
     );
     const error = (await createPublicApiClient(() => context, transport)
-      .put('gateway/config/routing/retry/request-retry', { requestId: operation.requestId, value: 3 }, credential)
+      .post('gateway/config/groups/retry', { requestId: operation.requestId, edits: [] }, credential)
       .catch((value) => value)) as Error & { code?: string; operationResult?: unknown };
     expect(error).toMatchObject({
       kind: 'http',

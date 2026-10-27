@@ -3,22 +3,34 @@ import { parseRuntimeJSON, runtimeRequestJSON } from './runtimeGeneration';
 
 export type PublicApiErrorKind = 'routing_unavailable' | 'network' | 'http' | 'authentication';
 
-const configFieldErrorCodes = new Set([
+// Stable codes the gateway configuration page can act on. Every other failure
+// stays a bare HTTP error: the page never guesses a cause from a status alone.
+const gatewayConfigErrorCodes = new Set([
   'operation_not_found',
   'source_or_operation_conflict',
-  'private_source_not_authorized',
   'config_key_writer_not_isolated',
   'original_operation_unknown',
   'configuration_unavailable',
-  'invalid_config_field',
+  'config_authority_unavailable',
+  'gateway_config_read_only',
+  'payload_rules_read_only',
+  'invalid_config_request',
+  'cpa_rejected_config',
 ]);
+
+// The gateway configuration surface is `gateway/config` plus its sub-resources.
+const isGatewayConfigResource = (resource: string) =>
+  resource === 'gateway/config' || resource.startsWith('gateway/config/');
 
 export class PublicApiError extends Error {
   constructor(
     readonly kind: PublicApiErrorKind,
     readonly status?: number,
     readonly operationResult?: unknown,
-    readonly code?: string
+    readonly code?: string,
+    // A CPA rejection names the field and the redacted diagnostic it refused.
+    readonly field?: string,
+    readonly detail?: string
   ) {
     super(`Public API ${kind}`);
     this.name = 'PublicApiError';
@@ -86,7 +98,7 @@ export function createPublicApiClient(
       resource.startsWith('runtime/operations/') ||
       resource.startsWith('api-keys/') ||
       resource === 'settings/update-channel' ||
-      resource.startsWith('gateway/config/')
+      isGatewayConfigResource(resource)
         ? new AbortController()
         : undefined;
     const timer = controller ? setTimeout(() => controller.abort(), 15000) : undefined;
@@ -111,7 +123,9 @@ export function createPublicApiClient(
         // retain their original 409/503 status and cannot authorize writes.
         let operationResult: unknown;
         let code: string | undefined;
-        const retryResource = resource.startsWith('gateway/config/');
+        let field: string | undefined;
+        let detail: string | undefined;
+        const retryResource = isGatewayConfigResource(resource);
         const operationResource = method === 'GET' && resource.startsWith('api-keys/operations/');
         if (
           (retryResource ||
@@ -119,15 +133,24 @@ export function createPublicApiClient(
             (resource === 'strategy' && response.status === 409)) &&
           (response.status === 409 ||
             response.status === 503 ||
-            (retryResource && response.status === 400))
+            (retryResource &&
+              (response.status === 400 || response.status === 422)))
         ) {
           try {
             const payload = (await response.json()) as Record<string, unknown>;
             if (retryResource) {
-              if (typeof payload.code === 'string' && configFieldErrorCodes.has(payload.code))
+              // Only a recognised code unlocks the diagnostic: an unrecognised
+              // upstream payload must not smuggle its message into the UI.
+              if (typeof payload.code === 'string' && gatewayConfigErrorCodes.has(payload.code))
                 code = payload.code;
+              if (code) {
+                if (typeof payload.field === 'string') field = payload.field;
+                if (typeof payload.message === 'string') detail = payload.message;
+              }
+              // A 400 shape error and a 422 CPA rejection carry no journal; only a
+              // conflict or an unavailable authority can hold an operation.
               if (
-                response.status !== 400 &&
+                (response.status === 409 || response.status === 503) &&
                 'result' in payload &&
                 payload.result &&
                 typeof payload.result === 'object'
@@ -149,7 +172,7 @@ export function createPublicApiClient(
             // A malformed failed response does not provide a journal snapshot.
           }
         }
-        throw new PublicApiError('http', response.status, operationResult, code);
+        throw new PublicApiError('http', response.status, operationResult, code, field, detail);
       }
       return (
         ['operation', 'strategy', 'complete', 'installation/runtime'].includes(resource)
