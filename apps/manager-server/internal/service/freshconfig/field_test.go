@@ -37,6 +37,8 @@ type fakeField struct {
 	writes      int
 	reads       int
 	ignoreWrite bool
+	h1          *fakeH1
+	putsH1      int
 }
 
 func (f *fakeField) source() cpa.ConfigFieldSource {
@@ -94,8 +96,24 @@ func (f *fakeField) PutConfigField(_ context.Context, _ cpa.ConfigFieldSource, _
 	return nil
 }
 
-func (f *fakeField) WriteH1ConfigField(context.Context, string, cpa.H1Step, string, string, any) error {
-	return cpa.ErrProofUnavailable
+// WriteH1ConfigField performs the one step write the H1 parent already reserved
+// and leaves the step ID as the source's last operation, exactly like the Runtime.
+func (f *fakeField) WriteH1ConfigField(_ context.Context, parent string, step cpa.H1Step, _ string, path string, value any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.putsH1++
+	if f.h1 == nil || parent != f.h1.parent.ID || step.Scope != path || step.ParentID != parent {
+		return cpa.ErrProofUnavailable
+	}
+	if cpa.ValidateConfigFieldValue(path, value) != nil {
+		return cpa.ErrProofUnavailable
+	}
+	f.value, f.present, f.applied = value, true, true
+	// The released Runtime keeps the step as its last operation.
+	f.operation = cpa.ConfigFieldSource{OperationID: step.ID, OperationScope: path, OperationPath: path, OperationValue: value, OperationState: "persisted"}
+	f.base.Revision++
+	f.base.State = "persisted"
+	return nil
 }
 
 func (f *fakeField) HasRuntimeJournal() bool { return !f.managed }

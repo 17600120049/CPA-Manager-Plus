@@ -67,10 +67,21 @@ func operationField(op configOperation) (string, any, bool) {
 }
 
 // ConfigFieldRequestID is the journal request ID behind a Runtime operation ID.
-// Pre-allowlist direct writes prefixed it; H1 step IDs are resolved from the H1
-// parent instead and therefore never match a request ID.
+// Pre-allowlist direct writes prefixed it; an H1 step embeds its parent request
+// ID ("c:<requestId>:<step>:<scope>") and is therefore resolved back to it.
 func ConfigFieldRequestID(id string) string {
-	return strings.TrimPrefix(id, "retry-")
+	id = strings.TrimPrefix(id, "retry-")
+	parent, ok := strings.CutPrefix(id, "c:")
+	if !ok {
+		return id
+	}
+	// The step scope may contain dots but never a colon, so the third separator
+	// ends the request ID.
+	parts := strings.SplitN(parent, ":", 3)
+	if len(parts) != 3 || parts[0] == "" {
+		return id
+	}
+	return parts[0]
 }
 
 func operationRequestID(id string) string { return ConfigFieldRequestID(id) }

@@ -67,6 +67,16 @@ type fieldWire interface {
 	HasRuntimeJournal() bool
 }
 
+// h1Wire is the H1 handoff bookkeeping this service needs. The Runtime keeps the
+// durable parent; the coordinator only journals the Manager's side of it.
+type h1Wire interface {
+	Claim(context.Context, *cpa.Transport, cpa.H1Intent) (*cpa.H1Parent, error)
+	Begin(context.Context, *cpa.Transport, string, int) (cpa.H1Step, error)
+	Commit(context.Context, *cpa.Transport, string, int) (cpa.H1Step, error)
+	ParentRecord(context.Context, *cpa.Transport, string) (*cpa.H1Parent, error)
+	Finish(context.Context, *cpa.Transport, string, string) error
+}
+
 // Service serializes every field write in this process. Runtime remains the
 // cross-process arbiter: this mutex never pretends to be the Host lease.
 type Service struct {
@@ -74,7 +84,7 @@ type Service struct {
 	store     freshstore.Store
 	wire      fieldWire
 	transport *cpa.Transport
-	h1        *cpa.H1Coordinator
+	h1        h1Wire
 	target    func(context.Context, uint64) (string, error)
 }
 
@@ -156,12 +166,16 @@ func knownSource(r freshstore.Record, source cpa.ConfigFieldSource) bool {
 		return true
 	}
 	if source.OperationPath == "" {
-		return false
+		// A Key step on the H1 profile names no field; its ready-and-free handoff
+		// already proves the source, exactly as before the allowlist cutover.
+		return source.H1 && source.HandoffValid && source.ParentID == ""
 	}
 	journal := r.Config[source.OperationPath]
 	if journal == nil {
 		return false
 	}
+	// The last write may be an H1 step ID ("c:<requestId>:<step>:<scope>"); it
+	// still names the same journal request as the direct profile.
 	id := cpa.ConfigFieldRequestID(source.OperationID)
 	for requestID, operation := range journal.Operations {
 		if requestID == id && operation.SourceID == source.SourceID && operation.Generation == source.Generation &&

@@ -153,6 +153,16 @@ func (h *H1Coordinator) Parent(ctx context.Context, t *Transport, id string) (co
 	}
 	return v, nil
 }
+
+// ParentRecord returns the held H1 parent the handoff currently owns. It is the
+// exported shape a field service verifies its own journal against.
+func (h *H1Coordinator) ParentRecord(ctx context.Context, t *Transport, id string) (*H1Parent, error) {
+	v, e := h.Parent(ctx, t, id)
+	if e != nil {
+		return nil, e
+	}
+	return v.H1.Parent, nil
+}
 func (h *H1Coordinator) Begin(ctx context.Context, t *Transport, parent string, n int) (H1Step, error) {
 	v, e := h.Parent(ctx, t, parent)
 	if e != nil {

@@ -276,13 +276,15 @@ func (s *Service) reconcileH1(ctx context.Context, path string, operation freshs
 		return operation, err
 	}
 	if operation.State == "unknown" {
-		v, err := s.h1.Parent(ctx, s.transport, operation.ParentID)
+		p, err := s.h1.ParentRecord(ctx, s.transport, operation.ParentID)
 		if err != nil {
 			return operation, err
 		}
-		p := v.H1.Parent
+		if p == nil {
+			return operation, cpa.ErrApplyUnknown
+		}
 		intentPath, intentValue, ok := cpa.H1IntentField(p.Intent)
-		if p == nil || !ok || intentPath != path || !reflect.DeepEqual(intentValue, operation.Value) ||
+		if !ok || intentPath != path || !reflect.DeepEqual(intentValue, operation.Value) ||
 			p.SourceID != operation.SourceID || p.Generation != operation.Generation ||
 			p.ClaimSHA256 != operation.SHA256 || p.ClaimRevision != operation.ClaimRevision ||
 			cpa.H1Terminal(p.Intent) != operation.IntentDigest || p.Intent.RequestID != operation.RequestID {
