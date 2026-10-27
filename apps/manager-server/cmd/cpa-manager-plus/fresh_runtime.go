@@ -40,7 +40,6 @@ const (
 // Manager-local `unknown` result of a mutation whose response was lost.
 const (
 	freshRuntimeStateAccepted  = string(model.RuntimeOperationAccepted)
-	freshRuntimeStateRunning   = string(model.RuntimeOperationRunning)
 	freshRuntimeStateSucceeded = string(model.RuntimeOperationSucceeded)
 	freshRuntimeStateFailed    = string(model.RuntimeOperationFailed)
 	freshRuntimeStateUnknown   = "unknown"
@@ -551,8 +550,8 @@ func (a *freshApplication) submitRuntimeOperation(w http.ResponseWriter, r *http
 	now := time.Now().UTC()
 	reserved := freshRuntimeOperation{
 		RequestID: request.RequestID, Action: request.Action,
-		OperationID: "runtime-ui/v1:" + request.RequestID,
-		State:       freshRuntimeStateAccepted,
+		OperationID:     "runtime-ui/v1:" + request.RequestID,
+		State:           freshRuntimeStateAccepted,
 		RuntimeIdentity: string(observed.Identity), RuntimeGeneration: uint64(observed.Generation),
 		CreatedAt: now, UpdatedAt: now,
 	}
