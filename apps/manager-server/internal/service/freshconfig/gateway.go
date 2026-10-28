@@ -245,9 +245,10 @@ type Service struct {
 	managed  bool
 	endpoint string
 	// targets is the installation-profile discriminator of the authority this
-	// page writes through. It is the same function the key surface uses, so the
-	// page can never accept a checkpoint the key authority refuses. Nil means
-	// this service holds no installation authority at all.
+	// page writes through. It is the key authority's Targets bound to the
+	// gateway-configuration surface, so the page can never accept a checkpoint
+	// the key surface refuses. Nil means this service holds no installation
+	// authority at all.
 	targets func(bootstrap.FreshOperation) bool
 	// external resolves the Manager-configured connection of an External
 	// install. It is nil for every other profile.

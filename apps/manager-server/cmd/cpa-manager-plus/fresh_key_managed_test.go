@@ -262,7 +262,7 @@ func TestCompletedDefaultInstallOwnsKeyInstallAdmissionAndGatewayConfig(t *testi
 	if op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime {
 		t.Fatal("test installation reused the private attested identity")
 	}
-	if harness.app.keyApply == nil || !harness.app.keyApply.Targets(op) {
+	if harness.app.keyApply == nil || !harness.app.keyApply.Targets(op, freshkeyapply.SurfaceKeyInstall) {
 		t.Fatal("completed default install is not the key authority's installation")
 	}
 	if harness.app.keyApply.ManagedEndpoint() != harness.endpoint {
@@ -430,7 +430,7 @@ func TestKeySurfaceRefusesCheckpointsTheAuthorityDoesNotOwn(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if harness.app.keyApply.Targets(op) {
+			if harness.app.keyApply.Targets(op, freshkeyapply.SurfaceKeyInstall) {
 				t.Fatal("authority accepted a checkpoint it does not own")
 			}
 			if harness.app.keyOperationTarget(op) {
@@ -482,7 +482,12 @@ func TestKeySurfaceRefusesCheckpointsTheAuthorityDoesNotOwn(t *testing.T) {
 }
 
 // The explicit private H1/direct profile keeps its own authority selection: it
-// owns the attested private target and never the managed installation.
+// owns the attested private target and never the managed installation. The one
+// discriminator still restores each surface's pre-cutover contract, so the key
+// install, key operation and chat admission routes refuse a checkpoint that is
+// merely adopted even when it names the attested private identity; only the
+// private gateway page and field journal ever shipped without the managed
+// strategy.
 func TestPrivateProfileKeepsItsOwnAuthoritySelection(t *testing.T) {
 	t.Setenv("CPAMP_PRIVATE_S1_PERMIT", freshkeyapply.PermitPath)
 	dir := t.TempDir()
@@ -497,19 +502,41 @@ func TestPrivateProfileKeepsItsOwnAuthoritySelection(t *testing.T) {
 	if app.keyApply == nil {
 		t.Fatal("the private profile lost its key authority")
 	}
-	private := bootstrap.FreshOperation{Strategy: bootstrap.FreshStrategyCheckpoint{
+	committedPrivate := bootstrap.FreshOperation{Strategy: bootstrap.FreshStrategyCheckpoint{
+		Strategy: bootstrap.NewManaged, Stage: "committed",
+		TargetIdentity: cpa.PrivateKeyRuntime, TargetArtifactID: cpa.PrivateKeyArtifact, TargetGeneration: 3,
+	}}
+	adoptedPrivate := bootstrap.FreshOperation{Strategy: bootstrap.FreshStrategyCheckpoint{
 		Strategy: bootstrap.AdoptExisting, Stage: "committed",
 		TargetIdentity: cpa.PrivateKeyRuntime, TargetArtifactID: cpa.PrivateKeyArtifact, TargetGeneration: 3,
 	}}
-	if !app.keyApply.Targets(private) {
-		t.Fatal("the private profile no longer owns the attested private target")
-	}
 	managed := bootstrap.FreshOperation{Strategy: bootstrap.FreshStrategyCheckpoint{
 		Strategy: bootstrap.NewManaged, Stage: "committed",
 		TargetIdentity: "embedded-default", TargetGeneration: 7, TargetArtifactID: "sha256:" + strings.Repeat("a", 64),
 		DestinationConnectionIdentity: "managed:sha256:" + strings.Repeat("c", 64),
 	}}
-	if app.keyApply.Targets(managed) {
-		t.Fatal("the private profile accepted a managed installation")
+	// The committed private target is the private key authority on every surface.
+	for _, surface := range []freshkeyapply.Surface{
+		freshkeyapply.SurfaceKeyInstall, freshkeyapply.SurfaceKeyOperation,
+		freshkeyapply.SurfaceChatAdmission, freshkeyapply.SurfaceGatewayConfig,
+	} {
+		if !app.keyApply.Targets(committedPrivate, surface) {
+			t.Fatalf("the private profile no longer owns %s for the attested target", surface)
+		}
+		if app.keyApply.Targets(managed, surface) {
+			t.Fatalf("the private profile accepted a managed installation on %s", surface)
+		}
+	}
+	// An adopted checkpoint is not a key write path, exactly as before the
+	// single discriminator existed.
+	for _, surface := range []freshkeyapply.Surface{
+		freshkeyapply.SurfaceKeyInstall, freshkeyapply.SurfaceKeyOperation, freshkeyapply.SurfaceChatAdmission,
+	} {
+		if app.keyApply.Targets(adoptedPrivate, surface) {
+			t.Fatalf("%s accepted an adopted private checkpoint", surface)
+		}
+	}
+	if !app.keyApply.Targets(adoptedPrivate, freshkeyapply.SurfaceGatewayConfig) {
+		t.Fatal("the private page lost its adopted target scope")
 	}
 }

@@ -39,7 +39,7 @@ func (a *freshApplication) privateChatAdmission(w http.ResponseWriter, r *http.R
 		return
 	}
 	op, err := a.current(r.Context())
-	if err != nil || !a.keyApply.Targets(op) {
+	if err != nil || !a.keyApply.Targets(op, freshkeyapply.SurfaceChatAdmission) {
 		w.WriteHeader(503)
 		return
 	}

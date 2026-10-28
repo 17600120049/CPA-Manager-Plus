@@ -268,11 +268,18 @@ Key install, revoke, replace and retry configuration use this connection as
 the default authority. One profile discriminator decides that ownership:
 `freshkeyapply.Service.Targets` compares the committed checkpoint with the
 profile the Manager constructed — the managed destination for the default
-Compose install, the attested private target for the host-permit profile.
-Initial install, key revoke/replace, the private chat consumer and the gateway
-configuration page all ask that one function, so no surface can accept a
-checkpoint another refuses, and an adoption, External or uncommitted
-checkpoint is refused everywhere. `DefaultInstallCPAAuthorityProven` is the
+Compose install, the attested private target for the host-permit profile — and
+takes the asking surface as an argument, so each surface keeps the contract it
+shipped with instead of a second inline check. Initial install, key
+revoke/replace and the private chat consumer all ask it and refuse an adopted,
+External or uncommitted checkpoint. The gateway configuration page asks the
+same discriminator under its own surface: on a managed install it refuses the
+same checkpoints, while on a private host-permit install it keeps the attested
+private target scope its page and field journal shipped with, including an
+adopted checkpoint that names that target. On an External install the page still
+reads and writes its scalars from the committed External connection until the
+External authority moves that path under `Targets`; the key, admission and chat
+surfaces never do. `DefaultInstallCPAAuthorityProven` is the
 boolean admission predicate at
 `apps/manager-server/internal/service/freshkeyapply/config_target.go`; it
 requires the exact committed Runtime facts, managed CPA posture and at least

@@ -210,7 +210,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	h1Valid := h1Mode == "" || (h1Mode == "1" && os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1" && os.Getenv("CPAMP_PRIVATE_KEY_OPERATIONS") == "1")
 	if h1Valid && os.Getenv("CPAMP_PRIVATE_S1_PERMIT") == freshkeyapply.PermitPath && cfg.RuntimeURL == "http://127.0.0.1:9081" && cfg.CPAUpstreamURL == "http://127.0.0.1:8317" {
 		a.keyApply = freshkeyapply.New(a.keyRepo, a.keys, runtime)
-		a.gatewayConfig = freshconfig.New(st, a.keyApply.ConfigTarget, a.keyApply.Targets)
+		a.gatewayConfig = freshconfig.New(st, a.keyApply.ConfigTarget, a.keyApply.TargetsFunc(freshkeyapply.SurfaceGatewayConfig))
 		// The explicit private profile keeps its own host-supplied Collector
 		// authority. Managed and External installs never reach this branch and
 		// therefore never fall back to it.
@@ -232,7 +232,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		// the committed destination and the protected Manager connection.
 		a.managedSource = managedInstallSource(st, opened.Protector, cfg.CPAUpstreamURL)
 		a.keyApply = freshkeyapply.NewManaged(a.keyRepo, a.keys, runtime, cfg.CPAUpstreamURL, a.managedSource)
-		a.gatewayConfig = freshconfig.New(st, a.keyApply.ConfigTarget, a.keyApply.Targets)
+		a.gatewayConfig = freshconfig.New(st, a.keyApply.ConfigTarget, a.keyApply.TargetsFunc(freshkeyapply.SurfaceGatewayConfig))
 		// The destination address is the managed installation's own CPA, not the
 		// private loopback profile the default Transport dials.
 		a.gatewayConfig.EnableManaged(cfg.CPAUpstreamURL)

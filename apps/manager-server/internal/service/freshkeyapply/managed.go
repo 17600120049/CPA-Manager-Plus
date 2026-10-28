@@ -93,25 +93,66 @@ func (s *Service) ManagedEndpoint() string {
 	return s.endpoint
 }
 
+// Surface names the one canonical caller asking its installation question.
+// Every caller asks Targets about the same durable checkpoint, so no surface can
+// accept a state another one refuses; the name exists because the surfaces do
+// not all ship the same scope. The key surfaces have always acted only on a
+// committed managed-strategy checkpoint, while the gateway configuration page of
+// the private H1/direct scope predates that strategy and selects the attested
+// target alone. Naming the surface keeps each rule here, in the one
+// discriminator, instead of re-adding profile checks at every caller.
+type Surface string
+
+const (
+	// SurfaceKeyInstall is the initial Client Key install route.
+	SurfaceKeyInstall Surface = "key_install"
+	// SurfaceKeyOperation is the durable revoke/replace journal route.
+	SurfaceKeyOperation Surface = "key_operation"
+	// SurfaceChatAdmission is the private chat proof consumer.
+	SurfaceChatAdmission Surface = "chat_admission"
+	// SurfaceGatewayConfig is the gateway configuration page and its private
+	// field journal.
+	SurfaceGatewayConfig Surface = "gateway_config"
+)
+
 // Targets is the single installation-profile discriminator of the canonical
 // HTTP surface: key install, key operation, chat admission and the gateway
-// configuration page all ask this authority, so no caller can accept a
-// checkpoint another one refuses. The profile is read from durable checkpoint
-// facts, never from an environment variable or a request.
-func (s *Service) Targets(op bootstrap.FreshOperation) bool {
+// configuration page all ask this authority. The profile is read from durable
+// checkpoint facts, never from an environment variable or a request. An unknown
+// surface is answered by the strictest rule, never by the loosest.
+func (s *Service) Targets(op bootstrap.FreshOperation, surface Surface) bool {
 	if s == nil || op.Strategy.Stage != "committed" {
 		return false
 	}
 	switch s.profile {
 	case ProfileManaged:
+		// One install-derived authority: the committed managed destination is the
+		// credential's destination on every surface, so keys, admission and
+		// configuration share exactly one answer.
 		return op.Strategy.Strategy == bootstrap.NewManaged && strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:")
 	case ProfilePrivate:
-		// The private H1/direct profile names one attested runtime and artifact.
-		// Its scope predates the managed checkpoint and does not require the
-		// NewManaged strategy: the Host permit remains the write authority.
-		return op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID == cpa.PrivateKeyArtifact
+		// The private H1/direct profile names one attested runtime and artifact;
+		// the Host permit remains the write authority for whatever it names.
+		if op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
+			return false
+		}
+		if surface == SurfaceGatewayConfig {
+			// Its page and field journal shipped before the managed strategy and
+			// never required one: the attested target alone is their scope.
+			return true
+		}
+		// Key install, key operations and chat admission require the managed
+		// strategy as well; an adopted checkpoint is never a key write path here.
+		return op.Strategy.Strategy == bootstrap.NewManaged
 	}
 	return false
+}
+
+// TargetsFunc binds Targets to one canonical surface for a consumer that takes a
+// plain predicate, such as the gateway configuration page. The rule stays in
+// Targets: this only names which surface is asking.
+func (s *Service) TargetsFunc(surface Surface) func(bootstrap.FreshOperation) bool {
+	return func(op bootstrap.FreshOperation) bool { return s.Targets(op, surface) }
 }
 
 // managedKeyGrant derives the per-step authority for one durable key operation.

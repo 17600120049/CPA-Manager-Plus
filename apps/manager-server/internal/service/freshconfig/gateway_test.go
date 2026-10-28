@@ -15,14 +15,16 @@ import (
 
 // managedTargets is the page's own pin of the managed profile contract: a
 // committed NewManaged checkpoint bound to a managed destination. Production
-// passes the key authority's Targets here.
+// passes the key authority's Targets bound to the gateway surface here.
 func managedTargets(op bootstrap.FreshOperation) bool {
 	return op.Strategy.Strategy == bootstrap.NewManaged && op.Strategy.Stage == "committed" &&
 		strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:")
 }
 
 // privateTargets is the page's own pin of the private H1/direct contract: a
-// committed checkpoint naming the attested private runtime and artifact.
+// committed checkpoint naming the attested private runtime and artifact. This
+// page and its field journal predate the managed strategy, so they do not
+// require it; the key surfaces do.
 func privateTargets(op bootstrap.FreshOperation) bool {
 	return op.Strategy.Stage == "committed" &&
 		op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID == cpa.PrivateKeyArtifact

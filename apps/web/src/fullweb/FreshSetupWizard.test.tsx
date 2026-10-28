@@ -328,10 +328,32 @@ it('keeps an unverified CPA readiness refusal resumable instead of freezing the 
   expect(byID('setup-resume').props.disabled).toBe(false);
   expect(JSON.stringify(renderer.toJSON())).toContain('已保存的进度不会丢失');
   expect(renderer.root.findAllByProps({ 'data-testid': 'enter-console' })).toHaveLength(0);
+  const strategyBodies = () =>
+    transport.mock.calls
+      .filter(([url]) => String(url).endsWith('/strategy'))
+      .map(([, init]) => JSON.parse(String(init?.body)));
+  const [refusedBody] = strategyBodies();
+  expect(strategyBodies()).toHaveLength(1);
   await click('setup-resume');
   expect(byID('enter-console').props.href).toBe('/private');
   expect(
     transport.mock.calls.filter(([url]) => String(url).endsWith('/admin/commit'))
+  ).toHaveLength(1);
+  // The resume replays that exact request before it stages: same operation,
+  // same expected revision and the same fixed target, so the server derives the
+  // very same Stage/Start identity instead of a second Supervisor attempt.
+  const bodies = strategyBodies();
+  expect(bodies).toHaveLength(3); // refused, then staged and committed on resume
+  expect(bodies[1]).toEqual(refusedBody);
+  // Every resume body keeps the fixed target the refusal carried; only the
+  // expected revision advances with the checkpoint the stage recorded.
+  for (const body of bodies) {
+    expect(body.expectedRuntimeIdentity).toBe(refusedBody.expectedRuntimeIdentity);
+    expect(body.expectedRuntimeGeneration).toBe(refusedBody.expectedRuntimeGeneration);
+    expect(body.expectedArtifactId).toBe(refusedBody.expectedArtifactId);
+  }
+  expect(
+    transport.mock.calls.filter(([url]) => String(url).endsWith('/complete'))
   ).toHaveLength(1);
 });
 

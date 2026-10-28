@@ -8,10 +8,32 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 )
 
+// The canonical surfaces in the order Targets is asked about them.
+var canonicalSurfaces = []Surface{SurfaceKeyInstall, SurfaceKeyOperation, SurfaceChatAdmission, SurfaceGatewayConfig}
+
+// keySurfaces are the surfaces that only ever acted on the managed strategy, so
+// they keep that rule inside the one discriminator.
+var keySurfaces = []Surface{SurfaceKeyInstall, SurfaceKeyOperation, SurfaceChatAdmission}
+
+// operation wraps one checkpoint in the Fresh operation the surfaces ask about.
+func operation(checkpoint bootstrap.FreshStrategyCheckpoint) bootstrap.FreshOperation {
+	return bootstrap.FreshOperation{Strategy: checkpoint}
+}
+
+func sameAnswer(t *testing.T, service *Service, op bootstrap.FreshOperation, want bool, surfaces ...Surface) {
+	t.Helper()
+	for _, surface := range surfaces {
+		if got := service.Targets(op, surface); got != want {
+			t.Fatalf("Targets(%s) = %v, want %v", surface, got, want)
+		}
+	}
+}
+
 // Targets is the one profile discriminator the key install, the key operation,
 // the chat consumer and the gateway configuration page ask. A managed
-// installation owns exactly its committed managed destination; the private
-// profile owns exactly the attested private target it has always owned.
+// installation owns exactly its committed managed destination on every surface;
+// the private profile owns exactly the attested private target it has always
+// owned, and only its own page shipped without the managed strategy.
 func TestTargetsSelectsTheProfileOfTheService(t *testing.T) {
 	managedDestination := "managed:sha256:" + strings.Repeat("c", 64)
 	managedCheckpoint := bootstrap.FreshStrategyCheckpoint{
@@ -23,8 +45,9 @@ func TestTargetsSelectsTheProfileOfTheService(t *testing.T) {
 		Strategy: bootstrap.NewManaged, Stage: "committed",
 		TargetIdentity: cpa.PrivateKeyRuntime, TargetGeneration: 9, TargetArtifactID: cpa.PrivateKeyArtifact,
 	}
-	// The private H1/direct scope predates the managed checkpoint: its page and
-	// field journal accept an adopted checkpoint naming the same attested target.
+	// The private H1/direct page and field journal predate the managed
+	// checkpoint and select the attested target alone, so they still accept an
+	// adopted checkpoint naming it. The key surfaces never did.
 	adoptedPrivate := privateCheckpoint
 	adoptedPrivate.Strategy = bootstrap.AdoptExisting
 	externalCheckpoint := bootstrap.FreshStrategyCheckpoint{
@@ -49,29 +72,51 @@ func TestTargetsSelectsTheProfileOfTheService(t *testing.T) {
 		t.Fatalf("NewManaged profile = %q", managed.profile)
 	}
 	var nilService *Service
-	for _, test := range []struct {
-		name    string
-		service *Service
-		check   bootstrap.FreshStrategyCheckpoint
-		want    bool
-	}{
-		{"nil", nilService, managedCheckpoint, false},
-		{"managed owns the managed destination", managed, managedCheckpoint, true},
-		{"managed refuses the private target", managed, privateCheckpoint, false},
-		{"managed refuses an unbound checkpoint", managed, unboundManaged, false},
-		{"managed refuses a staged checkpoint", managed, stagedManaged, false},
-		{"managed refuses an external checkpoint", managed, externalCheckpoint, false},
-		{"private owns the attested target", private, privateCheckpoint, true},
-		{"private keeps its adopted target", private, adoptedPrivate, true},
-		{"private refuses a staged target", private, stagedPrivate, false},
-		{"private refuses a foreign artifact", private, wrongArtifact, false},
-		{"private refuses the managed destination", private, managedCheckpoint, false},
-		{"private refuses an external checkpoint", private, externalCheckpoint, false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if got := test.service.Targets(bootstrap.FreshOperation{Strategy: test.check}); got != test.want {
-				t.Fatalf("Targets = %v, want %v", got, test.want)
+	t.Run("nil", func(t *testing.T) {
+		for _, surface := range canonicalSurfaces {
+			if nilService.Targets(operation(managedCheckpoint), surface) {
+				t.Fatalf("nil service authorized %s", surface)
 			}
-		})
-	}
+		}
+	})
+	t.Run("managed owns the managed destination on every surface", func(t *testing.T) {
+		sameAnswer(t, managed, operation(managedCheckpoint), true, canonicalSurfaces...)
+	})
+	t.Run("managed refuses the private target", func(t *testing.T) {
+		sameAnswer(t, managed, operation(privateCheckpoint), false, canonicalSurfaces...)
+	})
+	t.Run("managed refuses an unbound checkpoint", func(t *testing.T) {
+		sameAnswer(t, managed, operation(unboundManaged), false, canonicalSurfaces...)
+	})
+	t.Run("managed refuses a staged checkpoint", func(t *testing.T) {
+		sameAnswer(t, managed, operation(stagedManaged), false, canonicalSurfaces...)
+	})
+	t.Run("managed refuses an external checkpoint", func(t *testing.T) {
+		sameAnswer(t, managed, operation(externalCheckpoint), false, canonicalSurfaces...)
+	})
+	t.Run("private owns the attested target on every surface", func(t *testing.T) {
+		sameAnswer(t, private, operation(privateCheckpoint), true, canonicalSurfaces...)
+	})
+	t.Run("private keeps its adopted target only on the gateway page", func(t *testing.T) {
+		sameAnswer(t, private, operation(adoptedPrivate), false, keySurfaces...)
+		sameAnswer(t, private, operation(adoptedPrivate), true, SurfaceGatewayConfig)
+	})
+	t.Run("private refuses a staged target", func(t *testing.T) {
+		sameAnswer(t, private, operation(stagedPrivate), false, canonicalSurfaces...)
+	})
+	t.Run("private refuses a foreign artifact", func(t *testing.T) {
+		sameAnswer(t, private, operation(wrongArtifact), false, canonicalSurfaces...)
+	})
+	t.Run("private refuses the managed destination", func(t *testing.T) {
+		sameAnswer(t, private, operation(managedCheckpoint), false, canonicalSurfaces...)
+	})
+	t.Run("private refuses an external checkpoint", func(t *testing.T) {
+		sameAnswer(t, private, operation(externalCheckpoint), false, canonicalSurfaces...)
+	})
+	t.Run("unknown surface is answered by the strictest rule", func(t *testing.T) {
+		if private.Targets(operation(adoptedPrivate), Surface("unrecognized")) {
+			t.Fatal("an unknown surface accepted an adopted private checkpoint")
+		}
+		sameAnswer(t, private, operation(privateCheckpoint), true, Surface("unrecognized"))
+	})
 }

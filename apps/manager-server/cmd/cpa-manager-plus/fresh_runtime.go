@@ -539,6 +539,14 @@ func (a *freshApplication) submitRuntimeOperation(w http.ResponseWriter, r *http
 		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "desired_lifecycle_unavailable")
 		return
 	}
+	// The desired lifecycle is the Runtime domain's own durable record. Unreadable
+	// bytes there lock only that domain, and the lock is decided before any
+	// Supervisor call: a mutation whose follow-up write can never be read back is
+	// refused instead of being performed and then reported as unknown.
+	if _, _, err := a.runtimeSettings.LoadEmbeddedRuntimeDesiredState(r.Context()); err != nil {
+		freshRuntimeOperationError(w, http.StatusServiceUnavailable, "desired_lifecycle_unavailable")
+		return
+	}
 	// One observation fences the submission and resolves abandoned journal
 	// entries, so no second Runtime call is needed.
 	observed, err := a.runtime.Status(r.Context())

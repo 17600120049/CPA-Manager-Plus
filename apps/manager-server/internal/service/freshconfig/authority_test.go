@@ -8,9 +8,10 @@ import (
 )
 
 // The page never decides for itself whether a checkpoint belongs to this
-// installation: it asks the installation authority the key surface asks, so a
-// default install whose managed destination the authority owns is writable and
-// anything else fails closed on the page as well.
+// installation: it asks the installation authority the key surface asks — the
+// same function, bound to this page's surface — so a default install whose
+// managed destination the authority owns is writable and anything else fails
+// closed on the page as well.
 func TestGatewayConfigPageAsksTheInstallationAuthority(t *testing.T) {
 	wire := &fakeWire{document: map[string]any{
 		"routing":  map[string]any{"retry": map[string]any{"request-retry": 3}},
