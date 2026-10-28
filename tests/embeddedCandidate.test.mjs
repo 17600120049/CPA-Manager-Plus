@@ -212,6 +212,11 @@ describe('Fresh New automated smoke contracts', () => {
     expect(smoke).toContain("parsed.port === '18317'");
     expect(smoke).toContain("'Ingress Gateway admits the installed Client Key'");
     expect(smoke).toContain("'gateway pending configuration'");
+    // F5 removed the keyless window: the post-completion path is keyed, so the
+    // script asserts 401 there and keeps Pending only as a genuine pre-admission
+    // and post-restart negative control.
+    expect(smoke).toContain("await closed('keyed');");
+    expect(smoke).toContain("await closed('pending');");
     expect(smoke).toContain(
       'an admitted Gateway must still have CPA reject a missing Client Key'
     );
