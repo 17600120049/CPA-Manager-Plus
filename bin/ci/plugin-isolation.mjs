@@ -94,7 +94,8 @@ async function expandNavGroups(page) {
 }
 
 async function navigateInApp(page, path) {
-  const target = `${consoleBase}${path}`;
+  // The dashboard is the Control base itself, not a child route.
+  const target = path === '/dashboard' ? consoleBase : `${consoleBase}${path}`;
   let link = page.locator(`.app-shell a.nav-item[href="${target}"]`).first();
   if ((await link.count()) === 0) {
     // Sidebar children only render once their group is open.
@@ -586,7 +587,8 @@ async function adminCspCheck(engineName, launcher) {
       await page.waitForLoadState('networkidle');
       // A sweep that silently stayed on one page would prove nothing, so each
       // step asserts it really landed where it asked to go.
-      assert.equal(landed.settled, `${consoleBase}${path}`, `sweep did not reach ${path}`);
+      const expected = path === '/dashboard' ? consoleBase : `${consoleBase}${path}`;
+      assert.equal(landed.settled, expected, `sweep did not reach ${path}`);
       visited.push(landed.settled);
       violations.push(
         ...(await page.evaluate(() => {
