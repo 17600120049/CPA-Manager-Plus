@@ -314,34 +314,36 @@ async function runEngine(engineName, launcher) {
     record(engineName, 'plugin fetches its own resource', 'PASS', ownFetch);
 
     // ---- Positive: the host theme arrives over postMessage ----------------
-    // The host posts the theme when the frame finishes a navigation, so a frame
-    // that already settled before this listener attached is reloaded once to
-    // make the host re-post. Only the host can produce this message.
-    const awaitTheme = () =>
-      frame.evaluate(
-        (type) =>
-          new Promise((settle) => {
-            const timer = setTimeout(() => settle(null), 8000);
-            addEventListener('message', (event) => {
-              const data = event.data;
-              if (data && data.type === type) {
-                clearTimeout(timer);
-                settle({
-                  version: data.version,
-                  themeAttribute: data.themeAttribute,
-                  variables: Object.keys(data.variables || {}).length,
-                });
-              }
-            });
-          }),
-        themeMessageType
+    // The host posts the theme as soon as the frame finishes a navigation, so a
+    // listener attached after the fact misses it. Record every message from
+    // document start instead, then reload the frame to make the host post again.
+    // Only the host can produce this message.
+    await page.addInitScript((type) => {
+      window.__cpampHostThemeMessages = [];
+      addEventListener('message', (event) => {
+        const data = event.data;
+        if (data && data.type === type) window.__cpampHostThemeMessages.push(data);
+      });
+    }, themeMessageType);
+    const readThemes = () =>
+      frame.evaluate(() =>
+        (window.__cpampHostThemeMessages || []).map((data) => ({
+          version: data.version,
+          themeAttribute: data.themeAttribute,
+          variables: Object.keys(data.variables || {}).length,
+        }))
       );
-    let theme = await awaitTheme();
-    if (!theme) {
-      await frame.goto(`${resourceBase}/probe`, { waitUntil: 'domcontentloaded' });
-      await frame.locator('#probe-ready').waitFor({ timeout: 60000 });
-      theme = await awaitTheme();
-    }
+    const waitForTheme = async () => {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const seen = await readThemes();
+        if (seen.length > 0) return seen[seen.length - 1];
+        await page.waitForTimeout(250);
+      }
+      return null;
+    };
+    await frame.goto(`${resourceBase}/probe`, { waitUntil: 'domcontentloaded' });
+    await frame.locator('#probe-ready').waitFor({ timeout: 60000 });
+    const theme = await waitForTheme();
     assert(theme, 'plugin never received the host theme postMessage');
     assert(
       theme.themeAttribute === 'dark' || theme.themeAttribute === 'white',
