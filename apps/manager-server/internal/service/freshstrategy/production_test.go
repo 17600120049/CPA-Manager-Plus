@@ -78,50 +78,50 @@ func TestProductionRecordContainsOnlyIndependentlyReviewedConsumers(t *testing.T
 	if record.ImplementationSHA256 != consumerImplementationSHA256() {
 		t.Fatal("compiled consumer digest mismatch")
 	}
+	// The retained independent review 65eb659a was granted against the v8.0.13
+	// artifact only. Reusing it for v8.0.45 would claim an acceptance that no
+	// reviewer made, so every consumer must be pending and carry no acceptance,
+	// applicability or limitations until the pre-Beta re-acceptance exists.
+	const staleReview = "65eb659a172c9075afeddc959a9ab825d208cc728487186cce2514dd8d27050a"
 	for _, item := range record.Consumers {
 		key := consumerKey{item.Strategy, item.SourceClass}
-		applicable, ok := requiredConsumerApplicability(key)
-		if item.Status != "accepted" || !ok || item.Applicability == nil || *item.Applicability != applicable ||
-			!sameLimitationSet(item.Limitations, requiredConsumerLimitations(key)) {
-			t.Fatalf("unaccepted or unenforced consumer %v", key)
+		if item.Status != "pending" || item.Applicability != nil || item.AcceptanceSHA256 != "" || len(item.Limitations) != 0 {
+			t.Fatalf("consumer %v is not a bare pending record: %+v", key, item)
 		}
-		if item.AcceptanceSHA256 == "" {
-			t.Fatalf("missing acceptance review %v", key)
+		if item.AcceptanceSHA256 == staleReview {
+			t.Fatalf("consumer %v reuses the v8.0.13 review", key)
 		}
-		if _, err := pinnedEvidence(productionEvidence, item.AcceptanceSHA256, ".md"); err != nil {
-			t.Fatal(err)
+		// The retained original r4 profile inputs stay bound: they are the
+		// historical evidence a future acceptance must judge, not authority.
+		profiles := requiredConsumerProfiles(key)
+		if len(item.Evidence) != len(profiles) {
+			t.Fatalf("consumer %v lost its retained profile inputs: %+v", key, item.Evidence)
+		}
+		for i, evidence := range item.Evidence {
+			if evidence.Profile != profiles[i] || evidence.ManifestSHA256 == "" || evidence.ReportSHA256 == "" ||
+				evidence.ImplementationHead == "" || len(evidence.CaseRefs) != 0 {
+				t.Fatalf("consumer %v retained input %d drifted: %+v", key, i, evidence)
+			}
 		}
 		loaded := consumers[key]
-		expected := bootstrap.CPAQualification{
-			ManagementGeneration:         bootstrap.CPAManagementGenerationV8,
-			ArtifactQualified:            item.Strategy == bootstrap.NewManaged,
-			RequiredProfileQualified:     item.Strategy != bootstrap.NewManaged,
-			StagingV8TransitionQualified: item.SourceClass == bootstrap.AdoptLegacyManaged,
+		if loaded.Qualification != (bootstrap.CPAQualification{ManagementGeneration: bootstrap.CPAManagementGenerationV8}) ||
+			loaded.ArtifactID != "" || len(loaded.AdoptionResources) != 0 {
+			t.Fatalf("pending consumer %v gained qualification: %+v", key, loaded)
 		}
-		if loaded.Qualification != expected {
-			t.Fatalf("qualification crossed consumer boundaries for %v: %+v", key, loaded.Qualification)
+		if loaded.Qualification.ValidateForStrategy(item.Strategy, item.SourceClass) == nil {
+			t.Fatalf("pending consumer %v validated as qualified", key)
 		}
-		if item.Strategy == bootstrap.NewManaged && (!loaded.Qualification.ArtifactQualified || loaded.ArtifactID != record.ArtifactID) {
-			t.Fatal("New Managed exact artifact not accepted")
+		if item.Strategy == bootstrap.AdoptExisting && len(item.Evidence) != 2 {
+			t.Fatalf("adoption consumer %v lost a retained profile", key)
 		}
-		if item.Strategy == bootstrap.ConnectExternal && !loaded.Qualification.RequiredProfileQualified {
-			t.Fatal("External safe read not accepted")
-		}
-		if item.Strategy == bootstrap.AdoptExisting && (!loaded.Qualification.RequiredProfileQualified || len(loaded.AdoptionResources) != 1 || loaded.ArtifactID != record.ArtifactID) {
-			t.Fatal("Adoption resource not independently accepted")
-		}
-		if item.SourceClass == bootstrap.AdoptLegacyManaged && !loaded.Qualification.StagingV8TransitionQualified {
-			t.Fatal("Legacy transition qualification not accepted")
-		}
-		if item.Strategy == bootstrap.AdoptExisting {
-			resource := loaded.AdoptionResources[0]
-			if resource.ResourceRef != "client-api-keys" || resource.Kind != bootstrap.APIKeys ||
-				resource.Scope != bootstrap.ClientAPIKeys || resource.Qualification != bootstrap.CapabilityQualified || resource.Disposition != bootstrap.Migrate {
-				t.Fatalf("unaccepted resource migration for %v: %+v", key, resource)
-			}
-		} else if len(loaded.AdoptionResources) != 0 || (item.Strategy == bootstrap.ConnectExternal && loaded.ArtifactID != "") {
-			t.Fatalf("source-only qualification gained destination authority for %v", key)
-		}
+	}
+	// The exact-artifact gate, not a missing profile, is what stops a fresh
+	// install on this branch. That blocker must stay typed and reachable.
+	service := NewProduction(Options{Runtime: &managedRuntime{}, InitialClientKey: installInitialClientKey()})
+	result, err := service.Execute(context.Background(), operation(), Request{Strategy: bootstrap.NewManaged})
+	var blocker *Blocker
+	if !errors.As(err, &blocker) || blocker.Code != "exact_v8_artifact_qualification_required" || result.Checkpoint.Strategy != "" || !result.GatewayPending {
+		t.Fatalf("pending new_managed is not fail-closed: %+v %v", result, err)
 	}
 }
 
