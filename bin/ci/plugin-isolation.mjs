@@ -55,6 +55,9 @@ function record(engine, name, result, detail) {
   console.log(`${result} ${engine} ${name}${detail === undefined ? '' : ' — ' + JSON.stringify(detail)}`);
 }
 
+// The one Console key that carries admin authority. Its value is reversible
+// obfuscation, which is exactly why the sandbox must make it unreachable.
+const ADMIN_STORAGE_KEY = 'cli-proxy-auth';
 const adminStorageKeys = [];
 const adminCookies = [];
 
@@ -496,10 +499,21 @@ async function runEngine(engineName, launcher) {
     record(engineName, 'plugin resource without Fetch Metadata is 403', 'PASS');
 
     // ---- The plugin must not have replaced the admin credential ----------
+    // Scoped to the credential itself. The Console also stores ordinary UI
+    // preferences (visual effects, theme) and rewrites them during normal
+    // navigation, so requiring every snapshot key to be unchanged would fail on
+    // the app's own behaviour rather than on a plugin escape.
+    const credentialKeys = adminStorageKeys.filter((entry) => entry.key === ADMIN_STORAGE_KEY);
+    assert(credentialKeys.length > 0, 'admin credential was never snapshotted');
     const state = await context.storageState();
-    const stored = JSON.stringify(state.origins.find((item) => item.origin === origin)?.localStorage ?? []);
-    for (const entry of adminStorageKeys) {
-      assert(stored.includes(entry.value), `admin storage ${entry.kind}/${entry.key} changed after plugin interaction`);
+    const local = state.origins.find((item) => item.origin === origin)?.localStorage ?? [];
+    const stored = new Map(local.map((entry) => [entry.name, entry.value]));
+    for (const entry of credentialKeys) {
+      assert.equal(
+        stored.get(entry.key),
+        entry.value,
+        `admin credential ${entry.kind}/${entry.key} changed after plugin interaction`
+      );
     }
     record(engineName, 'admin credential unchanged after plugin interaction', 'PASS');
 
