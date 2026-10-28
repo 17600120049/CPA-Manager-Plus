@@ -246,7 +246,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	// plugin namespace. A managed install owns that answer through its committed
 	// destination, and any other profile must prove it from CPA's own document.
 	if a.gatewayConfig != nil {
-		a.pluginCapability = newPluginCapabilityProbe(pluginCapabilityTTL, a.v8PluginCapable)
+		a.pluginCapability = newPluginCapabilityProbe(pluginCapabilityTTL, pluginCapabilityProbeTimeout, a.v8PluginCapable)
 	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers. The

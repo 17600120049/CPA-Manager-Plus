@@ -20,6 +20,11 @@ const supportPluginHeaderValue = "1"
 // short enough that a connection change is reflected within a page refresh.
 const pluginCapabilityTTL = 30 * time.Second
 
+// pluginCapabilityProbeTimeout bounds one background proof. It is the probe's own
+// deadline, not the caller's: a hung CPA makes the answer stale, never a request
+// slow.
+const pluginCapabilityProbeTimeout = 5 * time.Second
+
 // supportPluginHeaderApplies reports whether a response carries the plugin
 // support guarantee.
 //
@@ -32,6 +37,9 @@ const pluginCapabilityTTL = 30 * time.Second
 //   - plugin resources keep their opaque-origin sandbox contract and must not
 //     advertise management capability to plugin code;
 //   - the private internal namespaces are not part of any public contract;
+//   - liveness and readiness endpoints answer for the process, not for a Console
+//     page, and a monitor must never be the request that triggers a CPA round
+//     trip;
 //   - a failed response says nothing, because capability is only true when the
 //     Manager can actually answer for the saved connection.
 func supportPluginHeaderApplies(r *http.Request) bool {
@@ -40,6 +48,10 @@ func supportPluginHeaderApplies(r *http.Request) bool {
 	}
 	requestPath := r.URL.Path
 	if strings.HasPrefix(requestPath, "/internal/") {
+		return false
+	}
+	if requestPath == "/health" || requestPath == "/healthz" ||
+		requestPath == "/ready" || requestPath == "/readyz" {
 		return false
 	}
 	return !proxysvc.IsCPAPluginResourcePath(requestPath)
@@ -122,63 +134,105 @@ func pluginResourceRequest(r *http.Request) bool {
 }
 
 // pluginCapabilityProbe proves whether a saved connection can serve plugin
-// resources end to end. It answers with the CPA's own configuration document:
-// a v8 build exposes the plugin section there, and a connection that cannot
-// produce it cannot serve a plugin page either.
+// resources end to end. It answers with the CPA's own configuration document: a
+// v8 build exposes the plugin section there, and a connection that cannot produce
+// it cannot serve a plugin page either.
 //
-// The probe is not free, so it is cached for a short window and deduplicated;
-// the navigation needs a stable answer across the several reads one page load
-// performs, and a probe per read would put a CPA round trip behind every
-// Console request.
+// The probe is a network round trip to CPA, so it never runs on a request. A
+// read serves the last proven answer and, when that answer is stale, asks for a
+// background refresh and returns immediately. Three properties follow, and each
+// is what the previous synchronous version got wrong:
+//
+//   - a hung or slow CPA cannot stall a request. /health and every other routed
+//     response return on their own deadline, not the probe's;
+//   - a cancelled request cannot poison the answer, because the refresh runs on
+//     its own detached context with its own timeout rather than borrowing the
+//     caller's;
+//   - at most one refresh is in flight, so a burst of requests after expiry
+//     produces one CPA read rather than one per request.
+//
+// Until the first proof lands the answer is false. The navigation narrows rather
+// than advertising a capability that has not been demonstrated.
 type pluginCapabilityProbe struct {
-	mu      sync.Mutex
-	ttl     time.Duration
-	at      time.Time
-	proven  bool
-	probe   func(context.Context) bool
-	lastErr error
+	mu       sync.Mutex
+	ttl      time.Duration
+	timeout  time.Duration
+	at       time.Time
+	proven   bool
+	proving  bool
+	probe    func(context.Context) bool
+	now      func() time.Time
+	launch   func(func())
 }
 
-func newPluginCapabilityProbe(ttl time.Duration, probe func(context.Context) bool) *pluginCapabilityProbe {
-	return &pluginCapabilityProbe{ttl: ttl, probe: probe}
+func newPluginCapabilityProbe(ttl, timeout time.Duration, probe func(context.Context) bool) *pluginCapabilityProbe {
+	return &pluginCapabilityProbe{
+		ttl:     ttl,
+		timeout: timeout,
+		probe:   probe,
+		now:     time.Now,
+		launch:  func(refresh func()) { go refresh() },
+	}
 }
 
-// capable reports whether plugins are proven reachable on the saved connection.
-// A probe that has not answered yet is not proof, so the default is false: the
-// navigation must not advertise a capability the Manager cannot demonstrate.
-func (p *pluginCapabilityProbe) capable(ctx context.Context) bool {
+// capable reports the last proven answer and refreshes it in the background when
+// it is stale. It never blocks on the probe.
+func (p *pluginCapabilityProbe) capable(context.Context) bool {
 	if p == nil || p.probe == nil {
 		return false
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if !p.at.IsZero() && time.Since(p.at) < p.ttl {
-		return p.proven
+	proven := p.proven
+	stale := p.at.IsZero() || p.now().Sub(p.at) >= p.ttl
+	start := stale && !p.proving
+	if start {
+		p.proving = true
 	}
-	p.proven = p.probe(ctx)
-	p.at = time.Now()
-	return p.proven
+	p.mu.Unlock()
+	if start {
+		p.launch(p.refresh)
+	}
+	return proven
 }
 
-// forget drops a cached answer so the next read proves again. A profile change
-// (managed install committed, connection edited) must not inherit the previous
-// connection's answer.
+// refresh performs one proof and stores its answer. It is the single place the
+// probe is called, so the detached context and the timeout are impossible to
+// forget.
+func (p *pluginCapabilityProbe) refresh() {
+	ctx, cancel := context.WithTimeout(context.Background(), p.timeout)
+	defer cancel()
+	proven := false
+	defer func() {
+		// A panic in the probe must not leave proving set, which would stop every
+		// later refresh.
+		if recovered := recover(); recovered != nil {
+			proven = false
+		}
+		p.mu.Lock()
+		p.proven = proven
+		p.at = p.now()
+		p.proving = false
+		p.mu.Unlock()
+	}()
+	proven = p.probe(ctx)
+}
+
+// forget drops the stored answer and lets the next read prove again. A profile
+// change - a managed install committing, a connection being edited - must not
+// inherit the previous connection's answer.
 func (p *pluginCapabilityProbe) forget() {
 	if p == nil {
 		return
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.at = time.Time{}
 	p.proven = false
+	p.mu.Unlock()
 }
 
-// v8PluginCapable proves plugin support by reading the saved CPA's configuration
-// document and requiring the plugin section in it. That is the same document the
-// plugin switch writes, so a connection that cannot produce it cannot serve the
-// switch either.
+// v8PluginCapable runs one proof against the saved connection.
 func (a *freshApplication) v8PluginCapable(ctx context.Context) bool {
-	if a.gatewayConfig == nil {
+	if a == nil || a.gatewayConfig == nil {
 		return false
 	}
 	return a.gatewayConfig.SupportsPlugins(ctx)

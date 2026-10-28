@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -118,37 +120,95 @@ func TestSupportPluginHeaderRequiresProvenCapability(t *testing.T) {
 	}
 }
 
-// The probe only trusts a fresh answer, asks once per window, and forgets on
-// demand so a changed connection is not judged by the previous one's answer.
-func TestPluginCapabilityProbeCachesAndForgets(t *testing.T) {
-	answers := []bool{false, true}
-	calls := 0
-	probe := newPluginCapabilityProbe(time.Hour, func(context.Context) bool {
-		value := answers[min(calls, len(answers)-1)]
-		calls++
-		return value
+// A read never waits for the probe. The last answer is served immediately, the
+// refresh happens on the probe's own goroutine, and at most one refresh is in
+// flight so a burst after expiry is one CPA round trip.
+func TestPluginCapabilityProbeNeverBlocksTheReader(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, 4)
+	var calls atomic.Int32
+	probe := newPluginCapabilityProbe(time.Hour, time.Minute, func(context.Context) bool {
+		calls.Add(1)
+		started <- struct{}{}
+		<-release
+		return true
 	})
-	ctx := context.Background()
-	if probe.capable(ctx) {
-		t.Fatal("first answer should be false")
+	// Run the refresh inline so the test controls when it completes, instead of
+	// racing a goroutine.
+	probe.launch = func(refresh func()) { go refresh() }
+
+	readBack := make(chan bool, 1)
+	go func() { readBack <- probe.capable(context.Background()) }()
+	select {
+	case answer := <-readBack:
+		if answer {
+			t.Fatal("an unproven capability was reported")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("capable blocked on the probe")
 	}
-	// Cached: the second read must not ask again.
-	if calls != 1 {
-		t.Fatalf("probe calls = %d after one read", calls)
+	<-started // the single refresh is now in flight and held open
+
+	// A second read while the first refresh is stuck must also return at once,
+	// and must not start another proof.
+	for range 3 {
+		readBack := make(chan bool, 1)
+		go func() { readBack <- probe.capable(context.Background()) }()
+		select {
+		case <-readBack:
+		case <-time.After(2 * time.Second):
+			t.Fatal("a read blocked while a refresh was in flight")
+		}
 	}
-	if probe.capable(ctx) {
-		t.Fatal("cached answer should still be false")
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("probe calls = %d, want exactly 1 concurrent refresh", got)
 	}
-	if calls != 1 {
-		t.Fatalf("probe calls = %d after a cached read", calls)
+	close(release)
+	// Drain the completion so the cached answer is visible to the assertions.
+	for range 100 {
+		if probe.capable(context.Background()) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	probe.forget()
-	if !probe.capable(ctx) {
-		t.Fatal("forget should re-prove and see the new answer")
+	t.Fatal("the completed proof was never served")
+}
+
+// The refresh uses its own detached context with its own deadline, so a
+// cancelled caller neither cancels the proof nor caches its failure.
+func TestPluginCapabilityProbeIgnoresCallerCancellation(t *testing.T) {
+	var sawDeadline atomic.Bool
+	probe := newPluginCapabilityProbe(time.Hour, time.Minute, func(ctx context.Context) bool {
+		// The probe must be able to work even though the request that triggered it
+		// was cancelled.
+		if _, ok := ctx.Deadline(); ok {
+			sawDeadline.Store(true)
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+		}
+		time.Sleep(20 * time.Millisecond)
+		return !errors.Is(ctx.Err(), context.Canceled)
+	})
+	probe.launch = func(refresh func()) { go refresh() }
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if probe.capable(cancelled) {
+		t.Fatal("an unproven capability was reported")
 	}
-	if calls != 2 {
-		t.Fatalf("probe calls = %d after forget", calls)
+	for range 200 {
+		if probe.capable(context.Background()) {
+			if !sawDeadline.Load() {
+				t.Fatal("the probe ran without its own deadline")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
+	t.Fatal("a cancelled caller poisoned the cached answer")
 }
 
 // A probe with nothing to ask proves nothing: the default is not capable, so a
@@ -158,7 +218,80 @@ func TestPluginCapabilityProbeWithoutEvidenceIsNotCapable(t *testing.T) {
 	if unset.capable(context.Background()) {
 		t.Fatal("a nil probe claimed capability")
 	}
-	if newPluginCapabilityProbe(time.Hour, nil).capable(context.Background()) {
+	if newPluginCapabilityProbe(time.Hour, time.Minute, nil).capable(context.Background()) {
 		t.Fatal("a probe without evidence claimed capability")
+	}
+}
+
+// forget drops the stored answer so a changed connection is not judged by the
+// previous one.
+func TestPluginCapabilityProbeForgets(t *testing.T) {
+	var answer atomic.Bool
+	probe := newPluginCapabilityProbe(time.Hour, time.Minute, func(context.Context) bool {
+		return answer.Load()
+	})
+	// Run the refresh inline: a read then returns what was known before it, and
+	// the answer it produced is what the next read sees.
+	probe.launch = func(refresh func()) { refresh() }
+	if probe.capable(context.Background()) {
+		t.Fatal("first answer should be false")
+	}
+	answer.Store(true)
+	// Cached: still the old answer, and no new proof.
+	if probe.capable(context.Background()) {
+		t.Fatal("the cached answer changed without forget")
+	}
+	probe.forget()
+	// The first read after forget still reports the value known before it...
+	if probe.capable(context.Background()) {
+		t.Fatal("a read reported a proof it had not yet produced")
+	}
+	// ...and the next read observes the proof forget requested.
+	if !probe.capable(context.Background()) {
+		t.Fatal("forget did not re-prove")
+	}
+}
+
+// Liveness endpoints answer for the process, so they must not carry the plugin
+// capability header and must not be the request that triggers a proof.
+func TestSupportPluginHeaderExcludesLiveness(t *testing.T) {
+	for _, path := range []string{"/health", "/healthz", "/ready", "/readyz", "/internal/anything"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		if supportPluginHeaderApplies(request) {
+			t.Fatalf("%s carried the plugin capability header", path)
+		}
+	}
+	for _, path := range []string{"/console/api/v2/operation", "/login"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		if !supportPluginHeaderApplies(request) {
+			t.Fatalf("%s should carry the plugin capability header", path)
+		}
+	}
+}
+
+// A hung CPA must not stall a routed request: /health is answered without ever
+// consulting the probe, and a UI path returns on the last known answer.
+func TestHungCPADoesNotStallRequests(t *testing.T) {
+	hung := newPluginCapabilityProbe(time.Hour, time.Minute, func(ctx context.Context) bool {
+		<-ctx.Done()
+		return false
+	})
+	hung.launch = func(refresh func()) { go refresh() }
+
+	handler := withSupportPluginHeader(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), func(*http.Request) bool { return hung.capable(context.Background()) })
+
+	for _, path := range []string{"/health", "/console/api/v2/operation"} {
+		done := make(chan struct{})
+		go func() {
+			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s stalled on a hung CPA", path)
+		}
 	}
 }
