@@ -503,10 +503,15 @@ async function runEngine(engineName, launcher) {
         data: writeBody,
         failOnStatusCode: false,
       });
-      assert.equal(refused.status(), 405, `${method} on a plugin resource returned ${refused.status()}`);
-      // The refusal comes before any upstream call, so it carries no document.
+      // The Ingress edge denies before the Manager is reached, and it answers a
+      // denial with 404 so the edge does not confirm which paths exist. Either
+      // refusal is correct; what must not happen is the write being served.
+      assert(
+        refused.status() === 404 || refused.status() === 405,
+        `${method} on a plugin resource returned ${refused.status()}`
+      );
       const body = await refused.text();
-      assert.equal(body, '', `${method} refusal leaked a body: ${body.slice(0, 80)}`);
+      assert(!body.includes('probe-root'), `${method} was served the plugin document: ${body.slice(0, 80)}`);
       record(engineName, `${method} on a plugin resource is 405`, 'PASS', { status: refused.status() });
     }
 
@@ -519,7 +524,7 @@ async function runEngine(engineName, launcher) {
       failOnStatusCode: false,
     });
     assert(
-      writeWithoutMetadata.status() === 405 || writeWithoutMetadata.status() === 403,
+      [403, 404, 405].includes(writeWithoutMetadata.status()),
       `write without Fetch Metadata returned ${writeWithoutMetadata.status()}`
     );
     record(engineName, 'write without Fetch Metadata is refused', 'PASS', {
