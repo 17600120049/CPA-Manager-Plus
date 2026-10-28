@@ -7,10 +7,12 @@ import (
 	"testing"
 )
 
-// TestGatewayPathTableCoversAcceptedInventory pins the accepted r3 scope: 39
-// writable leaves across 11 page groups plus 5 whole-family rule lists.
+// TestGatewayPathTableCoversAcceptedInventory pins the accepted r3 scope plus the
+// one plugin leaf a default install owns: 40 writable leaves across 12 page
+// groups plus 5 whole-family rule lists. `plugins.dir` is deliberately absent —
+// the Supervisor owns the plugin root and no page may repoint it.
 func TestGatewayPathTableCoversAcceptedInventory(t *testing.T) {
-	if len(gatewayLeaves) != 39 {
+	if len(gatewayLeaves) != 40 {
 		t.Fatalf("leaf count %d", len(gatewayLeaves))
 	}
 	if len(ConfigLeafPaths()) != len(gatewayLeaves) {
@@ -38,7 +40,7 @@ func TestGatewayPathTableCoversAcceptedInventory(t *testing.T) {
 	if len(seen) != len(gatewayLeaves) {
 		t.Fatalf("groups cover %d of %d leaves", len(seen), len(gatewayLeaves))
 	}
-	if got := len(ConfigGroupIDs()); got != 11 {
+	if got := len(ConfigGroupIDs()); got != 12 {
 		t.Fatalf("group count %d", got)
 	}
 	if got := len(ConfigRuleFamilyPaths()); got != 5 {

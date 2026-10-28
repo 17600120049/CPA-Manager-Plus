@@ -148,6 +148,12 @@ var gatewayLeaves = []ConfigLeaf{
 	{Path: "upstream.claude.header-defaults.stabilize-device-profile", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "headers"},
 
 	{Path: "upstream.xai.inject-x-search", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "xai"},
+
+	// The plugin switch is the one plugin setting a default install owns. It is a
+	// boolean CPA persists as `plugins.enabled` (internal/config/config_types.go:29,
+	// v8.0.13). The plugin directory is NEVER a leaf: the Supervisor owns it, and a
+	// page that could repoint plugin discovery would be a native-code path.
+	{Path: "plugins.enabled", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: "plugins"},
 }
 
 // imageModeValues is the v8.0.13 accepted spelling of disable-image-generation
@@ -219,6 +225,7 @@ var gatewayGroups = []ConfigGroup{
 		"upstream.claude.header-defaults.timezone", "upstream.claude.header-defaults.stabilize-device-profile",
 	}},
 	{ID: "xai", Prefix: "upstream.xai", Leaves: []string{"upstream.xai.inject-x-search"}},
+	{ID: "plugins", Prefix: "plugins", Leaves: []string{"plugins.enabled"}},
 }
 
 var (
