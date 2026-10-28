@@ -514,7 +514,7 @@ func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
 	harness := newExternalHarness(t)
 	ctx := context.Background()
 	applied, appliedSecret := harness.staged(t, strings.Repeat("e", 32))
-	pending, pendingSecret := harness.staged(t, strings.Repeat("f", 32))
+	_, pendingSecret := harness.staged(t, strings.Repeat("f", 32))
 	if _, err := harness.service.Apply(ctx, applied, 1); err != nil {
 		t.Fatal(err)
 	}
@@ -556,10 +556,6 @@ func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
 	if err != nil || unverified || len(same) != len(keys) {
 		t.Fatalf("non-external list = %d unverified=%v %v", len(same), unverified, err)
 	}
-	if string(pending) == "" {
-		t.Fatal("pending key missing")
-	}
-	_ = pending
 }
 
 func mustID(t *testing.T, raw string) identity.APIKeyID {

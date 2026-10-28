@@ -13,6 +13,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
@@ -149,16 +150,13 @@ func TestExternalAuthorityReportsAMovedTarget(t *testing.T) {
 	}
 }
 
-// TestExternalKeyListNeverReadsACPAForAnotherProfile proves the list read-back is
-// gated on the External discriminator. A Fresh application without a committed
-// External checkpoint stages keys exactly as before: it must answer 200 with the
-// staged keys, not fail because there is no CPA to read.
-func TestExternalKeyListNeverReadsACPAForAnotherProfile(t *testing.T) {
+// TestExternalKeyListWithoutACommittedCheckpointNeedsNoCPA proves the list read-back
+// is gated on the committed External checkpoint. A Fresh application that has not
+// committed one stages keys exactly as before: it answers 200 with the staged keys
+// instead of failing because there is no CPA to read.
+func TestExternalKeyListWithoutACommittedCheckpointNeedsNoCPA(t *testing.T) {
 	app, closeApp := newA3TestApp(t)
 	t.Cleanup(closeApp)
-	if app.keyApply.Profile() != freshkeyapply.ProfileExternal {
-		t.Fatalf("profile = %q", app.keyApply.Profile())
-	}
 	created := app.keyApplyKeys(t, strings.Repeat("a", 32))
 	request := httptest.NewRequest(http.MethodGet, "/control/api/v2/api-keys", nil)
 	request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
@@ -281,5 +279,88 @@ func TestExternalKeyListRouteAnswersWithoutACPA(t *testing.T) {
 	app2.canonicalAPI(response, request)
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), freshconfig.ReasonManagementRejected) {
 		t.Fatalf("list on a refused credential = %d %s", response.Code, response.Body.String())
+	}
+}
+
+// staticStore answers one record. The production source's refusals are about what
+// the committed record says, so the store's own validation must not be the thing
+// under test.
+type staticStore struct{ record freshstore.Record }
+
+func (s staticStore) Load(context.Context) (freshstore.Record, error) { return s.record, nil }
+func (s staticStore) Create(context.Context, bootstrap.FreshIdentity, *model.AdminCredential) (freshstore.Record, error) {
+	return freshstore.Record{}, errors.New("unsupported")
+}
+func (s staticStore) Update(context.Context, bootstrap.FreshIdentity, uint64, func(*freshstore.Record) error) (freshstore.Record, error) {
+	return freshstore.Record{}, errors.New("unsupported")
+}
+
+// TestExternalInstallSourceFailsClosed proves the production source resolves a
+// target only from a completed External installation with an intact protected
+// credential: an incomplete product, another stage or strategy, a missing
+// connection, a tampered envelope and a generation of zero are all refused, and a
+// credential shape the Connect External rule rejects is refused too.
+func TestExternalInstallSourceFailsClosed(t *testing.T) {
+	protector, err := security.NewProtector([]byte("external-source-test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const management = "short-key-2024"
+	protected, err := protector.ProtectString(management)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A well-formed envelope this Manager's data key cannot open: the exact state a
+	// tampered ciphertext leaves behind.
+	foreign, err := security.NewProtector([]byte("another-data-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered, err := foreign.ProtectString(management)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := func() freshstore.Record {
+		return freshstore.Record{
+			Operation: bootstrap.FreshOperation{
+				Strategy: bootstrap.FreshStrategyCheckpoint{
+					Strategy: bootstrap.ConnectExternal, Stage: "committed",
+					TargetIdentity: freshkeyapply.ExternalIdentity("https://cpa.test"), TargetGeneration: 1,
+				},
+				ProductComplete: true,
+			},
+			Connection: &model.ManagerCPAConnectionConfig{CPABaseURL: "https://cpa.test", ManagementKey: protected},
+		}
+	}
+	install, err := externalInstallSource(staticStore{record()}, protector)(t.Context())
+	if err != nil {
+		t.Fatalf("a completed installation was refused: %v", err)
+	}
+	if install.BaseURL != "https://cpa.test" || install.ManagementKey != management || install.Checkpoint != 1 {
+		t.Fatalf("resolved %+v", install)
+	}
+	for _, scenario := range []struct {
+		name  string
+		edit  func(*freshstore.Record)
+		cause error
+	}{
+		{"product incomplete", func(r *freshstore.Record) { r.Operation.ProductComplete = false }, freshkeyapply.ErrUnavailable},
+		{"stage not committed", func(r *freshstore.Record) { r.Operation.Strategy.Stage = "validated" }, freshkeyapply.ErrUnavailable},
+		{"another strategy", func(r *freshstore.Record) { r.Operation.Strategy.Strategy = bootstrap.NewManaged }, freshkeyapply.ErrUnavailable},
+		{"no connection", func(r *freshstore.Record) { r.Connection = nil }, freshkeyapply.ErrUnavailable},
+		{"tampered credential", func(r *freshstore.Record) { r.Connection.ManagementKey = tampered }, freshkeyapply.ErrUnavailable},
+		{"no generation", func(r *freshstore.Record) { r.Operation.Strategy.TargetGeneration = 0 }, freshkeyapply.ErrUnavailable},
+		{"no address", func(r *freshstore.Record) { r.Connection.CPABaseURL = "" }, freshkeyapply.ErrUnavailable},
+		{"moved target", func(r *freshstore.Record) {
+			r.Operation.Strategy.TargetIdentity = freshkeyapply.ExternalIdentity("https://other.test")
+		}, cpa.ErrExternalTargetMoved},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			subject := record()
+			scenario.edit(&subject)
+			if _, err := externalInstallSource(staticStore{subject}, protector)(t.Context()); !errors.Is(err, scenario.cause) {
+				t.Fatalf("%s = %v, want %v", scenario.name, err, scenario.cause)
+			}
+		})
 	}
 }

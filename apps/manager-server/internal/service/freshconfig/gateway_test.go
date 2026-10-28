@@ -14,21 +14,19 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 )
 
-// managedTargets is the page's own pin of the managed profile contract: a
-// committed NewManaged checkpoint bound to a managed destination. Production
-// passes the key authority's Targets bound to the gateway surface here.
-func managedTargets(op bootstrap.FreshOperation) bool {
-	return op.Strategy.Strategy == bootstrap.NewManaged && op.Strategy.Stage == "committed" &&
-		strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:")
+// privateTargets is the same binding for the private H1/direct profile, whose page
+// and field journal predate the managed strategy and select the attested target
+// alone.
+func privateTargets(op bootstrap.FreshOperation) bool {
+	return freshkeyapply.New(nil, nil, nil).TargetsFunc(freshkeyapply.SurfaceGatewayConfig)(op)
 }
 
-// privateTargets is the page's own pin of the private H1/direct contract: a
-// committed checkpoint naming the attested private runtime and artifact. This
-// page and its field journal predate the managed strategy, so they do not
-// require it; the key surfaces do.
-func privateTargets(op bootstrap.FreshOperation) bool {
-	return op.Strategy.Stage == "committed" &&
-		op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID == cpa.PrivateKeyArtifact
+// managedTargets is the profile rule production wires into the page: the key
+// authority's own discriminator bound to the gateway surface. A stub here would
+// let the page pass its tests against a contract no installation enforces.
+func managedTargets(op bootstrap.FreshOperation) bool {
+	return freshkeyapply.NewManaged(nil, nil, nil, "http://127.0.0.1:8317", nil).
+		TargetsFunc(freshkeyapply.SurfaceGatewayConfig)(op)
 }
 
 // memoryStore is the Fresh CAS in miniature: one record, one revision, and the
@@ -570,9 +568,7 @@ func TestExternalProfileWritesScalarsAndRefusesRuleFamilies(t *testing.T) {
 	})
 	// The page asks the one discriminator; an External checkpoint naming this
 	// installation's connection is what its own authority answers for.
-	service.targets = func(op bootstrap.FreshOperation) bool {
-		return op.Strategy.Strategy == bootstrap.ConnectExternal && op.Strategy.Stage == "committed"
-	}
+	service.targets = externalTargets()
 	service.externalWire = func(string) configWire { return wire }
 	view, err := service.Read(context.Background())
 	if err != nil {
@@ -782,9 +778,7 @@ func TestExternalProfileRefusesAnAuthorityItCannotResolve(t *testing.T) {
 	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
 		return "", "", cpa.ErrProofUnavailable
 	})
-	service.targets = func(op bootstrap.FreshOperation) bool {
-		return op.Strategy.Strategy == bootstrap.ConnectExternal && op.Strategy.Stage == "committed"
-	}
+	service.targets = externalTargets()
 	service.externalWire = func(string) configWire { return wire }
 	view, err := service.Read(context.Background())
 	if err != nil {
@@ -803,9 +797,6 @@ func TestExternalProfileRefusesAnAuthorityItCannotResolve(t *testing.T) {
 // authority: only rebinding the connection resolves it, so the page must not
 // offer a retry.
 func TestExternalProfileReportsARejectedManagementKey(t *testing.T) {
-	if ReasonManagementRejected != "external_management_key_rejected" {
-		t.Fatalf("reason code = %q", ReasonManagementRejected)
-	}
 	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"strategy": "round-robin"}}}
 	store := &memoryStore{record: managedRecord()}
 	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
@@ -817,9 +808,7 @@ func TestExternalProfileReportsARejectedManagementKey(t *testing.T) {
 	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
 		return "", "", cpa.ErrManagementRejected
 	})
-	service.targets = func(op bootstrap.FreshOperation) bool {
-		return op.Strategy.Strategy == bootstrap.ConnectExternal && op.Strategy.Stage == "committed"
-	}
+	service.targets = externalTargets()
 	service.externalWire = func(string) configWire { return wire }
 	view, err := service.Read(context.Background())
 	if err != nil {
