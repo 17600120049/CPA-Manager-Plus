@@ -53,6 +53,7 @@ const key = {
   runtimeState: 'not_applied',
   name: '',
   nameRevision: 1,
+  origin: 'workspace' as const,
 };
 describe('Canonical key detail and rename', () => {
   let renderer: ReactTestRenderer;

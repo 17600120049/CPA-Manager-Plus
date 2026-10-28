@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
@@ -81,7 +82,25 @@ type Options struct {
 	QualifiedArtifactID model.RuntimeArtifactID
 	AdoptionResources   []bootstrap.AdoptionResourceDecision
 	DestinationBaseURL  string
+	// InitialClientKey replays or mints the single Client Key the installation
+	// persists before its destination exists. CPA v8 disables client
+	// authentication when the key list is empty, so the default install must
+	// always stage exactly this key.
+	InitialClientKey InitialClientKeySource
 }
+
+// InitialClientKey is the canonical Client Key of the default installation.
+// The secret never leaves the install path: it is sealed into the protected
+// destination snapshot, and the canonical record remains the only durable copy.
+type InitialClientKey struct {
+	KeyID  string
+	Secret string
+}
+
+// InitialClientKeySource is idempotent for one Fresh operation and runtime
+// generation: a resume, retry or restart replays the same canonical Key and
+// never mints a second credential.
+type InitialClientKeySource func(context.Context, bootstrap.FreshOperation, uint64) (InitialClientKey, error)
 
 type Service struct {
 	options    Options
@@ -122,6 +141,10 @@ type Result struct {
 	GatewayPending     bool                              `json:"gatewayPending"`
 	SourcePreserved    bool                              `json:"sourcePreserved"`
 	AdoptionCiphertext string                            `json:"-"`
+	// InitialClientKey is the install-generated plaintext, returned only by the
+	// call that commits the destination so the completion screen can show it
+	// once. It is never journaled, logged or stored in the browser.
+	InitialClientKey string `json:"-"`
 }
 
 // Execute requires an authenticated, loaded current operation. NewManaged first
@@ -182,9 +205,18 @@ func ManagedDestinationIdentity(baseURL string) string {
 // without touching Runtime. The caller must CAS the returned ciphertext before
 // invoking Execute; operationIDSuffix is stable across retries and therefore
 // also names the Supervisor journal entry.
-func (s *Service) managedDestinationSnapshot(op bootstrap.FreshOperation, status model.RuntimeObservedStatus, stage string, bindIdentity bool, operationIDSuffix string, pluginsEnabled bool) (bootstrap.FreshStrategyCheckpoint, string, error) {
+func (s *Service) managedDestinationSnapshot(ctx context.Context, op bootstrap.FreshOperation, status model.RuntimeObservedStatus, stage string, bindIdentity bool, operationIDSuffix string, pluginsEnabled bool) (bootstrap.FreshStrategyCheckpoint, string, error) {
 	if s.options.Protector == nil || s.options.DestinationBaseURL == "" {
 		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "managed_destination_connection_unavailable"}
+	}
+	// The canonical Client Key is persisted before the destination is described,
+	// let alone staged: CPA must never start with client authentication off.
+	if s.options.InitialClientKey == nil {
+		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "managed_initial_client_key_unavailable"}
+	}
+	initial, err := s.options.InitialClientKey(ctx, op, uint64(status.Generation))
+	if _, keyErr := identity.ParseAPIKeyID(initial.KeyID); err != nil || keyErr != nil || !model.ValidInitialClientKey(initial.Secret) {
+		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "managed_initial_client_key_unavailable"}
 	}
 	baseURL, err := cpa.NormalizeV8BaseURL(s.options.DestinationBaseURL)
 	if err != nil {
@@ -195,7 +227,10 @@ func (s *Service) managedDestinationSnapshot(op bootstrap.FreshOperation, status
 		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "management_secret_storage_unavailable"}
 	}
 	managementKey := hex.EncodeToString(keyBytes)
-	destination := model.RuntimeDestinationRequest{OperationID: string(op.Identity.OperationID) + ":" + operationIDSuffix, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: status.ActiveGatewayArtifact.ArtifactID, SourceIdentity: ManagedDestinationIdentity(string(op.Identity.OperationID)), SourceClass: "new_managed", APIKeys: []string{}, ManagementKey: managementKey, PluginsEnabled: pluginsEnabled}
+	// The destination carries both the install's first Client Key - CPA must never
+	// start with client authentication off - and the plugin opt-in the wizard
+	// recorded.
+	destination := model.RuntimeDestinationRequest{OperationID: string(op.Identity.OperationID) + ":" + operationIDSuffix, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: status.ActiveGatewayArtifact.ArtifactID, SourceIdentity: ManagedDestinationIdentity(string(op.Identity.OperationID)), SourceClass: "new_managed", APIKeys: []string{initial.Secret}, ManagementKey: managementKey, PluginsEnabled: pluginsEnabled}
 	data, err := json.Marshal(managedDestinationSnapshot{Destination: destination, BaseURL: baseURL})
 	if err != nil {
 		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "management_secret_storage_unavailable"}
@@ -239,7 +274,7 @@ func (s *Service) PrepareManagedMigration(ctx context.Context, op bootstrap.Fres
 	if !status.Capabilities.Supports(model.RuntimeCapabilityStageDestination) || !status.Capabilities.Supports(model.RuntimeCapabilityStart) {
 		return result, &Blocker{Code: "managed_target_staging_required"}
 	}
-	checkpoint, ciphertext, err := s.managedDestinationSnapshot(op, status, "committed", false, "managed-migration-destination", op.Strategy.PluginsEnabled)
+	checkpoint, ciphertext, err := s.managedDestinationSnapshot(ctx, op, status, "committed", false, "managed-migration-destination", op.Strategy.PluginsEnabled)
 	if err != nil {
 		return result, err
 	}
@@ -269,7 +304,7 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 	checkpoint := op.Strategy
 	if checkpoint.Strategy == "" {
 		var snapshotCiphertext string
-		checkpoint, snapshotCiphertext, err = s.managedDestinationSnapshot(op, status, "staged", true, "managed-destination", request.PluginsEnabled)
+		checkpoint, snapshotCiphertext, err = s.managedDestinationSnapshot(ctx, op, status, "staged", true, "managed-destination", request.PluginsEnabled)
 		if err != nil {
 			return result, err
 		}
@@ -360,6 +395,9 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 	}
 	result.Connection = &ProtectedConnection{BaseURL: snapshot.BaseURL, ManagementKeyCiphertext: ciphertext}
 	result.Checkpoint.Stage = "committed"
+	// Delivered exactly once: this call commits the destination, and the
+	// completed replay returns the checkpoint without the plaintext.
+	result.InitialClientKey = snapshot.Destination.APIKeys[0]
 	return result, nil
 }
 

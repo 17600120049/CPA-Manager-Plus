@@ -40,9 +40,33 @@ type DestinationRequest struct {
 }
 
 // SourceClassNewManaged is the default Fresh New Managed installation. It has
-// no external source: its identity is the hashed Fresh operation and it never
-// carries client keys. Keys are installed later through the management API.
+// no external source: its identity is the hashed Fresh operation. It carries
+// exactly the single Client Key the Manager generated and persisted before
+// staging this destination, because CPA v8 treats an empty client-key list as
+// "client authentication disabled" and would publish the model API to every
+// peer that can reach the child listener.
 const SourceClassNewManaged = "new_managed"
+
+// initialClientKeyLength is the length of the Manager's install-generated
+// Client Key ("sk-" followed by 64 [A-Za-z0-9] characters), the same shape
+// v1.x installations were seeded with.
+const initialClientKeyLength = 3 + 64
+
+// validInitialClientKey reports whether key is the install-generated Client Key
+// the Manager itself persists as a canonical Key. Any other value is refused:
+// the Supervisor cannot distinguish a Manager-provided key from a caller-chosen
+// one, so only this exact shape is admitted for new_managed.
+func validInitialClientKey(key string) bool {
+	if len(key) != initialClientKeyLength || !strings.HasPrefix(key, "sk-") {
+		return false
+	}
+	for _, character := range key[3:] {
+		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z') {
+			return false
+		}
+	}
+	return true
+}
 
 // ErrGatewayAuthPresent refuses to replace a bootstrap Gateway whose auth
 // directory still holds provider logins the new destination would orphan.
@@ -54,7 +78,7 @@ func (r DestinationRequest) Validate() error {
 	case "network_existing", "legacy_managed":
 	case SourceClassNewManaged:
 		prefix = "managed:sha256:"
-		if len(r.APIKeys) != 0 {
+		if len(r.APIKeys) != 1 || !validInitialClientKey(r.APIKeys[0]) {
 			return ErrInvalidRequest
 		}
 	default:

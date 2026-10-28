@@ -185,7 +185,8 @@ describe('Fresh New automated smoke contracts', () => {
 
   it('asserts the CPA data layer and Gateway admission as hard requirements', () => {
     expect(smoke).toContain("'/console/api/v2/cpamp/v0/management/auth-files'");
-    expect(smoke).toMatch(/api-keys\/' \+ createdKey\.key\.id \+ '\/initial-install'/);
+    expect(smoke).toMatch(/api-keys\/' \+ installKeyRecord\.id \+ '\/initial-install'/);
+    expect(smoke).toMatch(/api-keys\/' \+ installKeyRecord\.id \+ '\/secret'/);
     expect(smoke).toContain(
       "process.env.CPAMP_SMOKE_MODEL_TARGET || 'http://cpamp-runtime:8317'"
     );
@@ -200,17 +201,22 @@ describe('Fresh New automated smoke contracts', () => {
     expect(smoke).toContain(
       'cpamp/ bridge must read CPA /auth-files through the committed managed authority'
     );
-    expect(smoke).toContain('Client Key initial install must configure the managed CPA');
+    expect(smoke).toContain('Client Key initial install must observe the managed CPA');
     // The model-request check proves Client Key authentication only.
     expect(smoke).toContain(
       "'CPA authenticates the installed Client Key on a model request (non-401)'"
     );
     expect(smoke).toContain('Real Provider model success');
-    // Ingress admits an installed Client Key and keeps the zero-key negative
-    // control closed; the probe origin is still reported.
+    // Ingress admits the installation Client Key and keeps the pre-admission
+    // negative control closed; the probe origin is still reported.
     expect(smoke).toContain("parsed.port === '18317'");
     expect(smoke).toContain("'Ingress Gateway admits the installed Client Key'");
     expect(smoke).toContain("'gateway pending configuration'");
+    // F5 removed the keyless window: the post-completion path is keyed, so the
+    // script asserts 401 there and keeps Pending only as a genuine pre-admission
+    // and post-restart negative control.
+    expect(smoke).toContain("await closed('keyed');");
+    expect(smoke).toContain("await closed('pending');");
     expect(smoke).toContain(
       'an admitted Gateway must still have CPA reject a missing Client Key'
     );

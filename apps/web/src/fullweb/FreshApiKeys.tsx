@@ -9,7 +9,7 @@ import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { FreshKeyDetails } from './FreshKeyDetails';
 import { FreshKeyRevocation } from './FreshKeyRevocation';
 import { parseUsageSummary, usageCountText, usageCoveragePill, usageReasonText, usageStateText, usageTimeText, type UsageSummary } from './freshKeyUsage';
-import { validKey, type Key } from './freshKeyMetadata';
+import { keyDisplayName, maskedPreviewOf, validKey, type Key } from './freshKeyMetadata';
 
 export function FreshApiKeys({
   client,
@@ -194,8 +194,8 @@ export function FreshApiKeys({
         !validKey(result.key) ||
         result.key.requestId !== requestId ||
         (result.createdSecret !== undefined &&
-          (!/^cpamp_sk_[a-f0-9]{64}$/.test(result.createdSecret) ||
-            result.key.maskedPreview !== 'cpamp_sk_…' + result.createdSecret.slice(-4)))
+          (maskedPreviewOf(result.createdSecret) === '' ||
+            result.key.maskedPreview !== maskedPreviewOf(result.createdSecret)))
       )
         throw new Error();
       setKeys((previous) => [
@@ -392,7 +392,7 @@ export function FreshApiKeys({
     (key) =>
       (filter === 'all' || (filter === 'replaced') === (key.lifecycle === 'superseded')) &&
       (!query ||
-        [key.name, key.maskedPreview, key.id].some((value) =>
+        [keyDisplayName(key, k('installerOrigin'), t('keysUnnamed')), key.maskedPreview, key.id].some((value) =>
           value.toLocaleLowerCase().includes(query)
         ))
   );
@@ -850,7 +850,7 @@ export function FreshApiKeys({
                               disabled={locked}
                               onClick={() => setSelected(key.id)}
                             >
-                              {key.name || t('keysUnnamed')}
+                              {keyDisplayName(key, k('installerOrigin'), t('keysUnnamed'))}
                             </button>
                             <small title={key.id}>
                               <code>{key.maskedPreview}</code>
@@ -890,7 +890,7 @@ export function FreshApiKeys({
                           </button>
                           {revocationAvailable && key.lifecycle !== 'superseded' && (
                             <DropdownMenu
-                              ariaLabel={k('moreActions') + ': ' + (key.name || t('keysUnnamed'))}
+                              ariaLabel={k('moreActions') + ': ' + keyDisplayName(key, k('installerOrigin'), t('keysUnnamed'))}
                               triggerLabel="⋮"
                               triggerClassName="btn btn-ghost btn-xs"
                               disabled={locked || operationPending}

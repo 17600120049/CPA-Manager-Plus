@@ -52,7 +52,7 @@ func newRetryFixture(t *testing.T) *retryFixture {
 	}))
 	t.Cleanup(server.Close)
 	app := newFreshApplication(opened, config.Config{}, nil)
-	app.strategy = freshstrategy.New(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: server.URL,
+	app.strategy = freshstrategy.New(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: server.URL, InitialClientKey: installTestClientKey,
 		Qualification: bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true}, QualifiedArtifactID: artifact})
 	request := freshstrategy.Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "runtime", ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact}
 	record, err := app.store.Load(ctx)

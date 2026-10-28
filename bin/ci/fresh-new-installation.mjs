@@ -397,6 +397,58 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
     'takeover /health must carry the Manager service identity'
   );
   pass('Fresh takeover /health is 200 with the Manager service identity');
+  // Two distinct Gateway states, both hard requirements:
+  // - `pending`: the Fresh install is not admitted yet, so Ingress answers every
+  //   path and credential with the Pending placeholder;
+  // - `keyed`: admission is granted and CPA owns client authentication, so every
+  //   path refuses an anonymous or unknown credential with 401 instead. F5
+  //   removed the keyless window, so 503 on the keyed path is now a regression.
+  const gatewayPaths = [
+    '/v1/models',
+    '/v1/chat/completions',
+    '/v1/responses',
+    '/v1/messages',
+    '/v1beta/models',
+  ];
+  const closed = async (state = 'keyed') => {
+    for (const path of gatewayPaths) {
+      for (const key of ['', 'incorrect-client-key']) {
+        const response = await fetch(origin + path, {
+          method: path.includes('models') ? 'GET' : 'POST',
+          headers: key ? { Authorization: 'Bearer ' + key } : {},
+        });
+        const body = (await response.text()).trim();
+        if (state === 'pending') {
+          assert.equal(response.status, 503, 'an unadmitted Gateway must answer 503: ' + path);
+          assert.equal(body, 'gateway pending configuration');
+        } else {
+          assert.notEqual(
+            body,
+            'gateway pending configuration',
+            'the Gateway must not still be Pending after completion: ' + path
+          );
+          assert.equal(
+            response.status,
+            401,
+            'an admitted key-protected Gateway must refuse ' +
+              (key || 'an anonymous credential') +
+              ': ' +
+              path +
+              ' -> ' +
+              response.status +
+              ' ' +
+              body
+          );
+        }
+      }
+    }
+  };
+  // Genuine pre-completion negative control: the Fresh install is claimed but no
+  // destination has been described yet, so no Gateway path may forward at all.
+  await closed('pending');
+  pass(
+    'before any installation submission: all tested Gateway paths remain Pending on every credential'
+  );
   const wizardIdle = (label) =>
     wait(
       async () =>
@@ -433,9 +485,18 @@ c=sqlite3.connect('/data/usage.sqlite');v=json.loads(c.execute("select value fro
     assert.equal(response.status(), 200);
     await route.abort('failed'); // Real server committed; response lost to browser.
   });
+  // Capture the reply that commits the destination: it is the single delivery of
+  // the installer Client Key. A committed replay must never repeat it.
+  const committingReplies = [];
   await page.route('**' + api + 'strategy', async (route) => {
     strategyWrites++;
-    await route.continue();
+    const response = await route.fetch();
+    committingReplies.push({
+      status: response.status(),
+      body: await response.text(),
+      cacheControl: response.headers()['cache-control'] || '',
+    });
+    await route.fulfill({ response });
   });
   // The pre-submission read must succeed; the recovery read that follows the
   // lost commit reply is the one that is also lost.
@@ -791,25 +852,13 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
       value.includes(adminKey)
     ), admin);
   assert.equal(storedSecrets, false);
-  const closed = async () => {
-    for (const path of [
-      '/v1/models',
-      '/v1/chat/completions',
-      '/v1/responses',
-      '/v1/messages',
-      '/v1beta/models',
-    ]) {
-      for (const key of ['', 'incorrect-client-key']) {
-        const response = await fetch(origin + path, {
-          method: path.includes('models') ? 'GET' : 'POST',
-          headers: key ? { Authorization: 'Bearer ' + key } : {},
-        });
-        assert.equal(response.status, 503);
-        assert.equal((await response.text()).trim(), 'gateway pending configuration');
-      }
-    }
-  };
-  await closed();
+  // Completion admitted the destination and it was staged with its installer
+  // Client Key, so every Gateway path now refuses an anonymous or unknown
+  // credential instead of answering the Pending placeholder.
+  await closed('keyed');
+  pass(
+    'after completion: all tested Gateway paths refuse an anonymous or unknown credential with 401 instead of staying Pending'
+  );
   // The committed default Managed destination binds CPA to the Compose network,
   // so an anonymous peer is expected to reach the model API and be rejected with
   // 401. 'unreachable' only means the peer could not open the connection at all;
@@ -845,7 +894,7 @@ except OSError:print('unreachable')`,
   );
   report.peerCPA = peerVerdict;
   pass(
-    'zero Client Keys: all tested Gateway paths remain Pending; anonymous peer cannot read CPA'
+    'the anonymous Compose peer cannot read the key-protected CPA model API'
   );
   // Data layer: the installed deployment must read real CPA management data,
   // install one Client Key and have CPA authenticate it. The committed default
@@ -876,22 +925,131 @@ except OSError:print('unreachable')`,
   recordDataLayer('cpamp resource bridge reads CPA /auth-files', 'PASS', {
     files: authFiles.files.length,
   });
-  const createdKeyResponse = await fetch(origin + '/console/api/v2/api-keys', {
+  // The installation minted exactly one Client Key and staged the destination
+  // with it, so CPA starts with client authentication on. The list proves that
+  // canonical record exists; the on-demand secret read is the only way to get
+  // the plaintext back.
+  const listResponse = await fetch(origin + '/console/api/v2/api-keys', {
+    headers: adminHeaders,
+  });
+  assert.equal(listResponse.status, 200, 'the Client Key list must be readable');
+  const listed = await listResponse.json();
+  assert(Array.isArray(listed.keys), 'Client Key list payload must be a list of keys');
+  const installKeyRecord = listed.keys.find((key) => key.origin === 'installer');
+  assert(installKeyRecord, 'the installation must own exactly one installer Client Key');
+  assert.equal(
+    listed.keys.filter((key) => key.origin === 'installer').length,
+    1,
+    'the installation must own exactly one installer Client Key'
+  );
+  assert.match(installKeyRecord.maskedPreview, /^sk-…[A-Za-z0-9]{4}$/);
+  assert(!('createdSecret' in installKeyRecord), 'the list must never carry a plaintext key');
+  const secretResponse = await fetch(
+    origin + '/console/api/v2/api-keys/' + installKeyRecord.id + '/secret',
+    {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: '{}',
+    }
+  );
+  const secretBody = await secretResponse.text();
+  assert.equal(
+    secretResponse.status,
+    200,
+    'the on-demand Client Key read must return the install secret: ' +
+      secretResponse.status +
+      ' ' +
+      secretBody.trim()
+  );
+  assert.equal(secretResponse.headers.get('cache-control'), 'no-store');
+  const installKey = JSON.parse(secretBody).secret;
+  assert.match(installKey, /^sk-[A-Za-z0-9]{64}$/);
+  assert.equal(installKeyRecord.maskedPreview, 'sk-…' + installKey.slice(-4));
+  secretValues.push(installKey);
+  // The committing strategy reply is the single browser delivery of this key.
+  // It must carry it with the canonical shape, be uncacheable, and no replay of
+  // the committed operation may repeat it.
+  const committing = committingReplies.filter((reply) => reply.status === 200);
+  assert(
+    committing.length >= 1,
+    'the installation must have one successful committing strategy reply'
+  );
+  const parseReply = (reply) => {
+    try {
+      return JSON.parse(reply.body);
+    } catch {
+      return {};
+    }
+  };
+  const committingKeys = committing.map((reply) => parseReply(reply).initialClientKey).filter(Boolean);
+  assert.equal(
+    committingKeys.length,
+    1,
+    'exactly one strategy reply may carry the installer Client Key, saw ' + committingKeys.length
+  );
+  assert.match(committingKeys[0], /^sk-[A-Za-z0-9]{64}$/);
+  assert.equal(
+    committingKeys[0],
+    installKey,
+    'the committing reply and the on-demand read must return the same key'
+  );
+  assert(
+    committing.some(
+      (reply) => reply.body.includes(committingKeys[0]) && reply.cacheControl === 'no-store'
+    ),
+    'the reply carrying the installer Client Key must be Cache-Control: no-store'
+  );
+  // The committed operation replays in place: same identity, same revision and
+  // the Runtime facts its own checkpoint recorded. The fixed Bootstrap carrier is
+  // retired once routing commits, so the replay is issued on the canonical
+  // Console API with the Admin credential.
+  const committed = parseReply(committing.find((reply) => parseReply(reply).initialClientKey));
+  assert.equal(committed.strategy.stage, 'committed', 'the committing reply must be committed');
+  // Completion advances the revision, so the replay uses the operation's current
+  // revision and the Runtime facts its own committed checkpoint recorded. The
+  // 64-bit generation is read as text: it exceeds Number.MAX_SAFE_INTEGER, and a
+  // round-trip through a JavaScript number would corrupt it.
+  const currentRaw = await (
+    await fetch(origin + '/console/api/v2/operation', { headers: adminHeaders })
+  ).text();
+  const current = JSON.parse(currentRaw);
+  const targetGeneration = currentRaw.match(/"targetGeneration"\s*:\s*([0-9]+)/)[1];
+  assert.equal(current.strategy.stage, 'committed');
+  const replayed = await fetch(origin + '/console/api/v2/strategy', {
     method: 'POST',
     headers: { ...adminHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId: randomBytes(16).toString('hex') }),
+    body: JSON.stringify({
+      identity: current.identity,
+      expectedRevision: current.revision,
+      strategy: 'new_managed',
+      expectedRuntimeIdentity: current.strategy.targetIdentity,
+      // Splice the exact digits so the 64-bit value is never re-encoded.
+      expectedRuntimeGeneration: '#GENERATION#',
+      expectedArtifactId: current.strategy.targetArtifactId,
+    }).replace('"#GENERATION#"', targetGeneration),
   });
+  const replayedBody = await replayed.text();
   assert.equal(
-    createdKeyResponse.status,
-    201,
-    'a Fresh Client Key must be created with a one-time secret'
+    replayed.status,
+    200,
+    'a committed strategy replay must return the checkpoint: ' +
+      replayed.status +
+      ' ' +
+      replayedBody.trim()
   );
-  const createdKey = await createdKeyResponse.json();
-  assert.match(createdKey.createdSecret, /^cpamp_sk_[a-f0-9]{64}$/);
-  assert.equal(createdKey.key.maskedPreview, 'cpamp_sk_…' + createdKey.createdSecret.slice(-4));
-  secretValues.push(createdKey.createdSecret);
+  assert.equal(JSON.parse(replayedBody).strategy.stage, 'committed');
+  assert(
+    !replayedBody.includes(installKey) && !replayedBody.includes('initialClientKey'),
+    'a committed strategy replay must not repeat the installer Client Key: ' + replayedBody.trim()
+  );
+  recordDataLayer('committing strategy reply carries the installer Client Key once', 'PASS', {
+    committingReplies: committing.length,
+    cacheControl: 'no-store',
+    replayRepeated: false,
+  });
+  // The install route observes that already-installed key and writes nothing.
   const installKeyResponse = await fetch(
-    origin + '/console/api/v2/api-keys/' + createdKey.key.id + '/initial-install',
+    origin + '/console/api/v2/api-keys/' + installKeyRecord.id + '/initial-install',
     {
       method: 'POST',
       headers: { ...adminHeaders, 'Content-Type': 'application/json' },
@@ -902,7 +1060,7 @@ except OSError:print('unreachable')`,
   assert.equal(
     installKeyResponse.status,
     200,
-    'Client Key initial install must configure the managed CPA: ' +
+    'Client Key initial install must observe the managed CPA: ' +
       installKeyResponse.status +
       ' ' +
       installKeyBody.trim()
@@ -915,9 +1073,27 @@ except OSError:print('unreachable')`,
     'installed Client Key records the durable attempt'
   );
   assert.equal(installedState.cpaConfigured, true, 'installed Client Key is configured in CPA');
-  recordDataLayer('Client Key installed into CPA', 'PASS', {
+  assert.equal(installedState.installAvailable, false, 'no second initial install remains');
+  recordDataLayer('installation Client Key installed in CPA', 'PASS', {
     runtimeState: installedState.runtimeState,
   });
+  // A key created later can never consume that single install journal, and CPA
+  // already has a non-empty client set, so a second install is refused.
+  const createdKeyResponse = await fetch(origin + '/console/api/v2/api-keys', {
+    method: 'POST',
+    headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId: randomBytes(16).toString('hex') }),
+  });
+  assert.equal(
+    createdKeyResponse.status,
+    201,
+    'a Fresh workspace Client Key must be created with a one-time secret'
+  );
+  const createdKey = await createdKeyResponse.json();
+  assert.match(createdKey.createdSecret, /^cpamp_sk_[a-f0-9]{64}$/);
+  assert.equal(createdKey.key.maskedPreview, 'cpamp_sk_…' + createdKey.createdSecret.slice(-4));
+  assert.equal(createdKey.key.origin, 'workspace');
+  secretValues.push(createdKey.createdSecret);
   // CPA acceptance is proven where this deployment publishes CPA: the Compose
   // network (CPAMP_SMOKE_MODEL_TARGET default) or the Ingress Gateway, which
   // admits an installed Client Key once Manager proves the default Managed
@@ -964,29 +1140,31 @@ except OSError:print('unreachable')`;
     // answer 500/503, so this must never be reported as a real model success.
     'CPA authenticates the installed Client Key on a model request (non-401)',
   ];
-  const accepted = cpaProbe(modelsProbe, createdKey.createdSecret);
+  const accepted = cpaProbe(modelsProbe, installKey);
   assert.equal(accepted, '200', 'installed Client Key must read the CPA model API: ' + accepted);
   recordDataLayer(cpaChecks[0], 'PASS', { status: 200 });
   const rejected = cpaProbe(modelsProbe, 'cpamp_sk_' + '0'.repeat(64));
   assert.equal(rejected, '401', 'unknown Client Key must be rejected: ' + rejected);
   recordDataLayer(cpaChecks[1], 'PASS', { status: 401 });
-  const modelStatus = cpaProbe(chatProbe, createdKey.createdSecret);
+  const modelStatus = cpaProbe(chatProbe, installKey);
   assert(
     /^[1-5][0-9]{2}$/.test(modelStatus) && modelStatus !== '401',
     'CPA must authenticate the installed Client Key on one model request: ' + modelStatus
   );
   recordDataLayer(cpaChecks[2], 'PASS', { status: Number(modelStatus) });
-  // The Ingress Gateway admits the installed Client Key once Manager proves the
-  // default Managed authority; the zero-key phase above stays the negative
+  // The Ingress Gateway admits the installation key once Manager proves the
+  // default Managed authority. The pre-completion read stays the negative
   // control. Ingress re-reads Manager within 1s after a negative answer, so the
-  // first request after the install may still observe the Pending placeholder.
+  // first request right after completion may still observe the Pending
+  // placeholder. The destination never starts keyless, so CPA rejects the
+  // anonymous call whether or not admission has already been granted.
   const admitted = async (label) => {
     let status = 0;
     await wait(async () => {
       const response = await fetch(origin + '/v1/chat/completions', {
         method: 'POST',
         headers: {
-          Authorization: 'Bearer ' + createdKey.createdSecret,
+          Authorization: 'Bearer ' + installKey,
           'Content-Type': 'application/json',
         },
         body: '{}',
@@ -1031,7 +1209,7 @@ except OSError:print('unreachable')`;
   // Manager's predicate pins the recorded identity, generation and artifact and
   // never rebinds on its own. The Gateway must therefore stay closed instead of
   // serving the installed Client Key from a stale admission.
-  await closed();
+  await closed('pending');
   // Runtime process generation changes across restart. Observe it but never
   // silently bind the original completed strategy to this new generation.
   const restartedStatusJSON = run(
@@ -1137,7 +1315,9 @@ print('ready')`;
     'ready'
   );
   assert.deepEqual(await adminGet('operation'), before);
-  await closed();
+  // The new generation is not the one admission pinned, so the Gateway is Pending
+  // again until a completion binds this generation.
+  await closed('pending');
   pass(
     'explicit Host lifecycle Start restores the new Runtime generation without rewriting installation provenance'
   );

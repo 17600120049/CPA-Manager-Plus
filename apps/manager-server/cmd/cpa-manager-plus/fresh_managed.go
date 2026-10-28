@@ -45,7 +45,7 @@ func managedInstallSource(store freshstore.Store, protector *security.Protector,
 			return freshkeyapply.ManagedInstall{}, freshkeyapply.ErrUnavailable
 		}
 		return freshkeyapply.ManagedInstall{
-			RunID:         "managed:" + string(record.Operation.Identity.OperationID),
+			RunID:         freshkeyapply.ManagedRunID(string(record.Operation.Identity.OperationID)),
 			Generation:    strconv.FormatUint(checkpoint.TargetGeneration, 10),
 			Identity:      checkpoint.TargetIdentity,
 			ArtifactID:    checkpoint.TargetArtifactID,
@@ -53,4 +53,20 @@ func managedInstallSource(store freshstore.Store, protector *security.Protector,
 			ManagementKey: key,
 		}, nil
 	}
+}
+
+// installInitialClientKey persists the default installation's Client Key before
+// its destination exists, so the destination is never staged for a CPA that
+// would start with client authentication disabled. The strategy and the key
+// authority replay the same canonical Key and the same initial-install journal
+// on every resume.
+func (a *freshApplication) installInitialClientKey(ctx context.Context, op bootstrap.FreshOperation, generation uint64) (freshstrategy.InitialClientKey, error) {
+	if a == nil || a.keyApply == nil {
+		return freshstrategy.InitialClientKey{}, freshkeyapply.ErrUnavailable
+	}
+	key, err := a.keyApply.EnsureInitialInstall(ctx, freshkeyapply.ManagedRunID(string(op.Identity.OperationID)), generation)
+	if err != nil {
+		return freshstrategy.InitialClientKey{}, err
+	}
+	return freshstrategy.InitialClientKey{KeyID: string(key.ID), Secret: key.Secret}, nil
 }

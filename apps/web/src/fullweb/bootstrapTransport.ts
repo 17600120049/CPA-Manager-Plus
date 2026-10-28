@@ -574,11 +574,13 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
       canonicalBase = verified;
       return verified;
     },
-    async executeStrategy(body: Record<string, unknown>): Promise<FreshOperation> {
+    async executeStrategy(
+      body: Record<string, unknown>
+    ): Promise<{ operation: FreshOperation; initialClientKey: string }> {
       if (!operation?.adminInitialized) {
         throw new BootstrapTransportError('Installation authority unavailable', 'authority');
       }
-      const next = await request<FreshOperation>('strategy', {
+      const next = await request<FreshOperation & { initialClientKey?: unknown }>('strategy', {
         ...body,
         identity: operation.identity,
         expectedRevision: operation.revision,
@@ -589,8 +591,20 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
       ) {
         throw new BootstrapTransportError('Installation response unavailable', 'mismatch');
       }
+      // The install-generated Client Key is delivered by the call that commits a
+      // New Managed destination and never by a replay. It stays in memory only.
+      const delivered = next.initialClientKey;
+      if (
+        delivered !== undefined &&
+        (typeof delivered !== 'string' ||
+          !/^sk-[A-Za-z0-9]{64}$/.test(delivered) ||
+          next.strategy?.strategy !== 'new_managed' ||
+          next.strategy.stage !== 'committed')
+      ) {
+        throw new BootstrapTransportError('Installation response unavailable', 'mismatch');
+      }
       operation = next;
-      return next;
+      return { operation: next, initialClientKey: delivered ?? '' };
     },
     async complete(): Promise<FreshOperation> {
       if (!canonicalBase || !operation?.adminInitialized) {

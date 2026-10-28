@@ -3,7 +3,7 @@ import { fullWebText as t } from '../i18n/fullweb';
 import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
 import { FullWebIcon } from './FullWebIcon';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
-import type { Key } from './freshKeyMetadata';
+import { keyDisplayName, type Key } from './freshKeyMetadata';
 import { Modal } from '../components/ui/Modal';
 
 interface Operation {
@@ -299,7 +299,7 @@ export function FreshKeyRevocation({
       {preset && (
         <div className="key-operation-resource">
           <strong>
-            {available.find((key) => key.id === preset.targetId)?.name || t('keysUnnamed')}
+            {(() => { const key = available.find((item) => item.id === preset.targetId); return key ? keyDisplayName(key, k('installerOrigin'), t('keysUnnamed')) : t('keysUnnamed'); })()}
           </strong>
           <code>{available.find((key) => key.id === preset.targetId)?.maskedPreview}</code>
         </div>
@@ -382,9 +382,9 @@ export function FreshKeyRevocation({
                   onChange={(e) => setTarget(e.target.value)}
                 >
                   <option value="">{t('keysOperationSelect')}</option>
-                  {available.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.name || t('keysUnnamed')} — {k.maskedPreview} ({k.id})
+                  {available.map((key) => (
+                    <option key={key.id} value={key.id}>
+                      {keyDisplayName(key, k('installerOrigin'), t('keysUnnamed'))} — {key.maskedPreview} ({key.id})
                     </option>
                   ))}
                 </select>
@@ -400,10 +400,10 @@ export function FreshKeyRevocation({
                 >
                   <option value="">{t('keysOperationSelect')}</option>
                   {available
-                    .filter((k) => k.id !== target)
-                    .map((k) => (
-                      <option key={k.id} value={k.id}>
-                        {k.name || t('keysUnnamed')} — {k.maskedPreview} ({k.id})
+                    .filter((key) => key.id !== target)
+                    .map((key) => (
+                      <option key={key.id} value={key.id}>
+                        {keyDisplayName(key, k('installerOrigin'), t('keysUnnamed'))} — {key.maskedPreview} ({key.id})
                       </option>
                     ))}
                 </select>

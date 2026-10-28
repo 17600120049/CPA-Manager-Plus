@@ -701,7 +701,7 @@ func TestLoadedArtifactUsesExistingExactRuntimeFence(t *testing.T) {
 	}
 	runtime, baseURL, protector, _ := managedDestinationFixture(t)
 	runtime.status.ActiveGatewayArtifact.ArtifactID = record.ArtifactID
-	service := &Service{options: Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL}, production: true, consumers: consumers}
+	service := &Service{options: Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, InitialClientKey: installInitialClientKey()}, production: true, consumers: consumers}
 	op := operation()
 	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: runtime.status.Generation, ExpectedArtifactID: record.ArtifactID}
 	staged, err := service.Execute(context.Background(), op, request)

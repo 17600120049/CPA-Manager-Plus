@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 )
 
 type KeySnapshot struct {
@@ -42,8 +44,10 @@ func (t *Transport) KeySnapshot(ctx context.Context, management string) (KeySnap
 	if json.Unmarshal(root["access"], &access) != nil || len(access) != 1 || json.Unmarshal(access["api-keys"], &result.Keys) != nil || len(result.Keys) < 1 || len(result.Keys) > 2 {
 		return result, ErrSourceConflict
 	}
+	// A default installation starts with the install-generated key, so both
+	// canonical shapes are legitimate projections of this destination.
 	for i, key := range result.Keys {
-		if len(key) != 73 || key[:9] != "cpamp_sk_" || !validHex(key[9:]) || slices.Contains(result.Keys[:i], key) {
+		if !model.ValidCanonicalClientKey(key) || slices.Contains(result.Keys[:i], key) {
 			return result, ErrSourceConflict
 		}
 	}
@@ -96,7 +100,7 @@ func (t *Transport) WriteKeySet(ctx context.Context, management string, keys []s
 		return ErrSourceConflict
 	}
 	for i, key := range keys {
-		if len(key) != 73 || key[:9] != "cpamp_sk_" || !validHex(key[9:]) || slices.Contains(keys[:i], key) {
+		if !model.ValidCanonicalClientKey(key) || slices.Contains(keys[:i], key) {
 			return ErrSourceConflict
 		}
 	}
