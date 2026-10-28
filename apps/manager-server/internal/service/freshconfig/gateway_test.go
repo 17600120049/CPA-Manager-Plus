@@ -11,23 +11,22 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 )
 
-// managedTargets is the page's own pin of the managed profile contract: a
-// committed NewManaged checkpoint bound to a managed destination. Production
-// passes the key authority's Targets bound to the gateway surface here.
-func managedTargets(op bootstrap.FreshOperation) bool {
-	return op.Strategy.Strategy == bootstrap.NewManaged && op.Strategy.Stage == "committed" &&
-		strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:")
+// privateTargets is the same binding for the private H1/direct profile, whose page
+// and field journal predate the managed strategy and select the attested target
+// alone.
+func privateTargets(op bootstrap.FreshOperation) bool {
+	return freshkeyapply.New(nil, nil, nil).TargetsFunc(freshkeyapply.SurfaceGatewayConfig)(op)
 }
 
-// privateTargets is the page's own pin of the private H1/direct contract: a
-// committed checkpoint naming the attested private runtime and artifact. This
-// page and its field journal predate the managed strategy, so they do not
-// require it; the key surfaces do.
-func privateTargets(op bootstrap.FreshOperation) bool {
-	return op.Strategy.Stage == "committed" &&
-		op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID == cpa.PrivateKeyArtifact
+// managedTargets is the profile rule production wires into the page: the key
+// authority's own discriminator bound to the gateway surface. A stub here would
+// let the page pass its tests against a contract no installation enforces.
+func managedTargets(op bootstrap.FreshOperation) bool {
+	return freshkeyapply.NewManaged(nil, nil, nil, "http://127.0.0.1:8317", nil).
+		TargetsFunc(freshkeyapply.SurfaceGatewayConfig)(op)
 }
 
 // memoryStore is the Fresh CAS in miniature: one record, one revision, and the
@@ -564,9 +563,12 @@ func TestExternalProfileWritesScalarsAndRefusesRuleFamilies(t *testing.T) {
 	service := New(store, nil, nil)
 	service.wire = wire
 	service.transport = nil
-	service.EnableExternal(func(context.Context) (string, string, error) {
+	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
 		return "https://external.test", "management-test-only", nil
 	})
+	// The page asks the one discriminator; an External checkpoint naming this
+	// installation's connection is what its own authority answers for.
+	service.targets = externalTargets()
 	service.externalWire = func(string) configWire { return wire }
 	view, err := service.Read(context.Background())
 	if err != nil {
@@ -760,10 +762,10 @@ func TestSaveRefusesATargetTheBrowserDidNotRead(t *testing.T) {
 	}
 }
 
-// TestExternalProfileRefusesAConnectionItNoLongerOwns proves the page only writes
-// the CPA this installation committed. The live settings can be edited after the
-// install, and following them would point the page at someone else's gateway.
-func TestExternalProfileRefusesAConnectionItNoLongerOwns(t *testing.T) {
+// TestExternalProfileRefusesAnAuthorityItCannotResolve proves the page writes only
+// what the External authority resolves. When that authority cannot prove the
+// committed connection, the page stays closed and never contacts a CPA.
+func TestExternalProfileRefusesAnAuthorityItCannotResolve(t *testing.T) {
 	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"strategy": "round-robin"}}}
 	store := &memoryStore{record: managedRecord()}
 	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
@@ -773,19 +775,51 @@ func TestExternalProfileRefusesAConnectionItNoLongerOwns(t *testing.T) {
 	service := New(store, nil, nil)
 	service.wire = wire
 	service.transport = nil
-	service.EnableExternal(func(context.Context) (string, string, error) {
-		return "https://elsewhere.test", "management-test-only", nil
+	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
+		return "", "", cpa.ErrProofUnavailable
 	})
+	service.targets = externalTargets()
 	service.externalWire = func(string) configWire { return wire }
 	view, err := service.Read(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Capability.Readable || view.Capability.Writable || view.Capability.Reason != ReasonNotInstalled {
-		t.Fatalf("unowned connection treated as writable: %+v", view.Capability)
+	if view.Capability.Readable || view.Capability.Writable || view.Capability.Reason != ReasonUnavailable {
+		t.Fatalf("unresolved authority treated as writable: %+v", view.Capability)
 	}
 	if wire.reads != 0 {
 		t.Fatal("unowned connection was contacted")
+	}
+}
+
+// TestExternalProfileReportsARejectedManagementKey proves a 401 from the user's
+// CPA is its own refusal on the page. It is distinct from an unavailable
+// authority: only rebinding the connection resolves it, so the page must not
+// offer a retry.
+func TestExternalProfileReportsARejectedManagementKey(t *testing.T) {
+	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"strategy": "round-robin"}}}
+	store := &memoryStore{record: managedRecord()}
+	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+		Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1,
+	}
+	service := New(store, nil, nil)
+	service.wire = wire
+	service.transport = nil
+	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
+		return "", "", cpa.ErrManagementRejected
+	})
+	service.targets = externalTargets()
+	service.externalWire = func(string) configWire { return wire }
+	view, err := service.Read(context.Background())
+	if err != nil {
+		t.Fatalf("read = %v", err)
+	}
+	if view.Capability.Readable || view.Capability.Writable || view.Capability.RulesWritable ||
+		view.Capability.Reason != ReasonManagementRejected {
+		t.Fatalf("rejected credential treated as another mode: %+v", view.Capability)
+	}
+	if wire.reads != 0 {
+		t.Fatal("a rejected credential still contacted the CPA")
 	}
 }
 
@@ -835,5 +869,42 @@ func TestUnresolvedLegacyFieldOperationBlocksItsGroup(t *testing.T) {
 	}
 	if len(wire.patches) != 0 {
 		t.Fatal("blocked save reached CPA")
+	}
+}
+
+// externalTargets is the real External surface rule, not a stub: the page asks the
+// key authority's own discriminator exactly as production wires it.
+func externalTargets() func(bootstrap.FreshOperation) bool {
+	return freshkeyapply.NewExternal(nil, nil, nil).TargetsFunc(freshkeyapply.SurfaceGatewayConfig)
+}
+
+// TestExternalProfileReportsAMovedTarget proves a connection the checkpoint no
+// longer names is its own blocker on the page. The installation exists, so it is
+// neither an unavailable authority nor a missing proof: only rebinding the
+// connection reaches it again, and nothing here contacts the old address.
+func TestExternalProfileReportsAMovedTarget(t *testing.T) {
+	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"strategy": "round-robin"}}}
+	store := &memoryStore{record: managedRecord()}
+	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+		Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1,
+	}
+	store.record.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: "https://committed.test", ManagementKey: "cpamp_protected_envelope"}
+	service := New(store, nil, nil)
+	service.wire = wire
+	service.transport = nil
+	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
+		return "", "", cpa.ErrExternalTargetMoved
+	})
+	service.targets = externalTargets()
+	service.externalWire = func(string) configWire { return wire }
+	view, err := service.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Capability.Readable || view.Capability.Writable || view.Capability.Reason != ReasonTargetMoved {
+		t.Fatalf("moved target treated as another mode: %+v", view.Capability)
+	}
+	if wire.reads != 0 {
+		t.Fatal("a moved target was contacted")
 	}
 }

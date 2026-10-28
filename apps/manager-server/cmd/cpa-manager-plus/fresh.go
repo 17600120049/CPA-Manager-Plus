@@ -131,6 +131,9 @@ type freshApplication struct {
 	// startIdentityWorker starts the Embedded identity reconciliation loop; a
 	// field so the completion path can be proven to start it once.
 	startIdentityWorker func(context.Context)
+	// externalSource is the committed Connect External authority. It is the only
+	// source of an External management credential; no environment fallback exists.
+	externalSource freshkeyapply.ExternalSource
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
@@ -183,9 +186,14 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	} else {
 		a.runtimeExternal = runtimeservice.NewExternalClientWithConnectionSource(externalConnection)
 		// An External CPA stays rule-read-only on the gateway page: without an
-		// exclusive write window CPAMP writes only best-effort scalars there.
-		a.gatewayConfig = freshconfig.New(st, nil, nil)
-		a.gatewayConfig.EnableExternal(externalConnection)
+		// exclusive write window CPAMP writes only best-effort scalars there. The
+		// target comes from the External authority, never from a raw settings
+		// read: only the authority proves the committed connection and carries the
+		// typed refusal of a rotated management credential.
+		a.externalSource = externalInstallSource(st, opened.Protector)
+		a.keyApply = freshkeyapply.NewExternal(a.keyRepo, a.keys, a.externalSource)
+		a.gatewayConfig = freshconfig.New(st, nil, a.keyApply.TargetsFunc(freshkeyapply.SurfaceGatewayConfig))
+		a.gatewayConfig.EnableExternal(a.keyApply.ExternalTarget)
 		// External stays strictly read-only and status-only: it never becomes the
 		// lifecycle/strategy Runtime of this application. The Runtime status page
 		// observes it through runtimeStatusClient and offers no lifecycle actions.
