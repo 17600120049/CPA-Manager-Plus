@@ -51,6 +51,13 @@ func (s *Service) externalPrepare(ctx context.Context, id, target, keeper, mode 
 		if mode == "revoke" && len(snapshot.Keys) <= 1 {
 			return ErrLastKey
 		}
+		// A revoke is only permitted when the CPA keeps a credential this Manager
+		// staged. A keeper that was never installed, with a credential from outside
+		// this Manager keeping the count above one, would otherwise delete the
+		// target and leave the journal with no observable end state.
+		if mode == "revoke" && !slices.Contains(snapshot.Keys, next) {
+			return cpa.ErrSourceConflict
+		}
 		return nil
 	})
 	if err != nil {
@@ -253,6 +260,12 @@ func (s *Service) externalContinue(ctx context.Context, o *repo.Operation, index
 			}
 			return cpa.ErrSourceConflict
 		}
+		// The credential that stays must be one this Manager staged: the step is
+		// never allowed to delete the target and leave the CPA's last key in the
+		// hands of a credential the journal cannot name.
+		if step == "revoke" && !slices.Contains(snapshot.Keys, next) {
+			return cpa.ErrSourceConflict
+		}
 		// The document this grant was derived from, compared immediately before the
 		// single PUT: an edit the user made in between is never written over.
 		if snapshot.SourceSHA256 != grant.SourceSHA256 {
@@ -283,6 +296,14 @@ func (s *Service) externalContinue(ctx context.Context, o *repo.Operation, index
 		}
 		writeErr := w.ExternalWriteKeySet(ctx, install.ManagementKey, after)
 		o.Steps[index].Returned = true
+		if errors.Is(writeErr, cpa.ErrManagementRejected) {
+			// A 401 is CPA's own refusal of the management credential, and it
+			// proves no byte of the list was written. The step is journaled as not
+			// applied, so a rebind can take it again instead of the journal staying
+			// unknown forever.
+			o.Steps[index].State = "unattempted"
+			o.Outcome = "pending"
+		}
 		// Retain the attempt on a lost client: the journal, not the reply, is the
 		// evidence a later reconcile reads.
 		saveCtx, cancel := context.WithTimeout(context.Background(), time.Second)

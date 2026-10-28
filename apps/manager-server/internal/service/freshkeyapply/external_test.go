@@ -410,9 +410,11 @@ func TestExternalRejectedManagementKeyIsNeverRetried(t *testing.T) {
 	}
 }
 
-// A revoke whose write the CPA refuses never removes the credential and never
-// resends the step: the journal stays reconcilable.
-func TestExternalRevokeRejectionKeepsTheCredential(t *testing.T) {
+// A revoke whose write the CPA refuses keeps the credential and journals the step
+// as not applied. A 401 proves nothing was written, so the step is taken again
+// once the connection accepts the credential — as it will after a rebind — instead
+// of the journal staying unknown forever.
+func TestExternalRevokeRejectionIsNotAnAppliedStep(t *testing.T) {
 	harness := newExternalHarness(t)
 	ctx := context.Background()
 	target, targetSecret := harness.staged(t, strings.Repeat("b", 32))
@@ -434,12 +436,69 @@ func TestExternalRevokeRejectionKeepsTheCredential(t *testing.T) {
 	if !slices.Contains(harness.cpa.keys, targetSecret) {
 		t.Fatal("a refused write removed the credential")
 	}
-	writes := harness.cpa.writes
-	if _, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1); err == nil {
-		t.Fatal("an attempted step was resent")
+	// The journal records the refusal as "not applied", not as an unknown effect.
+	journal, err := harness.service.repo.Operation(ctx, result.Operation.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if harness.cpa.writes != writes {
-		t.Fatal("reconcile repeated the write")
+	if journal.Outcome != "pending" || journal.Steps[0].State != "unattempted" {
+		t.Fatalf("a refused write was journaled as %q with step %q", journal.Outcome, journal.Steps[0].State)
+	}
+	// The CPA accepts the credential again, and the step is taken once.
+	result, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1)
+	if err != nil {
+		t.Fatalf("retry after the CPA accepts the credential: %v", err)
+	}
+	if slices.Contains(harness.cpa.keys, targetSecret) {
+		t.Fatal("the revoked credential is still carried by the user's CPA")
+	}
+	if result.Operation == nil || result.Operation.Outcome != "committed" {
+		t.Fatalf("retried revoke outcome = %+v", result.Operation)
+	}
+}
+
+// A revoke is refused — before anything is written — unless the CPA carries the
+// keeper this Manager leaves behind. A credential from outside this Manager that
+// merely keeps the last-key count above one is not a keeper the journal can
+// settle on, so the target is never deleted without it.
+func TestExternalRevokeRequiresACarriedKeeper(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	target, targetSecret := harness.staged(t, strings.Repeat("b", 32))
+	keeper, keeperSecret := harness.staged(t, strings.Repeat("c", 32))
+	if _, err := harness.service.Apply(ctx, target, 1); err != nil {
+		t.Fatal(err)
+	}
+	harness.cpa.keys = []string{targetSecret, "credential-from-outside"}
+	harness.cpa.writes = 0
+	if _, err := harness.service.Prepare(ctx, strings.Repeat("d", 32), target, keeper, "revoke", 1); !errors.Is(err, cpa.ErrSourceConflict) {
+		t.Fatalf("prepare with an uninstalled keeper = %v", err)
+	}
+	if harness.cpa.writes != 0 {
+		t.Fatal("a refused revoke reached the user's CPA")
+	}
+	// The keeper is carried when the operation is journaled and removed before it
+	// continues: that write is refused in exactly the same way.
+	if _, err := harness.service.Apply(ctx, keeper, 1); err != nil {
+		t.Fatal(err)
+	}
+	result, err := harness.service.Prepare(ctx, strings.Repeat("e", 32), target, keeper, "revoke", 1)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	harness.cpa.keys = []string{targetSecret, "credential-from-outside"}
+	harness.cpa.writes = 0
+	if _, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1); !errors.Is(err, cpa.ErrSourceConflict) {
+		t.Fatalf("continue with a removed keeper = %v", err)
+	}
+	if harness.cpa.writes != 0 || !slices.Contains(harness.cpa.keys, targetSecret) {
+		t.Fatal("a revoke without a carried keeper was written")
+	}
+	if !slices.Contains(harness.cpa.keys, "credential-from-outside") {
+		t.Fatal("a refused revoke rewrote the user's own credential list")
+	}
+	if keeperSecret == "" {
+		t.Fatal("keeper secret missing")
 	}
 }
 
