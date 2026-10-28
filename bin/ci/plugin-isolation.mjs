@@ -165,7 +165,10 @@ async function probe(target) {
         result.storage[name] = { reachable: false, error: (error && error.name) || 'Error' };
       }
     }
-    // An opaque origin cannot name its parent document or its cookie jar.
+    // A top-level plugin document has no parent, so `parent === window` and
+    // reading its title says nothing about containment. Only a framed document
+    // reaches across an origin boundary, so the check is scoped to that case.
+    result.dom.framed = window.parent !== window;
     try {
       result.dom.parentTitle = { reachable: true, value: String(parent.document.title) };
     } catch (error) {
@@ -209,12 +212,18 @@ function assertContained(engine, where, result) {
     );
   }
   record(engine, `${where}: storage unreachable`, 'PASS');
-  assert.equal(
-    result.dom.parentTitle.reachable,
-    false,
-    `${engine} ${where}: plugin reached parent.document (${JSON.stringify(result.dom.parentTitle)})`
-  );
-  record(engine, `${where}: parent.document unreachable`, 'PASS');
+  if (result.dom.framed) {
+    assert.equal(
+      result.dom.parentTitle.reachable,
+      false,
+      `${engine} ${where}: plugin reached parent.document (${JSON.stringify(result.dom.parentTitle)})`
+    );
+    record(engine, `${where}: parent.document unreachable`, 'PASS');
+  } else {
+    // Nothing embeds this document, so there is no parent to reach. The opaque
+    // origin is still proven by the empty storage and cookie jar above.
+    record(engine, `${where}: top level, no parent document to reach`, 'PASS');
+  }
   assert.equal(
     Boolean(result.dom.cookie.reachable && result.dom.cookie.value),
     false,
