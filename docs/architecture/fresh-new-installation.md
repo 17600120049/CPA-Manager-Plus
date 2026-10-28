@@ -393,19 +393,25 @@ staged secret is decrypted in-process and compared by membership against the
 CPA's own key list — there is no managed template to prove, and the CPA may
 carry credentials this Manager never staged. The journal settles from what the
 CPA shows: a revoke step has ended when the credential it removes is absent, and
-an add step when the credential it introduces is carried. A lost reply, a 401
-that proves nothing was written, and an edit the user made between `Prepare` and
-`Continue` therefore all reach a terminal state instead of leaving the journal
-pending and every later operation refused. A write is only sent while the start
+an add step when the credential it introduces is carried. A lost reply that the
+read-back can settle, a 401 that proves nothing was written, and an edit the
+user made between `Prepare` and `Continue` therefore all reach a terminal state
+instead of leaving the journal pending and every later operation refused. A lost
+reply is not always one of those: an attempted write that did not land — a 5xx, a
+timeout, or a 4xx other than 401 — leaves the effect unknown until an operator
+confirms it, exactly as on Managed. A write is only sent while the start
 state still holds: the credential it removes is carried, the CPA keeps another
 one, and — for a revoke — that keeper is a credential this Manager staged and has
 installed. Revoking the only credential is refused with `ErrLastKey`, because
 that would leave the user's CPA accepting unauthenticated clients. The External
 Apply refuses while a journal entry has not settled, and re-reads the document
 digest and the membership immediately before its own PUT, so a credential the
-user revoked on their CPA is never added back. The gateway configuration page
-keeps #1090's External semantics: scalars are best-effort with a baseline
-re-read, and rule families stay read-only.
+user revoked on their CPA is not knowingly added back. That read is not a
+compare-and-swap: a whole-list PUT replaces whatever the CPA holds when it
+arrives, so a change that lands between the re-read and the PUT is still
+overwritten — the check narrows the window, it does not close it. The gateway
+configuration page keeps #1090's External semantics: scalars are best-effort with
+a baseline re-read, and rule families stay read-only.
 
 The key list is the Manager's own record plus the presence read back from the
 CPA. A CPA that cannot be read leaves that list intact and reports
