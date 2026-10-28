@@ -253,6 +253,36 @@ func TestGatewayConfigReplySendsTheBoundedCPARejection(t *testing.T) {
 	}
 }
 
+// TestGatewayConfigSaveReportsAMovedTarget proves a save answers the same typed
+// blocker the read publishes. The External authority is resolved before anything
+// is read or written, so a connection that no longer names the committed target
+// is external_target_moved on every save — never a 503 no retry resolves, and
+// never a request to a CPA this installation does not own.
+func TestGatewayConfigSaveReportsAMovedTarget(t *testing.T) {
+	app, cpaServer := externalAuthorityApp(t, "external:sha256:"+strings.Repeat("c", 64))
+	expected := `{"generation":"1","baseline":"` + strings.Repeat("a", 64) + `"}`
+	for _, tc := range []struct {
+		name     string
+		resource string
+		body     string
+	}{
+		{"group", "gateway/config/groups/retry", `{"requestId":"` + strings.Repeat("ab", 16) + `","expected":` + expected +
+			`,"edits":[{"path":"routing.retry.request-retry","action":"set","value":3}]}`},
+		{"family", "gateway/config/rules/filter", `{"requestId":"` + strings.Repeat("cd", 16) + `","expected":` + expected +
+			`,"rules":[{"models":[{"name":"*"}],"params":["a"]}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := gatewayRequest(t, app, http.MethodPost, tc.resource, tc.body, "application/json")
+			if response.Code != http.StatusConflict || errorCode(t, response) != freshconfig.ReasonTargetMoved {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+	if cpaServer.reads.Load() != 0 {
+		t.Fatalf("a moved target was contacted %d times", cpaServer.reads.Load())
+	}
+}
+
 // TestGatewayConfigReplyKeepsTheManagerPrivateRangeCode proves the private
 // profile's own range refusal keeps its code. It is a code this Manager decided
 // before CPA was asked, so the page must be able to show it on the field.

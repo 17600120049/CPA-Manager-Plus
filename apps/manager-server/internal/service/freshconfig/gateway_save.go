@@ -309,7 +309,13 @@ func (s *Service) SaveFamily(ctx context.Context, familyID string, q FamilyReque
 		return freshstore.ConfigGroupOperation{}, err
 	}
 	auth, err := s.resolve(ctx, r, gatewayConfigScope)
-	if err != nil || auth.wire == nil {
+	if err != nil {
+		// A blocker the resolve already typed — a moved target, a refused
+		// management credential — is what the page must show. Folding it into an
+		// unavailable proof would answer a 503 for a state no retry changes.
+		return freshstore.ConfigGroupOperation{}, err
+	}
+	if auth.wire == nil {
 		return freshstore.ConfigGroupOperation{}, cpa.ErrProofUnavailable
 	}
 	if !auth.capable.RulesWritable {

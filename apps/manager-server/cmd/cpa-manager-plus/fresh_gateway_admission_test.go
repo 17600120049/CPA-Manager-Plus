@@ -10,6 +10,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/fresh"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/legacypreflight"
 )
 
@@ -62,9 +63,10 @@ func TestFreshAuthorityAdmissionIsCommittedAndProvenOnly(t *testing.T) {
 
 func TestFreshAuthorityWithoutManagedAuthorityNeverAdmits(t *testing.T) {
 	app := newInstallationTestApplication(t)
-	// A non-managed Fresh application has no install-derived CPA authority at
-	// all, so the private answer is a routable but closed posture.
-	if app.keyApply != nil {
+	// A Fresh application without an Embedded Runtime holds no managed CPA
+	// authority: an External one may exist, but admission is a managed fact and
+	// the External profile never answers it.
+	if app.keyApply != nil && app.keyApply.Profile() == freshkeyapply.ProfileManaged {
 		t.Fatal("test application unexpectedly has a managed key authority")
 	}
 	response := authorityResponse(t, app)

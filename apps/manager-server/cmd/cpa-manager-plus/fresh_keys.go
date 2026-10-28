@@ -9,12 +9,30 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 )
 
 // Called only after canonical routing and the existing Admin verifier succeed.
 func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op bootstrap.FreshOperation, resource string) {
-	if !op.GatewayPending || op.Strategy.Strategy != "" && op.Strategy.Strategy != bootstrap.NewManaged {
+	// Staging is available while the installation has not selected a strategy.
+	// Once one is committed, the installation authority answers for it: New
+	// Managed, the private profile and External each answer through their own
+	// profile, so a key route can never accept a checkpoint the surface
+	// discriminator refuses.
+	if !op.GatewayPending {
+		w.WriteHeader(http.StatusConflict)
+		return
+	}
+	// The staging routes (list, create, rename) are Manager-local and existed
+	// before any CPA authority did, so they keep serving a New Managed
+	// checkpoint exactly as before. Every other strategy must be admitted by the
+	// installation authority: External answers through its own committed
+	// connection, and an adopted or incomplete checkpoint answers nothing.
+	if op.Strategy.Strategy != "" && op.Strategy.Strategy != bootstrap.NewManaged &&
+		(a.keyApply == nil || !a.keyApply.Targets(op, freshkeyapply.SurfaceKeyOperation)) {
 		w.WriteHeader(http.StatusConflict)
 		return
 	}
@@ -37,11 +55,48 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
+		// An External installation reports the presence the user's CPA answers,
+		// not the effect this Manager intended. Any other profile is unchanged, and
+		// a checkpoint the External discriminator refuses is never contacted.
+		unverified := false
+		if a.keyApply != nil && a.keyApply.Profile() == freshkeyapply.ProfileExternal &&
+			a.keyApply.Targets(op, freshkeyapply.SurfaceKeyOperation) {
+			var listErr error
+			keys, unverified, listErr = a.keyApply.ExternalKeyList(r.Context(), keys)
+			switch {
+			case errors.Is(listErr, cpa.ErrExternalTargetMoved):
+				// The connection no longer names the committed target. The staged
+				// keys are not an effect of any CPA, so the list is a typed blocker
+				// rather than a stale 200.
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				writeFreshJSON(w, struct {
+					Code string `json:"code"`
+				}{freshconfig.ReasonTargetMoved})
+				return
+			case errors.Is(listErr, cpa.ErrManagementRejected):
+				// The user's CPA refused the stored management credential. The
+				// page must not offer a retry: only a rebind resolves it.
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				writeFreshJSON(w, struct {
+					Code string `json:"code"`
+				}{freshconfig.ReasonManagementRejected})
+				return
+			case listErr != nil:
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+		}
 		writeFreshJSON(w, struct {
 			Keys                []freshkeys.Key `json:"keys"`
 			GatewayPending      bool            `json:"gatewayPending"`
 			RevocationAvailable bool            `json:"revocationAvailable"`
-		}{keys, true, a.keyApply.KeyOperationsEnabled()})
+			// PresenceUnverified marks a list the user's CPA could not be read
+			// for: the keys are the Manager's own records, and none of them
+			// claims an observed effect.
+			PresenceUnverified bool `json:"presenceUnverified"`
+		}{keys, true, a.keyApply.KeyOperationsEnabled(), unverified})
 	case strings.HasPrefix(resource, "api-keys/requests/") && r.Method == http.MethodGet:
 		id := strings.TrimPrefix(resource, "api-keys/requests/")
 		key, err := a.keys.Lookup(r.Context(), id)

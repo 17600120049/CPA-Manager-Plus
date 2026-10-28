@@ -341,7 +341,7 @@ func TestPluginRuntimeFailsClosedOutsideTheManagedAuthority(t *testing.T) {
 	// External holds no installation authority, so the plugin scope's closed
 	// refusal is reached without one.
 	app.gatewayConfig = freshconfig.New(app.store, nil, nil)
-	app.gatewayConfig.EnableExternal(func(context.Context) (string, string, error) {
+	app.gatewayConfig.EnableExternal(func(context.Context, uint64) (string, string, error) {
 		return "https://external.test", "management-key", nil
 	})
 

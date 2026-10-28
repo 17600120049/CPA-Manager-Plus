@@ -110,6 +110,14 @@ const (
 	ReasonLegacyUnresolved = "legacy_operation_unresolved"
 	ReasonReadUnavailable  = "config_read_unavailable"
 	ReasonNotInstalled     = "installation_incomplete"
+	// ReasonManagementRejected reports a user's CPA refusing the stored
+	// management credential. It is distinct from an unavailable authority
+	// because only rebinding the connection resolves it.
+	ReasonManagementRejected = "external_management_key_rejected"
+	// ReasonTargetMoved reports the committed External target no longer naming the
+	// connection this Manager holds. The installation exists, so it is not an
+	// unavailable authority: only rebinding the connection reaches it again.
+	ReasonTargetMoved = "external_target_moved"
 	// ReasonPluginManagedOnly answers every profile that does not own the
 	// Supervisor-published plugin root. The plugin switch is the managed
 	// authority's alone, so it fails closed instead of borrowing a value another
@@ -260,9 +268,9 @@ type Service struct {
 	// the key surface refuses. Nil means this service holds no installation
 	// authority at all.
 	targets func(bootstrap.FreshOperation) bool
-	// external resolves the Manager-configured connection of an External
-	// install. It is nil for every other profile.
-	external func(context.Context) (string, string, error)
+	// external resolves the committed External target through the installation
+	// authority. It is nil for every other profile.
+	external ExternalAuthority
 	// externalWire builds the transport of that connection; nil selects the
 	// CPA v8 transport.
 	externalWire func(string) configWire
@@ -298,11 +306,17 @@ func (s *Service) EnableManaged(endpoint string) {
 	s.endpoint = strings.TrimRight(endpoint, "/")
 }
 
-// EnableExternal switches the service onto the Manager-configured connection of
-// an External install. External writes are best-effort scalars only: without an
-// exclusive write window a whole rule family is read-only.
-func (s *Service) EnableExternal(connection func(context.Context) (string, string, error)) {
-	s.external = connection
+// ExternalAuthority resolves the committed External target at one generation:
+// the address and the management credential of the CPA this installation owns.
+// The page never reads the Manager settings itself, so only the authority that
+// proved the committed connection can answer for it.
+type ExternalAuthority func(context.Context, uint64) (string, string, error)
+
+// EnableExternal switches the service onto the authority of a committed External
+// install. External writes are best-effort scalars only: without an exclusive
+// write window a whole rule family is read-only.
+func (s *Service) EnableExternal(authority ExternalAuthority) {
+	s.external = authority
 }
 
 // scope is one closed write surface over the shared journal, CAS and read-back
@@ -372,6 +386,16 @@ type authority struct {
 // match that authority is never a write path. A managed-only scope resolves to a
 // closed refusal on every other profile.
 func (s *Service) resolve(ctx context.Context, r freshstore.Record, sc scope) (authority, error) {
+	if sc.managedOnly && s.external != nil && !s.managed {
+		// The plugin root belongs to the Supervisor-owned destination this Manager
+		// stages. An External installation owns neither, so the scope is answered
+		// before the External authority is even asked: the user's CPA receives no
+		// request and its management credential is never used.
+		return authority{
+			mode:    ModeExternal,
+			capable: Capability{Mode: ModeExternal, Reason: ReasonPluginManagedOnly},
+		}, ErrPluginAuthority
+	}
 	auth, err := s.resolveProfile(ctx, r)
 	if !sc.managedOnly {
 		return auth, err
@@ -424,24 +448,30 @@ func (s *Service) resolveProfile(ctx context.Context, r freshstore.Record) (auth
 			},
 		}, nil
 	case s.external != nil:
-		if op.Strategy.Stage != "committed" || op.Strategy.Strategy != bootstrap.ConnectExternal || r.Connection == nil {
+		// The profile question is asked of the one discriminator, so the page can
+		// never accept a checkpoint the key surfaces refuse.
+		if s.targets == nil || !s.targets(op) || op.Strategy.TargetGeneration == 0 {
 			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
 		}
-		baseURL, secret, err := s.external(ctx)
-		if err != nil || baseURL == "" || secret == "" {
+		baseURL, secret, err := s.external(ctx, op.Strategy.TargetGeneration)
+		if err != nil {
+			// A management credential the user's CPA refuses is its own refusal:
+			// only rebinding the connection can resolve it, so it is never folded
+			// into an unavailable authority.
+			if errors.Is(err, cpa.ErrManagementRejected) {
+				return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonManagementRejected}}, cpa.ErrManagementRejected
+			}
+			if errors.Is(err, cpa.ErrExternalTargetMoved) {
+				return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonTargetMoved}}, cpa.ErrExternalTargetMoved
+			}
+			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
+		}
+		if baseURL == "" || secret == "" {
 			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
 		}
 		endpoint, err := cpa.NormalizeV8BaseURL(baseURL)
 		if err != nil {
 			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
-		}
-		// The live connection must still be the connection this installation
-		// committed. Reading settings alone proves nothing: a later edit would
-		// otherwise point the page at a CPA the installation does not own. The
-		// committed management key is a protected envelope, so the address is the
-		// comparable durable fact; the secret stays with the connection service.
-		if endpoint != strings.TrimRight(r.Connection.CPABaseURL, "/") {
-			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
 		}
 		wire := s.externalWire
 		var transport configWire
