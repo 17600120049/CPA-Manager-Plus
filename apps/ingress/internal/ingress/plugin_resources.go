@@ -32,35 +32,24 @@ func pluginResourceCandidate(value string) bool {
 	return false
 }
 
-// pluginResourceWriteMethods are the methods the Manager's plugin resource
-// contract accepts. Plugin pages are served with `sandbox allow-scripts
-// allow-forms` and use their own namespace for their own endpoints - the
-// official Codex Invite page posts to
-// /v0/resource/plugins/codex-invite/invite - so a method veto here would break
-// a working plugin on Full Docker while the same request reaches the Manager
-// directly in a Manager-only deployment. The isolation is delivered by the
-// Manager: Fetch Metadata, the opaque-origin sandbox CSP, response-header
-// confinement and redirect confinement apply to writes exactly as to reads.
-var pluginResourceWriteMethods = map[string]bool{
-	http.MethodGet:    true,
-	http.MethodHead:   true,
-	http.MethodPost:   true,
-	http.MethodPut:    true,
-	http.MethodPatch:  true,
-	http.MethodDelete: true,
-}
-
 // canonicalPluginResource reports whether the request is a bare, unescaped
-// plugin resource request in a method the Manager serves. Every other shape
-// (other method, trailing separator, empty segment, encoded separator, dot
-// segment, parameter) is a denial instead of Gateway traffic.
+// GET/HEAD for one plugin resource. Every other shape (write method, trailing
+// separator, empty segment, encoded separator, dot segment, parameter) is a
+// denial instead of Gateway traffic.
+//
+// The method set is read-only because CPA's resource namespace is: a
+// pluginapi.ResourceRoute is the plugin's own page ("the management UI menu
+// label for this GET resource"), and pluginhost serves it only for GET. A
+// plugin that needs to accept input posts to a management route instead - the
+// official Codex Invite plugin registers
+// {POST /codex-invite/invite} alongside its GET resource - so a write never
+// belongs under this prefix. Denying it here keeps the transport from carrying
+// a request CPA would answer with 404 anyway.
 func canonicalPluginResource(r *http.Request) bool {
 	if r == nil || r.URL == nil {
 		return false
 	}
-	// The canonical plugin resource path is shape-checked below; the method
-	// check here mirrors the Manager's accepted set exactly.
-	if !pluginResourceWriteMethods[r.Method] {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
 	p := r.URL.Path

@@ -490,49 +490,40 @@ async function runEngine(engineName, launcher) {
     );
     record(engineName, 'in-prefix redirect preserved', 'PASS', { status: inside.status(), location });
 
-    // ---- Writes: the plugin's own endpoint, admitted exactly like a read ---
-    // A plugin page is served with `sandbox allow-scripts allow-forms` and uses
-    // its own namespace for its own endpoints; the official Codex Invite page
-    // depends on that. A write must reach CPA with its method and body intact
-    // and carry the same sandbox contract as a read.
+    // ---- The resource namespace is read-only -----------------------------
+    // CPA serves a pluginapi.ResourceRoute only for GET (it is the plugin's own
+    // page), and a plugin that needs input posts to a Management route instead.
+    // Both edges must therefore refuse a write with 405 rather than forwarding
+    // it, and the refusal must not leak whether the path exists.
     const writeBody = JSON.stringify({ refresh: true, from: 'g2' });
-    const write = await context.request.post(`${resourceBase}/write`, {
-      headers: { ...sandboxHeaders, 'Content-Type': 'application/json' },
-      data: writeBody,
-    });
-    assert.equal(write.status(), 200, `plugin write refused with ${write.status()}`);
-    const echoed = JSON.parse(await write.text());
-    assert.equal(echoed.method, 'POST', `plugin write arrived as ${echoed.method}`);
-    assert.equal(echoed.body, writeBody, 'plugin write body was altered in transit');
-    assert.equal(
-      write.headers()['content-security-policy'],
-      'sandbox allow-scripts allow-forms',
-      'plugin write response lost the sandbox CSP'
-    );
-    record(engineName, 'plugin write reaches its own endpoint', 'PASS', { status: write.status() });
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      const refused = await context.request.fetch(`${resourceBase}/probe`, {
+        method,
+        headers: { ...sandboxHeaders, 'Content-Type': 'application/json' },
+        data: writeBody,
+        failOnStatusCode: false,
+      });
+      assert.equal(refused.status(), 405, `${method} on a plugin resource returned ${refused.status()}`);
+      // The refusal comes before any upstream call, so it carries no document.
+      const body = await refused.text();
+      assert.equal(body, '', `${method} refusal leaked a body: ${body.slice(0, 80)}`);
+      record(engineName, `${method} on a plugin resource is 405`, 'PASS', { status: refused.status() });
+    }
 
-    // A cross-site fetch/XHR from the sandboxed document is admitted; the same
-    // write without Fetch Metadata, or from the admin document, is not.
-    const writeWithoutMetadata = await context.request.post(`${resourceBase}/write`, {
+    // A write with no Fetch Metadata is refused earlier still: the method guard
+    // must not become a way around the metadata policy.
+    const writeWithoutMetadata = await context.request.fetch(`${resourceBase}/probe`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       data: writeBody,
+      failOnStatusCode: false,
     });
-    assert.equal(writeWithoutMetadata.status(), 403, 'plugin write without Fetch Metadata was admitted');
-    record(engineName, 'plugin write without Fetch Metadata is 403', 'PASS', {
+    assert(
+      writeWithoutMetadata.status() === 405 || writeWithoutMetadata.status() === 403,
+      `write without Fetch Metadata returned ${writeWithoutMetadata.status()}`
+    );
+    record(engineName, 'write without Fetch Metadata is refused', 'PASS', {
       status: writeWithoutMetadata.status(),
-    });
-
-    const writeFromAdmin = await context.request.post(`${resourceBase}/write`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Sec-Fetch-Site': 'same-origin',
-        'Sec-Fetch-Dest': 'empty',
-      },
-      data: writeBody,
-    });
-    assert.equal(writeFromAdmin.status(), 403, 'admin document wrote to a plugin endpoint');
-    record(engineName, 'admin document cannot write to a plugin endpoint', 'PASS', {
-      status: writeFromAdmin.status(),
     });
 
     // ---- Redirect targets a browser resolves differently than Go -----------

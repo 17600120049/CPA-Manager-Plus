@@ -38,14 +38,15 @@ func (h *Handler) ModelList(w http.ResponseWriter, r *http.Request) {
 	h.App.ProxyService.ProxyModelList(w, r, response.Error, response.MethodNotAllowed)
 }
 
+// CPAResource proxies one plugin resource. The namespace is read-only end to
+// end: a pluginapi.ResourceRoute is the plugin's own page ("the management UI
+// menu label for this GET resource") and CPA's pluginhost serves it only for
+// GET, so a write forwarded from here could only come back 404. Refusing it
+// here says so directly instead of spending an upstream round trip, and keeps
+// the transport from carrying methods this namespace never serves.
 func (h *Handler) CPAResource(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
-	case http.MethodGet,
-		http.MethodHead,
-		http.MethodPost,
-		http.MethodPut,
-		http.MethodPatch,
-		http.MethodDelete:
+	case http.MethodGet, http.MethodHead:
 	default:
 		response.MethodNotAllowed(w)
 		return
