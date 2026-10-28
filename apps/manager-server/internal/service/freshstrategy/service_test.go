@@ -21,6 +21,15 @@ func operation() bootstrap.FreshOperation {
 	return bootstrap.FreshOperation{Version: 1, Identity: bootstrap.FreshIdentity{AdmissionID: "admission", InstallationID: "installation", Generation: "generation", DatabasePath: "/private/manager.sqlite", OperationID: "fresh-operation-123"}, Revision: 1, AdminInitialized: true, GatewayPending: true}
 }
 
+// installInitialClientKey is the canonical install key every default
+// destination must carry. It replays one fixed Key, exactly as the real source
+// does across a resume.
+func installInitialClientKey() InitialClientKeySource {
+	return func(context.Context, bootstrap.FreshOperation, uint64) (InitialClientKey, error) {
+		return InitialClientKey{KeyID: strings.Repeat("9", 32), Secret: "sk-" + strings.Repeat("aB3", 21) + "Z"}, nil
+	}
+}
+
 func qualified() bootstrap.CPAQualification {
 	return bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true}
 }
@@ -246,7 +255,7 @@ func TestManagedNeverFallsBackToAStartOnlyCheckpoint(t *testing.T) {
 		}
 	}
 	// A resumed checkpoint without its protected snapshot cannot start either.
-	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact, InitialClientKey: installInitialClientKey()})
 	staged, err := service.Execute(t.Context(), operation(), request)
 	if err != nil || staged.AdoptionCiphertext == "" {
 		t.Fatalf("stage: %+v %v", staged, err)
@@ -265,10 +274,10 @@ func TestManagedRequiresDurableExactIntentAndReusesTypedRuntime(t *testing.T) {
 	other := model.RuntimeArtifactID("sha256:" + strings.Repeat("b", 64))
 	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "target-one", ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact}
 	op := operation()
-	if _, err := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: other}).Execute(t.Context(), op, request); err == nil || len(runtime.stages) != 0 {
+	if _, err := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: other, InitialClientKey: installInitialClientKey()}).Execute(t.Context(), op, request); err == nil || len(runtime.stages) != 0 {
 		t.Fatal("generic qualification promoted a different exact artifact")
 	}
-	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact, InitialClientKey: installInitialClientKey()})
 	staged, err := service.Execute(t.Context(), op, request)
 	if err != nil || staged.Checkpoint.Stage != "staged" || len(runtime.stages) != 0 || len(runtime.starts) != 0 || !staged.GatewayPending || staged.Connection != nil {
 		t.Fatalf("stage: %+v %v", staged, err)
@@ -283,8 +292,13 @@ func TestManagedRequiresDurableExactIntentAndReusesTypedRuntime(t *testing.T) {
 	if secret, err := protector.UnprotectString(committed.Connection.ManagementKeyCiphertext); err != nil || secret != runtime.stagedManagementKey() {
 		t.Fatal("committed connection is not the staged credential")
 	}
-	if runtime.stages[0].SourceClass != "new_managed" || runtime.stages[0].SourceIdentity != ManagedDestinationIdentity(string(op.Identity.OperationID)) || len(runtime.stages[0].APIKeys) != 0 {
+	if runtime.stages[0].SourceClass != "new_managed" || runtime.stages[0].SourceIdentity != ManagedDestinationIdentity(string(op.Identity.OperationID)) ||
+		len(runtime.stages[0].APIKeys) != 1 || !model.ValidInitialClientKey(runtime.stages[0].APIKeys[0]) {
 		t.Fatalf("destination request: %+v", runtime.stages[0])
+	}
+	// The install key is delivered exactly once, by the call that commits.
+	if committed.InitialClientKey != runtime.stages[0].APIKeys[0] || staged.InitialClientKey != "" {
+		t.Fatalf("install key delivery: staged=%q committed=%q", staged.InitialClientKey, committed.InitialClientKey)
 	}
 	if committed.Checkpoint.DestinationConnectionIdentity != ManagedDestinationIdentity(baseURL) {
 		t.Fatal("checkpoint is not bound to the destination")
@@ -299,9 +313,72 @@ func TestManagedRequiresDurableExactIntentAndReusesTypedRuntime(t *testing.T) {
 		t.Fatal("accepted foreign runtime generation", err)
 	}
 }
+
+// A default destination is never described, staged or started without the
+// install-generated Client Key, and the durable snapshot carries that exact key
+// across a Manager restart without minting another one.
+func TestManagedDestinationRequiresAndReusesTheInstallClientKey(t *testing.T) {
+	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
+	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "target-one", ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact}
+	op := operation()
+	if result, err := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact}).Execute(t.Context(), op, request); !blockedWith(err, "managed_initial_client_key_unavailable") || result.AdoptionCiphertext != "" || len(runtime.stages) != 0 {
+		t.Fatalf("missing install key authority: %+v %v", result, err)
+	}
+	invalid := map[string]InitialClientKeySource{
+		"source error": func(context.Context, bootstrap.FreshOperation, uint64) (InitialClientKey, error) {
+			return InitialClientKey{}, errors.New("mint failed")
+		},
+		"zero value": func(context.Context, bootstrap.FreshOperation, uint64) (InitialClientKey, error) {
+			return InitialClientKey{}, nil
+		},
+		"workspace key": func(context.Context, bootstrap.FreshOperation, uint64) (InitialClientKey, error) {
+			return InitialClientKey{KeyID: strings.Repeat("1", 32), Secret: "cpamp_sk_" + strings.Repeat("a", 64)}, nil
+		},
+		"short key": func(context.Context, bootstrap.FreshOperation, uint64) (InitialClientKey, error) {
+			return InitialClientKey{KeyID: strings.Repeat("1", 32), Secret: "sk-short"}, nil
+		},
+		"invalid key id": func(context.Context, bootstrap.FreshOperation, uint64) (InitialClientKey, error) {
+			return InitialClientKey{KeyID: "not-an-id", Secret: "sk-" + strings.Repeat("aB3", 21) + "Z"}, nil
+		},
+	}
+	for name, source := range invalid {
+		if result, err := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact, InitialClientKey: source}).Execute(t.Context(), op, request); !blockedWith(err, "managed_initial_client_key_unavailable") || result.AdoptionCiphertext != "" || len(runtime.stages) != 0 {
+			t.Fatalf("%s: %+v %v", name, result, err)
+		}
+	}
+	calls := 0
+	key := InitialClientKey{KeyID: strings.Repeat("7", 32), Secret: "sk-" + strings.Repeat("aB3", 21) + "Z"}
+	source := func(context.Context, bootstrap.FreshOperation, uint64) (InitialClientKey, error) {
+		calls++
+		return key, nil
+	}
+	options := Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact, InitialClientKey: source}
+	staged, err := New(options).Execute(t.Context(), op, request)
+	if err != nil || staged.Checkpoint.Stage != "staged" || staged.AdoptionCiphertext == "" || calls != 1 || len(runtime.stages) != 0 {
+		t.Fatalf("staged intent: %+v %v calls=%d", staged, err, calls)
+	}
+	// A Manager restart reconstructs the strategy; the protected snapshot is the
+	// only key source, so the same credential reaches the destination.
+	op.Strategy = staged.Checkpoint
+	request.AdoptionCiphertext = staged.AdoptionCiphertext
+	committed, err := New(options).Execute(t.Context(), op, request)
+	if err != nil || committed.Checkpoint.Stage != "committed" || calls != 1 || len(runtime.stages) != 1 {
+		t.Fatalf("resume: %+v %v calls=%d", committed, err, calls)
+	}
+	if len(runtime.stages[0].APIKeys) != 1 || runtime.stages[0].APIKeys[0] != key.Secret || committed.InitialClientKey != key.Secret {
+		t.Fatalf("destination install key: %+v", runtime.stages[0].APIKeys)
+	}
+	// The committed replay never re-delivers the secret.
+	op.Strategy = committed.Checkpoint
+	replay, err := New(options).Execute(t.Context(), op, request)
+	if err != nil || replay.InitialClientKey != "" || calls != 1 || len(runtime.stages) != 1 {
+		t.Fatalf("committed replay: %+v %v", replay, err)
+	}
+}
+
 func TestManagedMigrationRequiresStoppedRuntimeAndIsJournaled(t *testing.T) {
 	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
-	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact, InitialClientKey: installInitialClientKey()})
 	op := operation()
 	op.ProductComplete = true
 	op.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}
@@ -334,7 +411,7 @@ func TestManagedMigrationRefusesGatewayAuthPresence(t *testing.T) {
 	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
 	runtime.status.State = model.RuntimeStateOffline
 	runtime.stageErr = &runtimeservice.ProtocolError{Code: runtimeservice.ProtocolErrorCode("gateway_auth_present"), HTTPStatus: 409}
-	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact, InitialClientKey: installInitialClientKey()})
 	op := operation()
 	op.ProductComplete = true
 	op.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}

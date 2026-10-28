@@ -249,7 +249,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	// Pending/missing evidence retains the existing typed strategy blockers. The
 	// strategy's post-Start destination read-back must not race the spawn, so its
 	// Runtime client waits for the Supervisor's readiness observation first.
-	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: freshReadyStartRuntime(runtime), Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL})
+	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: freshReadyStartRuntime(runtime), Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL, InitialClientKey: a.installInitialClientKey})
 	a.runtime = runtime
 	// Normal Fresh initialization is authorized by the admitted installation
 	// and its Admin/session. Retain the opt-in private harness restriction only
@@ -628,6 +628,18 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		} else {
 			w.WriteHeader(http.StatusConflict)
 		}
+		return
+	}
+	if result.InitialClientKey != "" {
+		// The call that commits the destination is the only reply that carries
+		// the installation's Client Key. It is written once, in the same response
+		// as the committed checkpoint, so the completion screen can show it; the
+		// committed replay above never repeats it and no journal or log holds it.
+		w.Header().Set("Cache-Control", "no-store")
+		writeFreshJSON(w, struct {
+			bootstrap.FreshOperation
+			InitialClientKey string `json:"initialClientKey"`
+		}{next.Operation, result.InitialClientKey})
 		return
 	}
 	writeFreshJSON(w, next.Operation)

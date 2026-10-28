@@ -141,6 +141,7 @@ func installReadinessStrategy(t *testing.T, client runtimeservice.RuntimeClient,
 		Runtime: client, Protector: opened.Protector, DestinationBaseURL: baseURL,
 		QualifiedArtifactID: artifact,
 		Qualification:       bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true},
+		InitialClientKey:    installTestClientKey,
 	}), opened.Record.Operation
 }
 

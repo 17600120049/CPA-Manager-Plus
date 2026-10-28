@@ -142,6 +142,24 @@ func (s *Service) Apply(ctx context.Context, id string, generation uint64) (Stat
 	if op, err := s.repo.LatestOperation(ctx); err != nil || op != nil {
 		return result, repo.ErrConflict
 	}
+	// The install-generated Key is already in the destination: the destination
+	// was staged with it before CPA started. Observe that live state instead of
+	// installing a second key, which CPA would reject anyway because its list is
+	// no longer empty. A workspace key that owns the journal keeps the strict
+	// conflict: its unknown attempt must never be retried.
+	attempt, err := s.repo.InitialInstall(ctx)
+	if err != nil {
+		return result, err
+	}
+	if attempt != nil && attempt.KeyID == id {
+		key, err := s.keys.Detail(ctx, id)
+		if err != nil {
+			return result, err
+		}
+		if key.Origin == freshkeys.OriginInstaller {
+			return s.observe(ctx, id, generation)
+		}
+	}
 	p, err := s.permit()
 	if err != nil {
 		return result, err
@@ -182,6 +200,50 @@ func (s *Service) Observe(ctx context.Context, id string, generation uint64) (St
 		return s.externalObserve(ctx, id, generation)
 	}
 	return s.observe(ctx, id, generation)
+}
+
+// ManagedRunID is the installation run identity the install-derived authority
+// derives from a Fresh operation. The strategy that stages the default
+// destination and the authority that reads it must derive the same value.
+func ManagedRunID(operationID string) string { return "managed:" + operationID }
+
+// EnsureInitialInstall persists the installation-minted Client Key and records
+// the single initial-install attempt for it before the destination is staged.
+// It is idempotent: the canonical origin-unique Key and the one-shot journal are
+// both replayed, so a resume never mints a second key and the existing install
+// route sees the key as already installed.
+func (s *Service) EnsureInitialInstall(ctx context.Context, runID string, generation uint64) (freshkeys.InitialKey, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s == nil || s.keys == nil || s.repo == nil || runID == "" || generation == 0 {
+		return freshkeys.InitialKey{}, ErrUnavailable
+	}
+	key, err := s.keys.EnsureInitialKey(ctx)
+	if err != nil {
+		return freshkeys.InitialKey{}, err
+	}
+	generationText := strconv.FormatUint(generation, 10)
+	attempt, err := s.repo.InitialInstall(ctx)
+	if err != nil {
+		return freshkeys.InitialKey{}, err
+	}
+	if attempt == nil {
+		err = s.repo.ClaimInitialInstall(ctx, repo.InitialInstall{KeyID: string(key.ID), RunID: runID, Generation: generationText, AttemptedAtMS: time.Now().UnixMilli()})
+		if err == nil {
+			return key, nil
+		}
+		// A concurrent attempt owns the journal; only its exact binding replays.
+		if attempt, err = s.repo.InitialInstall(ctx); err != nil {
+			return freshkeys.InitialKey{}, err
+		}
+		if attempt == nil {
+			return freshkeys.InitialKey{}, ErrUnavailable
+		}
+	}
+	if attempt.KeyID != string(key.ID) || attempt.RunID != runID || attempt.Generation != generationText {
+		return freshkeys.InitialKey{}, ErrGeneration
+	}
+	return key, nil
 }
 func (s *Service) observe(ctx context.Context, id string, generation uint64) (State, error) {
 	result := State{KeyID: id, RuntimeState: "effect_unknown"}

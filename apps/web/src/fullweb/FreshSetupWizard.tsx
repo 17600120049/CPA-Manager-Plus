@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { bootstrapJourneyText as j } from '../i18n/bootstrapJourney';
 import { shellText as s } from '../i18n/consoleShell';
 import { fullWebText as t } from '../i18n/fullweb';
+import { keyWorkspaceText as k } from '../i18n/freshKeyWorkspace';
 import {
   BootstrapTransportError,
   validateFreshAdminKey,
@@ -93,6 +94,11 @@ export function FreshSetupWizard({
   const [savedKey, setSavedKey] = useState(false);
   const [target, setTarget] = useState<Target | null>(null);
   const [busy, setBusy] = useState(false);
+  // The install-generated Client Key is shown once, on the completion screen of
+  // the run that committed the destination. It lives in memory only: never in
+  // browser storage, and never in the summary or the URL.
+  const [installKey, setInstallKey] = useState('');
+  const [installKeyFeedback, setInstallKeyFeedback] = useState<'copied' | 'failed' | ''>('');
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [unknown, setUnknown] = useState(false);
@@ -258,7 +264,13 @@ export function FreshSetupWizard({
               checkpoint?.targetArtifactId || observed!.activeGatewayArtifact.artifactId,
           };
         }
-        current = await write(current, 'strategy', () => transport.executeStrategy(body));
+        let delivered = '';
+        current = await write(current, 'strategy', async () => {
+          const executed = await transport.executeStrategy(body);
+          delivered = executed.initialClientKey;
+          return executed.operation;
+        });
+        if (delivered) setInstallKey(delivered);
         setCPAKey('');
         if (current.strategy?.stage === 'starting') {
           setNote(j('waitingRuntime'));
@@ -545,6 +557,54 @@ export function FreshSetupWizard({
                   </label>
                 </>
               )}
+              {complete && installKey && (
+                <section
+                  className="journey-key"
+                  data-testid="install-client-key"
+                  aria-label={k('installKeyTitle')}
+                >
+                  <h2>{k('installKeyTitle')}</h2>
+                  <p>{k('installKeyHelp')}</p>
+                  <code data-testid="install-client-key-value">{installKey}</code>
+                  <div className="header-actions">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      data-testid="copy-install-client-key"
+                      onClick={() =>
+                        void task(async () => {
+                          try {
+                            await navigator.clipboard.writeText(installKey);
+                            setInstallKeyFeedback('copied');
+                          } catch {
+                            setInstallKeyFeedback('failed');
+                          }
+                        })
+                      }
+                    >
+                      <FullWebIcon name="copy" />
+                      {k('copyKey')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      data-testid="dismiss-install-client-key"
+                      onClick={() => {
+                        setInstallKey('');
+                        setInstallKeyFeedback('');
+                      }}
+                    >
+                      {k('installKeyDismiss')}
+                    </button>
+                  </div>
+                  {installKeyFeedback && (
+                    <p role="status" data-testid="install-client-key-feedback">
+                      {k(installKeyFeedback === 'copied' ? 'installKeyCopied' : 'installKeyCopyFailed')}
+                    </p>
+                  )}
+                  <p className="journey-quiet">{k('installKeyLater')}</p>
+                </section>
+              )}
               {complete && <p className="journey-quiet">{j('bookmark')}</p>}
             </>
           )}
@@ -576,7 +636,10 @@ export function FreshSetupWizard({
               className="btn btn-primary"
               data-testid="enter-console"
               href={operation.routing.target}
-              onClick={() => transport.clear()}
+              onClick={() => {
+                setInstallKey('');
+                transport.clear();
+              }}
             >
               {j('finishLogin')}
               <FullWebIcon name="arrowRight" size={20} />

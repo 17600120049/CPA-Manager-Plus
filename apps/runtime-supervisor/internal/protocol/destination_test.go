@@ -31,7 +31,7 @@ func TestDestinationProtocolReportsGatewayAuthRefusalForNewManaged(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := lifecycle.DestinationRequest{OperationID: "fresh:managed-destination", ExpectedRuntimeIdentity: "runtime-01", ExpectedRuntimeGeneration: 1, ExpectedActiveArtifactID: artifact.ID("sha256:" + strings.Repeat("a", 64)), SourceIdentity: "managed:sha256:" + strings.Repeat("b", 64), SourceClass: lifecycle.SourceClassNewManaged, APIKeys: []string{}, ManagementKey: strings.Repeat("c", 64)}
+	r := lifecycle.DestinationRequest{OperationID: "fresh:managed-destination", ExpectedRuntimeIdentity: "runtime-01", ExpectedRuntimeGeneration: 1, ExpectedActiveArtifactID: artifact.ID("sha256:" + strings.Repeat("a", 64)), SourceIdentity: "managed:sha256:" + strings.Repeat("b", 64), SourceClass: lifecycle.SourceClassNewManaged, APIKeys: []string{"sk-" + strings.Repeat("d", 64)}, ManagementKey: strings.Repeat("c", 64)}
 	body, _ := json.Marshal(r)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest("POST", destinationPath, strings.NewReader(string(body)))

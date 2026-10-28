@@ -3,8 +3,8 @@
 This is the bounded Linux/amd64 Fresh New journey on `v2`, using the normal
 official CPA v8 Runtime. It uses the existing Host initialization, Bootstrap,
 routing and Runtime lifecycle contracts. Ordinary Compose model Gateway stays
-Pending, including with zero CPA Client Keys. This is not a public deployment,
-Provider setup, Upgrade or five-path Beta qualification.
+Pending. CPA always starts with its installation-generated Client Key. This is
+not a public deployment, Provider setup, Upgrade or five-path Beta qualification.
 
 Use a disposable host/project and **new volumes**. Never attach an existing
 installation, Agent B's volumes/network, or a production database. Preserve both
@@ -150,15 +150,17 @@ installed Playwright Chromium. Use a new output directory per run. The script
 pins the supplied images by local image ID, creates a random Compose project,
 binds a random loopback port and removes only its own project/volumes afterward.
 It retains a secret-free JSON report and masked screenshots. It never logs
-Handoff or Admin/Runtime tokens. The data-layer step creates one Client Key and
-sends one model request inside the disposable installation.
+Handoff or Admin/Runtime tokens. The data-layer step exposes the
+installation-generated Client Key through the Key workspace, re-reads it on demand
+through `POST api-keys/<APIKeyID>/secret`, and sends one model request with it
+inside the disposable installation.
 
 The script asserts `/health` is `503` before Host initialize and `200` with the
 Manager service identity after the Fresh store takeover, then drives the whole
 setup wizard (administrator key, one installation submission, public route) and
 checks the CPA data layer through the `cpamp/` resource bridge: one CPA
-management read, one Client Key creation plus initial install, and one model
-request that must authenticate the installed Client Key (non-401 — it proves
+management read, the installation key installed (observed, not written) and one
+model request that must authenticate that key (non-401 — it proves
 authentication, not a real Provider response; real Provider model success is
 reported NOT RUN because no Provider fixture exists in the disposable install).
 `CPAMP_SMOKE_MODEL_TARGET` selects where that request is sent: the default
@@ -166,10 +168,12 @@ reported NOT RUN because no Provider fixture exists in the disposable install).
 `http://cpamp-ingress:18317` reaches it through the public Ingress listener. The
 data layer has no tolerance: the committed default New Managed destination is the
 installation-derived CPA management authority, so a bridge or install status
-other than the expected one fails the run. Before the first Client Key exists
-every tested Gateway path answers the Pending `503`; once one is installed the
-Ingress admits it, and any status other than Pending on that path means admission
-was granted. A restarted Runtime reports a new generation, which withdraws
+other than the expected one fails the run. Before the completion commits, every
+tested Gateway path answers the Pending `503`; once the destination is admitted
+every one of those paths stops answering the Pending body, and a status other
+than Pending means admission was granted. An anonymous direct call to the
+destination CPA is `401` from the first second, because the destination was
+staged with its installation key. A restarted Runtime reports a new generation, which withdraws
 admission until a new completion binds it, so the post-restart Gateway path is
 asserted closed again. The managed retry layout check runs when the config
 catalog exposes a retry count or interval field, and is reported `NOT RUN` only
@@ -227,8 +231,72 @@ the protected destination snapshot in the Fresh CAS checkpoint, stages and
 starts the destination, then requires an authenticated CPA v8 config read-back
 before committing `manager_config_v1`. The runtime template binds CPA to
 `0.0.0.0`, enables remote management and usage statistics, and disables the
-control panel. The key is never returned to the browser, Runtime journal,
-operation response, or logs.
+control panel.
+
+These are two different credentials with two different audiences, and the
+distinction matters when reading any statement about "the key":
+
+- the **management key** authenticates Manager to CPA's remote management API.
+  It is never returned to the browser, Runtime journal, operation response or
+  logs; Manager keeps only its protected form and unprotects it per call;
+- the **installer Client Key** authenticates model traffic to CPA. It is
+  returned exactly once, in the reply that commits the destination, and is
+  readable later on demand through `POST api-keys/<APIKeyID>/secret`.
+
+The same snapshot carries exactly one installation-generated Client Key, so CPA
+never starts with client authentication disabled. `freshkeys.EnsureInitialKey`
+mints `sk-` plus 64 `[A-Za-z0-9]` characters once, and the `origin = 'installer'`
+column with its partial unique index makes that record singular: a retry, a
+resume or a process restart replays the exact key instead of minting a second
+one. `freshkeyapply.EnsureInitialInstall` persists the key and the one-shot
+initial-install journal before the destination is described; the Supervisor
+rejects a `new_managed` stage that carries zero keys, two keys, or a
+workspace-shaped key. A missing or unpersistable key blocks the install with
+`managed_initial_client_key_unavailable` instead of starting an open CPA.
+
+The Key workspace lists that record with `origin: "installer"` and the default
+name `Initial key`; `POST api-keys/<APIKeyID>/secret` is the authenticated
+on-demand read behind the copy button, and it refuses a superseded key. The
+`initial-install` route observes the already-installed key and writes nothing,
+while a later workspace key cannot consume that single journal (409).
+
+#### Where the installer Client Key lives at rest
+
+The installer Client Key is a working credential for model traffic, not a
+one-way secret: CPA has to read it on every request, so `access.api-keys` in the
+child-owned CPA `config.yaml` holds it in plaintext regardless of what Manager
+does. The declared trust model is therefore "the Docker host is trusted; other
+processes inside the same container are not", and the key is confined to
+exactly these places:
+
+| location | form | access |
+| --- | --- | --- |
+| Manager SQLite (`freshkeys`, `origin = 'installer'`) | encrypted with the existing protector | Manager process; plaintext only in memory during a call |
+| Runtime volume `destination/stage.json` | plaintext | Supervisor-only stage snapshot, mode `0600`, same boundary as the management key |
+| Runtime volume CPA `config.yaml` (child-owned) | plaintext `access.api-keys` | the CPA child process, `0600` |
+| committing `POST strategy` reply | plaintext `initialClientKey` | the one in-flight install session, `Cache-Control: no-store`, never persisted by the browser |
+| `POST api-keys/<APIKeyID>/secret` reply | plaintext | authenticated Admin, `Cache-Control: no-store`, never cached |
+
+The Supervisor stage snapshot is not a new disclosure path: it has always held
+`ManagementKey` and the `network_existing`/legacy `APIKeys` in plaintext under
+the same `0600` Supervisor-only rule, and the child `config.yaml` must be
+plaintext for CPA to work. Manager keeps only the protected form, and the
+committed acceptance script (`bin/ci/fresh-new-installation.mjs`) checks the
+boundary it can observe from inside the disposable installation rather than
+scanning Manager's volume for encodings:
+
+- the raw installer Client Key, like every other secret the run touches, must not
+  appear in `docker compose logs` output;
+- the Manager volume's persistent identity files and its `settings` digest are
+  byte-identical before and after a completed-operation replay, so the replay
+  neither rewrites the checkpoint nor rewrites a credential;
+- the committing `POST strategy` reply carries the key exactly once with
+  `Cache-Control: no-store`, a replay of the committed operation omits both the
+  field and the key, `POST api-keys/<APIKeyID>/secret` returns it with the same
+  header, and the Key list never carries a plaintext secret.
+
+Anything beyond those checks — for example scanning the Manager volume for the
+key's hex and base64 encodings — is out-of-band verification, not CI evidence.
 
 After commit, `freshkeyapply.Service.DefaultInstallCPAAuthorityProven` in
 `apps/manager-server/internal/service/freshkeyapply/config_target.go` is the
@@ -384,11 +452,14 @@ it stays closed until Manager re-publishes the projection (the existing
 timeout, non-200 reply, legacy `204`, unknown field, trailing data or mismatch
 keeps the Gateway closed.
 
-Client authentication is enforced by requiring at least one installed Client
-Key, not by reacting to its removal. Three facts form the safety chain:
+Client authentication is enforced from the first second of the destination,
+not by reacting to a later key install. Three facts form the safety chain:
 
-1. admission requires at least one installed key, so Manager never admits a
-   destination whose client set is empty;
+1. the destination is staged with exactly one installation-generated Client Key
+   (`sk-` plus 64 `[A-Za-z0-9]`), which the Supervisor refuses to drop, so CPA
+   v8 starts with client authentication on; admission still requires at least
+   one installed key, so Manager never admits a destination whose client set is
+   empty;
 2. the product cannot empty that set: a managed revoke of the last effective
    key is refused with `ErrLastKey` (HTTP 409 `last_effective_key`), and
    replace installs the successor before the old key is dropped;
@@ -397,12 +468,13 @@ Key, not by reacting to its removal. Three facts form the safety chain:
    withdraws admission at that read.
 
 "Revoke every Client Key" is therefore not a reachable product state and does
-not itself withdraw admission. The residual window is out-of-band only: a
-positive answer already held by Ingress stays effective for at most 15 s, and
-CPA v8 with zero configured client keys does not enforce client
-authentication, so anonymous Gateway requests during that window are not
-rejected by CPA. With at least one installed key, a missing or wrong client
-credential is forwarded to CPA, which answers `401`.
+not itself withdraw admission. Because the destination never starts with an
+empty key set, CPA v8 has client authentication on for the whole life of the
+installation; an anonymous direct call to the destination is refused with `401`
+even before any workspace key exists. The residual window is out-of-band only: a
+positive admission answer already held by Ingress stays effective for at most
+15 s after the destination is changed outside Manager, and a missing or wrong
+client credential is forwarded to CPA, which answers `401`.
 
 The public Ingress listener never proxies CPA management paths:
 `/v8/management` is denied at the transport edge, `/v0/management` keeps its
@@ -432,15 +504,16 @@ this document and verifies, in order:
 1. Fresh New Managed completes with the destination identity, generation and
    artifact recorded; `manager_config_v1` and `setup` resolve to the same base
    URL and management authority without exposing it.
-2. Create a Client Key and send a real model request through the public
-   Ingress listener by setting
-   `CPAMP_SMOKE_MODEL_TARGET=http://cpamp-ingress:18317` for the smoke run;
-   observe CPA acceptance. Replace the key and observe the old key rejected
+2. Read the installation key from the completion screen, then create a workspace
+   Client Key and send a real model request through the public Ingress listener
+   by setting `CPAMP_SMOKE_MODEL_TARGET=http://cpamp-ingress:18317` for the smoke
+   run; observe CPA acceptance. Replace the key and observe the old key rejected
    while the new key works; revoking the last effective key must return 409
-   `last_effective_key`. Before the first Client Key exists the same request
-   returns 503; with a key installed, a wrong or missing credential returns
-   401 from CPA. A restart of Ingress must not forward before it has
-   reconfirmed admission.
+   `last_effective_key`. Before the installation is admitted the same request
+   returns the Pending 503; once admitted, a wrong or missing credential returns
+   401 from CPA, because the destination always has at least its installation
+   key. A restart of Ingress must not forward before it has reconfirmed
+   admission.
 3. Read and write each accepted Gateway retry/streaming field, then read it
    back and compare the CPA v8 config. Interrupt one write, query its operation
    and resume it; the journal must not duplicate the PUT.

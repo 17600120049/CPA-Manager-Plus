@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 )
@@ -42,6 +43,8 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 		a.keyUsage(w, r, op, strings.TrimSuffix(strings.TrimPrefix(resource, "api-keys/"), "/usage"))
 	case strings.HasSuffix(resource, "/revocation") && strings.Count(resource, "/") == 2:
 		a.prepareClientKeyOperation(w, r, op, strings.TrimSuffix(strings.TrimPrefix(resource, "api-keys/"), "/revocation"))
+	case strings.HasSuffix(resource, "/secret") && strings.Count(resource, "/") == 2 && r.Method == http.MethodPost:
+		a.clientKeySecret(w, r, op, strings.TrimSuffix(strings.TrimPrefix(resource, "api-keys/"), "/secret"))
 	case strings.HasSuffix(resource, "/initial-install") && strings.Count(resource, "/") == 2:
 		a.initialClientKey(w, r, op, strings.TrimSuffix(strings.TrimPrefix(resource, "api-keys/"), "/initial-install"))
 	case resource == "api-keys" && r.Method == http.MethodGet:
@@ -151,8 +154,64 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 		}
 		writeFreshJSON(w, result)
 	default:
-		// Including the final staged key: no delete/replace/reveal route exists.
+		// Including the final staged key: no delete/replace route exists, and a
+		// saved secret is never part of a list or detail response.
 		w.Header().Set("Allow", "GET, POST")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+// clientKeySecret is the authenticated on-demand copy of one saved Client Key.
+// The interaction is fixed: lists and details show only the masked preview, and
+// the full value is decrypted for this response alone. It is never logged,
+// journaled, cached or stored in the browser.
+func (a *freshApplication) clientKeySecret(w http.ResponseWriter, r *http.Request, op bootstrap.FreshOperation, id string) {
+	if a.keys == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	if r.Header.Get("Content-Type") != "application/json" {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+	var body *struct{}
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128))
+	d.DisallowUnknownFields()
+	var trailing any
+	if d.Decode(&body) != nil || body == nil || d.Decode(&trailing) != io.EOF {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	key, err := a.keys.Detail(r.Context(), id)
+	if errors.Is(err, freshkeys.ErrRequest) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, freshkeys.ErrNotFound) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	// A superseded record is retained history: it can no longer authenticate, so
+	// there is nothing to copy.
+	if key.Lifecycle != identity.LifecycleActive {
+		w.WriteHeader(http.StatusConflict)
+		return
+	}
+	var secret string
+	if err := a.keys.WithStagedSecret(r.Context(), id, func(value string) error {
+		secret = value
+		return nil
+	}); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	writeFreshJSON(w, struct {
+		Secret string `json:"secret"`
+	}{secret})
 }

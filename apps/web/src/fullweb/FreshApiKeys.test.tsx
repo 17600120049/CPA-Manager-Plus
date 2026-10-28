@@ -54,6 +54,7 @@ const key = {
   runtimeState: 'not_applied',
   name: '',
   nameRevision: 1,
+  origin: 'workspace' as const,
 };
 const secret = 'cpamp_sk_' + 'c'.repeat(64);
 const empty = () => Response.json({ keys: [], gatewayPending: true, revocationAvailable: false });

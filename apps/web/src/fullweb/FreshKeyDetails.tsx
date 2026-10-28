@@ -6,7 +6,7 @@ import './freshKeys.css';
 import { PublicApiError, type createPublicApiClient } from './publicApi';
 import { parseKeyUsage, usageCountText, usageCoveragePill, usageReasonText, usageStateText, usageTimeText, type KeyUsage, type UsageState } from './freshKeyUsage';
 import { FreshKeyInstallation } from './FreshKeyInstallation';
-import { validKey, type Key } from './freshKeyMetadata';
+import { keyDisplayName, validKey, validSecretShape, type Key } from './freshKeyMetadata';
 import { Drawer } from '../components/ui/Drawer';
 import { Modal } from '../components/ui/Modal';
 import { SegmentedTabs } from '../components/ui/SegmentedTabs';
@@ -58,6 +58,11 @@ export function FreshKeyDetails({
   const [rejectedDraft, setRejectedDraft] = useState(false);
   const [message, setMessage] = useState('');
   const [editing, setEditing] = useState(false);
+  // The full value is read on demand for the clipboard only. It is never kept in
+  // component state, browser storage or the URL.
+  const [copying, setCopying] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<'copied' | 'failed' | ''>('');
+  const copyingRef = useRef(false);
   const inFlight = useRef(false);
   const active = useRef(true);
   const input = useRef<HTMLInputElement>(null);
@@ -117,6 +122,27 @@ export function FreshKeyDetails({
     } finally {
       inFlight.current = false;
       if (active.current) setBusy(false);
+    }
+  }
+
+  // One authenticated read, one clipboard write. The response is not cached and
+  // no part of the secret survives this call.
+  async function copySavedSecret() {
+    if (copyingRef.current || record?.lifecycle === 'superseded') return;
+    copyingRef.current = true;
+    setCopying(true);
+    setCopyFeedback('');
+    try {
+      const value = await client.post<{ secret: string }>(resource + '/secret', {}, auth);
+      if (!value || !validSecretShape(value.secret)) throw new Error();
+      await navigator.clipboard.writeText(value.secret);
+      if (active.current) setCopyFeedback('copied');
+    } catch (err) {
+      if (err instanceof PublicApiError && err.kind === 'authentication') onUnauthorized();
+      else if (active.current) setCopyFeedback('failed');
+    } finally {
+      copyingRef.current = false;
+      if (active.current) setCopying(false);
     }
   }
 
@@ -266,7 +292,7 @@ export function FreshKeyDetails({
                   <FullWebIcon name="key" size={24} />
                 </span>
                 <div>
-                  <h3>{record.name || t('keysUnnamed')}</h3>
+                  <h3>{keyDisplayName(record, k('installerOrigin'), t('keysUnnamed'))}</h3>
                   <p>
                     <code>{record.maskedPreview}</code>
                   </p>
@@ -312,8 +338,29 @@ export function FreshKeyDetails({
                   <div className="key-detail-section-body">
                     <p className="key-detail-description">{k('detailHelp')}</p>
                     <div className="key-readonly-field">
+                      <span>{k('credential')}</span>
+                      <code>{record.maskedPreview}</code>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        data-testid="copy-saved-client-secret"
+                        disabled={busy || unknown || copying || record.lifecycle === 'superseded'}
+                        onClick={() => void copySavedSecret()}
+                      >
+                        {k('copyKey')}
+                      </button>
+                    </div>
+                    {copyFeedback && (
+                      <p
+                        role="status"
+                        className="key-notice"
+                        data-testid="copy-saved-client-secret-feedback"
+                      >
+                        {k(copyFeedback === 'copied' ? 'keyCopied' : 'keyCopyFailed')}
+                      </p>
+                    )}
+                    <div className="key-readonly-field">
                       <span>{t('keysName')}</span>
-                      <strong>{record.name || t('keysUnnamed')}</strong>
+                      <strong>{keyDisplayName(record, k('installerOrigin'), t('keysUnnamed'))}</strong>
                       <button
                         className="btn btn-secondary btn-sm"
                         disabled={busy || unknown || installationPending}
