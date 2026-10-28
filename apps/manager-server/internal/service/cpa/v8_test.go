@@ -64,6 +64,50 @@ func TestFreshV8NeverFollowsRedirectOrFallsBackToV0(t *testing.T) {
 	}
 }
 
+// CPA v8 disables client authentication when its Key list is empty, so a
+// well-formed source with no Key is not an invalid body: it has nothing to
+// adopt, and the browser needs that specific reason instead of an unreadable
+// source. The refusal is typed, and the read that discovers it stays the single
+// bounded GET the adoption already performs.
+func TestFreshV8AdoptionRefusesAZeroKeySourceWithItsOwnReason(t *testing.T) {
+	const zeroKeys = `{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"/private/auth"},"access":{"api-keys":[]}}`
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(zeroKeys))
+	}))
+	defer server.Close()
+	snapshot, err := ReadV8AdoptionSnapshot(context.Background(), server.URL, "private-management-key")
+	if !errors.Is(err, V8AdoptionSourceEmpty) || calls.Load() != 1 || snapshot.APIKeys != nil {
+		t.Fatalf("zero-key source: %+v %v calls=%d", snapshot, err, calls.Load())
+	}
+	// The refusal must not be reachable as a generic read failure: the same body
+	// is a valid observation for the read-only External surface, which never
+	// adopts and therefore never needs Keys.
+	if observation, err := ReadV8Config(context.Background(), server.URL, "private-management-key"); err != nil || observation.ClientKeyCount != 0 {
+		t.Fatalf("read-only surface rejected a zero-key source: %+v %v", observation, err)
+	}
+	// A malformed or oversized Key list stays a config failure, not an empty
+	// source: only a well-formed empty list is the adoption-specific reason.
+	for name, body := range map[string]string{
+		"null-list":    strings.Replace(zeroKeys, `"api-keys":[]`, `"api-keys":null`, 1),
+		"null-element": strings.Replace(zeroKeys, `"api-keys":[]`, `"api-keys":[null]`, 1),
+		"bad-element":  strings.Replace(zeroKeys, `"api-keys":[]`, `"api-keys":[7]`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(body))
+			}))
+			defer invalid.Close()
+			if _, err := ReadV8AdoptionSnapshot(context.Background(), invalid.URL, "private-management-key"); !errors.Is(err, V8InvalidConfig) {
+				t.Fatalf("accepted %s as an empty source: %v", name, err)
+			}
+		})
+	}
+}
+
 func TestFreshV8RejectsInvalidAndOversizedBodies(t *testing.T) {
 	for name, body := range map[string][]byte{
 		"wrong-generation":     []byte(strings.Replace(safeV8Config, `"config-version":8`, `"config-version":7`, 1)),
