@@ -104,11 +104,22 @@ async function navigateInApp(page, path) {
 }
 
 // The plugin page's sidebar entry is contributed by the plugin itself, so its
-// label and href come from the plugin list rather than a fixed route table.
+// label and href come from the plugin list rather than a fixed route table. It
+// sits inside the "Plugins" nav group, whose children only render once the
+// group is open, so the group is opened the way an operator opens it.
 async function openPluginPageFromSidebar(page, pluginId, menuIndex, expectedLabel) {
   const route = `/plugin-pages/${encodeURIComponent(pluginId)}/${menuIndex}`;
   const href = `${consoleBase}${route}`;
-  const link = page.locator(`.app-shell a.nav-item[href="${href}"]`).first();
+  let link = page.locator(`.app-shell a.nav-item[href="${href}"]`).first();
+  if ((await link.count()) === 0) {
+    const group = page
+      .locator('.app-shell .nav-item[aria-expanded], .app-shell .nav-item')
+      .filter({ hasText: /Plugins|插件/i })
+      .first();
+    await group.waitFor({ state: 'visible', timeout: 60000 });
+    await group.click();
+    link = page.locator(`.app-shell a.nav-item[href="${href}"]`).first();
+  }
   await link.waitFor({ state: 'visible', timeout: 60000 });
   const label = (await link.innerText()).trim();
   assert(
