@@ -3,7 +3,6 @@ package freshkeyapply
 import (
 	"context"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
@@ -27,30 +26,23 @@ func (s *Service) externalPrepare(ctx context.Context, id, target, keeper, mode 
 	}
 	w := s.externalKeyWire(install)
 	if w == nil {
-		return result, ErrUnavailable
-	}
-	installed, err := s.externalInstalledKey(ctx)
-	if err != nil {
-		return result, err
-	}
-	// A revoke may only ever remove the credential that is live; a replace
-	// removes it while installing the replacement. Either way the target must be
-	// the one the user's CPA currently accepts.
-	if installed != target {
-		return result, repo.ErrConflict
+		return result, ErrExternalUnavailable
 	}
 	err = s.keyPair(ctx, target, keeper, false, func(old, next string) error {
 		snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
 		if err != nil {
 			return err
 		}
-		if !slices.Contains(snapshot.Keys, old) || slices.Contains(snapshot.Keys, next) {
+		// The user's CPA is administered by the user, so it may carry credentials
+		// this Manager never staged. The step acts on exactly one of them: the
+		// credential it removes must be carried, and that is the whole condition.
+		if old == next || !slices.Contains(snapshot.Keys, old) {
 			return cpa.ErrSourceConflict
 		}
-		// The last credential is the only thing standing between the user's CPA
-		// and unauthenticated clients; removing it is their decision, never a
-		// step of this Manager.
-		if len(snapshot.Keys) <= 1 {
+		// A replace keeps a credential on the CPA; a revoke of the only one would
+		// leave it accepting unauthenticated clients, which is the user's decision
+		// and never a step of this Manager.
+		if mode == "revoke" && len(snapshot.Keys) <= 1 {
 			return ErrLastKey
 		}
 		return nil
@@ -64,7 +56,10 @@ func (s *Service) externalPrepare(ctx context.Context, id, target, keeper, mode 
 	}
 	o := repo.Operation{
 		ID: id, TargetID: target, KeeperID: keeper, Mode: mode,
-		RunID: install.Identity, Generation: strconv.FormatUint(install.Checkpoint, 10),
+		// The journal records the digest-derived generation, not the checkpoint
+		// number: that is the value a later step is bound to, and it changes as
+		// soon as the user edits the configuration this Manager last observed.
+		RunID: install.Identity, Generation: install.Generation(),
 		Revision: 1, Outcome: "pending", Steps: steps, CreatedAtMS: time.Now().UnixMilli(),
 	}
 	if err = s.repo.BeginOperation(ctx, o); err != nil {
@@ -87,11 +82,13 @@ func (s *Service) externalCheckOperation(ctx context.Context, o *repo.Operation,
 			return r, repo.ErrConflict
 		}
 		if latest.ID != o.ID {
-			if o.RunID != latest.RunID || o.Generation != latest.Generation || o.Generation != strconv.FormatUint(generation, 10) {
-				return r, ErrGeneration
-			}
 			// A historical committed operation is a durable record, not a live
 			// effectiveness claim: its former keeper may since have been revoked.
+			// It is only reported for the connection and generation it was
+			// journaled against.
+			if o.RunID != latest.RunID || o.Generation != latest.Generation {
+				return r, ErrGeneration
+			}
 			return r, nil
 		}
 	}
@@ -99,12 +96,12 @@ func (s *Service) externalCheckOperation(ctx context.Context, o *repo.Operation,
 	if err != nil {
 		return r, err
 	}
-	if o.RunID != install.Identity || o.Generation != strconv.FormatUint(install.Checkpoint, 10) {
+	if o.RunID != install.Identity || o.Generation != install.Generation() {
 		return r, ErrGeneration
 	}
 	w := s.externalKeyWire(install)
 	if w == nil {
-		return r, ErrUnavailable
+		return r, ErrExternalUnavailable
 	}
 	for i, step := range o.Steps {
 		if step.State == "unattempted" {
@@ -143,9 +140,11 @@ func (s *Service) externalCheckOperation(ctx context.Context, o *repo.Operation,
 // CPA may carry credentials it never staged, so a whole-list comparison would
 // report a conflict for a correct write.
 func (s *Service) awaitExternalKeySet(ctx context.Context, w externalWire, install ExternalInstall, step, old, next string) error {
+	// The step's own fact: a revoke leaves the removed credential absent, and the
+	// add step of a replace leaves the replacement carried.
 	want, reject := []string{next}, []string{old}
 	if step == "add" {
-		want, reject = []string{old, next}, nil
+		want, reject = []string{next}, nil
 	}
 	for n := range 3 {
 		snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
@@ -198,23 +197,23 @@ func (s *Service) externalContinue(ctx context.Context, o *repo.Operation, index
 	if err != nil {
 		return r, err
 	}
-	if o.RunID != install.Identity || o.Generation != strconv.FormatUint(install.Checkpoint, 10) {
+	if o.RunID != install.Identity || o.Generation != install.Generation() {
 		return r, ErrGeneration
 	}
 	step := o.Steps[index].Name
 	grant, err := s.keyPermit(ctx, o.ID, step)
 	if err != nil {
-		return r, ErrUnavailable
+		return r, ErrExternalUnavailable
 	}
 	now := time.Now().UnixMilli()
 	if grant.OperationID != o.ID || grant.Step != step || grant.RunID != o.RunID || grant.Generation != o.Generation ||
 		grant.IssuedAtMS < s.startedAtMS || grant.IssuedAtMS < o.CreatedAtMS || grant.IssuedAtMS > now ||
 		grant.ExpiresAtMS <= now || grant.ExpiresAtMS-grant.IssuedAtMS > 60000 || !identity.IsValidSHA256Hex(grant.SourceSHA256) {
-		return r, ErrUnavailable
+		return r, ErrExternalUnavailable
 	}
 	w := s.externalKeyWire(install)
 	if w == nil {
-		return r, ErrUnavailable
+		return r, ErrExternalUnavailable
 	}
 	err = s.keyPair(ctx, o.TargetID, o.KeeperID, false, func(old, next string) error {
 		snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
@@ -227,15 +226,15 @@ func (s *Service) externalContinue(ctx context.Context, o *repo.Operation, index
 		if step == "revoke" && len(snapshot.Keys) <= 1 {
 			return ErrLastKey
 		}
-		want, reject := []string{old, next}, []string(nil)
-		if step == "add" {
-			want, reject = []string{old}, nil
-		}
-		if !externalSatisfied(snapshot.Keys, want, reject) {
+		// A revoke removes the target and keeps the keeper; the add step of a
+		// replace only requires both to be carried, since the user's CPA may
+		// already hold the replacement.
+		if !externalSatisfied(snapshot.Keys, []string{old}, nil) ||
+			(step == "revoke" && len(snapshot.Keys) <= 1) {
 			return cpa.ErrSourceConflict
 		}
 		if !s.keyGrantHeld(ctx, grant, o.ID, step) || time.Now().UnixMilli() >= grant.ExpiresAtMS {
-			return ErrUnavailable
+			return ErrExternalUnavailable
 		}
 		o.Steps[index].State = "attempted"
 		o.Outcome = "unknown"
@@ -243,14 +242,19 @@ func (s *Service) externalContinue(ctx context.Context, o *repo.Operation, index
 			return err
 		}
 		o.Revision++
-		after := []string{next}
+		// The whole list is written because the CPA v8 route replaces it, but the
+		// step is still exactly one membership change: an add introduces the keeper
+		// and a revoke removes the target.
+		after := slices.Clone(snapshot.Keys)
 		if step == "add" {
-			after = append(slices.Clone(snapshot.Keys), next)
-		} else {
-			after = slices.DeleteFunc(slices.Clone(snapshot.Keys), func(key string) bool { return key == old })
-			if next != old && !slices.Contains(after, next) {
+			if !slices.Contains(after, next) {
 				after = append(after, next)
 			}
+		} else {
+			if len(after) <= 1 {
+				return ErrLastKey
+			}
+			after = slices.DeleteFunc(after, func(key string) bool { return key == old })
 		}
 		writeErr := w.ExternalWriteKeySet(ctx, install.ManagementKey, after)
 		o.Steps[index].Returned = true

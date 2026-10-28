@@ -564,9 +564,14 @@ func TestExternalProfileWritesScalarsAndRefusesRuleFamilies(t *testing.T) {
 	service := New(store, nil, nil)
 	service.wire = wire
 	service.transport = nil
-	service.EnableExternal(func(context.Context) (string, string, error) {
+	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
 		return "https://external.test", "management-test-only", nil
 	})
+	// The page asks the one discriminator; an External checkpoint naming this
+	// installation's connection is what its own authority answers for.
+	service.targets = func(op bootstrap.FreshOperation) bool {
+		return op.Strategy.Strategy == bootstrap.ConnectExternal && op.Strategy.Stage == "committed"
+	}
 	service.externalWire = func(string) configWire { return wire }
 	view, err := service.Read(context.Background())
 	if err != nil {
@@ -760,10 +765,10 @@ func TestSaveRefusesATargetTheBrowserDidNotRead(t *testing.T) {
 	}
 }
 
-// TestExternalProfileRefusesAConnectionItNoLongerOwns proves the page only writes
-// the CPA this installation committed. The live settings can be edited after the
-// install, and following them would point the page at someone else's gateway.
-func TestExternalProfileRefusesAConnectionItNoLongerOwns(t *testing.T) {
+// TestExternalProfileRefusesAnAuthorityItCannotResolve proves the page writes only
+// what the External authority resolves. When that authority cannot prove the
+// committed connection, the page stays closed and never contacts a CPA.
+func TestExternalProfileRefusesAnAuthorityItCannotResolve(t *testing.T) {
 	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"strategy": "round-robin"}}}
 	store := &memoryStore{record: managedRecord()}
 	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
@@ -773,16 +778,19 @@ func TestExternalProfileRefusesAConnectionItNoLongerOwns(t *testing.T) {
 	service := New(store, nil, nil)
 	service.wire = wire
 	service.transport = nil
-	service.EnableExternal(func(context.Context) (string, string, error) {
-		return "https://elsewhere.test", "management-test-only", nil
+	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
+		return "", "", cpa.ErrProofUnavailable
 	})
+	service.targets = func(op bootstrap.FreshOperation) bool {
+		return op.Strategy.Strategy == bootstrap.ConnectExternal && op.Strategy.Stage == "committed"
+	}
 	service.externalWire = func(string) configWire { return wire }
 	view, err := service.Read(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Capability.Readable || view.Capability.Writable || view.Capability.Reason != ReasonNotInstalled {
-		t.Fatalf("unowned connection treated as writable: %+v", view.Capability)
+	if view.Capability.Readable || view.Capability.Writable || view.Capability.Reason != ReasonUnavailable {
+		t.Fatalf("unresolved authority treated as writable: %+v", view.Capability)
 	}
 	if wire.reads != 0 {
 		t.Fatal("unowned connection was contacted")

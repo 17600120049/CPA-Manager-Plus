@@ -147,6 +147,10 @@ func gatewayConfigReply(w http.ResponseWriter, v any, e error) {
 		code, status = "config_key_writer_not_isolated", http.StatusConflict
 	case errors.Is(e, cpa.ErrApplyUnknown):
 		code, status = "original_operation_unknown", http.StatusConflict
+	case errors.Is(e, cpa.ErrManagementRejected):
+		// The user's CPA refused the stored management credential. Only rebinding
+		// the connection resolves it, so the page shows that instead of a retry.
+		code, status = freshconfig.ReasonManagementRejected, http.StatusConflict
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

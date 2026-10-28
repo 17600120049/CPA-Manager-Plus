@@ -22,6 +22,12 @@ import (
 // no Runtime for it, so no lifecycle, artifact or readiness fact exists here.
 const ProfileExternal = "external"
 
+// ErrExternalUnavailable reports an External authority that cannot be resolved:
+// no committed checkpoint, no protected connection, or a read-back the user's CPA
+// did not answer. It is separate from ErrUnavailable because that one names the
+// private profile's Host proof, which an External installation never holds.
+var ErrExternalUnavailable = errors.New("external cpa authority unavailable")
+
 // externalIdentityPrefix names an External connection by the digest of its
 // normalized address. The strategy service persists exactly this value, so the
 // address digest is the only comparable durable fact about the connection: the
@@ -75,7 +81,7 @@ func (i ExternalInstall) Generation() string {
 }
 
 // ExternalSource reloads and validates the External authority on every call. It
-// MUST fail closed with ErrUnavailable when the checkpoint, the protected
+// MUST fail closed with ErrExternalUnavailable when the checkpoint, the protected
 // connection or the read-back is unavailable, and it MUST return
 // cpa.ErrManagementRejected when the user's CPA refuses the credential.
 type ExternalSource func(context.Context) (ExternalInstall, error)
@@ -127,7 +133,7 @@ func (s *Service) externalPermit() (Permit, error) {
 // source that returns anything else is refused rather than trusted.
 func (s *Service) externalAuthority(ctx context.Context) (ExternalInstall, error) {
 	if s == nil || s.profile != ProfileExternal || s.externalSource == nil {
-		return ExternalInstall{}, ErrUnavailable
+		return ExternalInstall{}, ErrExternalUnavailable
 	}
 	install, err := s.externalSource(ctx)
 	if err != nil {
@@ -137,11 +143,11 @@ func (s *Service) externalAuthority(ctx context.Context) (ExternalInstall, error
 		if errors.Is(err, ErrGeneration) || errors.Is(err, cpa.ErrSourceConflict) || errors.Is(err, cpa.ErrApplyUnknown) {
 			return ExternalInstall{}, err
 		}
-		return ExternalInstall{}, ErrUnavailable
+		return ExternalInstall{}, ErrExternalUnavailable
 	}
 	if install.Checkpoint == 0 || len(install.ManagementKey) != 64 || install.BaseURL == "" ||
 		!validExternalIdentity(install.Identity) || !identity.IsValidSHA256Hex(install.ConfigSHA256) {
-		return ExternalInstall{}, ErrUnavailable
+		return ExternalInstall{}, ErrExternalUnavailable
 	}
 	return install, nil
 }
@@ -200,7 +206,7 @@ func (s *Service) ExternalKeyPresence(ctx context.Context, ids []identity.APIKey
 	}
 	w := s.externalKeyWire(install)
 	if w == nil {
-		return nil, ErrUnavailable
+		return nil, ErrExternalUnavailable
 	}
 	snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
 	if err != nil {
@@ -262,7 +268,7 @@ func (s *Service) externalApply(ctx context.Context, id string, generation uint6
 	}
 	w := s.externalKeyWire(install)
 	if w == nil {
-		return result, ErrUnavailable
+		return result, ErrExternalUnavailable
 	}
 	err = s.keys.WithStagedSecret(ctx, id, func(secret string) error {
 		snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
@@ -330,7 +336,7 @@ func (s *Service) externalInstalledKey(ctx context.Context) (string, error) {
 		return "", err
 	} else if o != nil {
 		if o.Outcome != "committed" {
-			return "", ErrUnavailable
+			return "", ErrExternalUnavailable
 		}
 		return o.KeeperID, nil
 	}
@@ -359,7 +365,7 @@ func (s *Service) externalInstalledKey(ctx context.Context) (string, error) {
 // generation and the configuration digest observed immediately before the step.
 func (s *Service) externalKeyGrant(ctx context.Context, operationID, step string) (KeyPermit, error) {
 	if operationID == "" || (step != "add" && step != "revoke") {
-		return KeyPermit{}, ErrUnavailable
+		return KeyPermit{}, ErrExternalUnavailable
 	}
 	install, err := s.externalAuthority(ctx)
 	if err != nil {
@@ -367,14 +373,14 @@ func (s *Service) externalKeyGrant(ctx context.Context, operationID, step string
 	}
 	w := s.externalKeyWire(install)
 	if w == nil {
-		return KeyPermit{}, ErrUnavailable
+		return KeyPermit{}, ErrExternalUnavailable
 	}
 	snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
 	if err != nil || !identity.IsValidSHA256Hex(snapshot.SourceSHA256) {
 		if err != nil {
 			return KeyPermit{}, err
 		}
-		return KeyPermit{}, ErrUnavailable
+		return KeyPermit{}, ErrExternalUnavailable
 	}
 	now := time.Now()
 	return KeyPermit{
@@ -401,7 +407,7 @@ func (a externalKeyAuthority) resolved(ctx context.Context, management string) (
 	}
 	w := a.s.externalKeyWire(install)
 	if w == nil {
-		return ExternalInstall{}, nil, ErrUnavailable
+		return ExternalInstall{}, nil, ErrExternalUnavailable
 	}
 	return install, w, nil
 }
@@ -436,7 +442,7 @@ func (a externalKeyAuthority) SampleKeySet(ctx context.Context, accepted, reject
 	}
 	w := a.s.externalKeyWire(install)
 	if w == nil {
-		return false, ErrUnavailable
+		return false, ErrExternalUnavailable
 	}
 	return w.ExternalSampleKeySet(ctx, accepted, rejected)
 }
@@ -446,13 +452,13 @@ func (a externalKeyAuthority) SampleKeySet(ctx context.Context, accepted, reject
 // dispatched to the External read-back before any of them is called — and they
 // refuse rather than pretend.
 func (a externalKeyAuthority) InstallOne(context.Context, cpa.TargetProof, string, string) (cpa.InstallResult, error) {
-	return cpa.InstallResult{}, ErrUnavailable
+	return cpa.InstallResult{}, ErrExternalUnavailable
 }
 
 func (a externalKeyAuthority) Configured(context.Context, string, string) (bool, error) {
-	return false, ErrUnavailable
+	return false, ErrExternalUnavailable
 }
 
 func (a externalKeyAuthority) AuthSweep(context.Context, string) (bool, error) {
-	return false, ErrUnavailable
+	return false, ErrExternalUnavailable
 }

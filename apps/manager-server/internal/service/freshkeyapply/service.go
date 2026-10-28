@@ -78,7 +78,10 @@ func (s *Service) keyGrantHeld(ctx context.Context, grant KeyPermit, operationID
 	if err != nil {
 		return false
 	}
-	if s.profile == ProfileManaged {
+	// An External grant is derived per call from the committed connection and the
+	// configuration read back from the user's CPA, exactly like the managed one,
+	// so its window is re-established rather than compared.
+	if s.profile == ProfileManaged || s.profile == ProfileExternal {
 		return current.OperationID == grant.OperationID && current.Step == grant.Step &&
 			current.RunID == grant.RunID && current.Generation == grant.Generation &&
 			current.SourceSHA256 == grant.SourceSHA256

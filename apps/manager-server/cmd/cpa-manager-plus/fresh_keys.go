@@ -8,12 +8,28 @@ import (
 	"strings"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 )
 
 // Called only after canonical routing and the existing Admin verifier succeed.
 func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op bootstrap.FreshOperation, resource string) {
-	if !op.GatewayPending || op.Strategy.Strategy != "" && op.Strategy.Strategy != bootstrap.NewManaged {
+	// Staging is available while the installation has not selected a strategy.
+	// Once one is committed, the installation authority answers for it: New
+	// Managed, the private profile and External each answer through their own
+	// profile, so a key route can never accept a checkpoint the surface
+	// discriminator refuses.
+	if !op.GatewayPending {
+		w.WriteHeader(http.StatusConflict)
+		return
+	}
+	// The staging routes (list, create, rename) are Manager-local and existed
+	// before any CPA authority did, so they keep serving a New Managed
+	// checkpoint exactly as before. Every other strategy must be admitted by the
+	// installation authority: External answers through its own committed
+	// connection, and an adopted or incomplete checkpoint answers nothing.
+	if op.Strategy.Strategy != "" && op.Strategy.Strategy != bootstrap.NewManaged &&
+		(a.keyApply == nil || !a.keyApply.Targets(op, freshkeyapply.SurfaceKeyOperation)) {
 		w.WriteHeader(http.StatusConflict)
 		return
 	}
