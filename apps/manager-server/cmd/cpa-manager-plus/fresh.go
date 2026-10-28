@@ -629,6 +629,9 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		}
 		if result.Connection != nil {
 			record.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: result.Connection.BaseURL, ManagementKey: result.Connection.ManagementKeyCiphertext}
+			// The plugin capability describes the connection that was saved, so a
+			// new connection must not inherit the previous one's answer.
+			a.pluginCapability.forget()
 		}
 		return nil
 	})
@@ -641,6 +644,10 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if result.InitialClientKey != "" {
+		// The managed install just committed its destination, so its plugin answer
+		// is proven against the new authority from the next read, not inherited from
+		// whatever the pre-commit connection reported.
+		a.pluginCapability.forget()
 		// The call that commits the destination is the only reply that carries
 		// the installation's Client Key. It is written once, in the same response
 		// as the committed checkpoint, so the completion screen can show it; the

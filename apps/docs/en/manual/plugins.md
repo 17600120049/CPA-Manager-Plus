@@ -73,7 +73,12 @@ The consequences:
 
 The plugin resource namespace is read-only in CPA: a `pluginapi.ResourceRoute` is the plugin's own page ("the management UI menu label for this GET resource"), and CPA's plugin host serves it only for GET. A plugin that needs to accept input registers a Management route instead — the official Codex Invite plugin serves its page from `/v0/resource/plugins/codex-invite/invite` over GET and posts the send action to `/v0/management/codex-invite/invite`.
 
-The Manager's plugin proxy is a generic reverse proxy and forwards whatever method the caller used, so a write does reach CPA; CPA answers it with 404 because the resource route is GET-only. Nothing about the isolation depends on the method: the sandbox CSP, the response-header allowlist, redirect confinement and the Fetch Metadata policy apply to a write exactly as to a read.
+What a write gets depends on which layer answers it, and both layers refuse:
+
+- **Full Docker (Ingress in front):** the Ingress routes the plugin resource namespace itself and only a bare, unescaped `GET` or `HEAD` for a canonical resource is forwarded to the Manager. Any other method is denied at the transport edge with `404`, before it reaches the Manager or the Gateway.
+- **Manager only (no Ingress):** the Manager's plugin proxy is a generic reverse proxy and forwards whatever method the caller used, so the write reaches CPA, and CPA refuses it (`404`, because the resource route is GET-only).
+
+The Manager does not add a method veto of its own, because it does not own that namespace. Nothing about the isolation depends on the method either way: the sandbox CSP, the response-header allowlist, redirect confinement and the Fetch Metadata policy apply to a write exactly as to a read.
 
 The Manager also enforces Fetch Metadata on every plugin resource request: a request without `Sec-Fetch-Site` is rejected with 403, and so are same-origin subresource requests whose `Sec-Fetch-Dest` is not a document destination (for example `script`, `worker`, `style`, or `font`). That check, not the CSP, is what stops an admin document from loading plugin code; the admin document's CSP does not exclude plugin URLs by path.
 

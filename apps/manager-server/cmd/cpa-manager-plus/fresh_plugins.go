@@ -153,6 +153,13 @@ func pluginResourceRequest(r *http.Request) bool {
 //
 // Until the first proof lands the answer is false. The navigation narrows rather
 // than advertising a capability that has not been demonstrated.
+//
+// The answer describes one saved connection, so a connection change invalidates
+// it immediately rather than up to one TTL later. forget() therefore carries an
+// epoch: a refresh captures the epoch it started under, and its result is
+// discarded if the epoch moved while it ran. Without that, a proof of the old
+// connection could land after the new one was saved and be served as the new
+// one's answer.
 type pluginCapabilityProbe struct {
 	mu       sync.Mutex
 	ttl      time.Duration
@@ -160,6 +167,7 @@ type pluginCapabilityProbe struct {
 	at       time.Time
 	proven   bool
 	proving  bool
+	epoch    uint64
 	probe    func(context.Context) bool
 	now      func() time.Time
 	launch   func(func())
@@ -185,12 +193,13 @@ func (p *pluginCapabilityProbe) capable(context.Context) bool {
 	proven := p.proven
 	stale := p.at.IsZero() || p.now().Sub(p.at) >= p.ttl
 	start := stale && !p.proving
+	epoch := p.epoch
 	if start {
 		p.proving = true
 	}
 	p.mu.Unlock()
 	if start {
-		p.launch(p.refresh)
+		p.launch(func() { p.refresh(epoch) })
 	}
 	return proven
 }
@@ -198,7 +207,7 @@ func (p *pluginCapabilityProbe) capable(context.Context) bool {
 // refresh performs one proof and stores its answer. It is the single place the
 // probe is called, so the detached context and the timeout are impossible to
 // forget.
-func (p *pluginCapabilityProbe) refresh() {
+func (p *pluginCapabilityProbe) refresh(epoch uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), p.timeout)
 	defer cancel()
 	proven := false
@@ -209,17 +218,24 @@ func (p *pluginCapabilityProbe) refresh() {
 			proven = false
 		}
 		p.mu.Lock()
-		p.proven = proven
-		p.at = p.now()
+		// A forget() while this proof was running means the answer describes a
+		// connection that is no longer saved, so it is dropped rather than
+		// stamped fresh. The cleared in-flight flag still lets the next read
+		// prove the new connection.
+		if p.epoch == epoch {
+			p.proven = proven
+			p.at = p.now()
+		}
 		p.proving = false
 		p.mu.Unlock()
 	}()
 	proven = p.probe(ctx)
 }
 
-// forget drops the stored answer and lets the next read prove again. A profile
-// change - a managed install committing, a connection being edited - must not
-// inherit the previous connection's answer.
+// forget drops the stored answer and invalidates any proof still in flight. A
+// profile change - a managed install committing, a connection being edited - must
+// not inherit the previous connection's answer, and must not be overwritten by a
+// proof that started against it.
 func (p *pluginCapabilityProbe) forget() {
 	if p == nil {
 		return
@@ -227,6 +243,7 @@ func (p *pluginCapabilityProbe) forget() {
 	p.mu.Lock()
 	p.at = time.Time{}
 	p.proven = false
+	p.epoch++
 	p.mu.Unlock()
 }
 

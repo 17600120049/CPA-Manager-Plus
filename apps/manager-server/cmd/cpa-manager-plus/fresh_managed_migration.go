@@ -86,6 +86,9 @@ func (a *freshApplication) migrateManagedDestination(ctx context.Context) error 
 		current.Operation.Strategy = result.Checkpoint
 		if result.Connection != nil {
 			current.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: result.Connection.BaseURL, ManagementKey: result.Connection.ManagementKeyCiphertext}
+			// The saved connection changed, so the plugin capability must be proven
+			// against it rather than served from the previous one.
+			a.pluginCapability.forget()
 		}
 		return nil
 	})

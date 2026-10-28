@@ -132,20 +132,47 @@ func TestStampLegacyPanelLeavesScriptLiteralsAlone(t *testing.T) {
 }
 
 // The built panel really does contain such a literal, so the stamper is exercised
-// against it rather than only against a synthetic case.
+// against the artifact rather than only against a synthetic case.
+//
+// This is a build-artifact test: it runs against `apps/web/dist/panel`, which only
+// exists after `npm run build:panel`. The gate is the repo's `CPAMP_FULLWEB_PACKAGED_TEST`
+// convention - CI sets it after staging the bundle, so a missing panel there is a
+// failure, not a skip. Without the gate, a developer who has not built the panel
+// still gets a skip instead of a red suite.
 func TestStampLegacyPanelOnBuiltPanelKeepsProgramSource(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "httpapi", "web", "management.html"))
+	expected := os.Getenv("CPAMP_FULLWEB_PACKAGED_TEST") == "1"
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "web", "dist", "panel", "management.html"))
 	if err != nil {
-		t.Skipf("built panel not present: %v", err)
+		if expected {
+			t.Fatalf("the staged panel is expected but missing: %v", err)
+		}
+		t.Skip("panel not built; run npm --workspace apps/web run build:panel")
 	}
+
 	stamped, ok := stampLegacyPanelScripts(raw, "abc123")
 	if !ok {
 		t.Fatal("the built panel has no script elements")
 	}
-	// Every occurrence of the nonce must be an attribute on a real opening tag,
-	// which means the count equals the number of script elements.
-	open := strings.Count(strings.ToLower(string(raw)), "<script")
-	if got := strings.Count(string(stamped), `nonce="abc123"`); got != open {
-		t.Fatalf("stamped %d of %d script elements", got, open)
+	text := string(stamped)
+	elements := strings.Count(text, `nonce="abc123"`)
+	if elements == 0 {
+		t.Fatal("the built panel produced no stamped script element")
+	}
+	// Counting occurrences of "<script" in the raw bytes would also count the text
+	// `<script><\/script>` inside the panel's own JavaScript, which is program
+	// source. Only the stamped openings are real elements.
+	// `nonce=` also matches the bundler's own `nonce:` object properties inside the
+	// program, so only the attribute form counts as fabricated markup.
+	if got := strings.Count(string(raw), `nonce="`); got != 0 {
+		t.Fatalf("the built panel already carries %d nonce attributes", got)
+	}
+	if !strings.Contains(string(raw), `<script><\/script>`) {
+		t.Skip("this panel build has no script literal to protect")
+	}
+	if !strings.Contains(text, `<script><\/script>`) {
+		t.Fatal("the stamper rewrote the panel's own script literal")
+	}
+	if got := strings.Count(text, "<script"); got != elements+1 {
+		t.Fatalf("script tag text = %d, want %d stamped elements plus the one program literal", got, elements)
 	}
 }

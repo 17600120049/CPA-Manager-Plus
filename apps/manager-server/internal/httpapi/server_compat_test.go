@@ -1573,23 +1573,29 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		body:              `{"management_origin":"` + upstream.URL + `","refresh":true}`,
 	})
 
+	// The write pass-through is asserted on a neutral resource name on purpose.
+	// CPA's resource namespace is GET-only, so a write here is forwarded and then
+	// refused upstream; naming the official Codex Invite plugin in this fixture
+	// would suggest it posts under its resource prefix, which it does not - it
+	// registers a Management route at /v0/management/codex-invite/invite (asserted
+	// above).
 	resourcePostNoAuthRR := requestWithHeaders(
 		http.MethodPost,
-		"/v0/resource/plugins/codex-invite/invite",
+		"/v0/resource/plugins/demo-widget/action",
 		`{"managementKey":"plugin-key"}`,
 		"",
 		nil,
 	)
 	testutil.RequireStatus(t, resourcePostNoAuthRR, http.StatusOK)
-	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
+	assertObserved("/v0/resource/plugins/demo-widget/action", observedRequest{
 		method: http.MethodPost,
-		path:   "/v0/resource/plugins/codex-invite/invite",
+		path:   "/v0/resource/plugins/demo-widget/action",
 		body:   `{"managementKey":"plugin-key"}`,
 	})
 
 	resourcePostCallerAuthRR := requestWithHeaders(
 		http.MethodPost,
-		"/v0/resource/plugins/codex-invite/invite",
+		"/v0/resource/plugins/demo-widget/action",
 		`{"refresh":true}`,
 		"plugin-management-key",
 		map[string]string{
@@ -1597,9 +1603,9 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		},
 	)
 	testutil.RequireStatus(t, resourcePostCallerAuthRR, http.StatusOK)
-	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
+	assertObserved("/v0/resource/plugins/demo-widget/action", observedRequest{
 		method:            http.MethodPost,
-		path:              "/v0/resource/plugins/codex-invite/invite",
+		path:              "/v0/resource/plugins/demo-widget/action",
 		authorization:     "Bearer plugin-management-key",
 		codexInviteOrigin: upstream.URL,
 		body:              `{"refresh":true}`,
@@ -1607,37 +1613,37 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 
 	resourcePostRR := requestWithHeaders(
 		http.MethodPost,
-		"/v0/resource/plugins/codex-invite/invite",
+		"/v0/resource/plugins/demo-widget/action",
 		`{"refresh":true}`,
 		testutil.AdminKey,
 		nil,
 	)
 	testutil.RequireStatus(t, resourcePostRR, http.StatusOK)
-	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
+	assertObserved("/v0/resource/plugins/demo-widget/action", observedRequest{
 		method:        http.MethodPost,
-		path:          "/v0/resource/plugins/codex-invite/invite",
+		path:          "/v0/resource/plugins/demo-widget/action",
 		authorization: "Bearer management-key",
 		body:          `{"refresh":true}`,
 	})
 
 	resourcePutRR := requestWithHeaders(
 		http.MethodPut,
-		"/v0/resource/plugins/codex-invite/invite",
+		"/v0/resource/plugins/demo-widget/action",
 		`{"key":"value"}`,
 		testutil.AdminKey,
 		nil,
 	)
 	testutil.RequireStatus(t, resourcePutRR, http.StatusOK)
-	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
+	assertObserved("/v0/resource/plugins/demo-widget/action", observedRequest{
 		method:        http.MethodPut,
-		path:          "/v0/resource/plugins/codex-invite/invite",
+		path:          "/v0/resource/plugins/demo-widget/action",
 		authorization: "Bearer management-key",
 		body:          `{"key":"value"}`,
 	})
 
 	resourceTraceRR := requestWithHeaders(
 		http.MethodTrace,
-		"/v0/resource/plugins/codex-invite/invite",
+		"/v0/resource/plugins/demo-widget/action",
 		"",
 		"",
 		nil,
@@ -1648,7 +1654,7 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 	// caller must never be elevated to the saved CPA management key.
 	resourceNoAuthRR := requestWithHeaders(
 		http.MethodGet,
-		"/v0/resource/plugins/codex-invite/invite",
+		"/v0/resource/plugins/demo-widget/action",
 		"",
 		"",
 		map[string]string{
@@ -1656,51 +1662,51 @@ func TestServerCompatPluginProxyRoutes(t *testing.T) {
 		},
 	)
 	testutil.RequireStatus(t, resourceNoAuthRR, http.StatusOK)
-	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
+	assertObserved("/v0/resource/plugins/demo-widget/action", observedRequest{
 		method:            http.MethodGet,
-		path:              "/v0/resource/plugins/codex-invite/invite",
+		path:              "/v0/resource/plugins/demo-widget/action",
 		codexInviteOrigin: upstream.URL,
 	})
 
 	resourceCallerAuthRR := requestWithHeaders(
 		http.MethodGet,
-		"/v0/resource/plugins/codex-invite/invite",
+		"/v0/resource/plugins/demo-widget/action",
 		"",
 		"plugin-management-key",
 		nil,
 	)
 	testutil.RequireStatus(t, resourceCallerAuthRR, http.StatusOK)
-	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
+	assertObserved("/v0/resource/plugins/demo-widget/action", observedRequest{
 		method:        http.MethodGet,
-		path:          "/v0/resource/plugins/codex-invite/invite",
+		path:          "/v0/resource/plugins/demo-widget/action",
 		authorization: "Bearer plugin-management-key",
 	})
 
 	resourceAdminAuthRR := requestWithHeaders(
 		http.MethodGet,
-		"/v0/resource/plugins/codex-invite/invite",
+		"/v0/resource/plugins/demo-widget/action",
 		"",
 		testutil.AdminKey,
 		nil,
 	)
 	testutil.RequireStatus(t, resourceAdminAuthRR, http.StatusOK)
-	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
+	assertObserved("/v0/resource/plugins/demo-widget/action", observedRequest{
 		method:        http.MethodGet,
-		path:          "/v0/resource/plugins/codex-invite/invite",
+		path:          "/v0/resource/plugins/demo-widget/action",
 		authorization: "Bearer management-key",
 	})
 
 	resourceHeadNoAuthRR := requestWithHeaders(
 		http.MethodHead,
-		"/v0/resource/plugins/codex-invite/invite",
+		"/v0/resource/plugins/demo-widget/action",
 		"",
 		"",
 		nil,
 	)
 	testutil.RequireStatus(t, resourceHeadNoAuthRR, http.StatusOK)
-	assertObserved("/v0/resource/plugins/codex-invite/invite", observedRequest{
+	assertObserved("/v0/resource/plugins/demo-widget/action", observedRequest{
 		method: http.MethodHead,
-		path:   "/v0/resource/plugins/codex-invite/invite",
+		path:   "/v0/resource/plugins/demo-widget/action",
 	})
 }
 

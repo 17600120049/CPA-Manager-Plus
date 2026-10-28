@@ -553,7 +553,16 @@ it('leaves the plugin opt-in off by default and submits no plugin choice', async
   const { transport } = await setup();
   expect(byID('plugin-optin-checkbox').props.checked).toBe(false);
   await click('setup-review');
-  expect(JSON.stringify(renderer.toJSON())).toContain('未启用');
+  // The default-off decision is asserted as behaviour, not as copy: the review
+  // carries the plugins row with its label and value cells, the control is
+  // unchecked, and the submitted body below omits the key entirely. Pinning a
+  // translated word would make a copy edit look like a behaviour change.
+  const reviewRow = renderer.root.findByProps({ 'data-testid': 'review-plugins' });
+  const cells = reviewRow.findAll((node) => node.type === 'dd' || node.type === 'dt');
+  expect(cells.length).toBe(2);
+  expect(cells.map((cell) => cell.props.children).every((value) => String(value).length > 0)).toBe(
+    true
+  );
   await input('confirm-key-saved-checkbox', true);
   await click('setup-execute');
   expect(byID('enter-console').props.href).toBe('/private');

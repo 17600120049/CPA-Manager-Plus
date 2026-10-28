@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -293,5 +294,80 @@ func TestHungCPADoesNotStallRequests(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatalf("%s stalled on a hung CPA", path)
 		}
+	}
+}
+
+// A proof that started before a connection change must not land afterwards.
+// Without the epoch, the stale result is stamped fresh and served as the new
+// connection's answer for a full TTL.
+func TestPluginCapabilityProbeDiscardsAProofThatOutlivedItsConnection(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	var calls atomic.Int32
+	// The first proof answers for the old connection, which could serve plugins;
+	// every later proof answers for the new one, which cannot. That difference is
+	// what makes a stale landing observable.
+	probe := newPluginCapabilityProbe(time.Hour, time.Minute, func(context.Context) bool {
+		first := calls.Add(1) == 1
+		if first {
+			started <- struct{}{}
+			<-release
+		}
+		return first
+	})
+	probe.launch = func(refresh func()) { go refresh() }
+
+	// Start the proof against the old connection and hold it open.
+	probe.capable(context.Background())
+	<-started
+	// The connection is saved now: everything in flight describes the old one.
+	probe.forget()
+	close(release)
+
+	// The stale proof must never become an answer. The new connection's own proof
+	// runs on the next read and answers false.
+	for range 200 {
+		if probe.capable(context.Background()) {
+			t.Fatal("a proof of the previous connection was served as the new one's answer")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := calls.Load(); got < 2 {
+		t.Fatalf("probe calls = %d, want a fresh proof after forget", got)
+	}
+}
+
+// Concurrent reads, forgets and refreshes must be safe under -race: the epoch
+// and the in-flight flag are the only shared state the answer depends on.
+func TestPluginCapabilityProbeIsRaceFree(t *testing.T) {
+	var answer atomic.Bool
+	probe := newPluginCapabilityProbe(time.Millisecond, time.Minute, func(context.Context) bool {
+		time.Sleep(time.Millisecond)
+		return answer.Load()
+	})
+	var wg sync.WaitGroup
+	for worker := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 50 {
+				if worker%4 == 0 {
+					probe.forget()
+				}
+				if worker%5 == 0 {
+					answer.Store(worker%2 == 0)
+				}
+				_ = probe.capable(context.Background())
+			}
+		}()
+	}
+	wg.Wait()
+	// Quiesce the last refresh before the test's t.TempDir-style cleanup.
+	probe.forget()
+	for range 100 {
+		if probe.capable(context.Background()) {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
 	}
 }

@@ -39,8 +39,11 @@ function pluginSwitchState(view: PluginRuntimeView | null): PluginSwitchState {
  * It is offered only when the Manager reports that the managed authority can write
  * it — every other profile owns its own CPA and is refused server-side, so a
  * control there would be a promise the server keeps by declining. The persisted
- * value and the effective value are shown separately: CPA applies configuration
- * asynchronously, so a save is persisted evidence and never a claimed effect.
+ * readout reports the value CPA is serving right now: it is read back from CPA's
+ * own configuration document, so it is the effective value rather than a claim
+ * the page makes about its last write. There is deliberately no second readout:
+ * the Manager never observes an "applied" signal separate from that document, so
+ * any second value could only repeat this one or be a constant.
  * An unknown write result is settled by reading the document back from the
  * journaled request ID, never by sending the write again.
  */
@@ -188,12 +191,6 @@ export function PluginRuntimeSwitch({
                   ? t('plugin_management.runtime_on')
                   : t('plugin_management.runtime_off')
                 : t('plugin_management.runtime_unset')}
-            </strong>
-          </span>
-          <span className={styles.readoutItem}>
-            <span className={styles.readoutLabel}>{t('plugin_management.runtime_effective')}</span>
-            <strong data-testid="plugin-runtime-effective">
-              {t('plugin_management.runtime_effective_unknown')}
             </strong>
           </span>
         </div>

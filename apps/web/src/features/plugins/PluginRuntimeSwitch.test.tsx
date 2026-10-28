@@ -92,17 +92,19 @@ beforeEach(async () => {
 });
 
 describe('Plugin runtime switch', () => {
-  it('shows the persisted value and leaves the effective value unclaimed', async () => {
+  it('shows the value CPA is serving and claims nothing beyond it', async () => {
     const api = client(vi.fn().mockResolvedValue(managedView()), vi.fn());
     await mount(api);
     // The persisted readout reports the tri-state from the Manager projection:
     // "off" here, because presence is `present` and the value is false.
     const persisted = renderer!.root.findByProps({ 'data-testid': 'plugin-runtime-persisted' });
     expect(text(persisted)).toBe(i18n.t('plugin_management.runtime_off'));
-    // The effective readout never claims a value the Manager cannot observe: it
-    // stays unknown until CPA reloads, which is the page's own invariant.
-    const effective = renderer!.root.findByProps({ 'data-testid': 'plugin-runtime-effective' });
-    expect(text(effective)).toBe(i18n.t('plugin_management.runtime_effective_unknown'));
+    // There is exactly one readout, and it reports the value read back from
+    // CPA's own configuration document. A second "effectively running" cell
+    // could only repeat it or be a constant, so its absence is the invariant.
+    expect(renderer!.root.findAllByProps({ 'data-testid': 'plugin-runtime-effective' })).toHaveLength(
+      0
+    );
     expect(switchInput().props.checked).toBe(false);
     expect(switchInput().props.disabled).toBe(false);
   });

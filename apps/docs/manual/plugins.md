@@ -73,7 +73,12 @@ GitHub Release 列表可能受到仓库权限、网络、代理或 API rate limi
 
 插件资源命名空间在 CPA 侧是只读的：`pluginapi.ResourceRoute` 就是插件自己的页面（“the management UI menu label for this GET resource”），CPA 的插件宿主只对 GET 提供服务。需要接收输入的插件应注册 Management 路由——官方 Codex Invite 插件用 GET 从 `/v0/resource/plugins/codex-invite/invite` 提供页面，把发送动作 POST 到 `/v0/management/codex-invite/invite`。
 
-Manager 的插件代理是通用反向代理，会按调用方使用的方法原样转发，因此写入确实会到达 CPA；CPA 因资源路由只支持 GET 而返回 404。隔离本身与请求方法无关：沙箱 CSP、响应头白名单、跳转限制与 Fetch Metadata 策略对写入与读取一视同仁。
+写入会被哪一层拦下取决于部署形态，两层都会拒绝：
+
+- **Full Docker（前置 Ingress）：** Ingress 自己接管插件资源命名空间，只有针对规范资源的裸 `GET` 或 `HEAD` 才会被转发给 Manager；其他方法在传输边缘即以 `404` 拒绝，既不会到达 Manager，也不会到达 Gateway。
+- **仅 Manager（无 Ingress）：** Manager 的插件代理是通用反向代理，会按调用方使用的方法原样转发，因此写入会到达 CPA，由 CPA 拒绝（`404`，因为资源路由只支持 GET）。
+
+Manager 不会自行追加方法限制，因为它并不拥有该命名空间。无论哪种情况，隔离本身都与请求方法无关：沙箱 CSP、响应头白名单、跳转限制与 Fetch Metadata 策略对写入与读取一视同仁。
 
 Manager 还会对每个插件资源请求校验 Fetch Metadata：缺少 `Sec-Fetch-Site` 的请求一律返回 403，来自管理界面的 `script`、`worker`、`style`、`font` 等非文档型子资源请求也会被拒绝。拦下管理界面加载插件代码的是这项校验，而不是 CSP；管理站点的 CSP 并不按路径排除插件 URL。
 
