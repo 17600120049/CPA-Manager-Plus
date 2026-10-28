@@ -100,9 +100,17 @@ func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.
 					}
 					delete(body, injected)
 				} else if item.strategy == bootstrap.AdoptExisting {
-					// Production qualification never grants an unapproved Host takeover.
-					if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
-						t.Fatalf("Adopt without Host authority was admitted: %d %s", response.Code, response.Body.String())
+					// A claim-authenticated request for the adopted source class
+					// now reaches the strategy adapter, which refuses it here only
+					// because no destination Runtime capability exists. A legacy
+					// or unspecified class stays refused before any source read.
+					wantCode, wantBlocker := http.StatusConflict, "adoption_destination_staging_required"
+					if item.class != bootstrap.AdoptNetworkExisting {
+						wantBlocker = "adoption_source_class_refused"
+					}
+					var blocker freshstrategy.Blocker
+					if response.Code != wantCode || json.Unmarshal(response.Body.Bytes(), &blocker) != nil || blocker.Code != wantBlocker {
+						t.Fatalf("Adopt %s without Host authority: %d %s", item.class, response.Code, response.Body.String())
 					}
 				} else {
 					var blocker freshstrategy.Blocker

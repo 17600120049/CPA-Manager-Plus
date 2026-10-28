@@ -196,6 +196,12 @@ func (s *Service) adopt(ctx context.Context, op bootstrap.FreshOperation, r Requ
 		}
 		sourceSnapshot, err := readAdoptionSource(ctx, r.AdoptSourceClass, source, r.ManagementKey)
 		if err != nil {
+			// A source that authenticates but carries no client Key is refused
+			// with its own reason: the body was well formed, so the browser must
+			// not be told the source is unreadable, and nothing was mutated.
+			if errors.Is(err, cpa.V8AdoptionSourceEmpty) {
+				return block("adoption_source_empty")
+			}
 			return block("adoption_source_read_unavailable")
 		}
 		decisions, complete := adoptionDecisionsForInventory(sourceSnapshot.DiscoveredResources, decision)
