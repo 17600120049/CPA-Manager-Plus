@@ -15,7 +15,7 @@ import (
 func stagedManagedInstall(t *testing.T) (*managedDestinationRuntime, *Service, Request, bootstrap.FreshOperation, Result) {
 	t.Helper()
 	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
-	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact, InitialClientKey: installInitialClientKey()})
 	request := Request{Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "target-one", ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact}
 	op := operation()
 	staged, err := service.Execute(t.Context(), op, request)
@@ -165,7 +165,7 @@ func TestManagedUnresolvedDestinationKeepsTheAttempt(t *testing.T) {
 func TestManagedMigrationTerminalFailureRetiresTheAttempt(t *testing.T) {
 	runtime, baseURL, protector, artifact := managedDestinationFixture(t)
 	runtime.status.State = model.RuntimeStateOffline
-	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact})
+	service := New(Options{Runtime: runtime, Protector: protector, DestinationBaseURL: baseURL, Qualification: qualified(), QualifiedArtifactID: artifact, InitialClientKey: installInitialClientKey()})
 	op := operation()
 	op.ProductComplete = true
 	op.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/console", Stage: bootstrap.PrefixCommitted, Committed: true}

@@ -60,6 +60,14 @@ func (d *managedKeyDestination) document() []byte {
 	return body
 }
 
+// seed mirrors the destination CPA that was staged with exactly the Client Key
+// the installation persisted before it started.
+func (d *managedKeyDestination) seed(keys ...string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.keys = slices.Clone(keys)
+}
+
 func (d *managedKeyDestination) installed() []string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -151,6 +159,7 @@ type managedInstallHarness struct {
 	app         *freshApplication
 	destination *managedKeyDestination
 	endpoint    string
+	installKey  freshkeys.InitialKey
 }
 
 // managedInstallEnv is what a harness install state is built from: the Runtime
@@ -181,10 +190,21 @@ func completedManagedInstall(r *freshstore.Record, env managedInstallEnv) {
 
 func newManagedInstallHarness(t *testing.T) *managedInstallHarness {
 	t.Helper()
-	return newManagedInstallHarnessWith(t, completedManagedInstall)
+	return newManagedInstallHarnessWith(t, completedManagedInstall, true)
 }
 
-func newManagedInstallHarnessWith(t *testing.T, install managedInstallSetup) *managedInstallHarness {
+// newLegacyManagedInstallHarness is the pre-F5 default install: a committed
+// managed destination whose CPA started with no client key at all.
+func newLegacyManagedInstallHarness(t *testing.T) *managedInstallHarness {
+	t.Helper()
+	return newManagedInstallHarnessWith(t, completedManagedInstall, false)
+}
+
+// newManagedInstallHarnessWith builds one installation. withInstallKey mirrors
+// the F5 flow: the installation mints its Client Key, claims the single
+// initial-install journal and stages the destination with that key, so CPA never
+// starts with client authentication disabled.
+func newManagedInstallHarnessWith(t *testing.T, install managedInstallSetup, withInstallKey bool) *managedInstallHarness {
 	t.Helper()
 	destination := &managedKeyDestination{management: strings.Repeat("e", 64)}
 	destinationServer := destination.serve(t)
@@ -214,13 +234,24 @@ func newManagedInstallHarnessWith(t *testing.T, install managedInstallSetup) *ma
 		t.Fatal(err)
 	}
 	env := managedInstallEnv{status: status, endpoint: destinationServer.URL, protected: protected}
-	if _, err = app.store.Update(t.Context(), record.Operation.Identity, record.Operation.Revision, func(r *freshstore.Record) error {
+	record, err = app.store.Update(t.Context(), record.Operation.Identity, record.Operation.Revision, func(r *freshstore.Record) error {
 		install(r, env)
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	return &managedInstallHarness{app: app, destination: destination, endpoint: destinationServer.URL}
+	harness := &managedInstallHarness{app: app, destination: destination, endpoint: destinationServer.URL}
+	if withInstallKey {
+		checkpoint := record.Operation.Strategy
+		key, err := app.keyApply.EnsureInitialInstall(t.Context(), freshkeyapply.ManagedRunID(string(record.Operation.Identity.OperationID)), checkpoint.TargetGeneration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		destination.seed(key.Secret)
+		harness.installKey = key
+	}
+	return harness
 }
 
 func (h *managedInstallHarness) call(t *testing.T, method, resource, body string) *httptest.ResponseRecorder {
@@ -268,14 +299,44 @@ func TestCompletedDefaultInstallOwnsKeyInstallAdmissionAndGatewayConfig(t *testi
 	if harness.app.keyApply.ManagedEndpoint() != harness.endpoint {
 		t.Fatalf("key authority endpoint = %q, want %q", harness.app.keyApply.ManagedEndpoint(), harness.endpoint)
 	}
-	// Before a client key exists the destination still accepts unauthenticated
-	// Gateway traffic, so admission is closed and the page has no authority.
-	if harness.app.gatewayAdmissionProven(t.Context()) {
-		t.Fatal("admission proven without an installed client key")
+	// The install secret is never durable in plaintext: the canonical record
+	// holds only the protected envelope, and no manager file or journal row
+	// carries the key.
+	record, err := harness.app.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	public, err := json.Marshal(record)
+	if err != nil || bytes.Contains(public, []byte(harness.installKey.Secret)) {
+		t.Fatal("install key leaked into the Fresh record")
+	}
+	stored, err := filepath.Glob(string(record.Operation.Identity.DatabasePath) + "*")
+	if err != nil || len(stored) == 0 {
+		t.Fatalf("manager store files: %v", err)
+	}
+	for _, name := range stored {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(data, []byte(harness.installKey.Secret)) {
+			t.Fatalf("install key stored in plaintext in %s", filepath.Base(name))
+		}
 	}
 
-	installed := harness.createKey(t, strings.Repeat("1", 32))
-	install := harness.call(t, http.MethodPost, "api-keys/"+string(installed.Key.ID)+"/initial-install", `{}`)
+	// F5: the destination was staged with the installation's Client Key before
+	// CPA started, so anonymous Compose traffic is already refused and Gateway
+	// admission is proven at completion.
+	if !harness.app.gatewayAdmissionProven(t.Context()) {
+		t.Fatal("admission not proven for an installation that started with its client key")
+	}
+	if got := harness.destination.installed(); len(got) != 1 || got[0] != harness.installKey.Secret {
+		t.Fatalf("destination keys = %v", got)
+	}
+
+	// The install route sees that key as already installed: it observes the live
+	// destination instead of installing a second key, and writes nothing.
+	install := harness.call(t, http.MethodPost, "api-keys/"+string(harness.installKey.ID)+"/initial-install", `{}`)
 	if install.Code != http.StatusOK {
 		t.Fatalf("initial install = %d %s", install.Code, install.Body.String())
 	}
@@ -283,15 +344,21 @@ func TestCompletedDefaultInstallOwnsKeyInstallAdmissionAndGatewayConfig(t *testi
 	if err := json.Unmarshal(install.Body.Bytes(), &state); err != nil {
 		t.Fatal(err)
 	}
-	if !state.ManagerStaged || !state.Attempted || !state.CPAConfigured || state.RuntimeState != "effective_observed" {
-		t.Fatalf("initial install state = %+v", state)
+	if !state.ManagerStaged || !state.Attempted || !state.CPAConfigured || state.RuntimeState != "effective_observed" || state.InstallAvailable {
+		t.Fatalf("install key state = %+v", state)
 	}
-	if got := harness.destination.installed(); len(got) != 1 || got[0] != installed.CreatedSecret {
-		t.Fatalf("destination keys = %v", got)
+	if harness.destination.writes != 0 {
+		t.Fatalf("install key was installed a second time (%d writes)", harness.destination.writes)
+	}
+	// A key created later cannot consume the already-installed initial install.
+	installed := harness.createKey(t, strings.Repeat("1", 32))
+	blocked := harness.call(t, http.MethodPost, "api-keys/"+string(installed.Key.ID)+"/initial-install", `{}`)
+	if blocked.Code != http.StatusConflict || harness.destination.writes != 0 {
+		t.Fatalf("workspace install = %d %s", blocked.Code, blocked.Body.String())
 	}
 
 	// Rename is authorised by the same installation.
-	detail := harness.call(t, http.MethodGet, "api-keys/"+string(installed.Key.ID), "")
+	detail := harness.call(t, http.MethodGet, "api-keys/"+string(harness.installKey.ID), "")
 	if detail.Code != http.StatusOK {
 		t.Fatalf("key detail = %d %s", detail.Code, detail.Body.String())
 	}
@@ -299,17 +366,21 @@ func TestCompletedDefaultInstallOwnsKeyInstallAdmissionAndGatewayConfig(t *testi
 	if err = json.Unmarshal(detail.Body.Bytes(), &key); err != nil {
 		t.Fatal(err)
 	}
+	if key.Origin != freshkeys.OriginInstaller || key.Name != freshkeys.InstallerOriginName {
+		t.Fatalf("install key projection = %+v", key)
+	}
 	renamed := harness.call(t, http.MethodPut, "api-keys/"+string(key.ID),
 		`{"name":"Primary","nameRevision":`+strconv.FormatInt(key.NameRevision, 10)+`}`)
 	if renamed.Code != http.StatusOK {
 		t.Fatalf("rename = %d %s", renamed.Code, renamed.Body.String())
 	}
 
-	// Replace runs the whole add/revoke journal through the install-derived
-	// per-step authority: no Host permit exists on a default install.
+	// Replace runs the whole add/revoke journal from the install key through the
+	// install-derived per-step authority: no Host permit exists on a default
+	// install.
 	keeper := harness.createKey(t, strings.Repeat("2", 32))
 	replaceID := strings.Repeat("3", 32)
-	prepare := harness.call(t, http.MethodPost, "api-keys/"+string(installed.Key.ID)+"/revocation",
+	prepare := harness.call(t, http.MethodPost, "api-keys/"+string(harness.installKey.ID)+"/revocation",
 		`{"requestId":"`+replaceID+`","keeperId":"`+string(keeper.Key.ID)+`","mode":"replace"}`)
 	if prepare.Code != http.StatusOK {
 		t.Fatalf("replace prepare = %d %s", prepare.Code, prepare.Body.String())
@@ -330,8 +401,8 @@ func TestCompletedDefaultInstallOwnsKeyInstallAdmissionAndGatewayConfig(t *testi
 	if got := harness.destination.installed(); len(got) != 1 || got[0] != keeper.CreatedSecret {
 		t.Fatalf("destination keys after replace = %v", got)
 	}
-	if harness.destination.writes != 3 {
-		t.Fatalf("install+replace wrote %d times, want 3", harness.destination.writes)
+	if harness.destination.writes != 2 {
+		t.Fatalf("replace wrote %d times, want 2", harness.destination.writes)
 	}
 
 	// Revoking the only remaining key is refused by the authority itself, which
@@ -348,7 +419,7 @@ func TestCompletedDefaultInstallOwnsKeyInstallAdmissionAndGatewayConfig(t *testi
 	if err = json.Unmarshal(revoke.Body.Bytes(), &refused); err != nil || refused.Code != "last_effective_key" {
 		t.Fatalf("lone revoke body = %s (%v)", revoke.Body.String(), err)
 	}
-	if harness.destination.writes != 3 {
+	if harness.destination.writes != 2 {
 		t.Fatalf("refused revocation wrote (%d writes)", harness.destination.writes)
 	}
 
@@ -389,6 +460,44 @@ func TestCompletedDefaultInstallOwnsKeyInstallAdmissionAndGatewayConfig(t *testi
 	}
 }
 
+// A committed install created before the install key existed started CPA with
+// an empty client list. Admission therefore stays closed, and the workspace can
+// still install its first key exactly as it did before F5.
+func TestLegacyManagedInstallWithoutInstallKeyStaysClosedUntilAKeyIsInstalled(t *testing.T) {
+	harness := newLegacyManagedInstallHarness(t)
+	op, err := harness.app.current(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if harness.app.gatewayAdmissionProven(t.Context()) {
+		t.Fatal("admission proven without an installed client key")
+	}
+	if got := harness.destination.installed(); len(got) != 0 {
+		t.Fatalf("legacy destination keys = %v", got)
+	}
+	installed := harness.createKey(t, strings.Repeat("1", 32))
+	install := harness.call(t, http.MethodPost, "api-keys/"+string(installed.Key.ID)+"/initial-install", `{}`)
+	if install.Code != http.StatusOK {
+		t.Fatalf("initial install = %d %s", install.Code, install.Body.String())
+	}
+	var state freshkeyapply.State
+	if err := json.Unmarshal(install.Body.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if !state.ManagerStaged || !state.Attempted || !state.CPAConfigured || state.RuntimeState != "effective_observed" {
+		t.Fatalf("initial install state = %+v", state)
+	}
+	if got := harness.destination.installed(); len(got) != 1 || got[0] != installed.CreatedSecret {
+		t.Fatalf("destination keys = %v", got)
+	}
+	if key, err := harness.app.keys.Detail(t.Context(), string(installed.Key.ID)); err != nil || key.Origin != freshkeys.OriginWorkspace {
+		t.Fatalf("workspace projection = %+v %v", key, err)
+	}
+	if !harness.app.gatewayAdmissionProven(t.Context()) || op.Strategy.Stage != "committed" {
+		t.Fatal("admission not proven after installing the first client key")
+	}
+}
+
 // Every surface that accepted the private attested identity still refuses a
 // checkpoint this installation does not own: incomplete, External and unowned.
 func TestKeySurfaceRefusesCheckpointsTheAuthorityDoesNotOwn(t *testing.T) {
@@ -425,7 +534,7 @@ func TestKeySurfaceRefusesCheckpointsTheAuthorityDoesNotOwn(t *testing.T) {
 		}},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			harness := newManagedInstallHarnessWith(t, scenario.install)
+			harness := newManagedInstallHarnessWith(t, scenario.install, false)
 			op, err := harness.app.current(t.Context())
 			if err != nil {
 				t.Fatal(err)

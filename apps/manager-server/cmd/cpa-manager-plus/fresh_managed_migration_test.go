@@ -66,6 +66,12 @@ func (r *migrationRuntime) StageDestination(_ context.Context, request model.Run
 	return model.RuntimeOperationResult{OperationID: request.OperationID, OperationType: model.RuntimeOperationStageDestination, RuntimeIdentity: r.status.Identity, RuntimeGeneration: r.status.Generation, State: state}, nil
 }
 
+// installTestClientKey replays one canonical install Client Key for a default
+// destination, exactly as the install authority does across a resume.
+func installTestClientKey(context.Context, bootstrap.FreshOperation, uint64) (freshstrategy.InitialClientKey, error) {
+	return freshstrategy.InitialClientKey{KeyID: strings.Repeat("9", 32), Secret: "sk-" + strings.Repeat("aB3", 21) + "Z"}, nil
+}
+
 func migrationFixture(t *testing.T, generation model.RuntimeGeneration, stageErr error) (*freshApplication, *migrationRuntime, freshstore.Store) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "manager.sqlite")
@@ -99,7 +105,7 @@ func migrationFixture(t *testing.T, generation model.RuntimeGeneration, stageErr
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := freshstrategy.New(freshstrategy.Options{Runtime: runtime, Protector: protector, DestinationBaseURL: server.URL, Qualification: bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true}, QualifiedArtifactID: artifact})
+	service := freshstrategy.New(freshstrategy.Options{Runtime: runtime, Protector: protector, DestinationBaseURL: server.URL, Qualification: bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true}, QualifiedArtifactID: artifact, InitialClientKey: installTestClientKey})
 	app := &freshApplication{store: fresh, strategy: service}
 	checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: "committed", TargetIdentity: string(runtime.status.Identity), TargetGeneration: 7, TargetArtifactID: string(artifact)}
 	if _, err = fresh.Update(t.Context(), id, record.Operation.Revision, func(r *freshstore.Record) error {

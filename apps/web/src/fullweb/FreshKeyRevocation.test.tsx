@@ -30,6 +30,7 @@ const keys = [target, keeper].map((id) => ({
   runtimeState: 'not_applied' as const,
   name: '',
   nameRevision: 1,
+  origin: 'workspace' as const,
 }));
 
 describe('Canonical revocation recovery UI', () => {

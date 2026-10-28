@@ -22,7 +22,17 @@ type Record struct {
 	Preview      string
 	Name         string
 	NameRevision int64
+	Origin       string
 }
+
+// Client Key origins. A workspace key is created by the Key workspace; the
+// installation mints exactly one installer key so CPA never starts with client
+// authentication disabled. The origin is storage vocabulary, not an
+// authorization: every canonical Key is read through the same projections.
+const (
+	OriginWorkspace = "workspace"
+	OriginInstaller = "installer"
+)
 
 var ErrConflict = errors.New("staged key name revision conflict")
 
@@ -39,7 +49,7 @@ func New(db *sql.DB) *Repository { return &Repository{db: db} }
 // breaks the tie; ordering by the random identity would silently reorder them.
 func (r *Repository) List(ctx context.Context) ([]Record, error) {
 	rows, err := r.db.QueryContext(ctx, `select k.request_id, i.id, i.revision, i.lifecycle, i.created_at_ms, i.updated_at_ms,
-		k.secret_ciphertext, k.secret_hash, k.masked_preview, k.name, k.name_revision from fresh_client_api_keys k
+		k.secret_ciphertext, k.secret_hash, k.masked_preview, k.name, k.name_revision, k.origin from fresh_client_api_keys k
 		join gateway_api_key_identities i on i.id=k.api_key_id order by i.created_at_ms, k.rowid`)
 	if err != nil {
 		return nil, err
@@ -48,10 +58,10 @@ func (r *Repository) List(ctx context.Context) ([]Record, error) {
 	result := []Record{}
 	for rows.Next() {
 		var v Record
-		if err = rows.Scan(&v.RequestID, &v.Identity.ID, &v.Identity.Revision, &v.Identity.Lifecycle, &v.Identity.CreatedAtMS, &v.Identity.UpdatedAtMS, &v.Ciphertext, &v.Hash, &v.Preview, &v.Name, &v.NameRevision); err != nil {
+		if err = rows.Scan(&v.RequestID, &v.Identity.ID, &v.Identity.Revision, &v.Identity.Lifecycle, &v.Identity.CreatedAtMS, &v.Identity.UpdatedAtMS, &v.Ciphertext, &v.Hash, &v.Preview, &v.Name, &v.NameRevision, &v.Origin); err != nil {
 			return nil, err
 		}
-		if v.Identity.Validate() != nil || v.NameRevision < 1 || !security.IsValidProtectedEnvelope(v.Ciphertext) {
+		if v.Identity.Validate() != nil || v.NameRevision < 1 || !security.IsValidProtectedEnvelope(v.Ciphertext) || !validOrigin(v.Origin) {
 			return nil, errors.New("invalid staged client key")
 		}
 		result = append(result, v)
@@ -88,7 +98,10 @@ func (r *Repository) Rename(ctx context.Context, id identity.APIKeyID, name stri
 // attribution window become durable together, so a later passive snapshot can
 // never mint a second Canonical ID for the same secret hash.
 func (r *Repository) Create(ctx context.Context, v Record, runtimeIdentity string) (bool, error) {
-	if v.Identity.Validate() != nil || !security.IsValidProtectedEnvelope(v.Ciphertext) || !identity.IsValidSHA256Hex(v.Hash) {
+	if v.Origin == "" {
+		v.Origin = OriginWorkspace
+	}
+	if v.Identity.Validate() != nil || !security.IsValidProtectedEnvelope(v.Ciphertext) || !identity.IsValidSHA256Hex(v.Hash) || v.Origin != OriginWorkspace {
 		return false, errors.New("invalid staged client key")
 	}
 	if runtimeIdentity != "" && (strings.TrimSpace(runtimeIdentity) != runtimeIdentity || v.Identity.CreatedAtMS <= 0) {
@@ -110,7 +123,7 @@ func (r *Repository) Create(ctx context.Context, v Record, runtimeIdentity strin
 	if _, err = tx.ExecContext(ctx, "insert into gateway_api_key_identities(id,revision,lifecycle,created_at_ms,updated_at_ms) values(?,?,?,?,?)", i.ID, i.Revision, i.Lifecycle, i.CreatedAtMS, i.UpdatedAtMS); err != nil {
 		return false, err
 	}
-	if _, err = tx.ExecContext(ctx, "insert into fresh_client_api_keys(request_id,api_key_id,secret_ciphertext,secret_hash,masked_preview) values(?,?,?,?,?)", v.RequestID, i.ID, v.Ciphertext, v.Hash, v.Preview); err != nil {
+	if _, err = tx.ExecContext(ctx, "insert into fresh_client_api_keys(request_id,api_key_id,secret_ciphertext,secret_hash,masked_preview,origin) values(?,?,?,?,?,?)", v.RequestID, i.ID, v.Ciphertext, v.Hash, v.Preview, v.Origin); err != nil {
 		return false, err
 	}
 	if runtimeIdentity != "" {
@@ -122,6 +135,69 @@ func (r *Repository) Create(ctx context.Context, v Record, runtimeIdentity strin
 		return false, err
 	}
 	return true, nil
+}
+
+// Installer returns the single installation-minted Client Key, or nil while the
+// installation has not created it. The partial unique index keeps the origin
+// singular, so this is the idempotent lookup a retried install replays.
+func (r *Repository) Installer(ctx context.Context) (*Record, error) {
+	return r.byOrigin(ctx, OriginInstaller)
+}
+
+func (r *Repository) byOrigin(ctx context.Context, origin string) (*Record, error) {
+	var v Record
+	err := r.db.QueryRowContext(ctx, `select k.request_id, i.id, i.revision, i.lifecycle, i.created_at_ms, i.updated_at_ms,
+		k.secret_ciphertext, k.secret_hash, k.masked_preview, k.name, k.name_revision, k.origin from fresh_client_api_keys k
+		join gateway_api_key_identities i on i.id=k.api_key_id where k.origin=?`, origin).
+		Scan(&v.RequestID, &v.Identity.ID, &v.Identity.Revision, &v.Identity.Lifecycle, &v.Identity.CreatedAtMS, &v.Identity.UpdatedAtMS, &v.Ciphertext, &v.Hash, &v.Preview, &v.Name, &v.NameRevision, &v.Origin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if v.Identity.Validate() != nil || v.NameRevision < 1 || !security.IsValidProtectedEnvelope(v.Ciphertext) || !validOrigin(v.Origin) {
+		return nil, errors.New("invalid staged client key")
+	}
+	return &v, nil
+}
+
+// CreateInstaller persists the installation-minted Client Key. It returns false
+// when the installation already owns one: the caller must replay that record
+// instead of minting a second key. The unique partial index is the durable
+// fence, so concurrent install attempts cannot both win.
+func (r *Repository) CreateInstaller(ctx context.Context, v Record) (bool, error) {
+	v.Origin = OriginInstaller
+	if v.Identity.Validate() != nil || !security.IsValidProtectedEnvelope(v.Ciphertext) || !identity.IsValidSHA256Hex(v.Hash) || v.Preview == "" || v.Identity.CreatedAtMS <= 0 {
+		return false, errors.New("invalid install client key")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var exists int
+	if err = tx.QueryRowContext(ctx, "select count(*) from fresh_client_api_keys where origin=?", OriginInstaller).Scan(&exists); err != nil {
+		return false, err
+	}
+	if exists != 0 {
+		return false, nil
+	}
+	i := v.Identity
+	if _, err = tx.ExecContext(ctx, "insert into gateway_api_key_identities(id,revision,lifecycle,created_at_ms,updated_at_ms) values(?,?,?,?,?)", i.ID, i.Revision, i.Lifecycle, i.CreatedAtMS, i.UpdatedAtMS); err != nil {
+		return false, err
+	}
+	if _, err = tx.ExecContext(ctx, "insert into fresh_client_api_keys(request_id,api_key_id,secret_ciphertext,secret_hash,masked_preview,name,origin) values(?,?,?,?,?,?,?)", v.RequestID, i.ID, v.Ciphertext, v.Hash, v.Preview, v.Name, v.Origin); err != nil {
+		return false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func validOrigin(origin string) bool {
+	return origin == OriginWorkspace || origin == OriginInstaller
 }
 
 // bindSource records one attribution window. An active binding of the same

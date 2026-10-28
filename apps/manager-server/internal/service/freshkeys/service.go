@@ -9,11 +9,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	repo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
 )
@@ -32,7 +34,32 @@ type Key struct {
 	Name          string             `json:"name"`
 	NameRevision  int64              `json:"nameRevision"`
 	Lifecycle     identity.Lifecycle `json:"lifecycle"`
+	// Origin is "workspace" for a Key the workspace created and "installer" for
+	// the single Key the default installation minted so CPA never starts with
+	// client authentication disabled. It is display metadata, not authority.
+	Origin string `json:"origin"`
 }
+
+// InitialKey is the installation-minted Client Key. The secret is returned only
+// to the install path, which places it in the protected destination snapshot;
+// no HTTP response, journal or log ever carries it.
+type InitialKey struct {
+	ID        identity.APIKeyID
+	RequestID string
+	Secret    string
+}
+
+// Origins of a canonical Client Key, mirrored to the Key workspace so the
+// installation's Key is displayed with a localised label instead of the stored
+// default name.
+const (
+	OriginWorkspace = repo.OriginWorkspace
+	OriginInstaller = repo.OriginInstaller
+)
+
+// InstallerOriginName is the default display name of the installation's Key.
+const InstallerOriginName = "Initial key"
+
 type Result struct {
 	Key           Key    `json:"key"`
 	CreatedSecret string `json:"createdSecret,omitempty"`
@@ -54,6 +81,10 @@ type Service struct {
 	repo      *repo.Repository
 	protector *security.Protector
 	source    SourceRuntime
+	// installMu serializes this process's install-key resolution. The origin
+	// unique index remains the durable cross-process fence; the lock only stops
+	// concurrent callers from racing a redundant mint attempt.
+	installMu sync.Mutex
 }
 
 func New(r *repo.Repository, p *security.Protector, options ...Option) *Service {
@@ -79,7 +110,9 @@ func (s *Service) runtimeIdentity(ctx context.Context) string {
 	return value
 }
 func public(v repo.Record) Key {
-	return Key{v.Identity.ID, v.RequestID, v.Preview, v.Identity.CreatedAtMS, "persisted", "not_applied", v.Name, v.NameRevision, v.Identity.Lifecycle}
+	return Key{ID: v.Identity.ID, RequestID: v.RequestID, MaskedPreview: v.Preview, CreatedAtMS: v.Identity.CreatedAtMS,
+		ManagerState: "persisted", RuntimeState: "not_applied", Name: v.Name, NameRevision: v.NameRevision,
+		Lifecycle: v.Identity.Lifecycle, Origin: v.Origin}
 }
 
 // IdentityIDs lists the Canonical Keys of this workspace without touching any
@@ -152,7 +185,7 @@ func (s *Service) List(ctx context.Context) ([]Key, error) {
 	}
 	for _, v := range records {
 		secret, err := s.protector.UnprotectString(v.Ciphertext)
-		if err != nil || digest(secret) != v.Hash || len(secret) != 73 || v.Preview != "cpamp_sk_…"+secret[len(secret)-4:] {
+		if err != nil || digest(secret) != v.Hash || !model.ValidCanonicalClientKey(secret) || v.Preview != model.MaskedClientKey(secret) {
 			return nil, errors.New("staged client secret unavailable")
 		}
 		key := public(v)
@@ -200,13 +233,13 @@ func (s *Service) Create(ctx context.Context, requestID string) (Result, bool, e
 	if _, err = rand.Read(raw); err != nil {
 		return Result{}, false, err
 	}
-	secret := "cpamp_sk_" + hex.EncodeToString(raw)
+	secret := model.WorkspaceClientKeyPrefix + hex.EncodeToString(raw)
 	ciphertext, err := s.protector.ProtectString(secret)
 	if err != nil {
 		return Result{}, false, err
 	}
 	now := time.Now().UnixMilli()
-	v := repo.Record{RequestID: requestID, Identity: identity.APIKeyIdentity{ID: id, Revision: identity.InitialRevision, Lifecycle: identity.LifecycleActive, CreatedAtMS: now, UpdatedAtMS: now}, Ciphertext: ciphertext, Hash: digest(secret), Preview: "cpamp_sk_…" + secret[len(secret)-4:], NameRevision: 1}
+	v := repo.Record{RequestID: requestID, Identity: identity.APIKeyIdentity{ID: id, Revision: identity.InitialRevision, Lifecycle: identity.LifecycleActive, CreatedAtMS: now, UpdatedAtMS: now}, Ciphertext: ciphertext, Hash: digest(secret), Preview: model.MaskedClientKey(secret), NameRevision: 1, Origin: repo.OriginWorkspace}
 	created, err := s.repo.Create(ctx, v, s.runtimeIdentity(ctx))
 	if err != nil {
 		return Result{}, false, err
@@ -216,6 +249,116 @@ func (s *Service) Create(ctx context.Context, requestID string) (Result, bool, e
 		return Result{Key: key}, false, err
 	}
 	return Result{Key: public(v), CreatedSecret: secret}, true, nil
+}
+
+// EnsureInitialKey returns the single Client Key the installation minted, or
+// mints and persists it now. The origin-unique canonical record is the only
+// durable copy, so a resume, retry or process restart replays that exact key and
+// never generates a second one. The plaintext reaches only the install path,
+// which stores it in the protected destination snapshot.
+func (s *Service) EnsureInitialKey(ctx context.Context) (InitialKey, error) {
+	if s == nil || s.repo == nil || s.protector == nil {
+		return InitialKey{}, errors.New("install client key authority unavailable")
+	}
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
+	record, err := s.repo.Installer(ctx)
+	if err != nil {
+		return InitialKey{}, err
+	}
+	if record != nil {
+		return s.installerKey(record)
+	}
+	requestID, err := identity.NewAPIKeyID()
+	if err != nil {
+		return InitialKey{}, err
+	}
+	id, err := identity.NewAPIKeyID()
+	if err != nil {
+		return InitialKey{}, err
+	}
+	secret, err := GenerateInitialClientKey()
+	if err != nil {
+		return InitialKey{}, err
+	}
+	ciphertext, err := s.protector.ProtectString(secret)
+	if err != nil {
+		return InitialKey{}, err
+	}
+	now := time.Now().UnixMilli()
+	record = &repo.Record{
+		RequestID:  string(requestID),
+		Identity:   identity.APIKeyIdentity{ID: id, Revision: identity.InitialRevision, Lifecycle: identity.LifecycleActive, CreatedAtMS: now, UpdatedAtMS: now},
+		Ciphertext: ciphertext, Hash: digest(secret), Preview: model.MaskedClientKey(secret),
+		Name: InstallerOriginName, NameRevision: 1, Origin: repo.OriginInstaller,
+	}
+	created, err := s.repo.CreateInstaller(ctx, *record)
+	if err != nil || !created {
+		// Another attempt may have won the origin fence. That durable record is
+		// authoritative; this call's freshly generated key is discarded.
+		stored, readErr := s.repo.Installer(ctx)
+		if readErr != nil {
+			return InitialKey{}, readErr
+		}
+		if stored == nil {
+			return InitialKey{}, err
+		}
+		return s.installerKey(stored)
+	}
+	return InitialKey{ID: id, RequestID: record.RequestID, Secret: secret}, nil
+}
+
+// installerKey decrypts and re-verifies the installation's stored Client Key.
+func (s *Service) installerKey(record *repo.Record) (InitialKey, error) {
+	secret, err := s.protector.UnprotectString(record.Ciphertext)
+	if err != nil || !model.ValidCanonicalClientKey(secret) || digest(secret) != record.Hash || record.Preview != model.MaskedClientKey(secret) {
+		return InitialKey{}, errors.New("install client key unavailable")
+	}
+	return InitialKey{ID: record.Identity.ID, RequestID: record.RequestID, Secret: secret}, nil
+}
+
+// GenerateInitialClientKey returns "sk-" + 64 uniformly random [A-Za-z0-9]
+// characters, the shape v1.x installations were seeded with. 62 does not divide
+// 256, so each byte is reduced to six bits and rejected unless it names one of
+// the 62 characters: taking the byte modulo 62 would bias the first eight
+// characters towards the low half of the alphabet.
+func GenerateInitialClientKey() (string, error) {
+	secret := make([]byte, 0, model.InitialClientKeyLength)
+	secret = append(secret, model.InitialClientKeyPrefix...)
+	buffer := make([]byte, 64)
+	for len(secret) < model.InitialClientKeyLength {
+		if _, err := rand.Read(buffer); err != nil {
+			return "", err
+		}
+		secret = appendInitialClientKeyAlnum(secret, buffer)
+	}
+	return string(secret), nil
+}
+
+const initialClientKeyAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+// initialClientKeyChar maps one random byte to an alphabet character. The two of
+// every sixty-four values that name no character are rejected instead of folded,
+// so every character is drawn with the same probability.
+func initialClientKeyChar(value byte) (byte, bool) {
+	if accepted := int(value) & 63; accepted < len(initialClientKeyAlphabet) {
+		return initialClientKeyAlphabet[accepted], true
+	}
+	return 0, false
+}
+
+// appendInitialClientKeyAlnum appends accepted characters from buffer to secret
+// until the key is complete. Bytes left over when the key fills are discarded.
+func appendInitialClientKeyAlnum(secret, buffer []byte) []byte {
+	for _, value := range buffer {
+		if len(secret) >= model.InitialClientKeyLength {
+			return secret
+		}
+		if character, ok := initialClientKeyChar(value); ok {
+			secret = append(secret, character)
+		}
+	}
+	return secret
 }
 
 // MatchStagedSecret verifies a Manager-staged credential against the existing
@@ -231,13 +374,13 @@ func (s *Service) MatchStagedSecret(ctx context.Context, candidate string) (bool
 	}
 	// The candidate shape matches secrets minted by Create. No caller input
 	// is interpolated into SQL or emitted in a response/log.
-	shape := len(candidate) == 73 && strings.HasPrefix(candidate, "cpamp_sk_")
+	shape := model.ValidWorkspaceClientKey(candidate)
 	sum := sha256.Sum256([]byte(candidate))
 	matched := 0
 	for _, record := range records {
 		secret, err := s.protector.UnprotectString(record.Ciphertext)
-		if err != nil || len(secret) != 73 || digest(secret) != record.Hash ||
-			record.Preview != "cpamp_sk_…"+secret[len(secret)-4:] {
+		if err != nil || !model.ValidCanonicalClientKey(secret) || digest(secret) != record.Hash ||
+			record.Preview != model.MaskedClientKey(secret) {
 			return false, errors.New("staged client key authority corrupt")
 		}
 		stored, err := hex.DecodeString(record.Hash)
