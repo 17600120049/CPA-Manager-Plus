@@ -999,23 +999,44 @@ except OSError:print('unreachable')`,
     ),
     'the reply carrying the installer Client Key must be Cache-Control: no-store'
   );
-  // The committed operation replays in place: same identity, same revision, no
-  // second strategy write and no repeat of the plaintext.
-  const committedOperation = await adminGet('operation');
+  // The committed operation replays in place: same identity, same revision and
+  // the Runtime facts its own checkpoint recorded. The fixed Bootstrap carrier is
+  // retired once routing commits, so the replay is issued on the canonical
+  // Console API with the Admin credential.
+  const committed = parseReply(committing.find((reply) => parseReply(reply).initialClientKey));
+  assert.equal(committed.strategy.stage, 'committed', 'the committing reply must be committed');
+  // Completion advances the revision, so the replay uses the operation's current
+  // revision and the Runtime facts its own committed checkpoint recorded. The
+  // 64-bit generation is read as text: it exceeds Number.MAX_SAFE_INTEGER, and a
+  // round-trip through a JavaScript number would corrupt it.
+  const currentRaw = await (
+    await fetch(origin + '/console/api/v2/operation', { headers: adminHeaders })
+  ).text();
+  const current = JSON.parse(currentRaw);
+  const targetGeneration = currentRaw.match(/"targetGeneration"\s*:\s*([0-9]+)/)[1];
+  assert.equal(current.strategy.stage, 'committed');
   const replayed = await fetch(origin + '/console/api/v2/strategy', {
     method: 'POST',
     headers: { ...adminHeaders, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      identity: committedOperation.identity,
-      expectedRevision: committedOperation.revision,
+      identity: current.identity,
+      expectedRevision: current.revision,
       strategy: 'new_managed',
-      expectedRuntimeIdentity: status.runtimeIdentity,
-      expectedRuntimeGeneration: Number(status.runtimeGeneration),
-      expectedArtifactId: status.activeGatewayArtifact.artifactId,
-    }),
+      expectedRuntimeIdentity: current.strategy.targetIdentity,
+      // Splice the exact digits so the 64-bit value is never re-encoded.
+      expectedRuntimeGeneration: '#GENERATION#',
+      expectedArtifactId: current.strategy.targetArtifactId,
+    }).replace('"#GENERATION#"', targetGeneration),
   });
   const replayedBody = await replayed.text();
-  assert.equal(replayed.status, 200, 'a committed strategy replay must return the checkpoint');
+  assert.equal(
+    replayed.status,
+    200,
+    'a committed strategy replay must return the checkpoint: ' +
+      replayed.status +
+      ' ' +
+      replayedBody.trim()
+  );
   assert.equal(JSON.parse(replayedBody).strategy.stage, 'committed');
   assert(
     !replayedBody.includes(installKey) && !replayedBody.includes('initialClientKey'),
