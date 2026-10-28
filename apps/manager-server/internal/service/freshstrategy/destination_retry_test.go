@@ -2,6 +2,7 @@ package freshstrategy
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -214,5 +215,43 @@ func TestDestinationOperationIDStaysWithinTheRuntimeLimit(t *testing.T) {
 	}
 	if _, err := destinationOperationID(strings.Repeat("x", maxRuntimeOperationIDBytes), 1); err == nil {
 		t.Fatal("attempt suffix exceeded the Runtime limit")
+	}
+}
+
+// Adoption reuses the shared destination attempt counter, so the bound it gained
+// must not leak into New Managed: a managed install may still retire attempts as
+// often as its own target terminally fails, and each retirement re-issues the
+// destination under the next operation ID.
+func TestNewManagedRetryBoundIsUnaffectedByAdoptionLimit(t *testing.T) {
+	if bootstrap.MaxAdoptionDestinationRetry != 1 {
+		t.Fatalf("adoption retry bound = %d", bootstrap.MaxAdoptionDestinationRetry)
+	}
+	runtime, service, request, op, _ := stagedManagedInstall(t)
+	runtime.stageState = model.RuntimeOperationFailed
+	// Walk one attempt past the adoption ceiling using only the retirements the
+	// strategy itself authorizes.
+	for attempt := uint64(1); attempt <= bootstrap.MaxAdoptionDestinationRetry+2; attempt++ {
+		result, err := service.Execute(t.Context(), op, request)
+		retry := destinationRetryOf(t, err, "managed_destination_stage_failed", attempt)
+		if result.Connection != nil || retry.Checkpoint.Strategy != bootstrap.NewManaged {
+			t.Fatalf("attempt %d: %+v", attempt, retry.Checkpoint)
+		}
+		op.Strategy = retry.Checkpoint
+	}
+	if op.Strategy.DestinationAttempt != bootstrap.MaxAdoptionDestinationRetry+2 {
+		t.Fatalf("managed install stopped advancing at the adoption bound: %d", op.Strategy.DestinationAttempt)
+	}
+	base := "fresh-operation-123:managed-destination"
+	if len(runtime.stages) != int(bootstrap.MaxAdoptionDestinationRetry+2) {
+		t.Fatalf("stage count = %d", len(runtime.stages))
+	}
+	for index, stage := range runtime.stages {
+		want := base
+		if index > 0 {
+			want = base + ":attempt-" + strconv.FormatUint(uint64(index), 10)
+		}
+		if stage.OperationID != want {
+			t.Fatalf("stage %d operation ID = %q, want %q", index, stage.OperationID, want)
+		}
 	}
 }
