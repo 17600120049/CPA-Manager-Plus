@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"time"
@@ -97,6 +98,7 @@ func NewExternal(r *repo.Repository, keys *freshkeys.Service, source ExternalSou
 	s.profile = ProfileExternal
 	s.externalSource = source
 	s.externalWire = func(endpoint string) externalWire { return cpa.NewTransportForEndpoint(endpoint) }
+	s.externalProbe = cpa.ObserveExternalVersion
 	// The adapter is the wire every step of this profile speaks: it resolves the
 	// committed target first, so no step is taken against a stale credential.
 	s.wire = externalKeyAuthority{s: s}
@@ -186,7 +188,59 @@ func (s *Service) externalKeyWire(install ExternalInstall) externalWire {
 	if s.externalWire == nil {
 		return nil
 	}
-	return s.externalWire(install.BaseURL)
+	w := s.externalWire(install.BaseURL)
+	if w == nil || s.externalProbe == nil {
+		return w
+	}
+	return externalVersionGate{wire: w, probe: s.externalProbe, baseURL: install.BaseURL}
+}
+
+// externalVersionGate is the External wire with the version refusal in front of
+// its one write. Reads pass through untouched: a version this Manager cannot
+// prove bounds what may be written, never what may be shown. The probe is asked
+// once per write attempt, immediately before it, so a CPA that was upgraded or
+// replaced since the connection was committed is judged as it is now.
+type externalVersionGate struct {
+	wire    externalWire
+	probe   func(context.Context, string, string) (cpa.ExternalVersionReport, error)
+	baseURL string
+}
+
+func (g externalVersionGate) ExternalKeySnapshot(ctx context.Context, management string) (cpa.ExternalKeySnapshot, error) {
+	return g.wire.ExternalKeySnapshot(ctx, management)
+}
+
+func (g externalVersionGate) ExternalWriteKeySet(ctx context.Context, management string, keys []string) error {
+	report, err := g.probe(ctx, g.baseURL, management)
+	if err := externalVersionWriteRefusal(report, err); err != nil {
+		return err
+	}
+	return g.wire.ExternalWriteKeySet(ctx, management, keys)
+}
+
+// externalWriteRefusal is the one verdict of a version probe in front of a write.
+// A refused credential and an unreachable CPA are the typed blockers of their own
+// reads and pass through unchanged: neither is evidence that the version is wrong.
+func externalVersionWriteRefusal(report cpa.ExternalVersionReport, err error) error {
+	if err != nil {
+		return err
+	}
+	if report.WriteBlocked {
+		return fmt.Errorf("%w: %s", cpa.ErrExternalVersionUnsupported, report.Support)
+	}
+	return nil
+}
+
+// externalWriteGate asks the probe once for a resolved target and returns its
+// verdict. The journal asks it before recording an intent, so an unsupported CPA
+// is refused before a durable operation exists that no later step could send: a
+// pending journal on a target this Manager cannot write would block every other
+// operation of that connection forever.
+func (s *Service) externalWriteGate(ctx context.Context, install ExternalInstall) error {
+	if s.externalProbe == nil {
+		return nil
+	}
+	return externalVersionWriteRefusal(s.externalProbe(ctx, install.BaseURL, install.ManagementKey))
 }
 
 // ExternalKeyPresence reports, per staged key, whether the user's CPA carries it.

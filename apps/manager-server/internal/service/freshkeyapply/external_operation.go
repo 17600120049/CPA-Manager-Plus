@@ -34,6 +34,12 @@ func (s *Service) externalPrepare(ctx context.Context, id, target, keeper, mode 
 	if w == nil {
 		return result, ErrExternalUnavailable
 	}
+	// No step is written here, but the journal is: an intent this Manager could
+	// never send would stay pending and block every later operation of the
+	// connection, so the version is asked before the intent exists.
+	if err = s.externalWriteGate(ctx, install); err != nil {
+		return result, err
+	}
 	err = s.keyPair(ctx, target, keeper, false, func(old, next string) error {
 		snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
 		if err != nil {
