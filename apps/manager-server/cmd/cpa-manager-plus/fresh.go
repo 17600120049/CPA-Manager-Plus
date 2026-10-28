@@ -46,6 +46,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -121,6 +122,14 @@ type freshApplication struct {
 	usageStarted          bool
 	usageWorkersStarted   bool
 	usageCollectorStarted bool
+	// usageStartReason is the stable code of the last refused Collector start.
+	// It is empty once a start succeeded, so the workspace can tell an unstarted
+	// window from one that was never attempted.
+	usageStartReason atomic.Value
+	// externalUsageConfirmed records the administrator's explicit confirmation
+	// to enable usage statistics on the user's own CPA. Without it nothing is
+	// written to that CPA and the collection window never opens.
+	externalUsageConfirmed atomic.Bool
 	// runCtx is the host lifetime of this application. Workers started after an
 	// in-process ProductComplete must outlive the request that triggered them.
 	runCtx context.Context
@@ -410,6 +419,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):
 		a.clientKeys(w, r, op, resource)
+	case resource == "external/usage" || strings.HasPrefix(resource, "external/usage/"):
+		a.externalUsageRoute(w, r, op, strings.TrimPrefix(strings.TrimPrefix(resource, "external/usage"), "/"))
 	case resource == "runtime/status":
 		a.runtimeStatus(w, r, op)
 	case resource == "runtime/operations" || strings.HasPrefix(resource, "runtime/operations/"):
