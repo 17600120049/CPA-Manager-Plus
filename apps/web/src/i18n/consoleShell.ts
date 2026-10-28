@@ -89,6 +89,8 @@ const en = {
   unknown: 'Result needs confirmation',
   unknownHelp:
     'A reply was lost. Keep this original operation and check its status. No new installation will be created.',
+  runtimeVerifyRequired:
+    'The packaged CPA has not finished starting, so the installation could not be verified yet. Everything saved so far is kept; continue to verify the same installation again.',
   failure: 'Installation paused',
   failureHelp:
     'The operation is preserved. Check the original status before continuing. A changed Host identity requires Host-side recovery.',
@@ -190,6 +192,8 @@ const zh: typeof en = {
   active: '执行中',
   unknown: '结果待确认',
   unknownHelp: '连接中断或响应丢失。请保留原操作并检查状态，不会另建安装。',
+  runtimeVerifyRequired:
+    '内置 CPA 尚未完成启动，暂时无法验证安装。已保存的进度不会丢失，请继续对同一次安装重新验证。',
   failure: '安装已暂停',
   failureHelp: '原操作已保留，请先检查状态再继续。宿主机身份发生变化时需要在宿主机恢复。',
   console: '进入 Console',
@@ -272,6 +276,8 @@ const tw: typeof en = {
   active: '執行中',
   unknown: '結果待確認',
   unknownHelp: '連線中斷或回應遺失。請保留原操作並檢查狀態，不會另建安裝。',
+  runtimeVerifyRequired:
+    '內建 CPA 尚未完成啟動，暫時無法驗證安裝。已儲存的進度不會遺失，請繼續對同一次安裝重新驗證。',
   failure: '安裝已暫停',
   failureHelp: '原操作已保留，請先檢查狀態再繼續。主機身分發生變更時需要在主機復原。',
   console: '進入 Console',
@@ -361,6 +367,8 @@ const ru: typeof en = {
   unknown: 'Результат требует подтверждения',
   unknownHelp:
     'Соединение прервано или ответ потерян. Сохраните исходную операцию и проверьте её состояние. Новая установка создана не будет.',
+  runtimeVerifyRequired:
+    'Встроенный CPA ещё не завершил запуск, поэтому установку пока нельзя проверить. Сохранённые шаги не потеряны — продолжите проверку той же установки.',
   failure: 'Установка приостановлена',
   failureHelp:
     'Исходная операция сохранена. Проверьте её состояние перед продолжением. При изменении идентичности хоста требуется восстановление на хосте.',

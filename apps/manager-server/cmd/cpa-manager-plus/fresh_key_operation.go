@@ -14,7 +14,7 @@ import (
 )
 
 func (a *freshApplication) keyOperationTarget(op bootstrap.FreshOperation) bool {
-	return a.keyApply.KeyOperationsEnabled() && op.Strategy.Stage == "committed" && op.Strategy.Strategy == bootstrap.NewManaged && op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID == cpa.PrivateKeyArtifact
+	return a.keyApply.KeyOperationsEnabled() && a.keyApply.Targets(op, freshkeyapply.SurfaceKeyOperation)
 }
 func decodeKeyOperation(w http.ResponseWriter, r *http.Request, v any) bool {
 	if r.Header.Get("Content-Type") != "application/json" {

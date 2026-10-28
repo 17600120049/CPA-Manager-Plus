@@ -13,9 +13,17 @@ import (
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 )
 
-// ProfileManaged marks the permit profile derived from a committed Fresh
-// NewManaged installation instead of a Host-issued S1 permit file.
-const ProfileManaged = "managed"
+// Profiles of one installation authority. A Manager holds exactly one of them,
+// selected once when the authority is constructed: the profile is never read
+// from a request or from the environment.
+const (
+	// ProfilePrivate marks the Host-attested S1/S2 loopback profile. Its
+	// authority is the Host-issued permit file.
+	ProfilePrivate = "private"
+	// ProfileManaged marks the authority derived from a committed Fresh
+	// NewManaged installation instead of a Host-issued S1 permit file.
+	ProfileManaged = "managed"
+)
 
 // managedGrantTTL bounds one derived step grant. It is never longer than the
 // remaining install window, and it is re-derived for every read.
@@ -44,7 +52,7 @@ type ManagedSource func(context.Context) (ManagedInstall, error)
 // its Host permit and is constructed with New instead.
 func NewManaged(r *repo.Repository, keys *freshkeys.Service, runtime runtimeservice.RuntimeClient, endpoint string, source ManagedSource) *Service {
 	s := New(r, keys, runtime)
-	s.managed = true
+	s.profile = ProfileManaged
 	s.endpoint = endpoint
 	s.source = source
 	s.permit = func() (Permit, error) {
@@ -79,25 +87,72 @@ func NewManaged(r *repo.Repository, keys *freshkeys.Service, runtime runtimeserv
 // ManagedEndpoint is the normalized destination CPA address this authority
 // writes through. It is configuration, not a credential.
 func (s *Service) ManagedEndpoint() string {
-	if s == nil || !s.managed {
+	if s == nil || s.profile != ProfileManaged {
 		return ""
 	}
 	return s.endpoint
 }
 
-// Targets is the installation profile discriminator for the canonical HTTP
-// surface: the committed checkpoint must belong either to the managed
-// destination of a default install or to the exact private attested target.
-// The profile is read from durable checkpoint facts, never from an environment
-// variable.
-func (s *Service) Targets(op bootstrap.FreshOperation) bool {
-	if s == nil || op.Strategy.Strategy != bootstrap.NewManaged || op.Strategy.Stage != "committed" {
+// Surface names the one canonical caller asking its installation question.
+// Every caller asks Targets about the same durable checkpoint, so no surface can
+// accept a state another one refuses; the name exists because the surfaces do
+// not all ship the same scope. The key surfaces have always acted only on a
+// committed managed-strategy checkpoint, while the gateway configuration page of
+// the private H1/direct scope predates that strategy and selects the attested
+// target alone. Naming the surface keeps each rule here, in the one
+// discriminator, instead of re-adding profile checks at every caller.
+type Surface string
+
+const (
+	// SurfaceKeyInstall is the initial Client Key install route.
+	SurfaceKeyInstall Surface = "key_install"
+	// SurfaceKeyOperation is the durable revoke/replace journal route.
+	SurfaceKeyOperation Surface = "key_operation"
+	// SurfaceChatAdmission is the private chat proof consumer.
+	SurfaceChatAdmission Surface = "chat_admission"
+	// SurfaceGatewayConfig is the gateway configuration page and its private
+	// field journal.
+	SurfaceGatewayConfig Surface = "gateway_config"
+)
+
+// Targets is the single installation-profile discriminator of the canonical
+// HTTP surface: key install, key operation, chat admission and the gateway
+// configuration page all ask this authority. The profile is read from durable
+// checkpoint facts, never from an environment variable or a request. An unknown
+// surface is answered by the strictest rule, never by the loosest.
+func (s *Service) Targets(op bootstrap.FreshOperation, surface Surface) bool {
+	if s == nil || op.Strategy.Stage != "committed" {
 		return false
 	}
-	if s.managed {
-		return strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:")
+	switch s.profile {
+	case ProfileManaged:
+		// One install-derived authority: the committed managed destination is the
+		// credential's destination on every surface, so keys, admission and
+		// configuration share exactly one answer.
+		return op.Strategy.Strategy == bootstrap.NewManaged && strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:")
+	case ProfilePrivate:
+		// The private H1/direct profile names one attested runtime and artifact;
+		// the Host permit remains the write authority for whatever it names.
+		if op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
+			return false
+		}
+		if surface == SurfaceGatewayConfig {
+			// Its page and field journal shipped before the managed strategy and
+			// never required one: the attested target alone is their scope.
+			return true
+		}
+		// Key install, key operations and chat admission require the managed
+		// strategy as well; an adopted checkpoint is never a key write path here.
+		return op.Strategy.Strategy == bootstrap.NewManaged
 	}
-	return op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime && op.Strategy.TargetArtifactID == cpa.PrivateKeyArtifact
+	return false
+}
+
+// TargetsFunc binds Targets to one canonical surface for a consumer that takes a
+// plain predicate, such as the gateway configuration page. The rule stays in
+// Targets: this only names which surface is asking.
+func (s *Service) TargetsFunc(surface Surface) func(bootstrap.FreshOperation) bool {
+	return func(op bootstrap.FreshOperation) bool { return s.Targets(op, surface) }
 }
 
 // managedKeyGrant derives the per-step authority for one durable key operation.
@@ -140,7 +195,7 @@ func (s *Service) managedKeyGrant(ctx context.Context, operationID, step string)
 // checkpoint and the authenticated destination read-back.
 func (s *Service) targetProof(target model.RuntimeObservedStatus, p Permit) cpa.TargetProof {
 	proof := cpa.TargetProof{Identity: string(target.Identity), Generation: uint64(target.Generation), Ready: true, ExpiresAtMS: p.ExpiresAtMS, ProviderSeed: p.S2B}
-	if s.managed {
+	if s.profile == ProfileManaged {
 		if target.ActiveGatewayArtifact != nil {
 			proof.ArtifactID = string(target.ActiveGatewayArtifact.ArtifactID)
 		}

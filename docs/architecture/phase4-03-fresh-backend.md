@@ -85,6 +85,16 @@ config-only initializer crashes while its receipt is still pending, normal
 service startup stays closed; the host reruns `initialize` to recover the same
 admission. Custom key/config paths have not received a separate kill matrix.
 
+Shared compatibility rows are owned per key, not as one legacy marker set.
+`runtime_desired_v1` and `bootstrap_state_v1` are written by delivered product
+surfaces of a completed installation — the Fresh Runtime page persists the
+desired lifecycle through the shared setting repository, and the existing Config
+service persists its bootstrap state — so they are refused only while the
+operation is pending, exactly like the compatibility `setup` row. A completed
+record therefore keeps loading after a Runtime stop or a Config save, and
+unreadable compatibility bytes lock only the domain that reads them, never the
+Manager record.
+
 ## Admin and transport boundary
 
 Only administrator keys are supported. Generated keys reuse the existing secure

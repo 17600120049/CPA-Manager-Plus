@@ -173,7 +173,7 @@ func privateFixture(t *testing.T, h1 bool) (*Service, *privateWire, *privateH1, 
 		Strategy: bootstrap.AdoptExisting, Stage: "committed",
 		TargetIdentity: cpa.PrivateKeyRuntime, TargetArtifactID: cpa.PrivateKeyArtifact, TargetGeneration: 3,
 	}
-	service := New(store, func(context.Context, uint64) (string, error) { return "management-test-only", nil })
+	service := New(store, func(context.Context, uint64) (string, error) { return "management-test-only", nil }, privateTargets)
 	service.wire = wire
 	service.transport = nil
 	if !h1 {

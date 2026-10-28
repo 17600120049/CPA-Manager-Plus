@@ -34,8 +34,7 @@ func (s *Service) privateOwner(ctx context.Context, path string) (freshstore.Rec
 		return r, "", err
 	}
 	op := r.Operation
-	if s.target == nil || op.Strategy.Stage != "committed" || op.Strategy.TargetGeneration == 0 ||
-		op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
+	if s.target == nil || s.targets == nil || op.Strategy.TargetGeneration == 0 || !s.targets(op) {
 		return r, "", cpa.ErrProofUnavailable
 	}
 	management, err := s.target(ctx, op.Strategy.TargetGeneration)
