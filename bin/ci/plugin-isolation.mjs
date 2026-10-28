@@ -59,7 +59,9 @@ const adminStorageKeys = [];
 const adminCookies = [];
 
 async function login(page) {
-  await page.goto(`${consoleRoot}/`, { waitUntil: 'domcontentloaded' });
+  // The Control base path is served at its own exact path; a trailing slash is
+  // not a canonical request path and is refused, so navigation targets it bare.
+  await page.goto(consoleRoot, { waitUntil: 'domcontentloaded' });
   // Full Web renders the Console login adapter with a stable test id and the
   // admin key field it declares for the console surface.
   const form = page.getByTestId('console-login');
@@ -441,14 +443,39 @@ async function adminCspCheck(engineName, launcher) {
     });
 
     // The admin document policy is nonce-based; a served document must carry it.
-    const documentResponse = await page.goto(`${consoleRoot}/`, { waitUntil: 'networkidle' });
+    const documentResponse = await page.goto(consoleRoot, { waitUntil: 'networkidle' });
     const policy = (await documentResponse.allHeaders())['content-security-policy'] || '';
     assert(/script-src 'nonce-/.test(policy), `admin document CSP is not nonce-scoped: ${policy}`);
     assert(/frame-src 'self'/.test(policy), `admin document CSP does not confine frames: ${policy}`);
     record(engineName, 'admin document carries the nonce CSP', 'PASS', { policy });
 
     await login(page);
-    for (const path of ['/dashboard', '/plugins', '/config', '/accounts']) {
+    // Every page the Console routes to. The list is the real route table, not a
+    // sample: a CSP regression on one page is the same defect wherever it lands.
+    const adminPages = [
+      '/dashboard',
+      '/api-keys',
+      '/config',
+      '/gateway',
+      '/system',
+      '/system/runtime',
+      '/system/updates',
+      '/accounts',
+      '/oauth',
+      '/ai-providers',
+      '/usage-analytics',
+      '/model-prices',
+      '/monitoring',
+      '/monitoring/account-actions',
+      '/monitoring/model-prices',
+      '/monitoring/codex-inspection',
+      '/codex-inspection',
+      '/codex-inspection/server',
+      '/logs',
+      '/plugins',
+      '/plugin-store',
+    ];
+    for (const path of adminPages) {
       await page.goto(`${consoleRoot}${path}`, { waitUntil: 'networkidle' });
       violations.push(
         ...(await page.evaluate(() => window.__cspViolations || [])).map((item) => ({ path, ...item }))
@@ -463,7 +490,7 @@ async function adminCspCheck(engineName, launcher) {
     const cspErrors = errors.filter((text) => /Content Security Policy|Refused to/i.test(text));
     assert.deepEqual(cspErrors, [], `${engineName}: CSP console errors ${JSON.stringify(cspErrors)}`);
     record(engineName, 'admin CSP: zero violations across Console pages', 'PASS', {
-      pages: ['/dashboard', '/plugins', '/config', '/accounts'],
+      pages: adminPages,
     });
     await context.close();
   } finally {
