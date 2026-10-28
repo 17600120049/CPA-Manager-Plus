@@ -362,39 +362,62 @@ An External installation has no Manager-owned Runtime, artifact or readiness
 fact: the CPA belongs to the user, and this Manager only holds a protected
 connection to it. `freshkeyapply.NewExternal` is therefore constructed from a
 source that re-reads, on every call, the committed `connect_external` checkpoint
-with `ProductComplete`, the protected Manager connection and the user's own CPA.
-It decrypts the management credential, refuses anything but a complete
-checkpoint, and derives two durable facts:
+with `ProductComplete` and the protected Manager connection. It decrypts the
+management credential and refuses anything but a complete checkpoint. The
+credential is accepted by the rule Connect External itself applies at
+installation (any printable key up to 4096 characters), not by an exact-length
+check, because the user chooses it. The user's CPA is never contacted to resolve
+the authority, so an outage there cannot hide the target.
+
+Two durable facts identify it:
 
 - the **identity** is `external:sha256:<digest>` of the normalized committed
   address — the address digest is the only comparable durable fact, because the
   credential is a protected envelope;
-- the **generation** is derived from that identity and the digest of the
-  configuration read back from the CPA. A configuration the user edited
-  afterwards is a different generation, so a step granted against the previous
-  one never authorizes a write against the new one, and neither half is request
-  input.
+- the **generation** is that identity and nothing else. An earlier design mixed
+  the digest of the CPA's `config.yaml` into it, which made every External
+  operation invalidate itself: the client-key list lives in that document, so
+  this Manager's own successful write changed the digest, left the journal at an
+  unknown effect, and `BeginOperation` then refused every later operation. The
+  configuration digest is a per-step grant CAS instead: it is read immediately
+  before each single PUT and compared there, and it never enters the journal.
 
-`Targets` answers `key_install`, `key_operation` and `gateway_config` for it and
-refuses chat admission and gateway admission, which stay with the managed
-destination. External, Managed and Private remain mutually exclusive: the
-discriminator accepts only the checkpoint of the profile the Manager
-constructed.
+`Targets` answers `key_install`, `key_operation` and `gateway_config` for it —
+that allowlist, so an unknown surface is refused — and refuses chat admission
+and gateway admission, which stay with the managed destination. External,
+Managed and Private remain mutually exclusive: the discriminator accepts only the
+checkpoint of the profile the Manager constructed.
 
 Keys are administered through the CPA v8 API and every claim is read back. The
 staged secret is decrypted in-process and compared by membership against the
 CPA's own key list — there is no managed template to prove, and the CPA may
-carry credentials this Manager never staged. A revoke or replace journals its
-intent before a single write and reconciles by reading the CPA, never by
-resending the step; revoking the only credential is refused with `ErrLastKey`,
-because that would leave the user's CPA accepting unauthenticated clients. The
-gateway configuration page keeps #1090's External semantics: scalars are
-best-effort with a baseline re-read, and rule families stay read-only.
+carry credentials this Manager never staged. The journal settles from what the
+CPA shows: a revoke step has ended when the credential it removes is absent, and
+an add step when the credential it introduces is carried. A lost reply, a 401
+that proves nothing was written, and an edit the user made between `Prepare` and
+`Continue` therefore all reach a terminal state instead of leaving the journal
+pending and every later operation refused. A write is only sent while the start
+state still holds: the credential it removes is carried, the CPA keeps another
+one, and — for a revoke — that keeper is a credential this Manager staged and has
+installed. Revoking the only credential is refused with `ErrLastKey`, because
+that would leave the user's CPA accepting unauthenticated clients. The External
+Apply refuses while a journal entry has not settled, and re-reads the document
+digest and the membership immediately before its own PUT, so a credential the
+user revoked on their CPA is never added back. The gateway configuration page
+keeps #1090's External semantics: scalars are best-effort with a baseline
+re-read, and rule families stay read-only.
 
-A 401 from the user's CPA is `cpa.ErrManagementRejected`, surfaced as
-`external_management_key_rejected`. It is a typed blocker, not an unavailable
-proof and not a retry reason: no write follows it, and only the user rebinding
-the connection resolves it.
+The key list is the Manager's own record plus the presence read back from the
+CPA. A CPA that cannot be read leaves that list intact and reports
+`presenceUnverified: true`, so an outage hides nothing this Manager knows and
+nothing in the list claims an observed effect. A 401 from the user's CPA is
+`cpa.ErrManagementRejected`, surfaced as `external_management_key_rejected`, and
+a committed target the connection no longer names is
+`cpa.ErrExternalTargetMoved`, surfaced as `external_target_moved` on every
+External surface. Both are typed blockers, not an unavailable proof and not a
+retry reason: no write follows either, and only rebinding the connection resolves
+it. This slice does not ship that rebind — the surfaces refuse and say why — and
+it arrives in the next one.
 
 ### Failed stage or start
 
