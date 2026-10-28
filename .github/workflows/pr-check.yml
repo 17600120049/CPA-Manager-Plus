@@ -182,10 +182,10 @@ jobs:
           tools="${RUNNER_TEMP}/fresh-adoption-tools"
           mkdir -p "${evidence}" "${tools}/v8" "${tools}/v7"
           curl --fail --location --max-time 120 --output "${tools}/v8/cpa.tar.gz" \
-            https://github.com/router-for-me/CLIProxyAPI/releases/download/v8.0.13/CLIProxyAPI_8.0.13_linux_amd64.tar.gz
-          printf '%s  %s\n' 50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3 "${tools}/v8/cpa.tar.gz" | sha256sum --check --status
+            https://github.com/router-for-me/CLIProxyAPI/releases/download/v8.0.45/CLIProxyAPI_8.0.45_linux_amd64.tar.gz
+          printf '%s  %s\n' e9e3a33a489d8a94ea9bd4b8eb4bb9286a978c3df11dc4c49f5ef393ef0fdc68 "${tools}/v8/cpa.tar.gz" | sha256sum --check --status
           tar -xzf "${tools}/v8/cpa.tar.gz" -C "${tools}/v8" cli-proxy-api
-          printf '%s  %s\n' b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41 "${tools}/v8/cli-proxy-api" | sha256sum --check --status
+          printf '%s  %s\n' 343084d9ea53eb144b2871074c84aa28d9a1faa7923ad1547319bafe2e9968cc "${tools}/v8/cli-proxy-api" | sha256sum --check --status
 
           curl --fail --location --max-time 120 --output "${tools}/v7/cpa.tar.gz" \
             https://github.com/router-for-me/CLIProxyAPI/releases/download/v7.0.12/CLIProxyAPI_7.0.12_linux_amd64.tar.gz
@@ -221,8 +221,8 @@ jobs:
               authority = json.load(f)
           tested_commit = output('git','rev-parse','HEAD')
           tested_tree = output('git','rev-parse','HEAD^{tree}')
-          target_archive = '50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3'
-          target_binary = 'b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41'
+          target_archive = 'e9e3a33a489d8a94ea9bd4b8eb4bb9286a978c3df11dc4c49f5ef393ef0fdc68'
+          target_binary = '343084d9ea53eb144b2871074c84aa28d9a1faa7923ad1547319bafe2e9968cc'
           legacy_archive = os.environ['CPAMP_TEST_CPA_LEGACY_ARCHIVE_SHA256']
           legacy_binary = output('sha256sum', os.environ['CPAMP_TEST_CPA_LEGACY']).split()[0]
           if report['manifestSha256'] != manifest_sha or report['evidence'][0]['sha256'] != observation_sha or report['run']['runnerCommit'] != tested_commit or report['run'].get('testedTree') != tested_tree:

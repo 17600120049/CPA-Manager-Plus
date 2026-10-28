@@ -10,9 +10,9 @@ Dependency sources to reconcile against exact final image bytes:
 - apps/runtime-supervisor/go.mod and go.sum (Runtime Supervisor)
 - apps/web/package.json and root package-lock.json (embedded Full Web; lock spans Docs/dev tooling)
 - Final Alpine/Debian runtime base-image packages and their original notices
-- Official CLIProxyAPI v8.0.13 archive (its original LICENSE is packaged separately)
+- Official CLIProxyAPI v8.0.45 archive (its original LICENSE is packaged separately)
 
 CPAMP's original MIT LICENSE is packaged into all three final images.
-CPA v8.0.13's original LICENSE is packaged into Runtime by Dockerfile.runtime.
+CPA v8.0.45's original LICENSE is packaged into Runtime by Dockerfile.runtime.
 The source dependency inventory is not a substitute for original third-party
 license texts or required notices. Legal/readiness and Release remain STOP.

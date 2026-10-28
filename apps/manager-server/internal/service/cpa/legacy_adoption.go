@@ -141,7 +141,7 @@ func readLegacyConfigWithClient(ctx context.Context, client *http.Client, baseUR
 	default:
 		return LegacyManagedAdoptionSnapshot{}, LegacyReadUnavailable
 	}
-	// The version header is the source-profile authority. CPA v8.0.13 still
+	// The version header is the source-profile authority. CPA v8.0.45 still
 	// serves this v0 endpoint with a legacy-shaped body, so a missing or
 	// non-matching version must fail closed before any body is interpreted.
 	if response.Header.Get("X-CPA-VERSION") != acceptedLegacyManagedHeaderVersion {

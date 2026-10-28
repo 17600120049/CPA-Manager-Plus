@@ -11,9 +11,9 @@ import sys
 import tarfile
 import time
 
-ASSET = "CLIProxyAPI_8.0.13_linux_amd64.tar.gz"
-SHA256 = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
-SIZE = 22952865
+ASSET = "CLIProxyAPI_8.0.45_linux_amd64.tar.gz"
+SHA256 = "e9e3a33a489d8a94ea9bd4b8eb4bb9286a978c3df11dc4c49f5ef393ef0fdc68"
+SIZE = 24353263
 MEMBERS = {"cli-proxy-api", "LICENSE", "README.md", "README_CN.md", "config.example.yaml"}
 CHUNK = 65536
 LIMIT = 512 * 1024 * 1024

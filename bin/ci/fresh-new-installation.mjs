@@ -21,7 +21,7 @@ mkdirSync(out, { recursive: false, mode: 0o700 });
 const project = 'cpamp-fresh-new-' + randomBytes(6).toString('hex');
 const bootstrap = '/.well-known/cpamp-bootstrap';
 const api = bootstrap + '/api/v2/';
-const pin = 'b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41';
+const pin = '343084d9ea53eb144b2871074c84aa28d9a1faa7923ad1547319bafe2e9968cc';
 const report = {
   result: 'FAIL',
   project,
@@ -634,7 +634,7 @@ with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r) as v:p
   status.runtimeGeneration = statusJSON.match(/"runtimeGeneration"\s*:\s*([0-9]+)/)[1];
   report.runtimeGeneration = status.runtimeGeneration;
   assert.equal(status.activeGatewayArtifact.artifactId, 'sha256:' + pin);
-  assert.equal(status.activeGatewayArtifact.version, '8.0.13');
+  assert.equal(status.activeGatewayArtifact.version, '8.0.45');
   assert.equal(
     dc('exec', '-T', 'cpamp-runtime', 'sha256sum', '/usr/local/bin/cli-proxy-api').split(/\s/)[0],
     pin

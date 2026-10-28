@@ -73,9 +73,9 @@ func TestManagedStagedIntentCannotRestoreWithdrawnQualification(t *testing.T) {
 	artifact := model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))
 	runtime := &managedRuntime{status: model.RuntimeObservedStatus{
 		Identity: "destination", Generation: 7, ProtocolVersion: "v1", State: model.RuntimeStateReady,
-		CPAObservedVersion:    "8.0.13",
+		CPAObservedVersion:    "8.0.45",
 		Capabilities:          model.RuntimeCapabilities{model.RuntimeCapabilityStart},
-		ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact, Version: "8.0.13"},
+		ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact, Version: "8.0.45"},
 	}}
 	if err := runtime.status.Validate(); err != nil {
 		t.Fatal(err)

@@ -22,9 +22,9 @@ ROLES = ("manager", "ingress", "runtime")
 SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
 SOURCE = "https://github.com/seakee/CPA-Manager-Plus"
 CANDIDATE_VERSION = "2.0.0-r1candidate"
-CPA_SHA = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
+CPA_SHA = "343084d9ea53eb144b2871074c84aa28d9a1faa7923ad1547319bafe2e9968cc"
 CPA_LICENSE_SHA = "879792e89cf1bdd6a8d446033ec87e30496f97dcafc4656dc53f641509b346a6"
-CPA_ARCHIVE_SHA = "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3"
+CPA_ARCHIVE_SHA = "e9e3a33a489d8a94ea9bd4b8eb4bb9286a978c3df11dc4c49f5ef393ef0fdc68"
 LICENSE = "/usr/local/share/licenses/cpamp/LICENSE"
 NOTICE = "/usr/local/share/cpamp/release/third-party-inventory.txt"
 WEB_MANIFEST = "/usr/local/share/cpamp/release/fullweb-manifest.json"
@@ -333,11 +333,11 @@ def inspect(path, role, source_sha, event, root_license, seed, runtime_entrypoin
             require(files[RUNTIME_ENTRYPOINT] == runtime_entrypoint,
                     "Runtime entrypoint differs from locked source")
             require(hashlib.sha256(files["/usr/local/bin/cli-proxy-api"]).hexdigest() == CPA_SHA,
-                    "official CPA v8.0.13 executable hash mismatch")
+                    "official CPA v8.0.45 executable hash mismatch")
             manifest_file = json_object(files["/usr/local/share/cpamp/runtime/cpa-artifact.json"],
                                         "CPA artifact")
             require(manifest_file == {"schemaVersion": 1, "engine": "cpa",
-                                     "version": "8.0.13", "artifactId": "sha256:" + CPA_SHA},
+                                     "version": "8.0.45", "artifactId": "sha256:" + CPA_SHA},
                     "CPA artifact identity mismatch")
             require(hashlib.sha256(files["/usr/local/share/licenses/cli-proxy-api/LICENSE"]).hexdigest()
                     == CPA_LICENSE_SHA, "official CPA license mismatch")
@@ -399,7 +399,7 @@ def verify(paths, source_sha, event, root):
         "platform": "linux/amd64",
         "images": result,
         "officialCPA": {
-            "version": "8.0.13", "dockerBuildPinArchiveSHA256": CPA_ARCHIVE_SHA,
+            "version": "8.0.45", "dockerBuildPinArchiveSHA256": CPA_ARCHIVE_SHA,
             "verifiedFinalImageExecutableSHA256": CPA_SHA,
         },
         "notVerified": [

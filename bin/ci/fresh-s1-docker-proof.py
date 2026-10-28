@@ -19,7 +19,7 @@ import sys
 import time
 import threading
 
-PIN = "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
+PIN = "343084d9ea53eb144b2871074c84aa28d9a1faa7923ad1547319bafe2e9968cc"
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 

@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	privateCPAArtifact     = "sha256:b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41"
+	privateCPAArtifact     = "sha256:343084d9ea53eb144b2871074c84aa28d9a1faa7923ad1547319bafe2e9968cc"
 	privateRuntimeIdentity = "embedded-auth-proof"
 	privateCPAAddress      = "127.0.0.1:8317"
 	maxResponseBytes       = 1 << 20

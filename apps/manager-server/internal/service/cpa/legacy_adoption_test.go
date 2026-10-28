@@ -177,7 +177,7 @@ func TestLegacyManagedUnknownSectionsUseOnlyTheFixedSentinel(t *testing.T) {
 }
 
 func TestLegacyManagedRequiresExactAcceptedSourceProfile(t *testing.T) {
-	for _, version := range []string{"", "7.0.11", "7.0.13", "8.0.13", "v7.0.12", "7.0.12-rc.1", "dev"} {
+	for _, version := range []string{"", "7.0.11", "7.0.13", "8.0.45", "v7.0.12", "7.0.12-rc.1", "dev"} {
 		t.Run("header="+version, func(t *testing.T) {
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -194,17 +194,17 @@ func TestLegacyManagedRequiresExactAcceptedSourceProfile(t *testing.T) {
 			}
 		})
 	}
-	// A real v8.0.13 v0 response is legacy-shaped: it has client API keys and no
+	// A real v8.0.45 v0 response is legacy-shaped: it has client API keys and no
 	// v8 nested sections, so only the version metadata rejects it.
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-CPA-VERSION", "8.0.13")
+		w.Header().Set("X-CPA-VERSION", "8.0.45")
 		_, _ = w.Write([]byte(`{"client":{"codex":{}},"api-keys":["private-v8-key"],"tls":{"enable":false}}`))
 	}))
 	defer server.Close()
-	if _, err := ReadLegacyManagedAdoptionSnapshot(context.Background(), server.URL, "private"); !errors.Is(err, LegacySourceProfileUnsupported) || calls.Load() != 1 || strings.Contains(err.Error(), "8.0.13") {
+	if _, err := ReadLegacyManagedAdoptionSnapshot(context.Background(), server.URL, "private"); !errors.Is(err, LegacySourceProfileUnsupported) || calls.Load() != 1 || strings.Contains(err.Error(), "8.0.45") {
 		t.Fatalf("v8 v0 compatibility endpoint accepted as legacy: %v", err)
 	}
 }

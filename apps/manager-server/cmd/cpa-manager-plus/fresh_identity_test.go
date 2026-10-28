@@ -46,7 +46,7 @@ func TestFreshEmbeddedLegacyMutationsUseRuntimeFencesAndJournal(t *testing.T) {
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"protocolVersion":"v1","runtimeIdentity":"runtime-01","runtimeGeneration":7,"state":"ready","cpaObservedVersion":"8.0.13","activeGatewayArtifact":{"engine":"cpa","artifactId":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","version":"8.0.13"},"capabilities":[]}`))
+				_, _ = w.Write([]byte(`{"protocolVersion":"v1","runtimeIdentity":"runtime-01","runtimeGeneration":7,"state":"ready","cpaObservedVersion":"8.0.45","activeGatewayArtifact":{"engine":"cpa","artifactId":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","version":"8.0.45"},"capabilities":[]}`))
 			}))
 			defer runtime.Close()
 			var mu sync.Mutex

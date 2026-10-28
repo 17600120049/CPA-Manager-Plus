@@ -123,7 +123,7 @@ func TestAdoptionInventoryMappingIsBounded(t *testing.T) {
 }
 
 func TestAdoptionRejectsUnacceptedLegacySourceProfileWithoutEffects(t *testing.T) {
-	for _, version := range []string{"", "7.0.11", "7.0.13", "8.0.13", "garbage"} {
+	for _, version := range []string{"", "7.0.11", "7.0.13", "8.0.45", "garbage"} {
 		t.Run("version="+version, func(t *testing.T) {
 			var calls atomic.Int32
 			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
