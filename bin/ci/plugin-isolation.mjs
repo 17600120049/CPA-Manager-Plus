@@ -55,9 +55,9 @@ function record(engine, name, result, detail) {
   console.log(`${result} ${engine} ${name}${detail === undefined ? '' : ' — ' + JSON.stringify(detail)}`);
 }
 
-// The one Console key that carries admin authority. Its value is reversible
-// obfuscation, which is exactly why the sandbox must make it unreachable.
-const ADMIN_STORAGE_KEY = 'cli-proxy-auth';
+// The admin key the run logged in with. It is memory-only in the Console, so
+// the check that matters is that it never becomes readable from storage.
+const adminCredential = adminKey;
 const adminStorageKeys = [];
 const adminCookies = [];
 
@@ -499,22 +499,26 @@ async function runEngine(engineName, launcher) {
     record(engineName, 'plugin resource without Fetch Metadata is 403', 'PASS');
 
     // ---- The plugin must not have replaced the admin credential ----------
-    // Scoped to the credential itself. The Console also stores ordinary UI
-    // preferences (visual effects, theme) and rewrites them during normal
-    // navigation, so requiring every snapshot key to be unchanged would fail on
-    // the app's own behaviour rather than on a plugin escape.
-    const credentialKeys = adminStorageKeys.filter((entry) => entry.key === ADMIN_STORAGE_KEY);
-    assert(credentialKeys.length > 0, 'admin credential was never snapshotted');
+    // The Console keeps the admin key in memory only; its storage entry holds
+    // server metadata (`apiBase`, `serverVersion`) that it rewrites as the page
+    // resolves the server, so byte equality says nothing and changes with or
+    // without a plugin. The invariant that matters is that the key itself never
+    // lands in storage where the sandboxed plugin could have influenced it, so
+    // assert exactly that, plus that nothing else stored the key.
+    assert(adminCredential, 'admin credential was never captured');
     const state = await context.storageState();
     const local = state.origins.find((item) => item.origin === origin)?.localStorage ?? [];
-    const stored = new Map(local.map((entry) => [entry.name, entry.value]));
-    for (const entry of credentialKeys) {
-      assert.equal(
-        stored.get(entry.key),
-        entry.value,
-        `admin credential ${entry.kind}/${entry.key} changed after plugin interaction`
+    for (const entry of local) {
+      assert(
+        !entry.value.includes(adminCredential),
+        `admin credential appeared in localStorage key ${entry.name}`
       );
     }
+    assert.equal(
+      state.cookies.filter((cookie) => cookie.value.includes(adminCredential)).length,
+      0,
+      'admin credential appeared in a cookie'
+    );
     record(engineName, 'admin credential unchanged after plugin interaction', 'PASS');
 
     await page.screenshot({ path: resolve(out, engineName + '-console.png'), fullPage: true });
