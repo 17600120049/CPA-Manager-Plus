@@ -123,6 +123,11 @@ func TestTargetsSelectsTheProfileOfTheService(t *testing.T) {
 	t.Run("external never answers chat admission", func(t *testing.T) {
 		sameAnswer(t, external, operation(externalCheckpoint), false, SurfaceChatAdmission)
 	})
+	t.Run("external refuses an unknown surface", func(t *testing.T) {
+		// The External surfaces are an allowlist: a name this Manager does not
+		// define is refused instead of inheriting the loose half of the rule.
+		sameAnswer(t, external, operation(externalCheckpoint), false, Surface("unrecognized"), Surface("gateway_admission"), Surface(""))
+	})
 	t.Run("external refuses a managed destination", func(t *testing.T) {
 		sameAnswer(t, external, operation(managedCheckpoint), false, canonicalSurfaces...)
 	})

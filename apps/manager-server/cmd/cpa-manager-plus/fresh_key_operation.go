@@ -51,6 +51,10 @@ func keyOperationReply(w http.ResponseWriter, result freshkeyapply.OperationResu
 		// The user's CPA refused the stored management credential. Only rebinding
 		// the connection resolves it, so the page must not offer a retry.
 		status, code = 409, freshconfig.ReasonManagementRejected
+	case errors.Is(err, cpa.ErrExternalTargetMoved):
+		// The connection no longer names the committed target. The journal is
+		// intact; the target moved, and only a rebind reaches it again.
+		status, code = 409, freshconfig.ReasonTargetMoved
 	case errors.Is(err, freshkeyapply.ErrUnavailable), errors.Is(err, freshkeyapply.ErrExternalUnavailable):
 		status, code = 409, "key_operation_host_proof_required"
 	case errors.Is(err, cpa.ErrSourceConflict):

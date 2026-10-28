@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"strings"
 
@@ -58,9 +57,9 @@ func managedInstallSource(store freshstore.Store, protector *security.Protector,
 
 // externalInstallSource is the only authority of a committed Connect External
 // installation. It re-reads the checkpoint and the protected Manager connection
-// on every call, decrypts the credential the user supplied, and observes the
-// user's own CPA to derive the configuration digest the generation binds to.
-// Nothing here is cached, and a 401 stays the typed blocker it is on the wire.
+// on every call and decrypts the credential the user supplied. Nothing here is
+// cached, and nothing here contacts the user's CPA: an outage there must not hide
+// the target, so every refusal is the typed blocker of the read that met it.
 func externalInstallSource(store freshstore.Store, protector *security.Protector) freshkeyapply.ExternalSource {
 	return func(ctx context.Context) (freshkeyapply.ExternalInstall, error) {
 		if store == nil || protector == nil {
@@ -85,26 +84,18 @@ func externalInstallSource(store freshstore.Store, protector *security.Protector
 		// The committed target must still be the connection this Manager holds.
 		// Comparing the address digests is the only comparison available: the
 		// credential is a protected envelope, and a connection the user edited to
-		// another CPA is a rebind, which this path must never perform silently.
+		// another CPA is a rebind, which this path never performs silently. It is
+		// reported as the typed blocker it is, so the page can offer the rebind the
+		// next slice ships instead of claiming the installation is unavailable.
 		if checkpoint.TargetIdentity != freshkeyapply.ExternalIdentity(baseURL) {
-			return freshkeyapply.ExternalInstall{}, freshkeyapply.ErrUnavailable
+			return freshkeyapply.ExternalInstall{}, cpa.ErrExternalTargetMoved
 		}
 		key, err := protector.UnprotectString(record.Connection.ManagementKey)
-		if err != nil || len(key) != 64 {
-			return freshkeyapply.ExternalInstall{}, freshkeyapply.ErrUnavailable
-		}
-		// The generation binds this connection to the configuration the user's CPA
-		// presents now, so one authenticated read is part of resolving the target.
-		snapshot, err := cpa.NewTransportForEndpoint(baseURL).ExternalKeySnapshot(ctx, key)
-		if err != nil {
-			if errors.Is(err, cpa.ErrManagementRejected) {
-				return freshkeyapply.ExternalInstall{}, cpa.ErrManagementRejected
-			}
+		if err != nil || !cpa.ValidV8ManagementKey(key) {
 			return freshkeyapply.ExternalInstall{}, freshkeyapply.ErrUnavailable
 		}
 		return freshkeyapply.ExternalInstall{
 			Identity:      freshkeyapply.ExternalIdentity(baseURL),
-			ConfigSHA256:  snapshot.SourceSHA256,
 			Checkpoint:    checkpoint.TargetGeneration,
 			BaseURL:       baseURL,
 			ManagementKey: key,

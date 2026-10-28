@@ -30,19 +30,32 @@ const externalManagement = "0123456789abcdef0123456789abcdef0123456789abcdef0123
 // client-key list and one management credential, and it answers exactly the
 // three v8 routes this Manager drives.
 type fakeExternalCPA struct {
-	config      string
 	keys        []string
 	management  string
 	rejectOnce  bool
 	rejectEvery bool
 	writes      int
-	server      *httptest.Server
+	// onKeyRead runs before each client-key read, so a test can act as the user
+	// editing their own CPA between the reads of one write.
+	onKeyRead func(f *fakeExternalCPA)
+	server    *httptest.Server
+}
+
+// config renders the CPA configuration the client-key list lives in. The list is
+// part of that document, exactly as it is on a real CPA, so this Manager's own
+// writes change the document digest.
+func (f *fakeExternalCPA) config() []byte {
+	keys := make([]any, 0, len(f.keys))
+	for _, key := range f.keys {
+		keys = append(keys, key)
+	}
+	data, _ := json.Marshal(map[string]any{"config-version": 8, "access": map[string]any{"api-keys": keys}})
+	return data
 }
 
 func newFakeExternalCPA(t *testing.T, keys ...string) *fakeExternalCPA {
 	t.Helper()
 	f := &fakeExternalCPA{
-		config:     `{"config-version":8,"access":{"api-keys":[]}}`,
 		keys:       keys,
 		management: externalManagement,
 	}
@@ -55,9 +68,12 @@ func newFakeExternalCPA(t *testing.T, keys ...string) *fakeExternalCPA {
 		}
 		switch {
 		case r.URL.Path == "/v8/management/config/access/api-keys" && r.Method == http.MethodGet:
+			if f.onKeyRead != nil {
+				f.onKeyRead(f)
+			}
 			_ = json.NewEncoder(w).Encode(f.keys)
 		case r.URL.Path == "/v8/management/config.yaml" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(f.config))
+			_, _ = w.Write(f.config())
 		case r.URL.Path == "/v8/management/config/access/api-keys" && r.Method == http.MethodPut:
 			f.writes++
 			if f.rejectOnce {
@@ -72,14 +88,6 @@ func newFakeExternalCPA(t *testing.T, keys ...string) *fakeExternalCPA {
 			}
 			f.keys = next
 			w.WriteHeader(http.StatusOK)
-		case r.URL.Path == "/v1/models":
-			key := r.Header.Get("Authorization")
-			key = strings.TrimPrefix(key, "Bearer ")
-			if slices.Contains(f.keys, key) {
-				_, _ = w.Write([]byte(`{"data":[]}`))
-				return
-			}
-			w.WriteHeader(http.StatusUnauthorized)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -88,17 +96,13 @@ func newFakeExternalCPA(t *testing.T, keys ...string) *fakeExternalCPA {
 	return f
 }
 
-// source is the External authority of this fake CPA: the configuration digest is
-// read from the CPA itself, exactly as the production source does.
+// source is the External authority of this fake CPA: the committed connection and
+// its management credential. It never contacts the CPA, exactly as the production
+// source does not.
 func (f *fakeExternalCPA) source() ExternalSource {
 	return func(context.Context) (ExternalInstall, error) {
-		snapshot, err := cpa.NewTransportForEndpoint(f.server.URL).ExternalKeySnapshot(context.Background(), f.management)
-		if err != nil {
-			return ExternalInstall{}, err
-		}
 		return ExternalInstall{
 			Identity:      ExternalIdentity(f.server.URL),
-			ConfigSHA256:  snapshot.SourceSHA256,
 			Checkpoint:    1,
 			BaseURL:       f.server.URL,
 			ManagementKey: f.management,
@@ -143,7 +147,11 @@ func (h *externalHarness) staged(t *testing.T, requestID string) (string, string
 	return string(result.Key.ID), result.CreatedSecret
 }
 
-func TestExternalGenerationBindsTheConnectionToTheReadBack(t *testing.T) {
+// The journal generation is the connection identity and nothing else. A user's CPA
+// configuration is theirs to edit, and this Manager's own key writes land in the
+// same document, so a configuration digest in the generation would invalidate
+// every operation after its own successful write.
+func TestExternalGenerationIsTheConnectionIdentity(t *testing.T) {
 	identity := ExternalIdentity("https://cpa.example")
 	if !validExternalIdentity(identity) {
 		t.Fatalf("identity = %q", identity)
@@ -152,17 +160,13 @@ func TestExternalGenerationBindsTheConnectionToTheReadBack(t *testing.T) {
 	if identity != "external:sha256:"+hex.EncodeToString(digest[:]) {
 		t.Fatalf("identity is not the address digest: %q", identity)
 	}
-	one := ExternalGeneration(identity, strings.Repeat("a", 64))
-	if one != ExternalGeneration(identity, strings.Repeat("a", 64)) {
-		t.Fatal("generation is not a function of its facts")
+	install := ExternalInstall{Identity: identity, Checkpoint: 1, BaseURL: "https://cpa.example", ManagementKey: externalManagement}
+	if install.Generation() != identity {
+		t.Fatalf("generation = %q, want the connection identity", install.Generation())
 	}
-	for _, other := range []string{
-		ExternalGeneration(identity, strings.Repeat("b", 64)),
-		ExternalGeneration(ExternalIdentity("https://other.example"), strings.Repeat("a", 64)),
-	} {
-		if other == one {
-			t.Fatal("a changed connection or read-back kept the generation")
-		}
+	other := ExternalInstall{Identity: ExternalIdentity("https://other.example")}
+	if other.Generation() == identity {
+		t.Fatal("a changed connection kept the generation")
 	}
 }
 
@@ -176,14 +180,17 @@ func TestExternalAuthorityFailsClosed(t *testing.T) {
 		edit  func(ExternalInstall) ExternalInstall
 		cause error
 	}{
-		{"short credential", func(i ExternalInstall) ExternalInstall { i.ManagementKey = "short"; return i }, nil},
+		{"unusable credential", func(i ExternalInstall) ExternalInstall { i.ManagementKey = " leading-space"; return i }, nil},
 		{"empty address", func(i ExternalInstall) ExternalInstall { i.BaseURL = ""; return i }, nil},
 		{"no checkpoint", func(i ExternalInstall) ExternalInstall { i.Checkpoint = 0; return i }, nil},
 		{"foreign identity", func(i ExternalInstall) ExternalInstall {
 			i.Identity = "managed:sha256:" + strings.Repeat("c", 64)
 			return i
 		}, nil},
-		{"unreadable digest", func(i ExternalInstall) ExternalInstall { i.ConfigSHA256 = ""; return i }, nil},
+		{"identity of another address", func(i ExternalInstall) ExternalInstall {
+			i.BaseURL = "https://other.example"
+			return i
+		}, nil},
 		{"rejected credential", func(i ExternalInstall) ExternalInstall { return i }, cpa.ErrManagementRejected},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
@@ -320,6 +327,60 @@ func TestExternalRevokeAndLastKeyProtection(t *testing.T) {
 	}
 }
 
+// An edit the user makes between Prepare and Continue settles by read-back. The
+// journal's generation is the connection, so the edit never invalidates it; the
+// step's own fact is what it settles on, so the operation reaches a terminal state
+// and the next operation on the same connection is still accepted.
+func TestExternalOperationSettlesWhenTheUserEditsBetweenPrepareAndContinue(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	target, targetSecret := harness.staged(t, strings.Repeat("2", 32))
+	keeper, keeperSecret := harness.staged(t, strings.Repeat("3", 32))
+	if _, err := harness.service.Apply(ctx, target, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := harness.service.Apply(ctx, keeper, 1); err != nil {
+		t.Fatal(err)
+	}
+	result, err := harness.service.Prepare(ctx, strings.Repeat("4", 32), target, keeper, "revoke", 1)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	// The user revokes the credential the operation was going to remove, directly
+	// on their own CPA, before the Manager continues.
+	harness.cpa.keys = slices.DeleteFunc(harness.cpa.keys, func(key string) bool { return key == targetSecret })
+	writes := harness.cpa.writes
+	result, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1)
+	if err != nil {
+		t.Fatalf("continue after the user's own edit: %v", err)
+	}
+	if result.Operation == nil || result.Operation.Outcome != "committed" {
+		t.Fatalf("the settled operation = %+v", result.Operation)
+	}
+	if harness.cpa.writes != writes {
+		t.Fatal("a step whose fact already held was written again")
+	}
+	if !slices.Contains(harness.cpa.keys, keeperSecret) {
+		t.Fatal("the keeper credential was lost")
+	}
+	// The journal is terminal, so the next operation is accepted: an operation
+	// stuck at an unknown effect would have refused it at BeginOperation.
+	next, nextSecret := harness.staged(t, strings.Repeat("5", 32))
+	if _, err = harness.service.Apply(ctx, next, 1); err != nil {
+		t.Fatalf("apply after a settled operation: %v", err)
+	}
+	result, err = harness.service.Prepare(ctx, strings.Repeat("6", 32), keeper, next, "revoke", 1)
+	if err != nil {
+		t.Fatalf("prepare after a settled operation: %v", err)
+	}
+	if _, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1); err != nil {
+		t.Fatalf("continue after a settled operation: %v", err)
+	}
+	if slices.Contains(harness.cpa.keys, keeperSecret) || !slices.Contains(harness.cpa.keys, nextSecret) {
+		t.Fatalf("the later operation did not take effect: %v", harness.cpa.keys)
+	}
+}
+
 // A 401 from the user's CPA is the typed blocker on every External write: it is
 // reported as such, never retried, and never followed by another write.
 func TestExternalRejectedManagementKeyIsNeverRetried(t *testing.T) {
@@ -339,15 +400,19 @@ func TestExternalRejectedManagementKeyIsNeverRetried(t *testing.T) {
 	if harness.cpa.writes != 0 {
 		t.Fatalf("a rejected credential still wrote: %d", harness.cpa.writes)
 	}
-	// The authority itself reports the same typed blocker to the page.
-	if _, _, err := harness.service.ExternalTarget(ctx, 1); !errors.Is(err, cpa.ErrManagementRejected) {
+	// The authority is the committed connection alone, so it still resolves: the
+	// refusal is the typed blocker of the read that met it and never a claim about
+	// the target itself.
+	if _, _, err := harness.service.ExternalTarget(ctx, 1); err != nil {
 		t.Fatalf("authority on a rejected credential = %v", err)
 	}
 }
 
-// A revoke whose write the CPA refuses never removes the credential and never
-// resends the step: the journal stays reconcilable.
-func TestExternalRevokeRejectionKeepsTheCredential(t *testing.T) {
+// A revoke whose write the CPA refuses keeps the credential and journals the step
+// as not applied. A 401 proves nothing was written, so the step is taken again
+// once the connection accepts the credential — as it will after a rebind — instead
+// of the journal staying unknown forever.
+func TestExternalRevokeRejectionIsNotAnAppliedStep(t *testing.T) {
 	harness := newExternalHarness(t)
 	ctx := context.Background()
 	target, targetSecret := harness.staged(t, strings.Repeat("b", 32))
@@ -369,12 +434,69 @@ func TestExternalRevokeRejectionKeepsTheCredential(t *testing.T) {
 	if !slices.Contains(harness.cpa.keys, targetSecret) {
 		t.Fatal("a refused write removed the credential")
 	}
-	writes := harness.cpa.writes
-	if _, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1); err == nil {
-		t.Fatal("an attempted step was resent")
+	// The journal records the refusal as "not applied", not as an unknown effect.
+	journal, err := harness.service.repo.Operation(ctx, result.Operation.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if harness.cpa.writes != writes {
-		t.Fatal("reconcile repeated the write")
+	if journal.Outcome != "pending" || journal.Steps[0].State != "unattempted" {
+		t.Fatalf("a refused write was journaled as %q with step %q", journal.Outcome, journal.Steps[0].State)
+	}
+	// The CPA accepts the credential again, and the step is taken once.
+	result, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1)
+	if err != nil {
+		t.Fatalf("retry after the CPA accepts the credential: %v", err)
+	}
+	if slices.Contains(harness.cpa.keys, targetSecret) {
+		t.Fatal("the revoked credential is still carried by the user's CPA")
+	}
+	if result.Operation == nil || result.Operation.Outcome != "committed" {
+		t.Fatalf("retried revoke outcome = %+v", result.Operation)
+	}
+}
+
+// A revoke is refused — before anything is written — unless the CPA carries the
+// keeper this Manager leaves behind. A credential from outside this Manager that
+// merely keeps the last-key count above one is not a keeper the journal can
+// settle on, so the target is never deleted without it.
+func TestExternalRevokeRequiresACarriedKeeper(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	target, targetSecret := harness.staged(t, strings.Repeat("b", 32))
+	keeper, keeperSecret := harness.staged(t, strings.Repeat("c", 32))
+	if _, err := harness.service.Apply(ctx, target, 1); err != nil {
+		t.Fatal(err)
+	}
+	harness.cpa.keys = []string{targetSecret, "credential-from-outside"}
+	harness.cpa.writes = 0
+	if _, err := harness.service.Prepare(ctx, strings.Repeat("d", 32), target, keeper, "revoke", 1); !errors.Is(err, cpa.ErrSourceConflict) {
+		t.Fatalf("prepare with an uninstalled keeper = %v", err)
+	}
+	if harness.cpa.writes != 0 {
+		t.Fatal("a refused revoke reached the user's CPA")
+	}
+	// The keeper is carried when the operation is journaled and removed before it
+	// continues: that write is refused in exactly the same way.
+	if _, err := harness.service.Apply(ctx, keeper, 1); err != nil {
+		t.Fatal(err)
+	}
+	result, err := harness.service.Prepare(ctx, strings.Repeat("e", 32), target, keeper, "revoke", 1)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	harness.cpa.keys = []string{targetSecret, "credential-from-outside"}
+	harness.cpa.writes = 0
+	if _, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1); !errors.Is(err, cpa.ErrSourceConflict) {
+		t.Fatalf("continue with a removed keeper = %v", err)
+	}
+	if harness.cpa.writes != 0 || !slices.Contains(harness.cpa.keys, targetSecret) {
+		t.Fatal("a revoke without a carried keeper was written")
+	}
+	if !slices.Contains(harness.cpa.keys, "credential-from-outside") {
+		t.Fatal("a refused revoke rewrote the user's own credential list")
+	}
+	if keeperSecret == "" {
+		t.Fatal("keeper secret missing")
 	}
 }
 
@@ -384,7 +506,7 @@ func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
 	harness := newExternalHarness(t)
 	ctx := context.Background()
 	applied, appliedSecret := harness.staged(t, strings.Repeat("e", 32))
-	pending, pendingSecret := harness.staged(t, strings.Repeat("f", 32))
+	_, pendingSecret := harness.staged(t, strings.Repeat("f", 32))
 	if _, err := harness.service.Apply(ctx, applied, 1); err != nil {
 		t.Fatal(err)
 	}
@@ -397,9 +519,9 @@ func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed, err := harness.service.ExternalKeyList(ctx, keys)
-	if err != nil {
-		t.Fatal(err)
+	listed, unverified, err := harness.service.ExternalKeyList(ctx, keys)
+	if err != nil || unverified {
+		t.Fatalf("listed %d keys, unverified=%v, err=%v", len(listed), unverified, err)
 	}
 	if len(listed) != 2 {
 		t.Fatalf("listed %d keys", len(listed))
@@ -411,7 +533,7 @@ func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
 	}
 	// A key the CPA no longer carries is not claimed.
 	harness.cpa.keys = slices.DeleteFunc(harness.cpa.keys, func(key string) bool { return key == appliedSecret })
-	listed, err = harness.service.ExternalKeyList(ctx, keys)
+	listed, _, err = harness.service.ExternalKeyList(ctx, keys)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,14 +544,10 @@ func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
 	}
 	// Another profile's list is returned untouched.
 	private := New(nil, harness.keys, nil)
-	same, err := private.ExternalKeyList(ctx, keys)
-	if err != nil || len(same) != len(keys) {
-		t.Fatalf("non-external list = %d %v", len(same), err)
+	same, unverified, err := private.ExternalKeyList(ctx, keys)
+	if err != nil || unverified || len(same) != len(keys) {
+		t.Fatalf("non-external list = %d unverified=%v %v", len(same), unverified, err)
 	}
-	if string(pending) == "" {
-		t.Fatal("pending key missing")
-	}
-	_ = pending
 }
 
 func mustID(t *testing.T, raw string) identity.APIKeyID {
@@ -439,4 +557,143 @@ func mustID(t *testing.T, raw string) identity.APIKeyID {
 		t.Fatal(err)
 	}
 	return parsed
+}
+
+// The management credential is chosen by the user and Connect External accepts any
+// printable key up to 4096 characters (cpa/v8.go). Only that rule may refuse one
+// here: an exact-length check would report a usable installation as unavailable.
+func TestExternalAuthorityUsesTheConnectExternalKeyRule(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	install := ExternalInstall{
+		Identity:      ExternalIdentity("https://cpa.example"),
+		Checkpoint:    1,
+		BaseURL:       "https://cpa.example",
+		ManagementKey: "short-key-2024",
+	}
+	service := NewExternal(nil, harness.keys, func(context.Context) (ExternalInstall, error) { return install, nil })
+	if _, key, err := service.ExternalTarget(ctx, 1); err != nil || key != install.ManagementKey {
+		t.Fatalf("a %d-character management key = %q, %v", len(install.ManagementKey), key, err)
+	}
+	for _, refused := range []string{"", " padded ", "line\nbreak", strings.Repeat("k", 4097)} {
+		install.ManagementKey = refused
+		service.externalSource = func(context.Context) (ExternalInstall, error) { return install, nil }
+		if _, _, err := service.ExternalTarget(ctx, 1); !errors.Is(err, ErrExternalUnavailable) {
+			t.Fatalf("a key the Connect External rule refuses was accepted: %q", refused)
+		}
+	}
+}
+
+// The key list is the Manager's own record when the user's CPA cannot be read, and
+// it says so. An outage is not a blocker: hiding the staged keys behind an error
+// would report the Manager's own knowledge as unknown.
+func TestExternalKeyListSurvivesACPAOutage(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	id, _ := harness.staged(t, strings.Repeat("a", 32))
+	if _, err := harness.service.Apply(ctx, id, 1); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := harness.keys.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The CPA is unreachable: the list still answers with the Manager's keys and
+	// marks their presence unverified.
+	harness.cpa.server.Close()
+	listed, unverified, err := harness.service.ExternalKeyList(ctx, keys)
+	if err != nil {
+		t.Fatalf("an unreachable CPA failed the list: %v", err)
+	}
+	if !unverified || len(listed) != 1 || string(listed[0].ID) != id {
+		t.Fatalf("outage list = %d keys, unverified=%v", len(listed), unverified)
+	}
+	if listed[0].RuntimeState == "effective_observed" {
+		t.Fatal("a list read from an unreachable CPA claimed an observed effect")
+	}
+}
+
+// A credential the user's CPA refuses is the typed blocker on the list: no read can
+// settle it, and only a rebind resolves it.
+func TestExternalKeyListReportsARejectedCredential(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	harness.staged(t, strings.Repeat("a", 32))
+	keys, err := harness.keys.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness.cpa.rejectEvery = true
+	if _, _, err = harness.service.ExternalKeyList(ctx, keys); !errors.Is(err, cpa.ErrManagementRejected) {
+		t.Fatalf("list on a rejected credential = %v", err)
+	}
+	// A moved target is the other blocker: the keys are not an effect of the CPA
+	// the checkpoint no longer names.
+	moved := NewExternal(nil, harness.keys, func(context.Context) (ExternalInstall, error) {
+		return ExternalInstall{}, cpa.ErrExternalTargetMoved
+	})
+	if _, _, err = moved.ExternalKeyList(ctx, keys); !errors.Is(err, cpa.ErrExternalTargetMoved) {
+		t.Fatalf("list on a moved target = %v", err)
+	}
+}
+
+// Apply replaces the CPA's whole list, so it never builds that list from a read the
+// user has since edited: a credential they revoked directly on their CPA is not
+// added back by the read this Manager took before that edit.
+func TestExternalApplyRefusesAConcurrentExternalEdit(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	present, presentSecret := harness.staged(t, strings.Repeat("1", 32))
+	if _, err := harness.service.Apply(ctx, present, 1); err != nil {
+		t.Fatal(err)
+	}
+	staged, stagedSecret := harness.staged(t, strings.Repeat("2", 32))
+	reads := 0
+	harness.cpa.onKeyRead = func(f *fakeExternalCPA) {
+		reads++
+		if reads == 2 {
+			// The user revokes their credential on their own CPA between the read
+			// this write was built from and the read that gates it.
+			f.keys = slices.DeleteFunc(f.keys, func(key string) bool { return key == presentSecret })
+		}
+	}
+	harness.cpa.writes = 0
+	if _, err := harness.service.Apply(ctx, staged, 1); !errors.Is(err, cpa.ErrSourceConflict) {
+		t.Fatalf("apply over an external edit = %v", err)
+	}
+	if harness.cpa.writes != 0 {
+		t.Fatal("a list built from a stale read was written")
+	}
+	if slices.Contains(harness.cpa.keys, stagedSecret) {
+		t.Fatal("the staged key was written over the user's edit")
+	}
+	if slices.Contains(harness.cpa.keys, presentSecret) {
+		t.Fatal("the credential the user revoked was added back")
+	}
+}
+
+// A journaled operation owns the key set until it settles: Apply refuses instead of
+// writing a list the journal's step is about to change.
+func TestExternalApplyRefusesWhileAnOperationIsJournaled(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	target, _ := harness.staged(t, strings.Repeat("3", 32))
+	keeper, _ := harness.staged(t, strings.Repeat("4", 32))
+	if _, err := harness.service.Apply(ctx, target, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := harness.service.Apply(ctx, keeper, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := harness.service.Prepare(ctx, strings.Repeat("5", 32), target, keeper, "revoke", 1); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	staged, stagedSecret := harness.staged(t, strings.Repeat("6", 32))
+	harness.cpa.writes = 0
+	if _, err := harness.service.Apply(ctx, staged, 1); !errors.Is(err, freshkeys.ErrConflict) {
+		t.Fatalf("apply while an operation is journaled = %v", err)
+	}
+	if harness.cpa.writes != 0 || slices.Contains(harness.cpa.keys, stagedSecret) {
+		t.Fatal("an apply during a journaled operation reached the user's CPA")
+	}
 }

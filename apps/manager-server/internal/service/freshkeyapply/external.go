@@ -40,15 +40,6 @@ func ExternalIdentity(baseURL string) string {
 	return externalIdentityPrefix + hex.EncodeToString(digest[:])
 }
 
-// ExternalGeneration derives the proof generation of one External target from the
-// committed connection identity and the digest of the configuration read back
-// from the user's CPA. Neither half is request input, so a caller cannot choose
-// the generation it is authorized against.
-func ExternalGeneration(connectionIdentity, configSHA256 string) string {
-	digest := sha256.Sum256([]byte(connectionIdentity + "\n" + configSHA256))
-	return externalIdentityPrefix + hex.EncodeToString(digest[:])
-}
-
 func validExternalIdentity(value string) bool {
 	return len(value) == len(externalIdentityPrefix)+64 &&
 		value[:len(externalIdentityPrefix)] == externalIdentityPrefix &&
@@ -56,14 +47,11 @@ func validExternalIdentity(value string) bool {
 }
 
 // ExternalInstall is the durable authority of a committed External installation.
-// It is re-derived from the checkpoint, the protected Manager connection and a
-// read-back of the user's CPA on every call; no credential is cached.
+// It is re-derived from the checkpoint and the protected Manager connection on
+// every call; no credential is cached.
 type ExternalInstall struct {
 	// Identity is external:sha256:<digest of the normalized committed address>.
 	Identity string
-	// ConfigSHA256 is the digest of the configuration read back from the user's
-	// CPA when this authority was resolved.
-	ConfigSHA256 string
 	// Checkpoint is the committed strategy generation the page and the key
 	// journal pass back, exactly as the managed destination's is.
 	Checkpoint uint64
@@ -73,17 +61,24 @@ type ExternalInstall struct {
 	ManagementKey string
 }
 
-// Generation binds the connection identity to the read-back configuration. A
-// configuration the user changed afterwards is a different generation, so a step
-// granted against the previous one never authorizes a write against the new one.
+// Generation is the durable generation of one External target, and it is the
+// connection identity alone. A user's CPA is administered by the user: its
+// configuration changes for reasons this Manager does not control, not least its
+// own key writes, which land in the same document the digest would cover. Binding
+// the journal to that digest would therefore invalidate every External operation
+// after its own successful write and wedge the journal forever. The configuration
+// digest is a per-step grant CAS instead: it is read immediately before each PUT
+// and compared there (see externalKeyGrant and externalContinue).
 func (i ExternalInstall) Generation() string {
-	return ExternalGeneration(i.Identity, i.ConfigSHA256)
+	return i.Identity
 }
 
 // ExternalSource reloads and validates the External authority on every call. It
-// MUST fail closed with ErrExternalUnavailable when the checkpoint, the protected
-// connection or the read-back is unavailable, and it MUST return
-// cpa.ErrManagementRejected when the user's CPA refuses the credential.
+// MUST fail closed with ErrExternalUnavailable when the checkpoint or the
+// protected connection is unavailable, and with ErrExternalTargetMoved when the
+// connection no longer names the committed target. It never contacts the user's
+// CPA: an outage there is a property of a single read-back, not of the authority,
+// so a credential CPA refuses stays the typed blocker of the read that met it.
 type ExternalSource func(context.Context) (ExternalInstall, error)
 
 // externalWire is the External CPA v8 surface this authority drives. There is no
@@ -92,7 +87,6 @@ type ExternalSource func(context.Context) (ExternalInstall, error)
 type externalWire interface {
 	ExternalKeySnapshot(context.Context, string) (cpa.ExternalKeySnapshot, error)
 	ExternalWriteKeySet(context.Context, string, []string) error
-	ExternalSampleKeySet(context.Context, []string, []string) (bool, error)
 }
 
 // NewExternal constructs the authority of a committed Connect External
@@ -113,8 +107,12 @@ func NewExternal(r *repo.Repository, keys *freshkeys.Service, source ExternalSou
 }
 
 // externalPermit is the step authority of the currently resolved External
-// target. Its generation is the digest-derived one, so a step is bound to the
-// configuration the user's CPA presented when it was granted.
+// target. Its generation is the connection identity alone, not a digest of the
+// configuration: the user's CPA rewrites that document for reasons this Manager
+// does not control — its own key writes included — so a digest-derived
+// generation would invalidate every later step. The configuration digest is a
+// per-step CAS instead, read immediately before each PUT and compared there (see
+// externalKeyGrant and externalContinue).
 func (s *Service) externalPermit() (Permit, error) {
 	install, err := s.externalAuthority(context.Background())
 	if err != nil {
@@ -129,8 +127,8 @@ func (s *Service) externalPermit() (Permit, error) {
 }
 
 // externalAuthority resolves and validates the committed External target. The
-// generation is recomputed from the identity and the read-back digest, so a
-// source that returns anything else is refused rather than trusted.
+// identity must name the address the connection holds, so a source that answers
+// about a different CPA is refused rather than trusted.
 func (s *Service) externalAuthority(ctx context.Context) (ExternalInstall, error) {
 	if s == nil || s.profile != ProfileExternal || s.externalSource == nil {
 		return ExternalInstall{}, ErrExternalUnavailable
@@ -140,13 +138,18 @@ func (s *Service) externalAuthority(ctx context.Context) (ExternalInstall, error
 		if errors.Is(err, cpa.ErrManagementRejected) {
 			return ExternalInstall{}, cpa.ErrManagementRejected
 		}
+		// A moved target is the committed installation's own blocker: it is
+		// reported as such on every surface instead of as a missing proof.
+		if errors.Is(err, cpa.ErrExternalTargetMoved) {
+			return ExternalInstall{}, cpa.ErrExternalTargetMoved
+		}
 		if errors.Is(err, ErrGeneration) || errors.Is(err, cpa.ErrSourceConflict) || errors.Is(err, cpa.ErrApplyUnknown) {
 			return ExternalInstall{}, err
 		}
 		return ExternalInstall{}, ErrExternalUnavailable
 	}
-	if install.Checkpoint == 0 || len(install.ManagementKey) != 64 || install.BaseURL == "" ||
-		!validExternalIdentity(install.Identity) || !identity.IsValidSHA256Hex(install.ConfigSHA256) {
+	if install.Checkpoint == 0 || install.BaseURL == "" || !cpa.ValidV8ManagementKey(install.ManagementKey) ||
+		!validExternalIdentity(install.Identity) || install.Identity != ExternalIdentity(install.BaseURL) {
 		return ExternalInstall{}, ErrExternalUnavailable
 	}
 	return install, nil
@@ -177,16 +180,6 @@ func (s *Service) externalTarget(ctx context.Context, generation uint64) (Extern
 		return ExternalInstall{}, ErrGeneration
 	}
 	return install, nil
-}
-
-// ExternalEndpoint is the normalized address of the committed External target. It
-// is configuration, not a credential, and it is empty for every other profile.
-func (s *Service) ExternalEndpoint(ctx context.Context) (string, error) {
-	install, err := s.externalAuthority(ctx)
-	if err != nil {
-		return "", err
-	}
-	return install.BaseURL, nil
 }
 
 func (s *Service) externalKeyWire(install ExternalInstall) externalWire {
@@ -230,11 +223,16 @@ func (s *Service) ExternalKeyPresence(ctx context.Context, ids []identity.APIKey
 // ExternalKeyList is the key list as the user's CPA answers it. Every staged key
 // carries the presence read back from that CPA, so the page never reports an
 // effect this Manager merely intended: a key the CPA does not carry stays
-// "not_applied" until its install is proven. The list of another profile is
-// returned unchanged.
-func (s *Service) ExternalKeyList(ctx context.Context, keys []freshkeys.Key) ([]freshkeys.Key, error) {
+// "not_applied" until its install is proven.
+//
+// The Manager's own records are the list either way. A CPA that cannot be read is
+// not a blocker — it is reported as unverified, so an outage never hides the keys
+// the Manager staged. A credential the CPA refuses and a target it no longer names
+// are blockers: no read can settle them, and only a rebind resolves them. The list
+// of another profile is returned unchanged.
+func (s *Service) ExternalKeyList(ctx context.Context, keys []freshkeys.Key) ([]freshkeys.Key, bool, error) {
 	if s == nil || s.profile != ProfileExternal {
-		return keys, nil
+		return keys, false, nil
 	}
 	ids := make([]identity.APIKeyID, 0, len(keys))
 	for _, key := range keys {
@@ -242,7 +240,10 @@ func (s *Service) ExternalKeyList(ctx context.Context, keys []freshkeys.Key) ([]
 	}
 	present, err := s.ExternalKeyPresence(ctx, ids)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, cpa.ErrManagementRejected) || errors.Is(err, cpa.ErrExternalTargetMoved) {
+			return nil, true, err
+		}
+		return keys, true, nil
 	}
 	annotated := make([]freshkeys.Key, 0, len(keys))
 	for _, key := range keys {
@@ -253,7 +254,7 @@ func (s *Service) ExternalKeyList(ctx context.Context, keys []freshkeys.Key) ([]
 		}
 		annotated = append(annotated, key)
 	}
-	return annotated, nil
+	return annotated, false, nil
 }
 
 // ExternalKeyPresenceOf is ExternalKeyPresence for one key, for the routes that
@@ -285,10 +286,21 @@ func (s *Service) externalSecretPresent(ctx context.Context, rawID string, snaps
 // written again, so a replay never duplicates a credential; the write itself is
 // sent exactly once, and a refused management credential is the typed blocker,
 // never a retry reason.
+//
+// The write replaces the CPA's whole list, so it never builds that list from a
+// read the user has since edited: the document digest and the membership are read
+// again immediately before the PUT and a change there is a source conflict with no
+// write at all. A journaled operation owns the key set until it settles, exactly as
+// the managed Apply is bound by its own journal.
 func (s *Service) externalApply(ctx context.Context, id string, generation uint64) (State, error) {
 	result := State{KeyID: id, RuntimeState: "effect_unknown"}
 	if _, err := s.keys.Detail(ctx, id); err != nil {
 		return result, err
+	}
+	if latest, err := s.repo.LatestOperation(ctx); err != nil {
+		return result, err
+	} else if latest != nil && latest.Outcome != "committed" {
+		return result, freshkeys.ErrConflict
 	}
 	result.ManagerStaged = true
 	install, err := s.externalTarget(ctx, generation)
@@ -307,8 +319,20 @@ func (s *Service) externalApply(ctx context.Context, id string, generation uint6
 		if slices.Contains(snapshot.Keys, secret) {
 			return nil
 		}
+		after := append(slices.Clone(snapshot.Keys), secret)
+		// The list was built from this one read. The read that gates the write must
+		// show the same document and the same membership, or the user changed their
+		// CPA under it — a credential they revoked directly on the CPA is never
+		// added back by a stale list.
+		again, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
+		if err != nil {
+			return err
+		}
+		if again.SourceSHA256 != snapshot.SourceSHA256 || !sameKeys(again.Keys, snapshot.Keys) {
+			return cpa.ErrSourceConflict
+		}
 		result.Attempted = true
-		if err = w.ExternalWriteKeySet(ctx, install.ManagementKey, append(slices.Clone(snapshot.Keys), secret)); err != nil {
+		if err = w.ExternalWriteKeySet(ctx, install.ManagementKey, after); err != nil {
 			return err
 		}
 		back, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
@@ -355,38 +379,6 @@ func (s *Service) externalObserve(ctx context.Context, id string, generation uin
 	result.ObservedUntilMS = now.UnixMilli()
 	result.ExpiresAtMS = now.Add(5 * time.Second).UnixMilli()
 	return result, nil
-}
-
-// externalInstalledKey names the one credential this Manager staged that the
-// user's CPA currently accepts. Revoke and replace act on exactly one key, so an
-// ambiguous set is a conflict rather than a guess.
-func (s *Service) externalInstalledKey(ctx context.Context) (string, error) {
-	if o, err := s.repo.LatestOperation(ctx); err != nil {
-		return "", err
-	} else if o != nil {
-		if o.Outcome != "committed" {
-			return "", ErrExternalUnavailable
-		}
-		return o.KeeperID, nil
-	}
-	ids, err := s.keys.IdentityIDs(ctx)
-	if err != nil {
-		return "", err
-	}
-	present, err := s.ExternalKeyPresence(ctx, ids)
-	if err != nil {
-		return "", err
-	}
-	carried := make([]string, 0, 1)
-	for _, id := range ids {
-		if present[id] {
-			carried = append(carried, string(id))
-		}
-	}
-	if len(carried) != 1 {
-		return "", repo.ErrConflict
-	}
-	return carried[0], nil
 }
 
 // externalKeyGrant derives the per-step authority for one durable External key
@@ -459,21 +451,6 @@ func (a externalKeyAuthority) WriteKeySet(ctx context.Context, management string
 		return err
 	}
 	return w.ExternalWriteKeySet(ctx, install.ManagementKey, keys)
-}
-
-// SampleKeySet probes exactly the keys one step added or removed. An External CPA
-// may have client authentication disabled and may carry credentials this Manager
-// never staged, so only the listed keys are sampled.
-func (a externalKeyAuthority) SampleKeySet(ctx context.Context, accepted, rejected []string) (bool, error) {
-	install, err := a.s.externalAuthority(ctx)
-	if err != nil {
-		return false, err
-	}
-	w := a.s.externalKeyWire(install)
-	if w == nil {
-		return false, ErrExternalUnavailable
-	}
-	return w.ExternalSampleKeySet(ctx, accepted, rejected)
 }
 
 // The External profile owns no install, no chat admission and no Runtime

@@ -18,6 +18,13 @@ import (
 // owns.
 var ErrManagementRejected = errors.New("external cpa management credential rejected")
 
+// ErrExternalTargetMoved reports a committed External target that no longer names
+// the connection this Manager holds: the address the user configured changed after
+// the installation was committed. It is a typed blocker, not an unavailable
+// target — the installation exists — and only a rebind can reach it again, so no
+// surface may treat it as a retry or as a missing proof.
+var ErrExternalTargetMoved = errors.New("external cpa target moved")
+
 // ExternalKeySnapshot is the user's CPA client-key list together with the digest
 // of the configuration that list belongs to. An External CPA owns its own
 // posture, key naming and extra credentials, so the only facts this Manager may
@@ -99,34 +106,6 @@ func (t *Transport) ExternalWriteKeySet(ctx context.Context, management string, 
 		return ErrManagementRejected
 	}
 	return ErrApplyUnknown
-}
-
-// ExternalSampleKeySet observes the External CPA's own client authentication for
-// the keys one step added or removed. Only the listed keys are probed: an
-// External CPA may run with client authentication disabled, and this Manager
-// does not own that setting.
-func (t *Transport) ExternalSampleKeySet(ctx context.Context, accepted, rejected []string) (bool, error) {
-	if t == nil {
-		return false, ErrProofUnavailable
-	}
-	for _, sample := range []struct {
-		keys   []string
-		status int
-	}{{accepted, http.StatusOK}, {rejected, http.StatusUnauthorized}} {
-		for _, key := range sample.keys {
-			code, _, err := t.request(ctx, http.MethodGet, "/v1/models", key, nil)
-			if err != nil {
-				return false, err
-			}
-			// A client key that is not live yet is an unproven effect, not a
-			// management credential failure: only a management request proves
-			// that, and this sample authenticates as a client.
-			if code != sample.status {
-				return false, nil
-			}
-		}
-	}
-	return true, nil
 }
 
 // validExternalKey accepts the client credentials a CPA v8 configuration stores:
