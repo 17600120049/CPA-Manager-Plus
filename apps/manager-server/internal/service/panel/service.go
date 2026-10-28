@@ -23,11 +23,6 @@ type Service struct {
 	embeddedErr         error
 	embeddedETag        string
 	embeddedContentType string
-	// embeddedStamped is the nonce-stamped copy of the embedded document and
-	// embeddedPolicy the policy that matches it. Both are built once, because the
-	// embedded artifact is fixed for the process lifetime. The nonce is
-	// regenerated per response from embeddedPolicyTemplate.
-	embeddedPolicyTemplate string
 }
 
 func New(panelPath string, embedded fs.FS) *Service {
