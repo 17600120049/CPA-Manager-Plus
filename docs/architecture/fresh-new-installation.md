@@ -231,8 +231,17 @@ the protected destination snapshot in the Fresh CAS checkpoint, stages and
 starts the destination, then requires an authenticated CPA v8 config read-back
 before committing `manager_config_v1`. The runtime template binds CPA to
 `0.0.0.0`, enables remote management and usage statistics, and disables the
-control panel. The key is never returned to the browser, Runtime journal,
-operation response, or logs.
+control panel.
+
+These are two different credentials with two different audiences, and the
+distinction matters when reading any statement about "the key":
+
+- the **management key** authenticates Manager to CPA's remote management API.
+  It is never returned to the browser, Runtime journal, operation response or
+  logs; Manager keeps only its protected form and unprotects it per call;
+- the **installer Client Key** authenticates model traffic to CPA. It is
+  returned exactly once, in the reply that commits the destination, and is
+  readable later on demand through `POST api-keys/<APIKeyID>/secret`.
 
 The same snapshot carries exactly one installation-generated Client Key, so CPA
 never starts with client authentication disabled. `freshkeys.EnsureInitialKey`
@@ -242,10 +251,7 @@ resume or a process restart replays the exact key instead of minting a second
 one. `freshkeyapply.EnsureInitialInstall` persists the key and the one-shot
 initial-install journal before the destination is described; the Supervisor
 rejects a `new_managed` stage that carries zero keys, two keys, or a
-workspace-shaped key. The reply that commits the destination is the only one
-that returns the plaintext (`initialClientKey`, `Cache-Control: no-store`), so
-the completion screen can show it once and the committed replay never repeats
-it. A missing or unpersistable key blocks the install with
+workspace-shaped key. A missing or unpersistable key blocks the install with
 `managed_initial_client_key_unavailable` instead of starting an open CPA.
 
 The Key workspace lists that record with `origin: "installer"` and the default
@@ -253,6 +259,30 @@ name `Initial key`; `POST api-keys/<APIKeyID>/secret` is the authenticated
 on-demand read behind the copy button, and it refuses a superseded key. The
 `initial-install` route observes the already-installed key and writes nothing,
 while a later workspace key cannot consume that single journal (409).
+
+#### Where the installer Client Key lives at rest
+
+The installer Client Key is a working credential for model traffic, not a
+one-way secret: CPA has to read it on every request, so `access.api-keys` in the
+child-owned CPA `config.yaml` holds it in plaintext regardless of what Manager
+does. The declared trust model is therefore "the Docker host is trusted; other
+processes inside the same container are not", and the key is confined to
+exactly these places:
+
+| location | form | access |
+| --- | --- | --- |
+| Manager SQLite (`freshkeys`, `origin = 'installer'`) | encrypted with the existing protector | Manager process; plaintext only in memory during a call |
+| Runtime volume `destination/stage.json` | plaintext | Supervisor-only stage snapshot, mode `0600`, same boundary as the management key |
+| Runtime volume CPA `config.yaml` (child-owned) | plaintext `access.api-keys` | the CPA child process, `0600` |
+| committing `POST strategy` reply | plaintext `initialClientKey` | the one in-flight install session, `Cache-Control: no-store`, never persisted by the browser |
+| `POST api-keys/<APIKeyID>/secret` reply | plaintext | authenticated Admin, `Cache-Control: no-store`, never cached |
+
+The Supervisor stage snapshot is not a new disclosure path: it has always held
+`ManagementKey` and the `network_existing`/legacy `APIKeys` in plaintext under
+the same `0600` Supervisor-only rule, and the child `config.yaml` must be
+plaintext for CPA to work. Manager's own volume holds no plaintext form of
+either credential, which the round-3 acceptance probe verified for the raw key
+and its hex and base64 encodings.
 
 After commit, `freshkeyapply.Service.DefaultInstallCPAAuthorityProven` in
 `apps/manager-server/internal/service/freshkeyapply/config_target.go` is the
