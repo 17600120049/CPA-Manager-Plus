@@ -159,7 +159,14 @@ func rootHandler(
 			return
 		}
 		if proxysvc.IsCPAPluginResourcePath(r.URL.Path) {
-			middleware.WithCORS(appCtx.Config, proxyHandler.CPAResource)(w, r)
+			// No CORS middleware here. A plugin resource response is rewritten
+			// into the opaque-origin sandbox contract by the proxy itself, which
+			// sets the one Access-Control-Allow-Origin that applies. Wrapping it
+			// in WithCORS as well emits two Access-Control-Allow-Origin values
+			// (this one and the CPA upstream's), and a browser rejects the
+			// response outright, so the sandboxed plugin could not read its own
+			// resource.
+			proxyHandler.CPAResource(w, r)
 			return
 		}
 		if r.URL.Path == "/" {
