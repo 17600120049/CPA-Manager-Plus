@@ -421,6 +421,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 		a.clientKeys(w, r, op, resource)
 	case resource == "external/usage" || strings.HasPrefix(resource, "external/usage/"):
 		a.externalUsageRoute(w, r, op, strings.TrimPrefix(strings.TrimPrefix(resource, "external/usage"), "/"))
+	case resource == "external/rebind" || strings.HasPrefix(resource, "external/rebind/"):
+		a.externalRebindRoute(w, r, op, strings.TrimPrefix(strings.TrimPrefix(resource, "external/rebind"), "/"))
 	case resource == "runtime/status":
 		a.runtimeStatus(w, r, op)
 	case resource == "runtime/operations" || strings.HasPrefix(resource, "runtime/operations/"):

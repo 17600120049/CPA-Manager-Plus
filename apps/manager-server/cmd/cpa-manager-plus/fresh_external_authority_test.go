@@ -129,6 +129,11 @@ func externalAuthorityAppWith(t *testing.T, management, targetIdentity string, e
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The committed checkpoint and the protected connection are what the External
+	// authority resolves, so the application is wired to them exactly as the
+	// External profile wires itself.
+	app.externalSource = externalInstallSource(app.store, app.protector)
+	app.keyApply = freshkeyapply.NewExternal(app.keyRepo, app.keys, app.externalSource)
 	return app, cpaServer
 }
 

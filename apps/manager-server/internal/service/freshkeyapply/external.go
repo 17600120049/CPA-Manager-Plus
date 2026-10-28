@@ -99,6 +99,7 @@ func NewExternal(r *repo.Repository, keys *freshkeys.Service, source ExternalSou
 	s.externalSource = source
 	s.externalWire = func(endpoint string) externalWire { return cpa.NewTransportForEndpoint(endpoint) }
 	s.externalProbe = cpa.ObserveExternalVersion
+	s.externalRebindVerifier = ObserveExternalRebindCredential
 	// The adapter is the wire every step of this profile speaks: it resolves the
 	// committed target first, so no step is taken against a stale credential.
 	s.wire = externalKeyAuthority{s: s}

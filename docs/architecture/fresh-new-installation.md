@@ -421,9 +421,61 @@ nothing in the list claims an observed effect. A 401 from the user's CPA is
 a committed target the connection no longer names is
 `cpa.ErrExternalTargetMoved`, surfaced as `external_target_moved` on every
 External surface. Both are typed blockers, not an unavailable proof and not a
-retry reason: no write follows either, and only rebinding the connection resolves
-it. This slice does not ship that rebind — the surfaces refuse and say why — and
-it arrives in the next one.
+retry reason: no write follows either, and only rebinding the connection
+resolves them.
+
+#### The CPA version decides what may be written
+
+External management speaks the CPA v8 contract, so every write is preceded by
+one authenticated `GET /v0/management/config` that reads the advertised version
+(`cpa.ObserveExternalVersion`). The class is `supported` for major 8 and later,
+`unsupported` below it, and `unknown` when the header is missing or unparseable.
+Both of the latter set `WriteBlocked` and refuse writes with
+`cpa.ErrExternalVersionUnsupported`, surfaced as
+`external_cpa_version_unsupported`: an unproven version is not a licence to
+write. Reads are never gated — the key list, the gateway page and the usage
+workspace keep showing what the user's CPA actually serves — and the class is
+published beside the observation (`cpaVersion` on `external/usage`,
+`versionSupport`/`writeBlocked` on the Runtime status) so the page can explain
+the refusal instead of offering a write that would fail.
+
+The gate sits on one point per profile: the External key wire wraps its single
+PUT, and the key journal and the gateway saves ask it before they record an
+intent, so an unsupported CPA never holds a pending operation it could never
+send. A probe that answers 401 stays the credential blocker and a probe that
+cannot reach the CPA stays `ErrProofUnavailable`; neither is reported as a
+version class.
+
+#### Rebind after a rotated management credential
+
+The user's CPA is theirs to administer, so a rotated management credential is a
+fact of their installation rather than an outage. `POST external/rebind` takes
+`{"requestId","managementKey"}` (and an optional `baseUrl`, accepted only to
+refuse it) and is the only way out of
+`external_management_key_rejected`. The order is the safety:
+
+1. the candidate must pass the rule Connect External itself applies;
+2. it is proven against the committed address with one authenticated read that
+   also classifies the version, so nothing is persisted for a credential that
+   does not authenticate or that does not serve the contract;
+3. it is encrypted and written in a transaction that replaces the connection and
+   both compatibility mirrors (`manager_config_v1`, `setup`) and bumps the record
+   revision.
+
+The **address is never changed**: a different address is a different
+installation, and reaching it is a reconnect that commits its own checkpoint.
+The installation identity — the address digest — therefore survives, and with it
+every key-usage binding, so a rebind never mixes one CPA's history into
+another's. The Connect External target generation is pinned to `1` by the
+contract and is not bumped here; the record revision is the CAS a rebind moves,
+and the credential a later write resolves is always the one the record holds at
+that moment. A candidate equal to the stored credential is refused rather than
+reported as a rotation. A rebind to a credential the CPA refuses, to an
+unsupported version, to another address, or against a stale revision is refused
+with its own code (`external_management_key_rejected`,
+`external_cpa_version_unsupported`, `external_rebind_refused`,
+`external_rebind_stale_generation`), and no reply carries the credential, the
+address or any text from the CPA.
 
 ### Failed stage or start
 
