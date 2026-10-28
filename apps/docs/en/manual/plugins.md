@@ -18,6 +18,15 @@ When `plugins.enabled` is off, an individually enabled plugin still cannot run.
 
 The plugin entry appears only when the Manager reports that the current connection supports plugins (`X-CPA-SUPPORT-PLUGIN`). In a default installation the Manager answers that capability itself, so no extra configuration is required. If the entry disappears, the connected Manager version or the saved CPA connection cannot serve plugins end to end.
 
+## Plugin Runtime Switch
+
+In a default managed installation the Runtime Supervisor writes `plugins.enabled` and the plugin directory into the target CPA configuration, and the first-run wizard selection decides the initial value. After installation the managed installation can change the switch from the "Plugin runtime" control at the top of the Plugins page:
+
+- Each flip is one baseline-checked save through the same journal, CAS, and read-back path as the gateway configuration page (Manager API: `plugins/runtime`). External CPA connections and the private H1 profile are refused server-side, so those profiles never show the control.
+- The page shows "Saved" and "Running" separately. CPA reloads configuration asynchronously, so a successful save only means the value is persisted; the running state stays unknown until CPA reloads.
+- If the result of the last write is unknown, the page offers "Read back result": it reads CPA's current document and records what it proves, and never sends the write again.
+- The plugin directory (`plugins.dir`) is published by the Runtime Supervisor and cannot be changed here.
+
 ## Install Versions
 
 The store supports three version modes:

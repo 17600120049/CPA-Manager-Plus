@@ -18,6 +18,15 @@ description: 使用 CPA Manager Plus 安装、选择版本、启用、配置和�
 
 插件入口只在 Manager 报告当前连接支持插件时出现（`X-CPA-SUPPORT-PLUGIN`）。默认安装由 Manager 自己回答该能力，因此无需额外配置。若入口消失，说明连接的 Manager 版本或保存的 CPA 连接无法端到端提供插件能力。
 
+## 插件运行开关
+
+默认托管安装由 Runtime Supervisor 把 `plugins.enabled` 和插件目录写入目标 CPA 的配置，首次安装向导中的选择决定初始值。安装完成后，托管安装可以在插件页顶部的“插件运行开关”中修改它：
+
+- 一次开关操作是一次带基线的保存，走与网关配置页相同的日志、CAS 与读回路径（Manager API：`plugins/runtime`）；外部 CPA 连接与私有 H1 profile 会被服务端拒绝，因此这些 profile 不显示开关。
+- 页面分别显示“已保存”和“运行状态”。CPA 异步重载配置，保存成功只表示配置已持久化，运行状态在 CPA 重载前保持“未知”。
+- 如果上次写入结果未知，页面显示“读回结果”：它只读取 CPA 当前文档并记录结论，不会重发写入。
+- 插件目录（`plugins.dir`）由 Runtime Supervisor 发布，页面不能修改它。
+
 ## 安装版本
 
 插件商店支持三种版本模式：

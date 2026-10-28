@@ -384,6 +384,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case resource == "gateway/config" || strings.HasPrefix(resource, "gateway/config/"):
 		a.gatewayConfiguration(w, r, strings.TrimPrefix(strings.TrimPrefix(resource, "gateway/config"), "/"))
+	case resource == "plugins/runtime" || strings.HasPrefix(resource, "plugins/runtime/"):
+		a.pluginRuntime(w, r, strings.TrimPrefix(strings.TrimPrefix(resource, "plugins/runtime"), "/"))
 	case resource == "settings/update-channel":
 		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):
