@@ -107,8 +107,12 @@ func NewExternal(r *repo.Repository, keys *freshkeys.Service, source ExternalSou
 }
 
 // externalPermit is the step authority of the currently resolved External
-// target. Its generation is the digest-derived one, so a step is bound to the
-// configuration the user's CPA presented when it was granted.
+// target. Its generation is the connection identity alone, not a digest of the
+// configuration: the user's CPA rewrites that document for reasons this Manager
+// does not control — its own key writes included — so a digest-derived
+// generation would invalidate every later step. The configuration digest is a
+// per-step CAS instead, read immediately before each PUT and compared there (see
+// externalKeyGrant and externalContinue).
 func (s *Service) externalPermit() (Permit, error) {
 	install, err := s.externalAuthority(context.Background())
 	if err != nil {
