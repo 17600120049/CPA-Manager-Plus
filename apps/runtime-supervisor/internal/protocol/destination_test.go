@@ -15,10 +15,12 @@ import (
 type destinationFake struct {
 	calls int
 	err   error
+	last  lifecycle.DestinationRequest
 }
 
 func (f *destinationFake) StageDestination(_ context.Context, r lifecycle.DestinationRequest) (journal.Operation, error) {
 	f.calls++
+	f.last = r
 	if f.err != nil {
 		return journal.Operation{}, f.err
 	}
@@ -77,5 +79,51 @@ func TestDestinationProtocolIsPrivateBoundedTypedAndSecretFree(t *testing.T) {
 	}
 	if fake.calls != 1 {
 		t.Fatal("invalid/private request reached executor")
+	}
+}
+
+// The Fresh wizard's plugin opt-in travels on the destination request. It is a
+// product decision, not a path, so it is part of the closed key set the decoder
+// admits; before it was named here every opted-in install was refused as
+// invalid_request and could never reach the Supervisor template.
+func TestDestinationProtocolCarriesPluginOptIn(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		fake := &destinationFake{}
+		h, err := NewHandler(Config{RuntimeIdentity: "runtime-01", RuntimeGeneration: 1, Token: "test-runtime-token", Destination: fake})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := lifecycle.DestinationRequest{OperationID: "fresh:managed-destination", ExpectedRuntimeIdentity: "runtime-01", ExpectedRuntimeGeneration: 1, ExpectedActiveArtifactID: artifact.ID("sha256:" + strings.Repeat("a", 64)), SourceIdentity: "managed:sha256:" + strings.Repeat("b", 64), SourceClass: lifecycle.SourceClassNewManaged, APIKeys: []string{}, ManagementKey: strings.Repeat("c", 64), PluginsEnabled: enabled}
+		body, _ := json.Marshal(r)
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest("POST", destinationPath, strings.NewReader(string(body)))
+		request.Header.Set("Authorization", "Bearer test-runtime-token")
+		h.ServeHTTP(recorder, request)
+		if recorder.Code != 200 || fake.calls != 1 {
+			t.Fatalf("pluginsEnabled=%v status=%d body=%s", enabled, recorder.Code, recorder.Body.String())
+		}
+		if fake.last.PluginsEnabled != enabled {
+			t.Fatalf("pluginsEnabled=%v reached the executor as %v", enabled, fake.last.PluginsEnabled)
+		}
+	}
+}
+
+// The opt-in is still a boolean, never a directory: a caller cannot direct
+// plugin discovery at a path of its choosing.
+func TestDestinationProtocolRefusesPluginDirectory(t *testing.T) {
+	fake := &destinationFake{}
+	h, err := NewHandler(Config{RuntimeIdentity: "runtime-01", RuntimeGeneration: 1, Token: "test-runtime-token", Destination: fake})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := lifecycle.DestinationRequest{OperationID: "fresh:managed-destination", ExpectedRuntimeIdentity: "runtime-01", ExpectedRuntimeGeneration: 1, ExpectedActiveArtifactID: artifact.ID("sha256:" + strings.Repeat("a", 64)), SourceIdentity: "managed:sha256:" + strings.Repeat("b", 64), SourceClass: lifecycle.SourceClassNewManaged, APIKeys: []string{}, ManagementKey: strings.Repeat("c", 64), PluginsEnabled: true}
+	body, _ := json.Marshal(r)
+	hostile := strings.TrimSuffix(string(body), "}") + `,"pluginsDir":"/tmp"}`
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest("POST", destinationPath, strings.NewReader(hostile))
+	request.Header.Set("Authorization", "Bearer test-runtime-token")
+	h.ServeHTTP(recorder, request)
+	if recorder.Code != 400 || fake.calls != 0 {
+		t.Fatalf("plugin directory status=%d calls=%d", recorder.Code, fake.calls)
 	}
 }
