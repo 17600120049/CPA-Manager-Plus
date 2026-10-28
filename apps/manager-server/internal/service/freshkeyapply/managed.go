@@ -147,12 +147,18 @@ func (s *Service) Targets(op bootstrap.FreshOperation, surface Surface) bool {
 	case ProfileExternal:
 		// The user's own CPA: keys and its configuration page are managed through
 		// the committed connection. This Manager owns no Runtime there, so chat
-		// admission and gateway admission are never answered by it.
+		// admission and gateway admission are never answered by it. The surfaces
+		// are an allowlist rather than one exclusion, so a surface added later is
+		// refused here until it is deliberately admitted.
 		if op.Strategy.Strategy != bootstrap.ConnectExternal ||
 			!validExternalIdentity(op.Strategy.TargetIdentity) {
 			return false
 		}
-		return surface != SurfaceChatAdmission
+		switch surface {
+		case SurfaceKeyInstall, SurfaceKeyOperation, SurfaceGatewayConfig:
+			return true
+		}
+		return false
 	}
 	return false
 }

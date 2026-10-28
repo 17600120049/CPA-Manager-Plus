@@ -88,14 +88,6 @@ func newFakeExternalCPA(t *testing.T, keys ...string) *fakeExternalCPA {
 			}
 			f.keys = next
 			w.WriteHeader(http.StatusOK)
-		case r.URL.Path == "/v1/models":
-			key := r.Header.Get("Authorization")
-			key = strings.TrimPrefix(key, "Bearer ")
-			if slices.Contains(f.keys, key) {
-				_, _ = w.Write([]byte(`{"data":[]}`))
-				return
-			}
-			w.WriteHeader(http.StatusUnauthorized)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

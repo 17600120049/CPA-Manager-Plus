@@ -87,7 +87,6 @@ type ExternalSource func(context.Context) (ExternalInstall, error)
 type externalWire interface {
 	ExternalKeySnapshot(context.Context, string) (cpa.ExternalKeySnapshot, error)
 	ExternalWriteKeySet(context.Context, string, []string) error
-	ExternalSampleKeySet(context.Context, []string, []string) (bool, error)
 }
 
 // NewExternal constructs the authority of a committed Connect External
@@ -177,16 +176,6 @@ func (s *Service) externalTarget(ctx context.Context, generation uint64) (Extern
 		return ExternalInstall{}, ErrGeneration
 	}
 	return install, nil
-}
-
-// ExternalEndpoint is the normalized address of the committed External target. It
-// is configuration, not a credential, and it is empty for every other profile.
-func (s *Service) ExternalEndpoint(ctx context.Context) (string, error) {
-	install, err := s.externalAuthority(ctx)
-	if err != nil {
-		return "", err
-	}
-	return install.BaseURL, nil
 }
 
 func (s *Service) externalKeyWire(install ExternalInstall) externalWire {
@@ -388,38 +377,6 @@ func (s *Service) externalObserve(ctx context.Context, id string, generation uin
 	return result, nil
 }
 
-// externalInstalledKey names the one credential this Manager staged that the
-// user's CPA currently accepts. Revoke and replace act on exactly one key, so an
-// ambiguous set is a conflict rather than a guess.
-func (s *Service) externalInstalledKey(ctx context.Context) (string, error) {
-	if o, err := s.repo.LatestOperation(ctx); err != nil {
-		return "", err
-	} else if o != nil {
-		if o.Outcome != "committed" {
-			return "", ErrExternalUnavailable
-		}
-		return o.KeeperID, nil
-	}
-	ids, err := s.keys.IdentityIDs(ctx)
-	if err != nil {
-		return "", err
-	}
-	present, err := s.ExternalKeyPresence(ctx, ids)
-	if err != nil {
-		return "", err
-	}
-	carried := make([]string, 0, 1)
-	for _, id := range ids {
-		if present[id] {
-			carried = append(carried, string(id))
-		}
-	}
-	if len(carried) != 1 {
-		return "", repo.ErrConflict
-	}
-	return carried[0], nil
-}
-
 // externalKeyGrant derives the per-step authority for one durable External key
 // operation from the live target: the connection identity, the checkpoint
 // generation and the configuration digest observed immediately before the step.
@@ -490,21 +447,6 @@ func (a externalKeyAuthority) WriteKeySet(ctx context.Context, management string
 		return err
 	}
 	return w.ExternalWriteKeySet(ctx, install.ManagementKey, keys)
-}
-
-// SampleKeySet probes exactly the keys one step added or removed. An External CPA
-// may have client authentication disabled and may carry credentials this Manager
-// never staged, so only the listed keys are sampled.
-func (a externalKeyAuthority) SampleKeySet(ctx context.Context, accepted, rejected []string) (bool, error) {
-	install, err := a.s.externalAuthority(ctx)
-	if err != nil {
-		return false, err
-	}
-	w := a.s.externalKeyWire(install)
-	if w == nil {
-		return false, ErrExternalUnavailable
-	}
-	return w.ExternalSampleKeySet(ctx, accepted, rejected)
 }
 
 // The External profile owns no install, no chat admission and no Runtime

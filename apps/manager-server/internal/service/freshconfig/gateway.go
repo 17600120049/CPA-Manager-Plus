@@ -386,6 +386,16 @@ type authority struct {
 // match that authority is never a write path. A managed-only scope resolves to a
 // closed refusal on every other profile.
 func (s *Service) resolve(ctx context.Context, r freshstore.Record, sc scope) (authority, error) {
+	if sc.managedOnly && s.external != nil && !s.managed {
+		// The plugin root belongs to the Supervisor-owned destination this Manager
+		// stages. An External installation owns neither, so the scope is answered
+		// before the External authority is even asked: the user's CPA receives no
+		// request and its management credential is never used.
+		return authority{
+			mode:    ModeExternal,
+			capable: Capability{Mode: ModeExternal, Reason: ReasonPluginManagedOnly},
+		}, ErrPluginAuthority
+	}
 	auth, err := s.resolveProfile(ctx, r)
 	if !sc.managedOnly {
 		return auth, err

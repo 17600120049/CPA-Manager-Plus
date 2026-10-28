@@ -265,6 +265,45 @@ func externalServiceForPluginTest(t *testing.T, wire *fakeWire) *Service {
 	return service
 }
 
+// TestPluginRouteRefusesExternalBeforeAskingTheAuthority proves the managed-only
+// scope is decided before the External authority is resolved: an installation that
+// does not own the plugin root neither contacts the user's CPA nor consumes its
+// management credential to say so.
+func TestPluginRouteRefusesExternalBeforeAskingTheAuthority(t *testing.T) {
+	wire := &fakeWire{document: pluginDocument(false)}
+	store := &memoryStore{record: managedRecord()}
+	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+		Strategy: bootstrap.ConnectExternal, Stage: "committed",
+		TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1,
+	}
+	store.record.Connection = &model.ManagerCPAConnectionConfig{
+		CPABaseURL: "https://external.test", ManagementKey: "cpamp_protected_envelope",
+	}
+	service := New(store, nil, nil)
+	service.wire = wire
+	service.transport = nil
+	asked := 0
+	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
+		asked++
+		return "https://external.test", "management-test-only", nil
+	})
+	service.targets = externalTargets()
+	service.externalWire = func(string) configWire { return wire }
+	view, err := service.ReadPlugins(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Capability.Reason != ReasonPluginManagedOnly {
+		t.Fatalf("reason = %q", view.Capability.Reason)
+	}
+	if asked != 0 {
+		t.Fatalf("the plugin route resolved the External authority %d times", asked)
+	}
+	if wire.reads != 0 {
+		t.Fatalf("the plugin route read the user's CPA %d times", wire.reads)
+	}
+}
+
 // TestPluginRequestValidationOwnsOnlyTheSwitch covers the closed request contract:
 // one known leaf, a boolean shape and no gateway leaf or group.
 func TestPluginRequestValidationOwnsOnlyTheSwitch(t *testing.T) {

@@ -108,34 +108,6 @@ func (t *Transport) ExternalWriteKeySet(ctx context.Context, management string, 
 	return ErrApplyUnknown
 }
 
-// ExternalSampleKeySet observes the External CPA's own client authentication for
-// the keys one step added or removed. Only the listed keys are probed: an
-// External CPA may run with client authentication disabled, and this Manager
-// does not own that setting.
-func (t *Transport) ExternalSampleKeySet(ctx context.Context, accepted, rejected []string) (bool, error) {
-	if t == nil {
-		return false, ErrProofUnavailable
-	}
-	for _, sample := range []struct {
-		keys   []string
-		status int
-	}{{accepted, http.StatusOK}, {rejected, http.StatusUnauthorized}} {
-		for _, key := range sample.keys {
-			code, _, err := t.request(ctx, http.MethodGet, "/v1/models", key, nil)
-			if err != nil {
-				return false, err
-			}
-			// A client key that is not live yet is an unproven effect, not a
-			// management credential failure: only a management request proves
-			// that, and this sample authenticates as a client.
-			if code != sample.status {
-				return false, nil
-			}
-		}
-	}
-	return true, nil
-}
-
 // validExternalKey accepts the client credentials a CPA v8 configuration stores:
 // a printable, non-empty token. CPA itself mints arbitrary shapes, so this guard
 // bounds what may be echoed into a write body; it never rewrites a value.
