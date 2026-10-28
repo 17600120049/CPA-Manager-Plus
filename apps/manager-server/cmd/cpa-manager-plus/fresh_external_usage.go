@@ -62,10 +62,15 @@ func (a *freshApplication) sampleUsageAuthority(ctx context.Context, baseURL, ma
 // resetUsageStart clears the latched Collector start so a later attempt may run
 // again. It is used once the credential has been replaced: the refusal that
 // latched the previous start is not a permanent property of the installation.
+// Both success flags are cleared, because a rebind must be able to restart a
+// Collector this process already started: the collection instant itself is
+// idempotent and keeps its earliest value.
 func (a *freshApplication) resetUsageStart() {
 	a.usageStartMu.Lock()
 	defer a.usageStartMu.Unlock()
+	a.usageStarted = false
 	a.usageCollectorStarted = false
+	a.setUsageStartReason("")
 }
 
 // setUsageStartReason records the stable code of the last refused start. It is
