@@ -64,7 +64,7 @@ func newVerificationFixture(t *testing.T) *verificationFixture {
 	app.strategy = freshstrategy.New(freshstrategy.Options{
 		Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: server.URL,
 		Qualification:       bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true},
-		QualifiedArtifactID: artifact,
+		QualifiedArtifactID: artifact, InitialClientKey: installTestClientKey,
 	})
 	request := freshstrategy.Request{
 		Strategy: bootstrap.NewManaged, ExpectedRuntimeIdentity: "runtime",

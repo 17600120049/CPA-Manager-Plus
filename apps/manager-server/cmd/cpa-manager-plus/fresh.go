@@ -241,7 +241,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	// Pending/missing evidence retains the existing typed strategy blockers. The
 	// strategy's post-Start destination read-back must not race the spawn, so its
 	// Runtime client waits for the Supervisor's readiness observation first.
-	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: freshReadyStartRuntime(runtime), Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL})
+	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: freshReadyStartRuntime(runtime), Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL, InitialClientKey: a.installInitialClientKey})
 	a.runtime = runtime
 	// Normal Fresh initialization is authorized by the admitted installation
 	// and its Admin/session. Retain the opt-in private harness restriction only

@@ -1043,7 +1043,8 @@ func Migrate(db *sql.DB) error {
 			api_key_id text not null unique references gateway_api_key_identities(id),
 			secret_ciphertext text not null,
 			secret_hash text not null unique,
-			masked_preview text not null
+			masked_preview text not null,
+			origin text not null default 'workspace' check(origin in ('workspace','installer'))
 		)`,
 		`create table if not exists gateway_quota_policies (
 			id text not null primary key check(length(id) = 32 and id not glob '*[^0-9a-f]*'),
@@ -1313,13 +1314,13 @@ func Migrate(db *sql.DB) error {
 	if err := ensureDashboardHourlyRollupFormatVersion(db); err != nil {
 		return err
 	}
-	if err := ensureFreshKeyNameColumns(db); err != nil {
+	if err := ensureFreshKeyColumns(db); err != nil {
 		return err
 	}
 	return ensureModelPriceColumns(db)
 }
 
-func ensureFreshKeyNameColumns(db *sql.DB) error {
+func ensureFreshKeyColumns(db *sql.DB) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -1328,6 +1329,7 @@ func ensureFreshKeyNameColumns(db *sql.DB) error {
 	for _, column := range []struct{ name, ddl string }{
 		{"name", "name text not null default ''"},
 		{"name_revision", "name_revision integer not null default 1 check(typeof(name_revision) = 'integer' and name_revision >= 1)"},
+		{"origin", "origin text not null default 'workspace' check(origin in ('workspace','installer'))"},
 	} {
 		found, err := tableHasColumn(tx, "fresh_client_api_keys", column.name)
 		if err != nil {
@@ -1338,6 +1340,12 @@ func ensureFreshKeyNameColumns(db *sql.DB) error {
 				return err
 			}
 		}
+	}
+	// The installation mints at most one install-origin Client Key. The partial
+	// index is the durable fence a concurrent or replayed install cannot pass.
+	if _, err := tx.Exec(`create unique index if not exists idx_fresh_client_api_keys_installer
+		on fresh_client_api_keys(origin) where origin = 'installer'`); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
