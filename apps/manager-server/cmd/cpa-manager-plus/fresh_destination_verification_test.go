@@ -178,6 +178,21 @@ func TestDestinationVerificationRefusalLetsTheResumeReuseTheSameAttempt(t *testi
 	if !reflect.DeepEqual(fixture.runtime.starts[0], fixture.runtime.starts[1]) {
 		t.Fatalf("resume changed the start request: %+v", fixture.runtime.starts)
 	}
+	// The committing reply is the one delivery of the installation's Client Key.
+	var delivered struct {
+		InitialClientKey string `json:"initialClientKey"`
+	}
+	if err := json.Unmarshal(resumed.Body.Bytes(), &delivered); err != nil ||
+		!model.ValidInitialClientKey(delivered.InitialClientKey) {
+		t.Fatalf("committing reply did not deliver the install key (%v): %s", err, resumed.Body.String())
+	}
+	if resumed.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("install key reply is cacheable")
+	}
+	replay := fixture.strategy(t, committed.Operation.Revision)
+	if replay.Code != http.StatusOK || strings.Contains(replay.Body.String(), delivered.InitialClientKey) {
+		t.Fatalf("committed replay repeated the install key: %d %s", replay.Code, replay.Body.String())
+	}
 }
 
 // A refusal that is never followed by a durable read stays exactly where it was:

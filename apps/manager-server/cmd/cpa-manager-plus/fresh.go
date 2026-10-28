@@ -622,6 +622,18 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
+	if result.InitialClientKey != "" {
+		// The call that commits the destination is the only reply that carries
+		// the installation's Client Key. It is written once, in the same response
+		// as the committed checkpoint, so the completion screen can show it; the
+		// committed replay above never repeats it and no journal or log holds it.
+		w.Header().Set("Cache-Control", "no-store")
+		writeFreshJSON(w, struct {
+			bootstrap.FreshOperation
+			InitialClientKey string `json:"initialClientKey"`
+		}{next.Operation, result.InitialClientKey})
+		return
+	}
 	writeFreshJSON(w, next.Operation)
 }
 
