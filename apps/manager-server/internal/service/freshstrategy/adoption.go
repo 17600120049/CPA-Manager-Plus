@@ -225,6 +225,7 @@ func (s *Service) adopt(ctx context.Context, op bootstrap.FreshOperation, r Requ
 	checkpoint.Stage = op.Strategy.Stage
 	checkpoint.AdoptionResources = append([]bootstrap.ResourceRef(nil), op.Strategy.AdoptionResources...)
 	checkpoint.AdoptionDecisions = append([]bootstrap.AdoptionResourceDecision(nil), op.Strategy.AdoptionDecisions...)
+	checkpoint.DestinationAttempt = op.Strategy.DestinationAttempt
 	if !adoptionCheckpointDecisionsValid(checkpoint.AdoptionResources, checkpoint.AdoptionDecisions, decision) || !reflect.DeepEqual(checkpoint, op.Strategy) {
 		return block("fresh_strategy_owner_conflict")
 	}
@@ -241,13 +242,32 @@ func (s *Service) adopt(ctx context.Context, op bootstrap.FreshOperation, r Requ
 	}
 	result.Checkpoint = op.Strategy
 	if op.Strategy.Stage != "committed" {
-		staged, err := runtime.StageDestination(ctx, destination)
-		if err != nil || !adoptionOperationSucceeded(staged, destination, model.RuntimeOperationStageDestination, destination.OperationID) {
+		// The protected snapshot is immutable for the lifetime of the Fresh
+		// operation, so the attempt index is the only thing that may distinguish
+		// one Supervisor destination operation from the next. A replay of the
+		// same attempt stays byte-identical and therefore idempotent.
+		operationID, err := destinationOperationID(destination.OperationID, checkpoint.DestinationAttempt)
+		if err != nil {
+			return block("adoption_destination_identity_conflict")
+		}
+		attempt := destination
+		attempt.OperationID = operationID
+		staged, stageErr := runtime.StageDestination(ctx, attempt)
+		state, resolved := adoptionOperationState(staged, stageErr, destination, model.RuntimeOperationStageDestination, operationID)
+		if !resolved {
 			return block("adoption_destination_stage_unresolved")
 		}
-		started, err := s.options.Runtime.Start(ctx, model.RuntimeMutationRequest{OperationID: destination.OperationID + ":start", ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: r.ExpectedArtifactID})
-		if err != nil || !adoptionOperationSucceeded(started, destination, model.RuntimeOperationStart, destination.OperationID+":start") {
+		if state == model.RuntimeOperationFailed {
+			return adoptTerminalFailure(result, checkpoint, "adoption_destination_stage_failed")
+		}
+		startID := operationID + ":start"
+		started, startErr := s.options.Runtime.Start(ctx, model.RuntimeMutationRequest{OperationID: startID, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: r.ExpectedArtifactID})
+		state, resolved = adoptionOperationState(started, startErr, destination, model.RuntimeOperationStart, startID)
+		if !resolved {
 			return block("adoption_destination_start_unresolved")
+		}
+		if state == model.RuntimeOperationFailed {
+			return adoptTerminalFailure(result, checkpoint, "adoption_destination_start_failed")
 		}
 	}
 	err = cpa.VerifyV8Adoption(ctx, target, destination.ManagementKey, destination.APIKeys)
@@ -267,6 +287,32 @@ func (s *Service) adopt(ctx context.Context, op bootstrap.FreshOperation, r Requ
 	return result, nil
 }
 
-func adoptionOperationSucceeded(result model.RuntimeOperationResult, r model.RuntimeDestinationRequest, kind model.RuntimeOperationType, id string) bool {
-	return result.Validate() == nil && result.OperationID == id && result.OperationType == kind && result.RuntimeIdentity == r.ExpectedRuntimeIdentity && result.RuntimeGeneration == r.ExpectedRuntimeGeneration && result.State == model.RuntimeOperationSucceeded
+// adoptionOperationState classifies one Supervisor destination response for the
+// exact operation this attempt issued. An error, an invalid result or any
+// foreign identity is an unresolved result: it is never terminal evidence, so it
+// may not authorize a new attempt. A resolved result is either still running, or
+// succeeded, or failed terminally.
+func adoptionOperationState(result model.RuntimeOperationResult, err error, r model.RuntimeDestinationRequest, kind model.RuntimeOperationType, id string) (model.RuntimeOperationState, bool) {
+	if err != nil || result.Validate() != nil || result.OperationID != id || result.OperationType != kind ||
+		result.RuntimeIdentity != r.ExpectedRuntimeIdentity || result.RuntimeGeneration != r.ExpectedRuntimeGeneration {
+		return "", false
+	}
+	if result.State == model.RuntimeOperationSucceeded || result.State == model.RuntimeOperationFailed {
+		return result.State, true
+	}
+	return "", false
+}
+
+// adoptTerminalFailure retires the attempt whose Supervisor operation failed
+// terminally. The Supervisor journal never resumes a terminal operation, so the
+// checkpoint advances by exactly one and the identical destination is re-issued
+// under the next operation ID. Adoption is limited to one retry: the second
+// terminal failure has no new information, so it stays a plain blocker and the
+// operator must reconcile the target instead of looping forever.
+func adoptTerminalFailure(result Result, checkpoint bootstrap.FreshStrategyCheckpoint, code string) (Result, error) {
+	if checkpoint.DestinationAttempt >= bootstrap.MaxAdoptionDestinationRetry {
+		return result, &Blocker{Code: code}
+	}
+	checkpoint.DestinationAttempt++
+	return Result{GatewayPending: result.GatewayPending, RuntimeMode: result.RuntimeMode, SourcePreserved: result.SourcePreserved}, &DestinationRetry{Blocker: &Blocker{Code: code}, Checkpoint: checkpoint}
 }
