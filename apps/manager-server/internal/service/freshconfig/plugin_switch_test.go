@@ -250,7 +250,7 @@ func externalServiceForPluginTest(t *testing.T, wire *fakeWire) *Service {
 	store.record.Connection = &model.ManagerCPAConnectionConfig{
 		CPABaseURL: "https://external.test", ManagementKey: "cpamp_protected_envelope",
 	}
-	service := New(store, nil)
+	service := New(store, nil, nil)
 	service.wire = wire
 	service.transport = nil
 	service.EnableExternal(func(context.Context) (string, string, error) {

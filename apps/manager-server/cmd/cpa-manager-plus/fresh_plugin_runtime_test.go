@@ -99,6 +99,9 @@ func newPluginRuntimeFixture(t *testing.T) *pluginRuntimeFixture {
 	}
 	app.gatewayConfig = freshconfig.New(app.store, func(context.Context, uint64) (string, error) {
 		return "management-key", nil
+	}, func(op bootstrap.FreshOperation) bool {
+		return op.Strategy.Strategy == bootstrap.NewManaged && op.Strategy.Stage == "committed" &&
+			strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:")
 	})
 	app.gatewayConfig.EnableManaged(server.URL)
 	fixture.app = app
@@ -335,7 +338,9 @@ func TestPluginRuntimeFailsClosedOutsideTheManagedAuthority(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	app.gatewayConfig = freshconfig.New(app.store, nil)
+	// External holds no installation authority, so the plugin scope's closed
+	// refusal is reached without one.
+	app.gatewayConfig = freshconfig.New(app.store, nil, nil)
 	app.gatewayConfig.EnableExternal(func(context.Context) (string, string, error) {
 		return "https://external.test", "management-key", nil
 	})
