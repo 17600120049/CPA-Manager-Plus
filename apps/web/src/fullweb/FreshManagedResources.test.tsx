@@ -139,6 +139,7 @@ describe('Fresh resources within the original Console', () => {
       runtimeState: 'not_applied',
       name: '',
       nameRevision: 1,
+      origin: 'workspace' as const,
     };
     const transport = vi.fn<typeof fetch>().mockImplementation((url, init) => {
       if (init?.method === 'POST') return Promise.reject(new TypeError('reply lost'));
@@ -190,6 +191,7 @@ describe('Fresh resources within the original Console', () => {
       runtimeState: 'not_applied',
       name: '',
       nameRevision: 1,
+      origin: 'workspace' as const,
     };
     const secret = 'cpamp_sk_' + 'c'.repeat(64);
     const transport = vi.fn<typeof fetch>().mockImplementation((url, init) => {
