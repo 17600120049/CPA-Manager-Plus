@@ -83,6 +83,11 @@ func (a *freshApplication) initialClientKey(w http.ResponseWriter, r *http.Reque
 			// not missing, it moved, and only a rebind reaches it again.
 			code = freshconfig.ReasonTargetMoved
 			w.WriteHeader(409)
+		case errors.Is(err, cpa.ErrExternalVersionUnsupported):
+			// The user's CPA does not prove the v8 contract this Manager writes.
+			// Reads keep working; no write is attempted until their CPA does.
+			code = freshconfig.ReasonVersionUnsupported
+			w.WriteHeader(409)
 		case errors.Is(err, freshkeyapply.ErrUnavailable), errors.Is(err, freshkeyapply.ErrExternalUnavailable):
 			code = "s1_host_proof_unavailable"
 			w.WriteHeader(409)

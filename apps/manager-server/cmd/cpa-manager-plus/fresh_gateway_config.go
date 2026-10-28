@@ -161,6 +161,11 @@ func gatewayConfigReply(w http.ResponseWriter, v any, e error) {
 		// this is the same typed blocker the read publishes as capability.reason,
 		// not an unavailable authority and not a retry reason.
 		code, status = freshconfig.ReasonTargetMoved, http.StatusConflict
+	case errors.Is(e, cpa.ErrExternalVersionUnsupported):
+		// The user's CPA did not prove the v8 contract this Manager writes, so no
+		// journal entry and no write exist. The page keeps reading that CPA; only
+		// the save is refused.
+		code, status = freshconfig.ReasonVersionUnsupported, http.StatusConflict
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

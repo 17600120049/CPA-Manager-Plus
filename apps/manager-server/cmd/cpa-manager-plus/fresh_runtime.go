@@ -15,6 +15,7 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 )
 
@@ -351,15 +352,20 @@ type freshRuntimeRecoveryResponse struct {
 }
 
 type freshRuntimeGatewayResponse struct {
-	Identity        string                        `json:"identity,omitempty"`
-	Generation      uint64                        `json:"generation,omitempty"`
-	ProtocolVersion string                        `json:"protocolVersion,omitempty"`
-	State           string                        `json:"state"`
-	Ready           bool                          `json:"ready"`
-	Version         string                        `json:"version,omitempty"`
-	ArtifactID      string                        `json:"artifactId,omitempty"`
-	Capabilities    []string                      `json:"capabilities,omitempty"`
-	Recovery        *freshRuntimeRecoveryResponse `json:"recovery,omitempty"`
+	Identity        string `json:"identity,omitempty"`
+	Generation      uint64 `json:"generation,omitempty"`
+	ProtocolVersion string `json:"protocolVersion,omitempty"`
+	State           string `json:"state"`
+	Ready           bool   `json:"ready"`
+	Version         string `json:"version,omitempty"`
+	// VersionSupport and WriteBlocked are the External class of the observed
+	// version: what this Manager proved about the CPA it does not own. The Embedded
+	// profile leaves them empty — its artifact is the authority, not a version.
+	VersionSupport string                        `json:"versionSupport,omitempty"`
+	WriteBlocked   bool                          `json:"writeBlocked,omitempty"`
+	ArtifactID     string                        `json:"artifactId,omitempty"`
+	Capabilities   []string                      `json:"capabilities,omitempty"`
+	Recovery       *freshRuntimeRecoveryResponse `json:"recovery,omitempty"`
 }
 
 func freshRuntimeGatewayStatus(status model.RuntimeObservedStatus) *freshRuntimeGatewayResponse {
@@ -410,6 +416,15 @@ func (a *freshApplication) runtimeStatus(w http.ResponseWriter, r *http.Request,
 	response := freshRuntimeStatusResponse{
 		Mode: mode, Status: string(observed.State), ObservedAt: &now,
 		Manager: freshRuntimeManagerStatus{State: "ready"}, Gateway: freshRuntimeGatewayStatus(observed),
+	}
+	if mode == string(model.RuntimeModeExternal) && response.Gateway != nil {
+		// The CPA observed here belongs to the user, so the version decides what
+		// this Manager may write to it. Reporting the class next to the version
+		// is what lets the page say why a write is unavailable instead of
+		// offering one that would be refused.
+		report := cpa.ClassifyExternalVersion(string(observed.CPAObservedVersion))
+		response.Gateway.VersionSupport = report.Support
+		response.Gateway.WriteBlocked = report.WriteBlocked
 	}
 	a.runtimeJournal.setLast(&response, now)
 	writeFreshJSON(w, response)

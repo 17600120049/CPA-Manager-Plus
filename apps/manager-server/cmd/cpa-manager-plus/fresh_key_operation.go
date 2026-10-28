@@ -55,6 +55,11 @@ func keyOperationReply(w http.ResponseWriter, result freshkeyapply.OperationResu
 		// The connection no longer names the committed target. The journal is
 		// intact; the target moved, and only a rebind reaches it again.
 		status, code = 409, freshconfig.ReasonTargetMoved
+	case errors.Is(err, cpa.ErrExternalVersionUnsupported):
+		// The user's CPA does not prove the v8 contract this Manager writes, so
+		// no step was sent. Reads keep working; the write waits for a CPA that
+		// serves the surface it would target.
+		status, code = 409, freshconfig.ReasonVersionUnsupported
 	case errors.Is(err, freshkeyapply.ErrUnavailable), errors.Is(err, freshkeyapply.ErrExternalUnavailable):
 		status, code = 409, "key_operation_host_proof_required"
 	case errors.Is(err, cpa.ErrSourceConflict):

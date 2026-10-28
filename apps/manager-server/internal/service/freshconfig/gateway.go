@@ -290,7 +290,12 @@ type Service struct {
 // owns. Both are nil for profiles without a key authority.
 func New(st freshstore.Store, target func(context.Context, uint64) (string, error), targets func(bootstrap.FreshOperation) bool) *Service {
 	transport := cpa.NewTransport()
-	return &Service{store: st, wire: transport, transport: transport, target: target, targets: targets}
+	return &Service{
+		store: st, wire: transport, transport: transport, target: target, targets: targets,
+		// The probe is the live one until a test replaces it, exactly as the wire
+		// is: a save must never be gated on a version nobody asked the CPA for.
+		externalProbe: cpa.ObserveExternalVersion,
+	}
 }
 
 // EnableH1 switches the service onto the Host H1 handoff journal. The private H1

@@ -117,6 +117,19 @@ func (a *freshApplication) startExternalUsageCollector(ctx context.Context) usag
 		log.Printf("Fresh external usage collection unavailable: %v", err)
 		return usageStartOutcome{Reason: usageStartReasonExternalUnavailable}
 	}
+	// Collection is only worth arming on a CPA this Manager can prove it manages:
+	// the version contract decides the enable write and every later write, so a
+	// CPA that does not serve it starts nothing. The refusal is the same typed
+	// code the write surfaces answer with, never an unexplained empty window.
+	switch report, err := cpa.ObserveExternalVersion(ctx, install.BaseURL, install.ManagementKey); {
+	case errors.Is(err, cpa.ErrManagementRejected):
+		return a.refuseExternalUsage(ctx, freshconfig.ReasonManagementRejected)
+	case err != nil:
+		log.Printf("Fresh external usage version unavailable: %v", err)
+		return usageStartOutcome{Reason: usageStartReasonExternalUnavailable}
+	case report.WriteBlocked:
+		return a.refuseExternalUsage(ctx, freshconfig.ReasonVersionUnsupported)
+	}
 	// The first authenticated sample of this attempt is also the read of the
 	// switch that decides whether anything has to be written at all.
 	enabled, err := cpa.FetchExternalUsageStatistics(ctx, install.BaseURL, install.ManagementKey)
@@ -242,18 +255,32 @@ func (a *freshApplication) confirmExternalUsageCollection(w http.ResponseWriter,
 	writeFreshJSON(w, state)
 }
 
+// externalVersionView is the CPA version this Manager observed and what it may do
+// with it. It carries no credential and no address, and it is a report of one
+// observation rather than a cached verdict.
+type externalVersionView struct {
+	Version      string `json:"version"`
+	Support      string `json:"support"`
+	WriteBlocked bool   `json:"writeBlocked"`
+}
+
 // externalUsageState is the External usage posture without any credential or
-// address: what the user's CPA records, whether the Collector is live, and the
-// stable code of whatever blocked the last start.
+// address: what the user's CPA records, whether the Collector is live, which
+// version it advertises, and the stable code of whatever blocked the last start.
 type externalUsageState struct {
-	StatisticsEnabled bool   `json:"statisticsEnabled"`
-	Collector         string `json:"collector"`
-	CollectionStarted bool   `json:"collectionStarted"`
-	BlockedReason     string `json:"blockedReason,omitempty"`
+	StatisticsEnabled bool                `json:"statisticsEnabled"`
+	Collector         string              `json:"collector"`
+	CollectionStarted bool                `json:"collectionStarted"`
+	CPA               externalVersionView `json:"cpaVersion"`
+	BlockedReason     string              `json:"blockedReason,omitempty"`
 }
 
 func (a *freshApplication) externalUsageState(ctx context.Context) (externalUsageState, error) {
 	install, err := a.externalSource(ctx)
+	if err != nil {
+		return externalUsageState{}, err
+	}
+	report, err := cpa.ObserveExternalVersion(ctx, install.BaseURL, install.ManagementKey)
 	if err != nil {
 		return externalUsageState{}, err
 	}
@@ -265,6 +292,7 @@ func (a *freshApplication) externalUsageState(ctx context.Context) (externalUsag
 		StatisticsEnabled: enabled,
 		Collector:         string(a.collectionPhase()),
 		CollectionStarted: a.usageCollectionStarted(),
+		CPA:               externalVersionView{Version: report.Version, Support: report.Support, WriteBlocked: report.WriteBlocked},
 		BlockedReason:     a.usageStartBlock(),
 	}, nil
 }
