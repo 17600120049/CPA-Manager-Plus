@@ -797,6 +797,42 @@ func TestExternalProfileRefusesAnAuthorityItCannotResolve(t *testing.T) {
 	}
 }
 
+// TestExternalProfileReportsARejectedManagementKey proves a 401 from the user's
+// CPA is its own refusal on the page. It is distinct from an unavailable
+// authority: only rebinding the connection resolves it, so the page must not
+// offer a retry.
+func TestExternalProfileReportsARejectedManagementKey(t *testing.T) {
+	if ReasonManagementRejected != "external_management_key_rejected" {
+		t.Fatalf("reason code = %q", ReasonManagementRejected)
+	}
+	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"strategy": "round-robin"}}}
+	store := &memoryStore{record: managedRecord()}
+	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+		Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1,
+	}
+	service := New(store, nil, nil)
+	service.wire = wire
+	service.transport = nil
+	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
+		return "", "", cpa.ErrManagementRejected
+	})
+	service.targets = func(op bootstrap.FreshOperation) bool {
+		return op.Strategy.Strategy == bootstrap.ConnectExternal && op.Strategy.Stage == "committed"
+	}
+	service.externalWire = func(string) configWire { return wire }
+	view, err := service.Read(context.Background())
+	if err != nil {
+		t.Fatalf("read = %v", err)
+	}
+	if view.Capability.Readable || view.Capability.Writable || view.Capability.RulesWritable ||
+		view.Capability.Reason != ReasonManagementRejected {
+		t.Fatalf("rejected credential treated as another mode: %+v", view.Capability)
+	}
+	if wire.reads != 0 {
+		t.Fatal("a rejected credential still contacted the CPA")
+	}
+}
+
 // TestUnresolvedLegacyFieldOperationBlocksItsGroup proves the pre-cutover journal
 // still gates new saves. Resolving an old field operation reads the current
 // document, so letting the group save on top of it would let the reconcile read

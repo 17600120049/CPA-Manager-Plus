@@ -276,16 +276,57 @@ External or uncommitted checkpoint. The gateway configuration page asks the
 same discriminator under its own surface: on a managed install it refuses the
 same checkpoints, while on a private host-permit install it keeps the attested
 private target scope its page and field journal shipped with, including an
-adopted checkpoint that names that target. On an External install the page still
-reads and writes its scalars from the committed External connection until the
-External authority moves that path under `Targets`; the key, admission and chat
-surfaces never do. `DefaultInstallCPAAuthorityProven` is the
+adopted checkpoint that names that target. On an External install the page and
+the key surfaces ask the same discriminator under `ProfileExternal`: the target
+comes from the External authority, never from a settings read, and only a
+committed Connect External checkpoint whose connection identity it can prove is
+accepted. `DefaultInstallCPAAuthorityProven` is the
 boolean admission predicate at
 `apps/manager-server/internal/service/freshkeyapply/config_target.go`; it
 requires the exact committed Runtime facts, managed CPA posture and at least
 one installed Client Key, so a CPA with client authentication off is not
 admitted. The private profile remains separately discriminated and continues
 to require the short-lived host permit.
+
+### Connect External management
+
+An External installation has no Manager-owned Runtime, artifact or readiness
+fact: the CPA belongs to the user, and this Manager only holds a protected
+connection to it. `freshkeyapply.NewExternal` is therefore constructed from a
+source that re-reads, on every call, the committed `connect_external` checkpoint
+with `ProductComplete`, the protected Manager connection and the user's own CPA.
+It decrypts the management credential, refuses anything but a complete
+checkpoint, and derives two durable facts:
+
+- the **identity** is `external:sha256:<digest>` of the normalized committed
+  address — the address digest is the only comparable durable fact, because the
+  credential is a protected envelope;
+- the **generation** is derived from that identity and the digest of the
+  configuration read back from the CPA. A configuration the user edited
+  afterwards is a different generation, so a step granted against the previous
+  one never authorizes a write against the new one, and neither half is request
+  input.
+
+`Targets` answers `key_install`, `key_operation` and `gateway_config` for it and
+refuses chat admission and gateway admission, which stay with the managed
+destination. External, Managed and Private remain mutually exclusive: the
+discriminator accepts only the checkpoint of the profile the Manager
+constructed.
+
+Keys are administered through the CPA v8 API and every claim is read back. The
+staged secret is decrypted in-process and compared by membership against the
+CPA's own key list — there is no managed template to prove, and the CPA may
+carry credentials this Manager never staged. A revoke or replace journals its
+intent before a single write and reconciles by reading the CPA, never by
+resending the step; revoking the only credential is refused with `ErrLastKey`,
+because that would leave the user's CPA accepting unauthenticated clients. The
+gateway configuration page keeps #1090's External semantics: scalars are
+best-effort with a baseline re-read, and rule families stay read-only.
+
+A 401 from the user's CPA is `cpa.ErrManagementRejected`, surfaced as
+`external_management_key_rejected`. It is a typed blocker, not an unavailable
+proof and not a retry reason: no write follows it, and only the user rebinding
+the connection resolves it.
 
 ### Failed stage or start
 
