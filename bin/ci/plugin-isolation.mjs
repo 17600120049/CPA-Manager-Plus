@@ -490,6 +490,87 @@ async function runEngine(engineName, launcher) {
     );
     record(engineName, 'in-prefix redirect preserved', 'PASS', { status: inside.status(), location });
 
+    // ---- Writes: the plugin's own endpoint, admitted exactly like a read ---
+    // A plugin page is served with `sandbox allow-scripts allow-forms` and uses
+    // its own namespace for its own endpoints; the official Codex Invite page
+    // depends on that. A write must reach CPA with its method and body intact
+    // and carry the same sandbox contract as a read.
+    const writeBody = JSON.stringify({ refresh: true, from: 'g2' });
+    const write = await context.request.post(`${resourceBase}/write`, {
+      headers: { ...sandboxHeaders, 'Content-Type': 'application/json' },
+      data: writeBody,
+    });
+    assert.equal(write.status(), 200, `plugin write refused with ${write.status()}`);
+    const echoed = JSON.parse(await write.text());
+    assert.equal(echoed.method, 'POST', `plugin write arrived as ${echoed.method}`);
+    assert.equal(echoed.body, writeBody, 'plugin write body was altered in transit');
+    assert.equal(
+      write.headers()['content-security-policy'],
+      'sandbox allow-scripts allow-forms',
+      'plugin write response lost the sandbox CSP'
+    );
+    record(engineName, 'plugin write reaches its own endpoint', 'PASS', { status: write.status() });
+
+    // A cross-site fetch/XHR from the sandboxed document is admitted; the same
+    // write without Fetch Metadata, or from the admin document, is not.
+    const writeWithoutMetadata = await context.request.post(`${resourceBase}/write`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: writeBody,
+    });
+    assert.equal(writeWithoutMetadata.status(), 403, 'plugin write without Fetch Metadata was admitted');
+    record(engineName, 'plugin write without Fetch Metadata is 403', 'PASS', {
+      status: writeWithoutMetadata.status(),
+    });
+
+    const writeFromAdmin = await context.request.post(`${resourceBase}/write`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-Dest': 'empty',
+      },
+      data: writeBody,
+    });
+    assert.equal(writeFromAdmin.status(), 403, 'admin document wrote to a plugin endpoint');
+    record(engineName, 'admin document cannot write to a plugin endpoint', 'PASS', {
+      status: writeFromAdmin.status(),
+    });
+
+    // ---- Redirect targets a browser resolves differently than Go -----------
+    for (const [name, path] of [
+      ['backslash traversal', 'redirect-backslash'],
+      ['backslash protocol-relative', 'redirect-protocol-relative'],
+    ]) {
+      const response = await context.request.get(`${resourceBase}/${path}`, {
+        maxRedirects: 0,
+        headers: sandboxHeaders,
+      });
+      assert(
+        response.status() !== 302 && response.status() !== 307 && response.status() !== 308,
+        `${name} redirect was admitted with ${response.status()}`
+      );
+      const location = response.headers()['location'] || '';
+      assert(!location.includes('\\'), `${name} redirect kept its backslash target: ${location}`);
+      record(engineName, `${name} redirect refused`, 'PASS', { status: response.status() });
+    }
+
+    // ---- Origin-wide response headers the plugin must not set --------------
+    const hostile = await context.request.get(`${resourceBase}/hostile-headers`, {
+      headers: sandboxHeaders,
+    });
+    const hostileHeaders = hostile.headers();
+    const dropped = [
+      'clear-site-data',
+      'nel',
+      'report-to',
+      'reporting-endpoints',
+      'strict-transport-security',
+      'alt-svc',
+      'access-control-allow-credentials',
+    ].filter((name) => hostileHeaders[name] !== undefined);
+    assert.equal(dropped.length, 0, `origin-wide headers survived: ${dropped.join(', ')}`);
+    assert.equal(hostileHeaders['content-type'], 'text/plain; charset=utf-8', 'representation header was dropped');
+    record(engineName, 'origin-wide plugin response headers dropped', 'PASS', { checked: 7 });
+
     const cookieResponse = await context.request.get(`${resourceBase}/cookie`, {
       headers: sandboxHeaders,
     });
