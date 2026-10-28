@@ -44,11 +44,17 @@ func gatewayAuthFixture(f *prepareFixture) string {
 	return filepath.Join(filepath.Dir(f.path), "gateway", "auth")
 }
 
+// initialClientKeyFixture is the Manager-generated install key the default
+// destination must carry: "sk-" + 64 [A-Za-z0-9].
+func initialClientKeyFixture() string {
+	return "sk-" + strings.Repeat("aB3", 21) + "Z"
+}
+
 func newManagedRequest(r DestinationRequest) DestinationRequest {
 	r.OperationID = "fresh-operation:managed-destination"
 	r.SourceClass = SourceClassNewManaged
 	r.SourceIdentity = "managed:sha256:" + strings.Repeat("a", 64)
-	r.APIKeys = []string{}
+	r.APIKeys = []string{initialClientKeyFixture()}
 	return r
 }
 
@@ -59,8 +65,12 @@ func TestDestinationNewManagedValidationIsClassBound(t *testing.T) {
 		t.Fatal("new_managed destination rejected")
 	}
 	for name, change := range map[string]func(*DestinationRequest){
-		"client keys":       func(r *DestinationRequest) { r.APIKeys = []string{"client"} },
-		"nil keys":          func(r *DestinationRequest) { r.APIKeys = nil },
+		"absent keys": func(r *DestinationRequest) { r.APIKeys = []string{} },
+		"nil keys":    func(r *DestinationRequest) { r.APIKeys = nil },
+		"two keys": func(r *DestinationRequest) {
+			r.APIKeys = []string{initialClientKeyFixture(), initialClientKeyFixture()}
+		},
+		"workspace key":     func(r *DestinationRequest) { r.APIKeys = []string{"cpamp_sk_" + strings.Repeat("a", 64)} },
 		"external identity": func(r *DestinationRequest) { r.SourceIdentity = "external:sha256:" + strings.Repeat("a", 64) },
 		"short identity":    func(r *DestinationRequest) { r.SourceIdentity = "managed:sha256:" + strings.Repeat("a", 63) },
 		"non-hex identity":  func(r *DestinationRequest) { r.SourceIdentity = "managed:sha256:" + strings.Repeat("z", 64) },
@@ -137,8 +147,20 @@ func TestDestinationNewManagedStagesProductizedTemplateOnlyOverEmptyGatewayAuth(
 		} `json:"observability"`
 	}
 	if json.Unmarshal(data, &config) != nil || config.Server.Port != 8317 || !config.Management.AllowRemote || config.Management.SecretKey != r.ManagementKey ||
-		!config.Management.DisableControlPanel || config.Access.Keys == nil || len(config.Access.Keys) != 0 || config.OAuth.AuthDir != filepath.Join(root, "auth") || !config.Observability.Usage.Enabled {
+		!config.Management.DisableControlPanel || !reflect.DeepEqual(config.Access.Keys, r.APIKeys) || config.OAuth.AuthDir != filepath.Join(root, "auth") || !config.Observability.Usage.Enabled {
 		t.Fatalf("New Managed template: %s", data)
+	}
+	// The immutable stage snapshot is Supervisor-private and holds exactly the
+	// one Client Key the Manager persisted before staging.
+	stage, err := os.ReadFile(filepath.Join(root, "stage.json"))
+	var snapshot DestinationRequest
+	if err != nil || json.Unmarshal(stage, &snapshot) != nil || !reflect.DeepEqual(snapshot.APIKeys, r.APIKeys) {
+		t.Fatalf("stage snapshot keys: %s (%v)", stage, err)
+	}
+	// The operation journal is secret-free, including the install key.
+	journalBytes, err := os.ReadFile(f.path)
+	if err != nil || strings.Contains(string(journalBytes), r.APIKeys[0]) {
+		t.Fatal("install client key entered the operation journal")
 	}
 }
 
