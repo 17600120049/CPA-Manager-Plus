@@ -470,8 +470,10 @@ func ensurePluginDir(name string, child *cpaprocess.ChildIdentity) error {
 		return ErrPersistenceUnavailable
 	}
 	// The directory is either ours or already handed to the child by an earlier
-	// publish. Anything else is not adopted: without a child there is no identity
-	// to reassign it to, and with one the chown below must actually succeed.
+	// publish. A foreign owner is refused only when there is no child: with a
+	// child identity the chown below reassigns it, so the child's own directory
+	// from a previous publish is adopted rather than rejected. The parent
+	// directory is private (checked earlier), so nothing else can have planted it.
 	if filetrust.RequireCurrentProcessOwner(info) != nil && child == nil {
 		return ErrPersistenceUnavailable
 	}

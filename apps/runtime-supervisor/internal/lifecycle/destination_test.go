@@ -159,14 +159,29 @@ func TestDestinationNewManagedStagesProductizedTemplateOnlyOverEmptyGatewayAuth(
 	if err = os.WriteFile(installed, []byte("plugin"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// The template decision is immutable for the operation: the Fresh checkpoint
-	// is what the Supervisor was given, so a later attempt cannot silently flip
-	// it. Changing the switch is the management authority's job, not a re-stage.
+	// The template decision is immutable: the Fresh checkpoint is what the
+	// Supervisor was given, so a later attempt cannot silently flip it. Changing
+	// the switch is the management authority's job, not a re-stage.
+	//
+	// The assertion must be about the opt-in and nothing else. A supersede is
+	// refused for several reasons, so "an error came back" would also be true if
+	// the field were ignored entirely. What discriminates is which refusal: a
+	// flipped value makes the request differ from the stored one, which is an
+	// operation-ID conflict; a field the comparison ignored would leave the
+	// requests equal and fall through to the state conflict instead.
 	flipped := newManagedRequest(r)
 	flipped.OperationID = "fresh-operation:managed-destination-optin"
 	flipped.PluginsEnabled = true
-	if _, err = f.starter.StageDestination(t.Context(), flipped); err == nil {
-		t.Fatal("a re-stage flipped the persisted plugin opt-in")
+	if _, err = f.starter.StageDestination(t.Context(), flipped); !errors.Is(err, journal.ErrOperationIDConflict) {
+		t.Fatalf("a flipped opt-in was not refused as a destination change: %v", err)
+	}
+	// The refusal above is only meaningful if a request that differs in nothing
+	// but its operation ID would be admitted to the state gate instead, so the
+	// comparison really does read the opt-in.
+	unchanged := newManagedRequest(r)
+	unchanged.OperationID = "fresh-operation:managed-destination-second"
+	if _, err = f.starter.StageDestination(t.Context(), unchanged); errors.Is(err, journal.ErrOperationIDConflict) {
+		t.Fatalf("an unchanged re-stage was refused as a destination change: %v", err)
 	}
 	if data, err = os.ReadFile(installed); err != nil || string(data) != "plugin" {
 		t.Fatalf("installed plugin lost across a refused publish: %q %v", data, err)
