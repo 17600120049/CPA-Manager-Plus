@@ -390,3 +390,38 @@ func TestFreshAdoptRetiresExactlyOneStartAttempt(t *testing.T) {
 		t.Fatalf("retry operations = %+v %+v", fixture.runtime.stages, fixture.runtime.starts)
 	}
 }
+
+// Only terminal failure evidence may advance an adoption attempt. An accepted
+// stage or a running start may still be executing in the Supervisor, so the
+// Manager keeps attempt zero: a second destination would race the first.
+func TestFreshAdoptUnresolvedDestinationKeepsTheAttempt(t *testing.T) {
+	for _, item := range []struct {
+		name    string
+		stage   model.RuntimeOperationState
+		start   model.RuntimeOperationState
+		blocker string
+	}{
+		{name: "accepted stage", stage: model.RuntimeOperationAccepted, blocker: "adoption_destination_stage_unresolved"},
+		{name: "running start", start: model.RuntimeOperationRunning, blocker: "adoption_destination_start_unresolved"},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			fixture := newAdoptRetryFixture(t)
+			fixture.runtime.stageState = item.stage
+			fixture.runtime.startState = item.start
+			response := fixture.strategy(t, fixture.record, fixture.request)
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), item.blocker) {
+				t.Fatalf("%s: %d %s", item.name, response.Code, response.Body.String())
+			}
+			after := fixture.reload(t)
+			if after.Operation.Revision != fixture.record.Operation.Revision || after.Operation.Strategy.DestinationAttempt != 0 || after.Operation.Strategy.Stage != "staged" || after.AdoptionCiphertext != fixture.record.AdoptionCiphertext {
+				t.Fatalf("%s advanced the attempt: revision=%d %+v", item.name, after.Operation.Revision, after.Operation.Strategy)
+			}
+			base := string(after.Operation.Identity.OperationID) + ":adopt-destination"
+			for _, stage := range fixture.runtime.stages {
+				if stage.OperationID != base {
+					t.Fatalf("%s forked a destination attempt: %q", item.name, stage.OperationID)
+				}
+			}
+		})
+	}
+}
