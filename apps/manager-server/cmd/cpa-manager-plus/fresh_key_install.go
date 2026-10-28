@@ -8,6 +8,7 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 )
@@ -72,7 +73,12 @@ func (a *freshApplication) initialClientKey(w http.ResponseWriter, r *http.Reque
 		case errors.Is(err, cpa.ErrSourceConflict):
 			code = "s1_source_conflict"
 			w.WriteHeader(409)
-		case errors.Is(err, freshkeyapply.ErrUnavailable):
+		case errors.Is(err, cpa.ErrManagementRejected):
+			// The user's CPA refused the stored management credential: only
+			// rebinding the connection resolves it, so it is never a retry.
+			code = freshconfig.ReasonManagementRejected
+			w.WriteHeader(409)
+		case errors.Is(err, freshkeyapply.ErrUnavailable), errors.Is(err, freshkeyapply.ErrExternalUnavailable):
 			code = "s1_host_proof_unavailable"
 			w.WriteHeader(409)
 		default:

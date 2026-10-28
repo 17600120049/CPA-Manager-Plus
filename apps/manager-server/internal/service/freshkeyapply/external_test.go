@@ -378,6 +378,60 @@ func TestExternalRevokeRejectionKeepsTheCredential(t *testing.T) {
 	}
 }
 
+// The list reports the presence the user's CPA answers: a staged key it does not
+// carry is never shown as applied, and a key it does carry is.
+func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	applied, appliedSecret := harness.staged(t, strings.Repeat("e", 32))
+	pending, pendingSecret := harness.staged(t, strings.Repeat("f", 32))
+	if _, err := harness.service.Apply(ctx, applied, 1); err != nil {
+		t.Fatal(err)
+	}
+	// The user installed the second credential out of band.
+	harness.cpa.keys = append(harness.cpa.keys, pendingSecret)
+	harness.cpa.keys = slices.DeleteFunc(harness.cpa.keys, func(key string) bool { return key == appliedSecret })
+	harness.cpa.keys = append(harness.cpa.keys, appliedSecret)
+
+	keys, err := harness.keys.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := harness.service.ExternalKeyList(ctx, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 2 {
+		t.Fatalf("listed %d keys", len(listed))
+	}
+	for _, key := range listed {
+		if key.RuntimeState != "effective_observed" {
+			t.Fatalf("key %s state = %q", key.ID, key.RuntimeState)
+		}
+	}
+	// A key the CPA no longer carries is not claimed.
+	harness.cpa.keys = slices.DeleteFunc(harness.cpa.keys, func(key string) bool { return key == appliedSecret })
+	listed, err = harness.service.ExternalKeyList(ctx, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range listed {
+		if string(key.ID) == applied && key.RuntimeState == "effective_observed" {
+			t.Fatal("a key the CPA does not carry was reported as applied")
+		}
+	}
+	// Another profile's list is returned untouched.
+	private := New(nil, harness.keys, nil)
+	same, err := private.ExternalKeyList(ctx, keys)
+	if err != nil || len(same) != len(keys) {
+		t.Fatalf("non-external list = %d %v", len(same), err)
+	}
+	if string(pending) == "" {
+		t.Fatal("pending key missing")
+	}
+	_ = pending
+}
+
 func mustID(t *testing.T, raw string) identity.APIKeyID {
 	t.Helper()
 	parsed, err := identity.ParseAPIKeyID(raw)

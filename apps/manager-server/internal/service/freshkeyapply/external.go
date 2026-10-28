@@ -227,6 +227,35 @@ func (s *Service) ExternalKeyPresence(ctx context.Context, ids []identity.APIKey
 	return present, nil
 }
 
+// ExternalKeyList is the key list as the user's CPA answers it. Every staged key
+// carries the presence read back from that CPA, so the page never reports an
+// effect this Manager merely intended: a key the CPA does not carry stays
+// "not_applied" until its install is proven. The list of another profile is
+// returned unchanged.
+func (s *Service) ExternalKeyList(ctx context.Context, keys []freshkeys.Key) ([]freshkeys.Key, error) {
+	if s == nil || s.profile != ProfileExternal {
+		return keys, nil
+	}
+	ids := make([]identity.APIKeyID, 0, len(keys))
+	for _, key := range keys {
+		ids = append(ids, key.ID)
+	}
+	present, err := s.ExternalKeyPresence(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	annotated := make([]freshkeys.Key, 0, len(keys))
+	for _, key := range keys {
+		// A revoked or finalized record keeps its own state: presence only
+		// refines a key that is still meant to be live.
+		if present[key.ID] && key.Lifecycle == identity.LifecycleActive {
+			key.RuntimeState = "effective_observed"
+		}
+		annotated = append(annotated, key)
+	}
+	return annotated, nil
+}
+
 // ExternalKeyPresenceOf is ExternalKeyPresence for one key, for the routes that
 // answer about exactly one record.
 func (s *Service) ExternalKeyPresenceOf(ctx context.Context, id identity.APIKeyID) (bool, error) {

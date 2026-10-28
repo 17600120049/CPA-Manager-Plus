@@ -50,6 +50,17 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
+		// An External installation reports the presence the user's CPA answers,
+		// not the effect this Manager intended. Any other profile is unchanged, and
+		// a checkpoint the External discriminator refuses is never contacted.
+		if a.keyApply != nil && a.keyApply.Profile() == freshkeyapply.ProfileExternal &&
+			a.keyApply.Targets(op, freshkeyapply.SurfaceKeyOperation) {
+			keys, err = a.keyApply.ExternalKeyList(r.Context(), keys)
+			if err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+		}
 		writeFreshJSON(w, struct {
 			Keys                []freshkeys.Key `json:"keys"`
 			GatewayPending      bool            `json:"gatewayPending"`

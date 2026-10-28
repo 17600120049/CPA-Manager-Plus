@@ -69,6 +69,15 @@ func New(r *repo.Repository, keys *freshkeys.Service, runtime runtimeservice.Run
 	return s
 }
 
+// Profile names the installation profile this authority was constructed for. It
+// is read-only: the profile is fixed at construction and never switched.
+func (s *Service) Profile() string {
+	if s == nil {
+		return ""
+	}
+	return s.profile
+}
+
 // keyGrantHeld re-derives the grant for this operation step. A Host permit is a
 // fixed file and must be identical; a managed grant is derived per call from
 // the committed installation and the live destination source, so its validity

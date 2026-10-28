@@ -75,15 +75,18 @@ func externalInstallSource(store freshstore.Store, protector *security.Protector
 		// no Runtime is staged for it, so the durable product checkpoint is the
 		// only proof the installation finished.
 		if checkpoint.Strategy != bootstrap.ConnectExternal || checkpoint.Stage != "committed" ||
-			!record.Operation.ProductComplete || record.Connection == nil {
+			!record.Operation.ProductComplete || checkpoint.TargetGeneration == 0 || record.Connection == nil {
 			return freshkeyapply.ExternalInstall{}, freshkeyapply.ErrUnavailable
 		}
-		// The live Manager connection is the CPA this Manager administers. The
-		// installation target is historical provenance, so the identity is the
-		// digest of the address the connection now holds: following an edited
-		// address is administration, not a silent rebind.
 		baseURL, err := cpa.NormalizeV8BaseURL(record.Connection.CPABaseURL)
 		if err != nil || baseURL != strings.TrimRight(record.Connection.CPABaseURL, "/") {
+			return freshkeyapply.ExternalInstall{}, freshkeyapply.ErrUnavailable
+		}
+		// The committed target must still be the connection this Manager holds.
+		// Comparing the address digests is the only comparison available: the
+		// credential is a protected envelope, and a connection the user edited to
+		// another CPA is a rebind, which this path must never perform silently.
+		if checkpoint.TargetIdentity != freshkeyapply.ExternalIdentity(baseURL) {
 			return freshkeyapply.ExternalInstall{}, freshkeyapply.ErrUnavailable
 		}
 		key, err := protector.UnprotectString(record.Connection.ManagementKey)
