@@ -1,6 +1,18 @@
 import { fullWebLanguage } from './fullweb';
 
 const en = {
+  installerOrigin: 'Installation key',
+  copyKey: 'Copy key',
+  keyCopied: 'Key copied. It was not stored in this browser.',
+  keyCopyFailed: 'Clipboard unavailable. Try copying the key again.',
+  installKeyTitle: 'Your installation key',
+  installKeyHelp:
+    'CPA already runs with this key installed, so it was never open to unauthenticated callers. This is the only time Manager shows it: copy and save it securely.',
+  installKeyCopied: 'Installation key copied.',
+  installKeyCopyFailed: 'Clipboard unavailable. Select the key and copy it manually.',
+  installKeyDismiss: 'Hide',
+  installKeyLater: 'You can copy it again later from this key\'s detail page.',
+
   overview: 'Overview',
   rename: 'Rename',
   cancel: 'Cancel',
@@ -51,7 +63,7 @@ const en = {
     'Check the real deployment before using this key. An observed result does not grant public ingress access.',
   privateKey: 'Full key is hidden',
   privateKeyHelp:
-    'Existing keys expose only a masked preview. The full value cannot be read again.',
+    'Existing keys expose only a masked preview. Copy the full value on demand; it is never stored in this browser.',
   refresh: 'Refresh keys',
   pending: 'Creation result needs confirmation',
   count: 'keys',
@@ -132,6 +144,18 @@ const en = {
     'Need to rotate or retire this key? Jump to the revocation & replacement workflow with this key preselected.',
 };
 const zh: typeof en = {
+  installerOrigin: '安装生成的密钥',
+  copyKey: '复制密钥',
+  keyCopied: '密钥已复制，未保存在此浏览器中。',
+  keyCopyFailed: '剪贴板不可用，请重试复制密钥。',
+  installKeyTitle: '安装生成的客户端密钥',
+  installKeyHelp:
+    'CPA 已带着这把密钥启动，因此从未对未认证调用者开放。这是它唯一一次展示：请复制并妥善保存。',
+  installKeyCopied: '安装生成的密钥已复制。',
+  installKeyCopyFailed: '剪贴板不可用，请选中密钥手动复制。',
+  installKeyDismiss: '隐藏',
+  installKeyLater: '之后可在该密钥详情页再次按需复制。',
+
   overview: '概览',
   rename: '修改名称',
   cancel: '取消',
@@ -175,7 +199,7 @@ const zh: typeof en = {
   access: '接入信息',
   accessHelp: '使用前请核实实际部署；观测到生效不代表已获准开放公开接入。',
   privateKey: '完整密钥已隐藏',
-  privateKeyHelp: '既有密钥仅返回脱敏预览，无法重新读取完整内容。',
+  privateKeyHelp: '既有密钥仅显示脱敏预览，可按需复制完整内容；完整值不会保存在浏览器中。',
   refresh: '刷新密钥',
   pending: '创建结果待确认',
   count: '把',
@@ -252,6 +276,18 @@ const zh: typeof en = {
   detailReplaceHelp: '需要轮换或停用此密钥？可将该密钥预填为目标密钥并前往撤销与替换流程。',
 };
 const tw: typeof en = {
+  installerOrigin: '安裝產生的金鑰',
+  copyKey: '複製金鑰',
+  keyCopied: '金鑰已複製，未儲存在此瀏覽器中。',
+  keyCopyFailed: '剪貼簿無法使用，請重試複製金鑰。',
+  installKeyTitle: '安裝產生的用戶端金鑰',
+  installKeyHelp:
+    'CPA 已帶著這把金鑰啟動，因此從未對未驗證的呼叫者開放。這是它唯一一次顯示：請複製並妥善保存。',
+  installKeyCopied: '安裝產生的金鑰已複製。',
+  installKeyCopyFailed: '剪貼簿無法使用，請選取金鑰後手動複製。',
+  installKeyDismiss: '隱藏',
+  installKeyLater: '之後可在該金鑰詳細資料頁再次按需複製。',
+
   overview: '概覽',
   rename: '修改名稱',
   cancel: '取消',
@@ -295,7 +331,7 @@ const tw: typeof en = {
   access: '接入資訊',
   accessHelp: '使用前請核實實際部署；觀測到生效不代表已獲准開放公開存取。',
   privateKey: '完整金鑰已隱藏',
-  privateKeyHelp: '既有金鑰僅傳回遮罩預覽，無法重新讀取完整內容。',
+  privateKeyHelp: '既有金鑰僅顯示遮罩預覽，可依需求複製完整內容；完整值不會儲存在瀏覽器中。',
   refresh: '重新整理金鑰',
   pending: '建立結果待確認',
   count: '把',
@@ -372,6 +408,18 @@ const tw: typeof en = {
   detailReplaceHelp: '需要輪換或停用此金鑰？可將該金鑰預填為目標金鑰並前往撤銷與替換流程。',
 };
 const ru: typeof en = {
+  installerOrigin: 'Ключ установки',
+  copyKey: 'Скопировать ключ',
+  keyCopied: 'Ключ скопирован. В этом браузере он не сохранён.',
+  keyCopyFailed: 'Буфер обмена недоступен. Попробуйте скопировать ключ ещё раз.',
+  installKeyTitle: 'Ваш ключ установки',
+  installKeyHelp:
+    'CPA уже запущен с этим ключом, поэтому он никогда не был открыт для неаутентифицированных вызовов. Manager показывает его только сейчас: скопируйте и сохраните его в надёжном месте.',
+  installKeyCopied: 'Ключ установки скопирован.',
+  installKeyCopyFailed: 'Буфер обмена недоступен. Выделите ключ и скопируйте его вручную.',
+  installKeyDismiss: 'Скрыть',
+  installKeyLater: 'Позже его можно скопировать в подробностях этого ключа.',
+
   overview: 'Обзор',
   rename: 'Изменить имя',
   cancel: 'Отмена',
@@ -422,7 +470,7 @@ const ru: typeof en = {
     'Перед использованием проверьте развёртывание. Наблюдаемый результат не разрешает публичный доступ.',
   privateKey: 'Полный ключ скрыт',
   privateKeyHelp:
-    'Для существующих ключей доступна только маска. Полное значение нельзя прочитать повторно.',
+    'Для существующих ключей видна только маска. Полное значение можно скопировать по запросу; в браузере оно не сохраняется.',
   refresh: 'Обновить ключи',
   pending: 'Создание требует подтверждения',
   count: 'ключей',
