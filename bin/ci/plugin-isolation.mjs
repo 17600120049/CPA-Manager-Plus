@@ -82,28 +82,35 @@ async function login(page) {
 //
 // Some routes redirect (`/api-keys` and `/settings` both land on `/config`), so
 // the resolved path is reported rather than asserted against the request.
+async function expandNavGroups(page) {
+  const toggles = page.locator('.app-shell button.nav-section-toggle');
+  const count = await toggles.count();
+  for (let index = 0; index < count; index += 1) {
+    const toggle = toggles.nth(index);
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+      await toggle.click().catch(() => {});
+    }
+  }
+}
+
 async function navigateInApp(page, path) {
   const target = `${consoleBase}${path}`;
-  const link = page.locator(`.app-shell a.nav-item[href="${target}"]`).first();
-  const hadLink = (await link.count()) > 0;
-  if (hadLink) {
-    await link.click();
-  } else {
-    // Pages reached from a card rather than the sidebar still resolve through
-    // the SPA history, which is the same in-memory router.
-    await page.evaluate((next) => {
-      window.history.pushState({}, '', next);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }, target);
+  let link = page.locator(`.app-shell a.nav-item[href="${target}"]`).first();
+  if ((await link.count()) === 0) {
+    // Sidebar children only render once their group is open.
+    await expandNavGroups(page);
+    link = page.locator(`.app-shell a.nav-item[href="${target}"]`).first();
   }
+  assert((await link.count()) > 0, `${path} is not reachable from the Console sidebar`);
+  await link.click();
   await page.waitForFunction(
-    () => document.querySelector('.app-shell') !== null,
-    undefined,
+    (expected) => window.location.pathname === expected,
+    target,
     { timeout: 60000 }
   );
   const settled = new URL(page.url()).pathname;
-  assert(settled.startsWith(consoleBase), `in-app navigation left the Control base: ${settled}`);
-  return { requested: path, settled, viaSidebar: hadLink };
+  assert.equal(settled, target, `in-app navigation settled on ${settled}`);
+  return { path, settled };
 }
 
 // The plugin page's sidebar entry is contributed by the plugin itself, so its
@@ -557,32 +564,30 @@ async function adminCspCheck(engineName, launcher) {
     await login(page);
     // Every page the Console routes to. The list is the real route table, not a
     // sample: a CSP regression on one page is the same defect wherever it lands.
+    // These are the routes the Console sidebar exposes; groups are expanded as
+    // each route is visited, so the sweep walks what an operator can open.
     const adminPages = [
       '/dashboard',
+      '/accounts',
+      '/ai-providers',
+      '/oauth',
       '/api-keys',
-      '/config',
-      '/gateway',
+      '/model-prices',
       '/system',
       '/system/runtime',
-      '/system/updates',
-      '/accounts',
-      '/oauth',
-      '/ai-providers',
-      '/usage-analytics',
-      '/model-prices',
-      '/monitoring',
-      '/monitoring/account-actions',
-      '/monitoring/model-prices',
-      '/monitoring/codex-inspection',
-      '/codex-inspection',
-      '/codex-inspection/server',
+      '/config',
       '/logs',
+      '/system/updates',
       '/plugins',
-      '/plugin-store',
     ];
+    const visited = [];
     for (const path of adminPages) {
-      await navigateInApp(page, path);
+      const landed = await navigateInApp(page, path);
       await page.waitForLoadState('networkidle');
+      // A sweep that silently stayed on one page would prove nothing, so each
+      // step asserts it really landed where it asked to go.
+      assert.equal(landed.settled, `${consoleBase}${path}`, `sweep did not reach ${path}`);
+      visited.push(landed.settled);
       violations.push(
         ...(await page.evaluate(() => {
           const found = window.__cspViolations || [];
@@ -602,7 +607,7 @@ async function adminCspCheck(engineName, launcher) {
     const cspErrors = errors.filter((text) => /Content Security Policy|Refused to/i.test(text));
     assert.deepEqual(cspErrors, [], `${engineName}: CSP console errors ${JSON.stringify(cspErrors)}`);
     record(engineName, 'admin CSP: zero violations across Console pages', 'PASS', {
-      pages: adminPages,
+      pages: visited,
     });
     await context.close();
   } finally {
