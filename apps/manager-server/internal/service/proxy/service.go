@@ -194,11 +194,20 @@ func (s *Service) ProxyPluginResourceWithCallerAuth(w http.ResponseWriter, r *ht
 // admitPluginResource applies the request-side isolation policy for plugin
 // resources.
 //
-// The method is deliberately not restricted. A plugin page is served with
-// `sandbox allow-scripts allow-forms`, so its own form posts and fetches back
-// into its own resource namespace are expected: CPA v8 plugin pages use that
-// namespace for their own endpoints, not only for documents. What contains them
-// is the sandbox CSP and the Fetch Metadata policy below, not a method veto.
+// The method is deliberately not restricted here, and that is a statement about
+// this proxy rather than about what CPA serves. CPA's plugin resource namespace
+// is read-only: a pluginapi.ResourceRoute is the plugin's own page ("the
+// management UI menu label for this GET resource") and the plugin host answers
+// only GET, so a write forwarded from here comes back 404. A plugin that needs
+// input registers a Management route, which is credentialed and unreachable from
+// the sandbox - the official Codex Invite plugin posts to
+// /v0/management/codex-invite/invite, not under its resource prefix.
+//
+// The proxy does not invent a method veto for a namespace it does not own: it
+// forwards what the caller sent and lets CPA answer, which is also what the
+// compatibility suite pins. Isolation does not depend on the method - the
+// sandbox CSP, the response-header allowlist and the redirect confinement below
+// apply to a write exactly as to a read.
 //
 // The caller-auth branch keeps its v1.11.11 invariant: an unauthenticated
 // request is forwarded with its own (absent) authorization and never borrows the

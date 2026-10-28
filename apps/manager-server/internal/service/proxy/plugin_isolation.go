@@ -25,9 +25,9 @@ import (
 //   - a fixed Access-Control-Allow-Origin without credentials so the
 //     opaque-origin page can still read its own public resources.
 //
-// Writes are admitted here exactly like reads: a plugin page uses its own
-// namespace for its own endpoints, and the containment above does not depend on
-// the method.
+// A write is treated exactly like a read: the method changes nothing about the
+// containment above, and it changes nothing about the answer either, because CPA
+// serves this namespace read-only and refuses the write itself.
 const (
 	pluginResourceSandboxCSP  = "sandbox allow-scripts allow-forms"
 	pluginResourceAllowOrigin = "*"
