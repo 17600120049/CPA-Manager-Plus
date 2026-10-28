@@ -14,13 +14,16 @@ export const notifyPluginResourcesChanged = (options?: { delayMs?: number }) => 
   dispatch();
 };
 
+// Plugin management stays reachable whenever the deployment can serve plugins,
+// including while the global switch is off. That page is where the switch lives,
+// and its disabled state renders an explicit "the global switch is off" notice,
+// so hiding the entry would leave an administrator with no way back on besides
+// editing config by hand. Only the plugin's own menus depend on the switch.
 export const isPluginManagementNavVisible = ({
   supportsPlugin,
-  pluginsEnabled,
 }: {
   supportsPlugin: boolean;
-  pluginsEnabled?: boolean | null;
-}) => supportsPlugin && pluginsEnabled !== false;
+}) => supportsPlugin;
 
 export const isPluginResourceNavVisible = ({
   supportsPlugin,

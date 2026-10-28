@@ -72,17 +72,12 @@ const createStoreEntry = (patch: Partial<PluginStoreEntry> = {}): PluginStoreEnt
 });
 
 describe('plugin resource helpers', () => {
-  it('hides the plugin management nav when plugins are explicitly disabled', () => {
-    expect(
-      isPluginManagementNavVisible({ supportsPlugin: true, pluginsEnabled: true })
-    ).toBe(true);
-    expect(
-      isPluginManagementNavVisible({ supportsPlugin: true, pluginsEnabled: false })
-    ).toBe(false);
+  it('keeps plugin management reachable while the global switch is off', () => {
+    // Visibility depends on deployment capability alone: the switch that turns
+    // plugins back on lives on this page, so the page stays reachable whether
+    // the global switch is on, off, or not yet known.
     expect(isPluginManagementNavVisible({ supportsPlugin: true })).toBe(true);
-    expect(
-      isPluginManagementNavVisible({ supportsPlugin: false, pluginsEnabled: true })
-    ).toBe(false);
+    expect(isPluginManagementNavVisible({ supportsPlugin: false })).toBe(false);
   });
 
   it('shows plugin resource nav only when supported and globally enabled', () => {
