@@ -107,7 +107,15 @@ func TestPluginResourceRedirectConfinedToOwnPluginPrefix(t *testing.T) {
 		{"absolute same origin", "https://cpamp.example/v0/resource/plugins/demo/x.js", false},
 		{"protocol relative", "//evil.example/x.js", false},
 		{"dot segment escape", "/v0/resource/plugins/demo/../../console", false},
+		// Go treats `\` as an ordinary path character and a browser treats it as
+		// a separator, so every one of these passes a leading-slash or prefix
+		// check here and still leaves the sandbox in the browser.
 		{"backslash escape", `/v0/resource/plugins/demo\..\console`, false},
+		{"backslash traversal to admin", `..\..\..\..\console`, false},
+		{"backslash protocol relative", `\\evil.example/x`, false},
+		{"backslash into another plugin", `.\..\other\x`, false},
+		{"control character", "/v0/resource/plugins/demo/x\x00.js", false},
+		{"carriage return", "/v0/resource/plugins/demo/x\r\nSet-Cookie: a=b", false},
 		{"empty", "", false},
 		{"scheme only", "javascript:alert(1)", false},
 		{"data url", "data:text/html,<script>alert(1)</script>", false},
@@ -137,5 +145,84 @@ func TestPluginResourceRequestPrefixIsPerPlugin(t *testing.T) {
 		if got := pluginResourceRequestPrefix(testCase.path); got != testCase.want {
 			t.Fatalf("prefix(%q) = %q, want %q", testCase.path, got, testCase.want)
 		}
+	}
+}
+
+// A plugin response must not be able to set directives that act on the whole
+// Control origin, nor grant the Control origin's credentials to another origin.
+// The allowlist keeps the document's own representation and drops everything
+// else, then the sandbox headers are written on top.
+func TestPluginResourceSandboxDropsOriginWideDirectives(t *testing.T) {
+	header := http.Header{}
+	// The document's own representation survives.
+	header.Set("Content-Type", "text/html; charset=utf-8")
+	header.Set("Content-Length", "128")
+	header.Set("Content-Encoding", "gzip")
+	header.Set("Content-Language", "en")
+	header.Set("Content-Disposition", "inline")
+	header.Set("ETag", `"v1"`)
+	header.Set("Last-Modified", "Wed, 21 Oct 2026 07:28:00 GMT")
+	header.Set("Cache-Control", "no-cache")
+	header.Set("Expires", "0")
+	header.Set("Vary", "Accept-Encoding")
+	header.Set("Accept-Ranges", "bytes")
+	header.Set("Content-Range", "bytes 0-127/128")
+
+	// Origin-wide directives and credential grants must not survive.
+	dropped := []string{
+		"Clear-Site-Data",
+		"NEL",
+		"Report-To",
+		"Reporting-Endpoints",
+		"Strict-Transport-Security",
+		"Alt-Svc",
+		"Access-Control-Allow-Credentials",
+		"Set-Cookie",
+		"Set-Cookie2",
+		"Permissions-Policy",
+		"Public-Key-Pins",
+		"Service-Worker-Allowed",
+		"Link",
+		"Refresh",
+		"X-Frame-Options",
+	}
+	for _, name := range dropped {
+		header.Set(name, "default")
+	}
+
+	applyPluginResourceSandboxHeaders(header)
+
+	for _, name := range dropped {
+		if values := header.Values(name); len(values) != 0 {
+			t.Fatalf("%s survived isolation: %v", name, values)
+		}
+	}
+	for _, name := range []string{
+		"Content-Type", "Content-Length", "Content-Encoding", "Content-Language",
+		"Content-Disposition", "ETag", "Last-Modified", "Cache-Control", "Expires",
+		"Vary", "Accept-Ranges", "Content-Range",
+	} {
+		if got := header.Get(name); got == "" {
+			t.Fatalf("%s was dropped from the document representation", name)
+		}
+	}
+	// An in-prefix redirect target survives, because the proxy validated it
+	// before this rewrite. Without it a validated redirect would be dropped and
+	// the plugin's own navigation would silently stop working.
+	header.Set("Location", "/v0/resource/plugins/demo/next.js")
+	applyPluginResourceSandboxHeaders(header)
+	if got := header.Get("Location"); got != "/v0/resource/plugins/demo/next.js" {
+		t.Fatalf("validated Location was dropped: %q", got)
+	}
+	// The sandbox headers are added after the allowlist, so an allowlisted name
+	// can never reintroduce a plugin-chosen value.
+	if got := header.Get("Content-Security-Policy"); got != pluginResourceSandboxCSP {
+		t.Fatalf("policy = %q", got)
+	}
+	if got := header.Get("Access-Control-Allow-Origin"); got != pluginResourceAllowOrigin {
+		t.Fatalf("allow-origin = %q", got)
+	}
+	if got := header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("nosniff = %q", got)
 	}
 }

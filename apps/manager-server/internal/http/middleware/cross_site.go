@@ -35,14 +35,19 @@ func adminFetchMetadataRejected(r *http.Request) bool {
 }
 
 // RejectCrossSiteAdmin wraps an admin surface and refuses cross-site
-// fetch/XHR requests. exemptPath, when non-nil, marks request paths that carry
-// their own request-side isolation policy and must be judged there instead.
-func RejectCrossSiteAdmin(next http.Handler, exemptPath func(string) bool) http.Handler {
+// fetch/XHR requests. exempt, when non-nil, marks requests that carry their own
+// request-side isolation policy and must be judged there instead.
+//
+// The exemption takes the whole request, not just the path, because "is this a
+// plugin resource" is a statement about the request shape: an encoded or
+// dot-segment path that a canonical router rejects must not be exempted from
+// the cross-site check either.
+func RejectCrossSiteAdmin(next http.Handler, exempt func(*http.Request) bool) http.Handler {
 	if next == nil {
 		return http.NotFoundHandler()
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if exemptPath != nil && r != nil && r.URL != nil && exemptPath(r.URL.Path) {
+		if exempt != nil && exempt(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

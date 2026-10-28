@@ -86,8 +86,11 @@ func New(appCtx *app.Context) http.Handler {
 	// a sandboxed plugin document from using this API as a confused deputy, and
 	// it keeps the admin surface unreachable from any origin other than the one
 	// that served the Console. Plugin resources are exempt because they carry
-	// their own fail-closed policy and must stay reachable from the sandbox.
-	routes = middleware.RejectCrossSiteAdmin(routes, proxysvc.IsCPAPluginResourcePath)
+	// their own fail-closed policy and must stay reachable from the sandbox. The
+	// exemption is the canonical request shape, not a raw prefix: an encoded or
+	// dot-segment path never reaches the proxy as a plugin resource, so it must
+	// not skip the cross-site check either.
+	routes = middleware.RejectCrossSiteAdmin(routes, proxysvc.IsCanonicalPluginResourceRequest)
 	return middleware.Recovery(middleware.RequestLogger(routingdomain.ProtectFixedDiscovery(routes, routingdomain.DiscoveryHandler{})))
 }
 

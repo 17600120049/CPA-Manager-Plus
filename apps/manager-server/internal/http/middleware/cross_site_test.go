@@ -7,7 +7,9 @@ import (
 )
 
 func TestRejectCrossSiteAdmin(t *testing.T) {
-	exempt := func(path string) bool { return path == "/v0/resource/plugins/demo/page.html" }
+	exempt := func(r *http.Request) bool {
+		return r != nil && r.URL != nil && r.URL.Path == "/v0/resource/plugins/demo/page.html"
+	}
 	reached := false
 	handler := RejectCrossSiteAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
