@@ -467,8 +467,16 @@ async function runEngine(engineName, launcher) {
       maxRedirects: 0,
       headers: sandboxHeaders,
     });
+    // The plugin answers a relative target and the proxy preserves it as sent,
+    // so the confinement check is on where the browser resolves it: a relative
+    // Location keeps its own directory, an absolute one must already be inside
+    // the prefix.
     const location = inside.headers()['location'] || '';
-    assert(location.startsWith(resourceBase + '/'), `in-prefix redirect was not preserved: ${location}`);
+    const resolved = new URL(location, `${resourceBase}/redirect-self`).href;
+    assert(
+      resolved.startsWith(resourceBase + '/'),
+      `in-prefix redirect resolved outside the prefix: ${location} -> ${resolved}`
+    );
     record(engineName, 'in-prefix redirect preserved', 'PASS', { status: inside.status(), location });
 
     const cookieResponse = await context.request.get(`${resourceBase}/cookie`, {
