@@ -460,3 +460,63 @@ func TestFreshAdoptLostReplyRefusesADifferentSnapshot(t *testing.T) {
 		t.Fatalf("refused different snapshot issued a destination operation: %+v", fixture.runtime.stages)
 	}
 }
+
+// The compiled consumer record accepts legacy_managed, but an accepted
+// consumer is qualification evidence, never an installation permit: admission
+// still refuses that class before any source read or checkpoint mutation.
+func TestFreshAdoptProductionQualificationCannotAdmitLegacyClass(t *testing.T) {
+	paths := legacypreflight.DefaultPaths(filepath.Join(t.TempDir(), "manager.sqlite"))
+	paths.Config = filepath.Join(filepath.Dir(paths.Database), "config.json")
+	opened, err := fresh.Open(t.Context(), paths, fresh.OpenOptions{Initialize: true, AdminKey: strategyTestAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = opened.Close() }()
+	app := newFreshApplication(opened, config.Config{}, nil)
+	app.strategy = freshstrategy.NewProduction(freshstrategy.Options{Protector: opened.Protector})
+	op := opened.Record.Operation
+	if _, err = app.store.Update(t.Context(), op.Identity, op.Revision, func(r *freshstore.Record) error {
+		r.Operation.Routing = bootstrap.FreshRoutingCheckpoint{OperationID: op.Identity.OperationID, Revision: 1, Target: "/control", Stage: bootstrap.PrefixCommitted, Committed: true}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := app.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The same production service, called directly, passes the qualification
+	// gate for legacy_managed: the refusal below is admission, not qualification.
+	legacy := freshstrategy.Request{Strategy: bootstrap.AdoptExisting, AdoptSourceClass: bootstrap.AdoptLegacyManaged,
+		BaseURL: "http://127.0.0.1:8317", ManagementKey: adoptTestSourceKey}
+	if _, err = app.strategy.Execute(t.Context(), before.Operation, legacy); err != nil {
+		var blocker *freshstrategy.Blocker
+		if !errors.As(err, &blocker) || blocker.Code != "adoption_destination_staging_required" {
+			t.Fatalf("production qualification does not accept legacy_managed: %v", err)
+		}
+	} else {
+		t.Fatal("production adoption unexpectedly executed without a destination runtime")
+	}
+
+	body, err := json.Marshal(struct {
+		Identity         bootstrap.FreshIdentity `json:"identity"`
+		ExpectedRevision uint64                  `json:"expectedRevision"`
+		freshstrategy.Request
+	}{before.Operation.Identity, before.Operation.Revision, legacy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/control/api/v2/strategy", bytes.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+	response := httptest.NewRecorder()
+	app.canonicalAPI(response, request)
+	var blocker freshstrategy.Blocker
+	if response.Code != http.StatusConflict || json.Unmarshal(response.Body.Bytes(), &blocker) != nil || blocker.Code != "adoption_source_class_refused" {
+		t.Fatalf("legacy_managed admission: %d %s", response.Code, response.Body.String())
+	}
+	after, err := app.store.Load(t.Context())
+	if err != nil || after.Operation.Revision != before.Operation.Revision || after.Operation.Strategy.Strategy != "" || after.AdoptionCiphertext != "" {
+		t.Fatalf("refused legacy_managed admission mutated Fresh authority: %+v %v", after.Operation.Strategy, err)
+	}
+}
