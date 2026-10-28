@@ -469,3 +469,60 @@ it('uses the maintained shell and shared CSS classes across configuration, revie
   await click('setup-execute');
   check();
 });
+
+function strategyBodies(transport: { mock: { calls: unknown[][] } }) {
+  return transport.mock.calls
+    .filter(([url, init]) => {
+      const options = init as { method?: string } | undefined;
+      return options?.method === 'POST' && String(url).endsWith('/strategy');
+    })
+    .map(([, init]) => JSON.parse(String((init as { body?: unknown }).body)));
+}
+
+it('leaves the plugin opt-in off by default and submits no plugin choice', async () => {
+  const { transport } = await setup();
+  expect(byID('plugin-optin-checkbox').props.checked).toBe(false);
+  await click('setup-review');
+  expect(JSON.stringify(renderer.toJSON())).toContain('未启用');
+  await input('confirm-key-saved-checkbox', true);
+  await click('setup-execute');
+  expect(byID('enter-console').props.href).toBe('/private');
+  const bodies = strategyBodies(transport);
+  expect(bodies.length).toBeGreaterThan(0);
+  for (const body of bodies) {
+    expect(body.strategy).toBe('new_managed');
+    expect(body).not.toHaveProperty('pluginsEnabled');
+  }
+});
+
+it('submits the opt-in exactly once per New Managed attempt', async () => {
+  const { transport } = await setup();
+  await input('plugin-optin-checkbox', true);
+  expect(byID('plugin-optin-checkbox').props.checked).toBe(true);
+  await click('setup-review');
+  expect(JSON.stringify(renderer.toJSON())).toContain('已启用');
+  await input('confirm-key-saved-checkbox', true);
+  await click('setup-execute');
+  expect(byID('enter-console').props.href).toBe('/private');
+  const bodies = strategyBodies(transport);
+  expect(bodies.map((body) => body.pluginsEnabled)).toEqual(
+    bodies.map(() => true)
+  );
+  // Every retried attempt carries the same persisted decision, and nothing else
+  // rides along with it.
+  for (const body of bodies) expect(body.strategy).toBe('new_managed');
+});
+
+it('never offers or submits the plugin opt-in for an External connection', async () => {
+  const { transport } = await setup({ external: true });
+  expect(renderer.root.findAllByProps({ 'data-testid': 'plugin-optin-checkbox' })).toHaveLength(0);
+  await click('setup-review');
+  await input('confirm-key-saved-checkbox', true);
+  await click('setup-execute');
+  expect(byID('enter-console').props.href).toBe('/private');
+  const bodies = strategyBodies(transport);
+  expect(bodies).toHaveLength(1);
+  expect(bodies[0].strategy).toBe('connect_external');
+  expect(bodies[0]).not.toHaveProperty('pluginsEnabled');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('启用插件运行');
+});

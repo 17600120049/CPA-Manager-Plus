@@ -290,7 +290,9 @@ export function FreshSetupWizard({
     [j('key'), operation.adminInitialized ? j('keepKey') : j('keyHidden')],
     [s('consoleAddress'), path],
     ...(strategy === 'connect_external' && baseURL ? [[t('externalBaseURL'), baseURL]] : []),
-    ...(strategy === 'new_managed' ? [[s('plugins'), plugins ? s('enabled') : s('disabled')]] : []),
+    ...(strategy === 'new_managed'
+      ? [[j('plugins'), plugins ? j('enabled') : j('disabled')]]
+      : []),
   ];
   return (
     <section className="cpamp-installation" data-testid="fresh-setup-wizard" aria-busy={busy}>
@@ -475,9 +477,9 @@ export function FreshSetupWizard({
                       disabled={!!operation.strategy?.strategy}
                       onChange={(e) => setPlugins(e.target.checked)}
                     />
-                    <span>{s('pluginsOptIn')}</span>
+                    <span>{j('pluginsOptIn')}</span>
                   </label>
-                  <p className="journey-help">{s('pluginsOptInHelp')}</p>
+                  <p className="journey-help">{j('pluginsOptInHelp')}</p>
                 </div>
               )}
               <div className="journey-field">

@@ -33,6 +33,8 @@ export interface FreshStrategyCheckpoint {
   targetArtifactId?: string;
   targetGeneration?: RuntimeGeneration;
   stage?: string;
+  /** The persisted plugin opt-in of a New Managed install; absent means off. */
+  pluginsEnabled?: boolean;
 }
 
 export interface FreshOperation {
