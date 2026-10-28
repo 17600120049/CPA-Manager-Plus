@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -24,10 +25,18 @@ func TestPluginResourceOwnedByManager(t *testing.T) {
 		{"plugin asset", http.MethodGet, "/v0/resource/plugins/demo/assets/app.js", RouteManager},
 		{"plugin head", http.MethodHead, "/v0/resource/plugins/demo/index.html", RouteManager},
 		{"plugin with query", http.MethodGet, "/v0/resource/plugins/demo/index.html?v=7", RouteManager},
-		// A method that could not have come from a document load is denied rather
-		// than forwarded; the transport edge will not prove the method upstream.
-		{"plugin post", http.MethodPost, "/v0/resource/plugins/demo/index.html", RouteDeny},
-		{"plugin put", http.MethodPut, "/v0/resource/plugins/demo/index.html", RouteDeny},
+		// Plugin pages use their own namespace for their own endpoints: the
+		// official Codex Invite page posts to its resource prefix, so writes are
+		// Manager traffic like reads. The Manager applies the same isolation to
+		// them.
+		{"plugin post", http.MethodPost, "/v0/resource/plugins/demo/index.html", RouteManager},
+		{"plugin put", http.MethodPut, "/v0/resource/plugins/demo/index.html", RouteManager},
+		{"plugin patch", http.MethodPatch, "/v0/resource/plugins/demo/index.html", RouteManager},
+		{"plugin delete", http.MethodDelete, "/v0/resource/plugins/demo/index.html", RouteManager},
+		{"codex invite post", http.MethodPost, "/v0/resource/plugins/codex-invite/invite", RouteManager},
+		// A method the Manager does not serve is denied rather than forwarded.
+		{"plugin trace", http.MethodTrace, "/v0/resource/plugins/demo/index.html", RouteDeny},
+		{"plugin options", http.MethodOptions, "/v0/resource/plugins/demo/index.html", RouteDeny},
 		// Malformed aliases must not become Manager or Gateway traffic.
 		{"encoded separator", http.MethodGet, "/v0/resource/plugins%2fdemo/index.html", RouteDeny},
 		{"dot segment", http.MethodGet, "/v0/resource/plugins/../demo/index.html", RouteDeny},
@@ -100,5 +109,82 @@ func TestPluginResourceNeverReachesGateway(t *testing.T) {
 	}
 	if got := recorder.Header().Get("X-CPAMP-Route-Owner"); got != "manager" {
 		t.Fatalf("route owner = %q", got)
+	}
+}
+
+// A write reaches the Manager and never the Gateway. The official Codex Invite
+// plugin posts to its own resource prefix, so denying writes here would break a
+// plugin that works on a Manager-only deployment.
+func TestPluginResourceWriteReachesManager(t *testing.T) {
+	var managerHits, gatewayHits int
+	var seenMethod, seenBody string
+	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		managerHits++
+		seenMethod = r.Method
+		body, _ := io.ReadAll(r.Body)
+		seenBody = string(body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer manager.Close()
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gatewayHits++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer gateway.Close()
+
+	managerTarget, err := url.Parse(manager.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gatewayTarget, err := url.Parse(gateway.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(
+		NewClassifier(ControlMatcherFunc(func(path string) bool { return false })),
+		managerTarget, gatewayTarget, log.New(io.Discard, "", 0),
+	)
+
+	body := strings.NewReader(`{"refresh":true}`)
+	request := httptest.NewRequest(http.MethodPost, "/v0/resource/plugins/codex-invite/invite", body)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%q", recorder.Code, recorder.Body.String())
+	}
+	if managerHits != 1 {
+		t.Fatalf("manager hits = %d, want 1", managerHits)
+	}
+	if gatewayHits != 0 {
+		t.Fatalf("plugin write reached the gateway %d times", gatewayHits)
+	}
+	if seenMethod != http.MethodPost {
+		t.Fatalf("upstream method = %q, want POST", seenMethod)
+	}
+	if seenBody != `{"refresh":true}` {
+		t.Fatalf("upstream body = %q", seenBody)
+	}
+	if got := recorder.Header().Get("X-CPAMP-Route-Owner"); got != "manager" {
+		t.Fatalf("route owner = %q", got)
+	}
+}
+
+// A plugin write with a malformed shape is still a denial: the write contract
+// widens the method set, not the path shape.
+func TestPluginResourceWriteWithMalformedPathIsDenied(t *testing.T) {
+	classifier := NewClassifier(ControlMatcherFunc(func(path string) bool { return false }))
+	cases := []string{
+		"/v0/resource/plugins%2fdemo/invite",
+		"/v0/resource/plugins//demo/invite",
+		"/v0/resource/plugins/../demo/invite",
+	}
+	for _, target := range cases {
+		request := httptest.NewRequest(http.MethodPost, target, strings.NewReader("{}"))
+		if got := classifier.ClassifyRequest(request); got != RouteDeny {
+			t.Fatalf("POST %q route = %v, want RouteDeny", target, got)
+		}
 	}
 }

@@ -32,15 +32,35 @@ func pluginResourceCandidate(value string) bool {
 	return false
 }
 
+// pluginResourceWriteMethods are the methods the Manager's plugin resource
+// contract accepts. Plugin pages are served with `sandbox allow-scripts
+// allow-forms` and use their own namespace for their own endpoints - the
+// official Codex Invite page posts to
+// /v0/resource/plugins/codex-invite/invite - so a method veto here would break
+// a working plugin on Full Docker while the same request reaches the Manager
+// directly in a Manager-only deployment. The isolation is delivered by the
+// Manager: Fetch Metadata, the opaque-origin sandbox CSP, response-header
+// confinement and redirect confinement apply to writes exactly as to reads.
+var pluginResourceWriteMethods = map[string]bool{
+	http.MethodGet:    true,
+	http.MethodHead:   true,
+	http.MethodPost:   true,
+	http.MethodPut:    true,
+	http.MethodPatch:  true,
+	http.MethodDelete: true,
+}
+
 // canonicalPluginResource reports whether the request is a bare, unescaped
-// GET/HEAD for one plugin resource. Every other shape (write method, trailing
-// separator, empty segment, encoded separator, dot segment, parameter) is a
-// denial instead of Gateway traffic.
+// plugin resource request in a method the Manager serves. Every other shape
+// (other method, trailing separator, empty segment, encoded separator, dot
+// segment, parameter) is a denial instead of Gateway traffic.
 func canonicalPluginResource(r *http.Request) bool {
 	if r == nil || r.URL == nil {
 		return false
 	}
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+	// The canonical plugin resource path is shape-checked below; the method
+	// check here mirrors the Manager's accepted set exactly.
+	if !pluginResourceWriteMethods[r.Method] {
 		return false
 	}
 	p := r.URL.Path
