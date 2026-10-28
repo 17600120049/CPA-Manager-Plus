@@ -102,6 +102,9 @@ type freshApplication struct {
 	keyApply        *freshkeyapply.Service
 	updates         *updatecheck.Service
 	gatewayConfig   *freshconfig.Service
+	// pluginCapability is the short-lived proof behind X-CPA-SUPPORT-PLUGIN.
+	// It is nil until the application knows which connection it serves.
+	pluginCapability *pluginCapabilityProbe
 	legacy          http.Handler
 	legacyCollector *collectorservice.Service
 	collectorWorker *worker.CollectorWorker
@@ -238,6 +241,13 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		// private loopback profile the default Transport dials.
 		a.gatewayConfig.EnableManaged(cfg.CPAUpstreamURL)
 	}
+	// The plugin capability the navigation reads is proven, not assumed: this
+	// installation must be able to show that its saved connection serves the
+	// plugin namespace. A managed install owns that answer through its committed
+	// destination, and any other profile must prove it from CPA's own document.
+	if a.gatewayConfig != nil {
+		a.pluginCapability = newPluginCapabilityProbe(pluginCapabilityTTL, a.v8PluginCapable)
+	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers. The
 	// strategy's post-Start destination read-back must not race the spawn, so its
@@ -272,10 +282,10 @@ func writeFreshStrategyError(w http.ResponseWriter, err error) {
 }
 
 func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Every routed answer of this application is served for a saved connection
-	// the Manager itself proxies, so the plugin capability it announces is the
-	// deployment's answer, not a property of one resource.
-	withSupportPluginHeader(http.HandlerFunc(a.serve)).ServeHTTP(w, r)
+	// The plugin capability is a claim about the saved connection, so it is
+	// announced only when that connection proves it; a route existing is not a
+	// capability.
+	withSupportPluginHeader(http.HandlerFunc(a.serve), a.supportPluginCapable).ServeHTTP(w, r)
 }
 
 func (a *freshApplication) serve(w http.ResponseWriter, r *http.Request) {
@@ -314,7 +324,7 @@ func (a *freshApplication) serve(w http.ResponseWriter, r *http.Request) {
 	// The canonical surface is Full Web's admin API. A sandboxed plugin document
 	// is a cross-site fetch client, so it is refused here as well as in the
 	// legacy router that serves the Foundation-era pages.
-	httpapi.ProtectBrandResources(middleware.RejectCrossSiteAdmin(protect, proxysvc.IsCPAPluginResourcePath)).ServeHTTP(w, r)
+	httpapi.ProtectBrandResources(middleware.RejectCrossSiteAdmin(protect, proxysvc.IsCanonicalPluginResourceRequest)).ServeHTTP(w, r)
 }
 
 func (a *freshApplication) canonical(w http.ResponseWriter, r *http.Request) {

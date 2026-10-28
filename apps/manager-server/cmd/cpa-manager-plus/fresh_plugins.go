@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"net/http"
-	"path"
 	"strings"
+	"sync"
+	"time"
 
 	proxysvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/proxy"
 )
@@ -12,6 +14,11 @@ import (
 // when the Manager's saved connection can serve plugins end to end.
 const supportPluginHeader = "X-CPA-SUPPORT-PLUGIN"
 const supportPluginHeaderValue = "1"
+
+// pluginCapabilityTTL bounds how long one proven answer serves the navigation.
+// Long enough that a page load issues one CPA round trip rather than several,
+// short enough that a connection change is reflected within a page refresh.
+const pluginCapabilityTTL = 30 * time.Second
 
 // supportPluginHeaderApplies reports whether a response carries the plugin
 // support guarantee.
@@ -41,26 +48,38 @@ func supportPluginHeaderApplies(r *http.Request) bool {
 // withSupportPluginHeader tells Full Web whether plugin management and plugin
 // pages are reachable on this deployment.
 //
-// The Manager is the only component that knows whether the saved CPA connection
-// is a v8 install its proxy may serve plugins for, so it answers this on its own
-// management surface instead of relying on a CPA response header that Fresh
-// never forwards. A default Fresh install is therefore plugin-capable without
-// any plugin-specific configuration.
+// The header is a claim about the saved connection, so it is only written when
+// the connection actually proves plugin support - not merely because a route
+// exists. A deployment whose connection cannot serve plugins must not advertise
+// the capability, or Console renders plugin management for a CPA that has none.
 //
 // The header is written when the status line is committed, not before: a failed
 // response must not claim the capability, because the caller reads this value as
 // the deployment's answer rather than the outcome of one request.
-func withSupportPluginHeader(next http.Handler) http.Handler {
+func withSupportPluginHeader(next http.Handler, capable func(*http.Request) bool) http.Handler {
 	if next == nil {
 		return http.NotFoundHandler()
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !supportPluginHeaderApplies(r) {
+		if !supportPluginHeaderApplies(r) || capable == nil || !capable(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(&supportPluginResponseWriter{ResponseWriter: w}, r)
 	})
+}
+
+// supportPluginCapable is the production capability answer: this installation's
+// saved connection proves plugin support, and only then does the header appear.
+func (a *freshApplication) supportPluginCapable(r *http.Request) bool {
+	if a.pluginCapability == nil {
+		return false
+	}
+	ctx := context.Background()
+	if r != nil {
+		ctx = r.Context()
+	}
+	return a.pluginCapability.capable(ctx)
 }
 
 // supportPluginResponseWriter adds the support header to a successful response
@@ -95,27 +114,72 @@ func (w *supportPluginResponseWriter) Unwrap() http.ResponseWriter {
 
 // pluginResourceRequest reports whether a request addresses the CPA plugin
 // resource namespace, which the Manager must proxy itself so every response
-// carries the sandbox contract. The predicate is deliberately conservative:
-// an encoded, doubled or dot-segment path never reaches the proxy as a plugin
-// resource.
+// carries the sandbox contract. The shapes are the proxy package's canonical
+// predicate, so the routing decision, the proxy admission and the cross-site
+// exemption cannot drift apart.
 func pluginResourceRequest(r *http.Request) bool {
-	if r == nil || r.URL == nil {
+	return proxysvc.IsCanonicalPluginResourceRequest(r)
+}
+
+// pluginCapabilityProbe proves whether a saved connection can serve plugin
+// resources end to end. It answers with the CPA's own configuration document:
+// a v8 build exposes the plugin section there, and a connection that cannot
+// produce it cannot serve a plugin page either.
+//
+// The probe is not free, so it is cached for a short window and deduplicated;
+// the navigation needs a stable answer across the several reads one page load
+// performs, and a probe per read would put a CPA round trip behind every
+// Console request.
+type pluginCapabilityProbe struct {
+	mu      sync.Mutex
+	ttl     time.Duration
+	at      time.Time
+	proven  bool
+	probe   func(context.Context) bool
+	lastErr error
+}
+
+func newPluginCapabilityProbe(ttl time.Duration, probe func(context.Context) bool) *pluginCapabilityProbe {
+	return &pluginCapabilityProbe{ttl: ttl, probe: probe}
+}
+
+// capable reports whether plugins are proven reachable on the saved connection.
+// A probe that has not answered yet is not proof, so the default is false: the
+// navigation must not advertise a capability the Manager cannot demonstrate.
+func (p *pluginCapabilityProbe) capable(ctx context.Context) bool {
+	if p == nil || p.probe == nil {
 		return false
 	}
-	if !proxysvc.IsCPAPluginResourcePath(r.URL.Path) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.at.IsZero() && time.Since(p.at) < p.ttl {
+		return p.proven
+	}
+	p.proven = p.probe(ctx)
+	p.at = time.Now()
+	return p.proven
+}
+
+// forget drops a cached answer so the next read proves again. A profile change
+// (managed install committed, connection edited) must not inherit the previous
+// connection's answer.
+func (p *pluginCapabilityProbe) forget() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.at = time.Time{}
+	p.proven = false
+}
+
+// v8PluginCapable proves plugin support by reading the saved CPA's configuration
+// document and requiring the plugin section in it. That is the same document the
+// plugin switch writes, so a connection that cannot produce it cannot serve the
+// switch either.
+func (a *freshApplication) v8PluginCapable(ctx context.Context) bool {
+	if a.gatewayConfig == nil {
 		return false
 	}
-	if r.URL.EscapedPath() != r.URL.Path || (r.URL.RawPath != "" && r.URL.RawPath != r.URL.Path) {
-		return false
-	}
-	if path.Clean(r.URL.Path) != r.URL.Path || strings.Contains(r.URL.Path, "//") {
-		return false
-	}
-	// A query string is part of a plugin's own resource contract (cache-busting
-	// suffixes, asset versioning), so it is preserved rather than refused. The
-	// upstream receives the same request URI the caller sent.
-	if r.RequestURI != "" && strings.SplitN(r.RequestURI, "?", 2)[0] != r.URL.Path {
-		return false
-	}
-	return true
+	return a.gatewayConfig.SupportsPlugins(ctx)
 }

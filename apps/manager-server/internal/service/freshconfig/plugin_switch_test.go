@@ -317,3 +317,31 @@ func TestPluginRequestValidationOwnsOnlyTheSwitch(t *testing.T) {
 		t.Fatalf("plugin validator accepted a gateway group: %v", err)
 	}
 }
+
+// A transient proof failure on a managed install must not be reported as "this
+// install does not own the plugin root". The operator would be told their
+// install is the wrong shape and the switch would disappear, when the only fact
+// is that the proof could not be taken right now.
+func TestPluginSwitchReportsTransientManagedProofFailureAsUnavailable(t *testing.T) {
+	wire := &fakeWire{document: pluginDocument(true)}
+	service, _ := managedService(t, wire)
+	// A managed install whose committed target no longer satisfies the pin: the
+	// profile is still managed, but the proof fails.
+	service.targets = func(bootstrap.FreshOperation) bool { return false }
+
+	view, err := service.ReadPlugins(context.Background())
+	if err != nil {
+		if !errors.Is(err, cpa.ErrProofUnavailable) {
+			t.Fatalf("read err = %v, want ErrProofUnavailable", err)
+		}
+	}
+	// The proof could not be taken, so the profile is unavailable; what must not
+	// happen is the managed-only refusal, which asserts a fact about the
+	// install's shape that is not true here.
+	if view.Capability.Reason == ReasonPluginManagedOnly {
+		t.Fatalf("a transient managed proof failure was reported as %q", view.Capability.Reason)
+	}
+	if view.Capability.Writable {
+		t.Fatal("a switch without proof was reported writable")
+	}
+}

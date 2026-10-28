@@ -380,6 +380,19 @@ func (s *Service) resolve(ctx context.Context, r freshstore.Record, sc scope) (a
 		// The plugin switch belongs to the Supervisor-owned destination, so a
 		// profile that does not own that CPA fails closed: no read borrowed from
 		// another CPA and no write to one.
+		//
+		// A transient proof failure on a managed install is not the same fact as
+		// "this install does not own the plugin root": reporting the profile
+		// reason would tell the operator their install is the wrong shape and
+		// hide the switch. This service's own profile is managed, so a proof that
+		// could not be taken right now stays ErrProofUnavailable and the caller
+		// retries instead of concluding anything about the install.
+		if err != nil && s.managed {
+			return authority{
+				mode:    auth.mode,
+				capable: Capability{Mode: auth.mode, Reason: ReasonUnavailable},
+			}, err
+		}
 		return authority{
 			mode:    auth.mode,
 			capable: Capability{Mode: auth.mode, Reason: ReasonPluginManagedOnly},
@@ -849,4 +862,37 @@ func fieldGroup(path string) string {
 		return leaf.Group
 	}
 	return "legacy"
+}
+
+// SupportsPlugins proves whether this saved connection can serve plugin
+// resources end to end. It answers from the CPA's own configuration document: a
+// build that exposes the plugin section there can serve a plugin page, and one
+// that cannot produce the document cannot serve the plugin switch either.
+//
+// It is a capability question about the connection, never a write, so it never
+// touches the journal and never needs a profile that may write.
+func (s *Service) SupportsPlugins(ctx context.Context) bool {
+	r, err := s.store.Load(ctx)
+	if err != nil {
+		return false
+	}
+	auth, err := s.resolveProfile(ctx, r)
+	if err != nil {
+		return false
+	}
+	if auth.wire == nil || auth.secret == "" {
+		return false
+	}
+	document, err := auth.wire.ReadConfigDocument(ctx, auth.secret)
+	if err != nil {
+		return false
+	}
+	plugins, ok := document["plugins"].(map[string]any)
+	if !ok {
+		return false
+	}
+	// The directory the Supervisor owns is what makes the namespace servable;
+	// `enabled` says nothing about capability and may legitimately be false.
+	_, hasDir := plugins["dir"]
+	return hasDir
 }
