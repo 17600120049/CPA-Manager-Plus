@@ -16,14 +16,16 @@ description: 使用 CPA Manager Plus 安装、选择版本、启用、配置和�
 
 如果 `plugins.enabled` 关闭，单个插件即使标记为启用也不会运行。
 
-插件入口只在 Manager 报告当前连接支持插件时出现（`X-CPA-SUPPORT-PLUGIN`）。默认安装由 Manager 自己回答该能力，因此无需额外配置。若入口消失，说明连接的 Manager 版本或保存的 CPA 连接无法端到端提供插件能力。
+插件入口只在 Manager 证明当前连接支持插件时出现（`X-CPA-SUPPORT-PLUGIN`）。Manager 不会因为某条路由存在就宣称该能力：它会读取所保存 CPA 连接自身的配置文档，并要求其中存在插件段。默认托管安装满足这一条件，因此无需额外配置。若入口消失，说明保存的连接无法证明插件支持——通常是旧版 CPA 没有插件命名空间，或 Manager 无法读取该连接。
+
+`plugins.enabled` 关闭时入口仍然保留，因为该页面正持有把它重新打开的开关。只有插件自身的菜单会消失。
 
 ## 插件运行开关
 
 默认托管安装由 Runtime Supervisor 把 `plugins.enabled` 和插件目录写入目标 CPA 的配置，首次安装向导中的选择决定初始值。安装完成后，托管安装可以在插件页顶部的“插件运行开关”中修改它：
 
 - 一次开关操作是一次带基线的保存，走与网关配置页相同的日志、CAS 与读回路径（Manager API：`plugins/runtime`）；外部 CPA 连接与私有 H1 profile 会被服务端拒绝，因此这些 profile 不显示开关。
-- 页面分别显示“已保存”和“运行状态”。CPA 异步重载配置，保存成功只表示配置已持久化，运行状态在 CPA 重载前保持“未知”。
+- 页面分别显示已保存值与运行值。CPA 异步重载配置，保存成功只表示配置已持久化。运行值显示为“未知，直到 CPA 重载”；本版本不观测 CPA 的重载，因此重载后也不会更新该读数。
 - 如果上次写入结果未知，页面显示“读回结果”：它只读取 CPA 当前文档并记录结论，不会重发写入。
 - 插件目录（`plugins.dir`）由 Runtime Supervisor 发布，页面不能修改它。
 
@@ -61,15 +63,17 @@ GitHub Release 列表可能受到仓库权限、网络、代理或 API rate limi
 
 - 每个 `/v0/resource/plugins/*` 响应都带 `Content-Security-Policy: sandbox allow-scripts allow-forms`，不含 `allow-same-origin`。
 - iframe 自身使用 `sandbox="allow-scripts allow-forms"`，不授予弹窗、顶层导航、下载或同源访问。
-- 响应被剥离 `Set-Cookie`，跳转只能指向同一插件自身的前缀。
+- 响应只保留一组表示型响应头白名单（`Content-Type`、`Content-Length`、`Content-Encoding`、`Content-Language`、`Content-Disposition`、`ETag`、`Last-Modified`、`Cache-Control`、`Expires`、`Vary`、`Accept-Ranges`、`Content-Range` 以及经过校验的 `Location`）。插件发送的其余响应头一律丢弃，包括 `Set-Cookie`、`Clear-Site-Data`、`NEL`、`Report-To`、`Reporting-Endpoints`、`Strict-Transport-Security`、`Alt-Svc` 与 `Access-Control-Allow-Credentials`。跳转只能指向同一插件自身的前缀。
 
 由此得到的限制：
 
 - 插件页面**不能**读取 `localStorage`、`sessionStorage`、Cookie 或管理界面的 DOM，也不能调用管理 API。
-- 插件页面**只能**从自己的 `/v0/resource/plugins/<插件 id>/` 前缀加载资源。跨域、`data:`、`blob:` 与其他相对路径都会被判定为不支持。
-- 依赖同源访问的插件（例如直接读取 Console 存储、依赖相对路径 API 或使用同源 Cookie 的页面）**不受支持**。界面会显示"无法显示该插件页面"的说明，而不会降级为同源加载。
+- 沙箱给页面的是**不透明来源**，这才是失去管理权限的原因。它**并不**限制插件的网络访问：插件 CSP 不含任何 fetch 指令，因此页面可以从任意来源加载资源、向任意来源发送数据；插件资源以 `Access-Control-Allow-Origin: *` 提供，页面因此也能读取其他插件的资源。请把插件页面当作恰好在 Console 框架内运行的不可信第三方代码，而不是网络受限的页面。
+- 依赖同源访问的插件（例如直接读取 Console 存储、依赖 Console 下的相对路径 API 或使用同源 Cookie 的页面）**不受支持**。界面会显示“无法显示该插件页面”的说明，而不会降级为同源加载。
 
-插件资源只接受 `GET`/`HEAD`。Manager 还会校验 Fetch Metadata：缺少 `Sec-Fetch-Site` 的请求一律返回 403，来自管理界面的 `script`、`worker`、`style`、`font` 等非文档型子资源请求也会被拒绝。管理站点的 CSP 同时对插件路径封锁管理与 Worker 执行路径。
+插件资源接受 `GET`、`HEAD`、`POST`、`PUT`、`PATCH`、`DELETE`。写入是预期行为：插件页面会用自己的命名空间提供自己的接口，官方 Codex Invite 页面就会向 `/v0/resource/plugins/codex-invite/invite` 发起 POST。其余方法一律拒绝。写入与读取受到完全相同的隔离——沙箱 CSP、响应头白名单、跳转限制与 Fetch Metadata 策略都与方法无关。
+
+Manager 还会对每个插件资源请求校验 Fetch Metadata：缺少 `Sec-Fetch-Site` 的请求一律返回 403，来自管理界面的 `script`、`worker`、`style`、`font` 等非文档型子资源请求也会被拒绝。拦下管理界面加载插件代码的是这项校验，而不是 CSP；管理站点的 CSP 并不按路径排除插件 URL。
 
 不支持 Fetch Metadata 的老旧浏览器仍可使用插件管理，但插件页面无法打开。这是预期的降级。
 

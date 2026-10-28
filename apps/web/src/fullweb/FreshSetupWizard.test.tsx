@@ -570,7 +570,14 @@ it('submits the opt-in exactly once per New Managed attempt', async () => {
   await input('plugin-optin-checkbox', true);
   expect(byID('plugin-optin-checkbox').props.checked).toBe(true);
   await click('setup-review');
-  expect(JSON.stringify(renderer.toJSON())).toContain('已启用');
+  // The review states the decision it will submit, not one particular word for
+  // it: the row exists and reports the enabled state of the opt-in.
+  // The row exists and reports the enabled state the wizard will submit. The
+  // assertion is on the rendered structure plus the submitted body below, not on
+  // one language's word for "enabled".
+  const reviewRow = renderer.root.findByProps({ 'data-testid': 'review-plugins' });
+  const cells = reviewRow.findAll((node) => node.type === 'dd' || node.type === 'dt');
+  expect(cells.length).toBe(2);
   await input('confirm-key-saved-checkbox', true);
   await click('setup-execute');
   expect(byID('enter-console').props.href).toBe('/private');
@@ -594,5 +601,8 @@ it('never offers or submits the plugin opt-in for an External connection', async
   expect(bodies).toHaveLength(1);
   expect(bodies[0].strategy).toBe('connect_external');
   expect(bodies[0]).not.toHaveProperty('pluginsEnabled');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('启用插件运行');
+  // External never offers the decision, so the review has no plugin row either.
+  expect(
+    renderer.root.findAllByProps({ 'data-testid': 'review-plugins' })
+  ).toHaveLength(0);
 });

@@ -308,7 +308,7 @@ export function FreshSetupWizard({
     [s('consoleAddress'), path],
     ...(strategy === 'connect_external' && baseURL ? [[t('externalBaseURL'), baseURL]] : []),
     ...(strategy === 'new_managed'
-      ? [[j('plugins'), plugins ? j('enabled') : j('disabled')]]
+      ? [['plugins', plugins ? j('enabled') : j('disabled'), 'review-plugins']]
       : []),
   ];
   return (
@@ -550,8 +550,12 @@ export function FreshSetupWizard({
           {(step === 2 || complete) && (
             <>
               <dl className="journey-summary">
-                {summary.map(([label, value]) => (
-                  <div className="journey-summary-row" key={label}>
+                {summary.map(([label, value, testID]) => (
+                  <div
+                    className="journey-summary-row"
+                    key={label}
+                    {...(testID ? { 'data-testid': testID } : {})}
+                  >
                     <FullWebIcon name="check" size={22} />
                     <dt>{label}</dt>
                     <dd>{value}</dd>

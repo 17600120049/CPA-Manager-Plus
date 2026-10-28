@@ -55,6 +55,14 @@ const text = (node: ReactTestInstance): string =>
 
 const switchInput = () => renderer!.root.findByType('input');
 
+// The notice is the page's one place for a settled outcome. Asserting its key
+// keeps these tests about behaviour: a copy edit must not read as a regression,
+// and a changed message must not pass silently.
+const noticeText = () => {
+  const nodes = renderer!.root.findAllByProps({ 'data-testid': 'plugin-runtime-notice' });
+  return nodes.length === 0 ? undefined : text(nodes[0]);
+};
+
 const client = (get: Mock, post: Mock): PublicApiClient =>
   ({ get, post, put: vi.fn() }) as unknown as PublicApiClient;
 
@@ -77,19 +85,24 @@ afterEach(async () => {
 });
 
 beforeEach(async () => {
-  // The host locale decides the default language; the copy asserted below must not
-  // depend on the machine running these tests.
-  await i18n.changeLanguage('zh-CN');
+  // These assertions are about structure and behaviour, not copy: the switch's
+  // presence, its tested state and what the page claims about the effective
+  // value. Pinning a translation would make a copy edit look like a regression.
+  await i18n.changeLanguage('en-US');
 });
 
 describe('Plugin runtime switch', () => {
   it('shows the persisted value and leaves the effective value unclaimed', async () => {
     const api = client(vi.fn().mockResolvedValue(managedView()), vi.fn());
     await mount(api);
-    const content = text(renderer!.root);
-    expect(content).toContain('插件运行开关');
-    expect(content).toContain('已关闭');
-    expect(content).toContain('未知，直到 CPA 重载');
+    // The persisted readout reports the tri-state from the Manager projection:
+    // "off" here, because presence is `present` and the value is false.
+    const persisted = renderer!.root.findByProps({ 'data-testid': 'plugin-runtime-persisted' });
+    expect(text(persisted)).toBe(i18n.t('plugin_management.runtime_off'));
+    // The effective readout never claims a value the Manager cannot observe: it
+    // stays unknown until CPA reloads, which is the page's own invariant.
+    const effective = renderer!.root.findByProps({ 'data-testid': 'plugin-runtime-effective' });
+    expect(text(effective)).toBe(i18n.t('plugin_management.runtime_effective_unknown'));
     expect(switchInput().props.checked).toBe(false);
     expect(switchInput().props.disabled).toBe(false);
   });
@@ -137,9 +150,10 @@ describe('Plugin runtime switch', () => {
     expect(typeof body.requestId).toBe('string');
     expect(body.requestId).toHaveLength(32);
     expect(get).toHaveBeenCalledTimes(2);
-    const content = text(renderer!.root);
-    expect(content).toContain('已启用');
-    expect(content).toContain('已保存。CPA 重载配置后生效。');
+    expect(
+      text(renderer!.root.findByProps({ 'data-testid': 'plugin-runtime-persisted' }))
+    ).toBe(i18n.t('plugin_management.runtime_on'));
+    expect(noticeText()).toBe(i18n.t('plugin_management.runtime_saved_effect_unknown'));
     expect(onApplied).toHaveBeenCalledTimes(1);
   });
 
@@ -168,8 +182,7 @@ describe('Plugin runtime switch', () => {
     expect(post.mock.calls[0][0]).toBe('plugins/runtime/groups/plugins');
     expect(post.mock.calls[1][0]).toBe('plugins/runtime/operations/request-unknown/reconcile');
     expect(post.mock.calls[1][1]).toEqual({});
-    const content = text(renderer!.root);
-    expect(content).toContain('已读回：新值已保存。');
+    expect(noticeText()).toBe(i18n.t('plugin_management.runtime_reconciled'));
     expect(onApplied).toHaveBeenCalledTimes(1);
   });
 
@@ -186,7 +199,7 @@ describe('Plugin runtime switch', () => {
     expect(switchInput().props.disabled).toBe(true);
     const reconcile = renderer!.root
       .findAll((node) => node.type === 'button')
-      .find((item) => text(item) === '读回结果');
+      .find((item) => text(item) === i18n.t('plugin_management.runtime_reconcile'));
     expect(reconcile).toBeDefined();
 
     await act(async () => {
@@ -195,7 +208,7 @@ describe('Plugin runtime switch', () => {
 
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0][0]).toBe('plugins/runtime/operations/request-journaled/reconcile');
-    expect(text(renderer!.root)).toContain('已读回：新值已保存。');
+    expect(noticeText()).toBe(i18n.t('plugin_management.runtime_reconciled'));
   });
 
   it('keeps the draft and reports a moved baseline without writing again', async () => {
@@ -210,7 +223,7 @@ describe('Plugin runtime switch', () => {
     });
 
     expect(post).toHaveBeenCalledTimes(1);
-    expect(text(renderer!.root)).toContain('读取后配置已被改动，请重新读取后再保存。');
+    expect(noticeText()).toBe(i18n.t('plugin_management.runtime_conflict'));
     expect(onApplied).not.toHaveBeenCalled();
   });
 });

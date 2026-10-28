@@ -16,14 +16,16 @@ Open the [Plugin Management Demo](https://seakee.github.io/CPA-Manager-Plus/#/de
 
 When `plugins.enabled` is off, an individually enabled plugin still cannot run.
 
-The plugin entry appears only when the Manager reports that the current connection supports plugins (`X-CPA-SUPPORT-PLUGIN`). In a default installation the Manager answers that capability itself, so no extra configuration is required. If the entry disappears, the connected Manager version or the saved CPA connection cannot serve plugins end to end.
+The plugin entry appears only when the Manager proves that the current connection supports plugins (`X-CPA-SUPPORT-PLUGIN`). The Manager does not infer this from a route existing: it reads the saved CPA connection's own configuration document and requires the plugin section in it. A default managed installation satisfies that, so no extra configuration is required. If the entry disappears, the saved connection could not prove plugin support — typically an older CPA without the plugin namespace, or a connection the Manager cannot read.
+
+The entry stays visible while `plugins.enabled` is off, because that page holds the switch that turns plugins back on. Only the plugin's own menus disappear.
 
 ## Plugin Runtime Switch
 
 In a default managed installation the Runtime Supervisor writes `plugins.enabled` and the plugin directory into the target CPA configuration, and the first-run wizard selection decides the initial value. After installation the managed installation can change the switch from the "Plugin runtime" control at the top of the Plugins page:
 
 - Each flip is one baseline-checked save through the same journal, CAS, and read-back path as the gateway configuration page (Manager API: `plugins/runtime`). External CPA connections and the private H1 profile are refused server-side, so those profiles never show the control.
-- The page shows "Saved" and "Running" separately. CPA reloads configuration asynchronously, so a successful save only means the value is persisted; the running state stays unknown until CPA reloads.
+- The page shows the persisted value and the running value separately. CPA reloads configuration asynchronously, so a successful save only means the value is persisted. The running readout reports that it is unknown until CPA reloads; this release does not observe CPA's reload, so it does not update that readout afterwards either.
 - If the result of the last write is unknown, the page offers "Read back result": it reads CPA's current document and records what it proves, and never sends the write again.
 - The plugin directory (`plugins.dir`) is published by the Runtime Supervisor and cannot be changed here.
 
@@ -61,15 +63,17 @@ Plugin pages open inside the Console as an iframe and always run in a **sandboxe
 
 - Every `/v0/resource/plugins/*` response carries `Content-Security-Policy: sandbox allow-scripts allow-forms`, without `allow-same-origin`.
 - The iframe itself uses `sandbox="allow-scripts allow-forms"`, which grants no popups, top-level navigation, downloads, or same-origin access.
-- Responses are stripped of `Set-Cookie`, and redirects may only stay inside the plugin's own prefix.
+- Responses are reduced to an allowlist of representation headers (`Content-Type`, `Content-Length`, `Content-Encoding`, `Content-Language`, `Content-Disposition`, `ETag`, `Last-Modified`, `Cache-Control`, `Expires`, `Vary`, `Accept-Ranges`, `Content-Range`, and a validated `Location`). Everything else the plugin sends is dropped, including `Set-Cookie`, `Clear-Site-Data`, `NEL`, `Report-To`, `Reporting-Endpoints`, `Strict-Transport-Security`, `Alt-Svc`, and `Access-Control-Allow-Credentials`. Redirects may only stay inside the plugin's own prefix.
 
 The consequences:
 
 - A plugin page **cannot** read `localStorage`, `sessionStorage`, cookies, or the admin document's DOM, and cannot call the management API.
-- A plugin page **can only** load resources from its own `/v0/resource/plugins/<plugin id>/` prefix. Cross-origin, `data:`, `blob:`, and other relative targets are reported as unsupported.
-- Plugins that depend on same-origin access (reading Console storage, relative API paths, same-origin cookies) are **not supported**. The UI shows a "cannot display this plugin page" explanation instead of falling back to a same-origin load.
+- The sandbox gives the page an **opaque origin**, which is what removes admin authority. It does **not** confine the plugin's network access: the plugin CSP carries no fetch directives, so a page can load from and send data to any origin it likes, and it can read other plugins' resources because those are served with `Access-Control-Allow-Origin: *`. Treat a plugin page as untrusted third-party code that happens to run inside the Console frame, not as a page with a narrowed network.
+- Plugins that depend on same-origin access (reading Console storage, relative API paths under the Console, same-origin cookies) are **not supported**. The UI shows a "cannot display this plugin page" explanation instead of falling back to a same-origin load.
 
-Plugin resources accept only `GET` and `HEAD`. The Manager also enforces Fetch Metadata: a request without `Sec-Fetch-Site` is rejected with 403, and so are same-origin subresource requests whose `Sec-Fetch-Dest` is not a document destination (for example `script`, `worker`, `style`, or `font`). The admin document's CSP separately blocks management and worker execution paths from reaching plugin URLs.
+Plugin resources accept `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, and `DELETE`. Writes are expected: a plugin page uses its own namespace for its own endpoints, and the official Codex Invite page posts to `/v0/resource/plugins/codex-invite/invite`. Every other method is refused. The same isolation applies to writes as to reads — the sandbox CSP, the response-header allowlist, redirect confinement and the Fetch Metadata policy do not depend on the method.
+
+The Manager also enforces Fetch Metadata on every plugin resource request: a request without `Sec-Fetch-Site` is rejected with 403, and so are same-origin subresource requests whose `Sec-Fetch-Dest` is not a document destination (for example `script`, `worker`, `style`, or `font`). That check, not the CSP, is what stops an admin document from loading plugin code; the admin document's CSP does not exclude plugin URLs by path.
 
 Older browsers without Fetch Metadata still support plugin management, but cannot open plugin pages. That degradation is expected.
 

@@ -4738,8 +4738,8 @@
     "not_found_desc": "目前服務沒有宣告這個插件頁面。",
     "empty_src": "插件頁面地址為空",
     "empty_src_desc": "該插件選單沒有提供可開啟的頁面地址。",
-    "unsupported_target": "無法顯示該外掛頁面",
-    "unsupported_target_desc": "外掛頁面必須由本網站自身的 /v0/resource/plugins/ 命名空間提供。由於外掛頁面在沙箱來源中執行，依賴同源存取、外部位址、data: 與 blob: 的頁面不受支援。"
+    "unsupported_target": "無法顯示該插件頁面",
+    "unsupported_target_desc": "插件頁面必須由本網站自身的 /v0/resource/plugins/ 命名空間提供。由於插件頁面在沙箱來源中執行，依賴同源存取、外部位址、data: 與 blob: 的頁面不受支援。"
   },
   "system_info": {
     "title": "系統資訊",
