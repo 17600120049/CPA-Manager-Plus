@@ -536,7 +536,13 @@ async function adminCspCheck(engineName, launcher) {
       await navigateInApp(page, path);
       await page.waitForLoadState('networkidle');
       violations.push(
-        ...(await page.evaluate(() => window.__cspViolations || [])).map((item) => ({ path, ...item }))
+        ...(await page.evaluate(() => {
+          const found = window.__cspViolations || [];
+          // In-app routing keeps one document, so the buffer is drained per
+          // page: an entry then names the page it happened on.
+          window.__cspViolations = [];
+          return found;
+        })).map((item) => ({ path, ...item }))
       );
       assert.equal(
         (await page.evaluate(() => (document.body?.innerText || '').trim().length > 0)),
