@@ -91,6 +91,10 @@ export function FreshSetupWizard({
   const [baseURL, setBaseURL] = useState('');
   const [cpaKey, setCPAKey] = useState('');
   const [savedKey, setSavedKey] = useState(false);
+  // The plugin opt-in is the operator's explicit decision, so it starts off and
+  // is submitted with the operation that owns it. The Supervisor only ever reads
+  // this persisted value, so a retry cannot silently turn plugins on.
+  const [plugins, setPlugins] = useState(initialOperation.strategy?.pluginsEnabled === true);
   const [target, setTarget] = useState<Target | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -239,6 +243,10 @@ export function FreshSetupWizard({
             expectedRuntimeGeneration: checkpoint?.targetGeneration || observed!.runtimeGeneration,
             expectedArtifactId:
               checkpoint?.targetArtifactId || observed!.activeGatewayArtifact.artifactId,
+            // Every New Managed attempt carries the same persisted decision, so a
+            // retried destination publishes what the operator chose and nothing
+            // else. Adoption and External never send it.
+            ...(strategy === 'new_managed' && plugins ? { pluginsEnabled: true } : {}),
           };
         }
         current = await write(current, 'strategy', () => transport.executeStrategy(body));
@@ -282,6 +290,7 @@ export function FreshSetupWizard({
     [j('key'), operation.adminInitialized ? j('keepKey') : j('keyHidden')],
     [s('consoleAddress'), path],
     ...(strategy === 'connect_external' && baseURL ? [[t('externalBaseURL'), baseURL]] : []),
+    ...(strategy === 'new_managed' ? [[s('plugins'), plugins ? s('enabled') : s('disabled')]] : []),
   ];
   return (
     <section className="cpamp-installation" data-testid="fresh-setup-wizard" aria-busy={busy}>
@@ -453,6 +462,22 @@ export function FreshSetupWizard({
                       {j('copy')}
                     </button>
                   </div>
+                </div>
+              )}
+              {strategy === 'new_managed' && (
+                <div className="journey-field">
+                  <label className="journey-checkline" htmlFor="setup-plugin-optin">
+                    <input
+                      id="setup-plugin-optin"
+                      data-testid="plugin-optin-checkbox"
+                      type="checkbox"
+                      checked={plugins}
+                      disabled={!!operation.strategy?.strategy}
+                      onChange={(e) => setPlugins(e.target.checked)}
+                    />
+                    <span>{s('pluginsOptIn')}</span>
+                  </label>
+                  <p className="journey-help">{s('pluginsOptInHelp')}</p>
                 </div>
               )}
               <div className="journey-field">
