@@ -72,6 +72,54 @@ async function login(page) {
   await page.locator('.app-shell').first().waitFor({ timeout: 60000 });
 }
 
+// The Console's Full Web credential lives only in memory, so a top-level
+// navigation reloads the document and lands back on the login form. Every admin
+// page after login must therefore be entered through the app's own router: the
+// sidebar links carry the real routes and keep the session alive.
+//
+// Some routes redirect (`/api-keys` and `/settings` both land on `/config`), so
+// the resolved path is reported rather than asserted against the request.
+async function navigateInApp(page, path) {
+  const target = `${consoleBase}${path}`;
+  const link = page.locator(`.app-shell a.nav-item[href="${target}"]`).first();
+  const hadLink = (await link.count()) > 0;
+  if (hadLink) {
+    await link.click();
+  } else {
+    // Pages reached from a card rather than the sidebar still resolve through
+    // the SPA history, which is the same in-memory router.
+    await page.evaluate((next) => {
+      window.history.pushState({}, '', next);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, target);
+  }
+  await page.waitForFunction(
+    () => document.querySelector('.app-shell') !== null,
+    undefined,
+    { timeout: 60000 }
+  );
+  const settled = new URL(page.url()).pathname;
+  assert(settled.startsWith(consoleBase), `in-app navigation left the Control base: ${settled}`);
+  return { requested: path, settled, viaSidebar: hadLink };
+}
+
+// The plugin page's sidebar entry is contributed by the plugin itself, so its
+// label and href come from the plugin list rather than a fixed route table.
+async function openPluginPageFromSidebar(page, pluginId, menuIndex, expectedLabel) {
+  const route = `/plugin-pages/${encodeURIComponent(pluginId)}/${menuIndex}`;
+  const href = `${consoleBase}${route}`;
+  const link = page.locator(`.app-shell a.nav-item[href="${href}"]`).first();
+  await link.waitFor({ state: 'visible', timeout: 60000 });
+  const label = (await link.innerText()).trim();
+  assert(
+    label.includes(expectedLabel),
+    `plugin sidebar entry label ${JSON.stringify(label)} does not name ${expectedLabel}`
+  );
+  await link.click();
+  await page.waitForURL((url) => url.pathname === href, { timeout: 60000 });
+  return { href, label };
+}
+
 async function snapshotAdminAuthority(context, page) {
   // The Console keeps its session under the real storage key. The value is
   // reversible obfuscation, which is exactly why the sandbox must make it
@@ -193,6 +241,8 @@ async function adminList(page) {
   assert.equal(entry.effective_enabled, true, `plugin ${pluginId} is not effectively enabled`);
   const menuIndex = (entry.menus || []).findIndex((menu) => menu.path.includes('/probe'));
   assert(menuIndex >= 0, `plugin ${pluginId} exposes no probe menu`);
+  report.pluginLabel = (entry.menus[menuIndex].menu || '').trim();
+  assert(report.pluginLabel, `plugin ${pluginId} menu has no label to find in the sidebar`);
   return { entry, menuIndex };
 }
 
@@ -215,9 +265,15 @@ async function runEngine(engineName, launcher) {
     record(engineName, 'plugin list through the admin bridge', 'PASS', { pluginId, menuIndex });
 
     // ---- Positive: the Console renders the plugin menu in a sandbox -------
-    await page.goto(`${consoleRoot}/plugin-pages/${encodeURIComponent(pluginId)}/${menuIndex}`, {
-      waitUntil: 'networkidle',
-    });
+    // Clicked from the sidebar the plugin contributes, not by loading the URL:
+    // that is how an operator reaches it and it keeps the session alive.
+    const sidebarEntry = await openPluginPageFromSidebar(
+      page,
+      pluginId,
+      menuIndex,
+      report.pluginLabel || pluginId
+    );
+    record(engineName, 'plugin page opened from the in-app sidebar entry', 'PASS', sidebarEntry);
     const iframe = page.locator('iframe').first();
     await iframe.waitFor({ timeout: 60000 });
     const sandboxAttr = (await iframe.getAttribute('sandbox')) || '';
@@ -299,7 +355,8 @@ async function runEngine(engineName, launcher) {
     assertContained(engineName, 'new-tab', await probe(tab));
 
     // ---- Negative: a Control document cannot load plugin code ------------
-    await page.goto(`${consoleRoot}/dashboard`, { waitUntil: 'networkidle' });
+    await navigateInApp(page, '/dashboard');
+    await page.waitForLoadState('networkidle');
     const injections = await page.evaluate(async (src) => {
       const results = {};
       const settle = (name, promise) =>
@@ -476,7 +533,8 @@ async function adminCspCheck(engineName, launcher) {
       '/plugin-store',
     ];
     for (const path of adminPages) {
-      await page.goto(`${consoleRoot}${path}`, { waitUntil: 'networkidle' });
+      await navigateInApp(page, path);
+      await page.waitForLoadState('networkidle');
       violations.push(
         ...(await page.evaluate(() => window.__cspViolations || [])).map((item) => ({ path, ...item }))
       );
