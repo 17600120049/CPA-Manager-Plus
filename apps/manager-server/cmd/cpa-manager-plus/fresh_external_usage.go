@@ -86,6 +86,16 @@ func (a *freshApplication) usageStartBlock() string {
 	return reason
 }
 
+// usageCollectionStarted reports whether this process proved a live Collector
+// for the committed authority. It reads the same latch a fully successful start
+// sets, never the absence of a refusal: a start that was simply never attempted
+// has no blocker, so an unstarted window must not read as coverage.
+func (a *freshApplication) usageCollectionStarted() bool {
+	a.usageStartMu.Lock()
+	defer a.usageStartMu.Unlock()
+	return a.usageCollectorStarted
+}
+
 // startExternalUsageCollector arms collection against the user's own CPA. The
 // committed External authority resolves the address and the decrypted
 // credential; nothing reads the Manager configuration directly, so an
@@ -254,7 +264,7 @@ func (a *freshApplication) externalUsageState(ctx context.Context) (externalUsag
 	return externalUsageState{
 		StatisticsEnabled: enabled,
 		Collector:         string(a.collectionPhase()),
-		CollectionStarted: a.usageStartBlock() == "",
+		CollectionStarted: a.usageCollectionStarted(),
 		BlockedReason:     a.usageStartBlock(),
 	}, nil
 }

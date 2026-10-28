@@ -325,6 +325,33 @@ func TestExternalUsageCollectionClaimsNothingWhenNothingStarts(t *testing.T) {
 	}
 }
 
+// TestExternalUsageStateNeverClaimsAnAttemptedStart proves the reported
+// CollectionStarted is the real started latch, not the absence of a refusal: a
+// Collector that was simply never attempted has no blocker, and must still read
+// as no coverage.
+func TestExternalUsageStateNeverClaimsAnAttemptedStart(t *testing.T) {
+	h := newExternalUsageHarness(t)
+	h.cpa.enabled.Store(true)
+
+	response := h.call(t, http.MethodGet, "external/usage", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("usage state = %d %s", response.Code, response.Body.String())
+	}
+	state := decodeExternalUsageState(t, response.Body.Bytes())
+	if state.CollectionStarted || state.BlockedReason != "" {
+		t.Fatalf("state = %+v, want no coverage and no blocker", state)
+	}
+
+	h.app.startUsageCollection(h.operation(t))
+	if !h.app.usageCollectionStarted() {
+		t.Fatal("a successful start did not latch collection")
+	}
+	response = h.call(t, http.MethodGet, "external/usage", "")
+	if state = decodeExternalUsageState(t, response.Body.Bytes()); !state.CollectionStarted {
+		t.Fatalf("state = %+v, want the started latch", state)
+	}
+}
+
 // TestExternalUsageCollectionRefusesAForeignConnection proves an authority that
 // no longer names the committed CPA starts nothing and keeps the first binding:
 // a rebind to another CPA must never inherit the previous history.
