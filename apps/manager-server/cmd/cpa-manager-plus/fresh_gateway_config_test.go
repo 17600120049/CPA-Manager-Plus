@@ -170,6 +170,9 @@ func newGatewayConfigFixture(t *testing.T, document string, write func(w http.Re
 	}
 	app.gatewayConfig = freshconfig.New(app.store, func(context.Context, uint64) (string, error) {
 		return "management-key", nil
+	}, func(op bootstrap.FreshOperation) bool {
+		return op.Strategy.Strategy == bootstrap.NewManaged && op.Strategy.Stage == "committed" &&
+			strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:")
 	})
 	app.gatewayConfig.EnableManaged(server.URL)
 	return &gatewayConfigFixture{app: app, server: server, document: document}
@@ -271,6 +274,8 @@ func TestGatewayConfigReplyKeepsTheManagerPrivateRangeCode(t *testing.T) {
 	}
 	app.gatewayConfig = freshconfig.New(app.store, func(context.Context, uint64) (string, error) {
 		return "management-key", nil
+	}, func(op bootstrap.FreshOperation) bool {
+		return op.Strategy.Stage == "committed" && op.Strategy.TargetIdentity == cpa.PrivateKeyRuntime
 	})
 	body := `{"requestId":"` + strings.Repeat("ab", 16) + `","expected":{"generation":"7","baseline":"` + strings.Repeat("a", 64) + `"},` +
 		`"edits":[{"path":"requests.streaming.keepalive-seconds","action":"set","value":301}]}`

@@ -44,7 +44,7 @@ func (a *freshApplication) initialClientKey(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
-	if a.keyApply == nil || op.Strategy.Stage != "committed" || op.Strategy.Strategy != bootstrap.NewManaged || op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
+	if a.keyApply == nil || !a.keyApply.Targets(op, freshkeyapply.SurfaceKeyInstall) {
 		if r.Method == http.MethodPost {
 			w.WriteHeader(409)
 			return

@@ -75,12 +75,17 @@ export type BootstrapErrorKind =
 export class BootstrapTransportError extends Error {
   readonly kind: BootstrapErrorKind;
   readonly status?: number;
+  // Server-owned refusal code of the bounded blocker envelope ({ "Code": "…" }).
+  // Absent when the refusal carried none, which keeps a lost reply and a typed
+  // refusal distinguishable.
+  readonly code?: string;
 
-  constructor(message: string, kind: BootstrapErrorKind, status?: number) {
+  constructor(message: string, kind: BootstrapErrorKind, status?: number, code?: string) {
     super(message);
     this.name = 'BootstrapTransportError';
     this.kind = kind;
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -326,10 +331,21 @@ export function createBootstrapTransport(transport: typeof fetch = globalThis.fe
       throw new BootstrapTransportError('Bootstrap transport unavailable', 'transport');
     }
     if (!response.ok) {
+      // The Fresh strategy adapter refuses with a typed, bounded blocker body.
+      // Preserve its code so a typed refusal stays distinguishable from a reply
+      // that was lost after the server may have acted.
+      let code: string | undefined;
+      try {
+        const refusal = (await response.json()) as { Code?: unknown };
+        if (typeof refusal?.Code === 'string' && refusal.Code) code = refusal.Code;
+      } catch {
+        /* A refusal without a bounded envelope stays a plain status failure. */
+      }
       throw new BootstrapTransportError(
         'Bootstrap request unavailable',
         classifyStatus(response.status),
-        response.status
+        response.status,
+        code
       );
     }
     try {

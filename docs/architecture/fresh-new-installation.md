@@ -253,15 +253,34 @@ The first strategy call only returns this protected snapshot. The caller writes
 it through the Fresh CAS before `StageDestination` or `Start` is attempted.
 The next call reuses the same child operation ID, verifies the Runtime facts,
 stages the `new_managed` destination, starts it and authenticates
-`GET /v8/management/config`. Only after that read succeeds does the CAS store
+`GET /v8/management/config`. A Supervisor `Start` result only publishes the
+spawn, so the install consumer's Runtime client first waits for the Supervisor's
+own readiness observation of that exact identity and generation (bounded to
+20 s); a readiness timeout is not a failed spawn, and it leaves the typed,
+resumable `managed_destination_verification_required` blocker instead of an
+unconfirmed write. Only after that read succeeds does the CAS store
 the protected Manager connection. Completing the Fresh routing/product CAS
 also mirrors that connection to `manager_config_v1` and the compatibility
 `setup` row; both rows contain the protected envelope and are decrypted only by
 Manager-owned repositories.
 
 Key install, revoke, replace and retry configuration use this connection as
-the default authority. `DefaultInstallCPAAuthorityProven` is the boolean
-admission predicate at
+the default authority. One profile discriminator decides that ownership:
+`freshkeyapply.Service.Targets` compares the committed checkpoint with the
+profile the Manager constructed — the managed destination for the default
+Compose install, the attested private target for the host-permit profile — and
+takes the asking surface as an argument, so each surface keeps the contract it
+shipped with instead of a second inline check. Initial install, key
+revoke/replace and the private chat consumer all ask it and refuse an adopted,
+External or uncommitted checkpoint. The gateway configuration page asks the
+same discriminator under its own surface: on a managed install it refuses the
+same checkpoints, while on a private host-permit install it keeps the attested
+private target scope its page and field journal shipped with, including an
+adopted checkpoint that names that target. On an External install the page still
+reads and writes its scalars from the committed External connection until the
+External authority moves that path under `Targets`; the key, admission and chat
+surfaces never do. `DefaultInstallCPAAuthorityProven` is the
+boolean admission predicate at
 `apps/manager-server/internal/service/freshkeyapply/config_target.go`; it
 requires the exact committed Runtime facts, managed CPA posture and at least
 one installed Client Key, so a CPA with client authentication off is not

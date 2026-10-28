@@ -35,10 +35,6 @@ type queryer interface {
 
 func load(ctx context.Context, q queryer) (Record, error) {
 	var r Record
-	var legacy int
-	if err := q.QueryRowContext(ctx, "select count(*) from settings where key in ('bootstrap_state_v1','runtime_desired_v1')").Scan(&legacy); err != nil || legacy != 0 {
-		return Record{}, ErrNotFresh
-	}
 	for _, item := range []struct {
 		k        string
 		v        any
@@ -56,6 +52,27 @@ func load(ctx context.Context, q queryer) (Record, error) {
 			return Record{}, err
 		}
 		if err = json.Unmarshal([]byte(data), item.v); err != nil {
+			return Record{}, ErrNotFresh
+		}
+	}
+	// Two shared settings keys are written by delivered product surfaces, not
+	// only by a legacy installation: the Fresh Runtime page persists the desired
+	// lifecycle (SetEmbeddedRuntimeDesiredLifecycle) and the existing Config
+	// service persists its bootstrap state beside manager_config_v1. Both are
+	// therefore refused only while the operation is pending, exactly like the
+	// compatibility `setup` row below: a pending install owns neither, while a
+	// completed one must keep loading after writing them. The rows themselves are
+	// never validated here: unreadable compatibility bytes lock only the domain
+	// that reads them, never the Manager record.
+	//
+	// ProductComplete is the durable completion evidence this fence trusts,
+	// because the trust model trusts the Docker host and the Compose operator:
+	// forging it needs write access to the Manager data volume, which only that
+	// trusted host has. A malformed legacy row on a completed record is therefore
+	// not an admission bypass; it is a broken domain, and each reader refuses it.
+	var legacy int
+	if !r.Operation.ProductComplete {
+		if err := q.QueryRowContext(ctx, "select count(*) from settings where key in ('bootstrap_state_v1','runtime_desired_v1')").Scan(&legacy); err != nil || legacy != 0 {
 			return Record{}, ErrNotFresh
 		}
 	}

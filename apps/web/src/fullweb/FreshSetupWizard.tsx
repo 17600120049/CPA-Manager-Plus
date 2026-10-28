@@ -166,6 +166,18 @@ export function FreshSetupWizard({
       } catch {
         /* Keep the original uncertain write, never replay it. */
       }
+      // A typed strategy refusal is not an unconfirmed write. The adapter
+      // refused before it recorded any checkpoint, so the installation stays
+      // exactly where it is and the same operation may continue on request.
+      if (
+        stage === 'strategy' &&
+        err instanceof BootstrapTransportError &&
+        err.code === 'managed_destination_verification_required'
+      ) {
+        pending.current = null;
+        setUnknown(false);
+        throw err;
+      }
       if (
         err instanceof BootstrapTransportError &&
         (err.kind === 'bad_request' ||
@@ -186,9 +198,14 @@ export function FreshSetupWizard({
     setNote('');
     try {
       await action();
-    } catch {
+    } catch (err) {
       if (alive.current) {
-        setError(j('setupError'));
+        setError(
+          err instanceof BootstrapTransportError &&
+            err.code === 'managed_destination_verification_required'
+            ? s('runtimeVerifyRequired')
+            : j('setupError')
+        );
         setUnknown(pending.current !== null);
       }
     } finally {

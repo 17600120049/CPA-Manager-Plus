@@ -254,6 +254,12 @@ type Service struct {
 	// committed destination CPA the page writes.
 	managed  bool
 	endpoint string
+	// targets is the installation-profile discriminator of the authority this
+	// page writes through. It is the key authority's Targets bound to the
+	// gateway-configuration surface, so the page can never accept a checkpoint
+	// the key surface refuses. Nil means this service holds no installation
+	// authority at all.
+	targets func(bootstrap.FreshOperation) bool
 	// external resolves the Manager-configured connection of an External
 	// install. It is nil for every other profile.
 	external func(context.Context) (string, string, error)
@@ -262,11 +268,13 @@ type Service struct {
 	externalWire func(string) configWire
 }
 
-// New builds the service over the Fresh CAS store and the private management
-// authority. The authority is the only source of a management credential.
-func New(st freshstore.Store, target func(context.Context, uint64) (string, error)) *Service {
+// New builds the service over the Fresh CAS store and the installation
+// authority. The authority supplies the management credential of exactly one
+// committed target; targets decides which durable checkpoint that authority
+// owns. Both are nil for profiles without a key authority.
+func New(st freshstore.Store, target func(context.Context, uint64) (string, error), targets func(bootstrap.FreshOperation) bool) *Service {
 	transport := cpa.NewTransport()
-	return &Service{store: st, wire: transport, transport: transport, target: target}
+	return &Service{store: st, wire: transport, transport: transport, target: target, targets: targets}
 }
 
 // EnableH1 switches the service onto the Host H1 handoff journal. The private H1
@@ -387,8 +395,7 @@ func (s *Service) resolveProfile(ctx context.Context, r freshstore.Record) (auth
 	}
 	switch {
 	case s.managed:
-		if op.Strategy.Strategy != bootstrap.NewManaged || op.Strategy.Stage != "committed" ||
-			op.Strategy.TargetGeneration == 0 || !strings.HasPrefix(op.Strategy.DestinationConnectionIdentity, "managed:sha256:") {
+		if s.targets == nil || !s.targets(op) || op.Strategy.TargetGeneration == 0 {
 			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
 		}
 		secret, err := s.target(ctx, op.Strategy.TargetGeneration)
@@ -445,8 +452,7 @@ func (s *Service) resolveProfile(ctx context.Context, r freshstore.Record) (auth
 		// The private H1/direct profile keeps its frozen six-leaf scope and the
 		// Host reservation protocol: one leaf per operation, reserved by the
 		// Runtime, no delete. The rest of the page is readable and read-only.
-		if op.Strategy.Stage != "committed" || op.Strategy.TargetGeneration == 0 ||
-			op.Strategy.TargetIdentity != cpa.PrivateKeyRuntime || op.Strategy.TargetArtifactID != cpa.PrivateKeyArtifact {
+		if s.targets == nil || !s.targets(op) || op.Strategy.TargetGeneration == 0 {
 			return authority{mode: ModePrivate, capable: Capability{Mode: ModePrivate, Readable: false, Reason: ReasonNotInstalled}}, cpa.ErrProofUnavailable
 		}
 		secret, err := s.target(ctx, op.Strategy.TargetGeneration)

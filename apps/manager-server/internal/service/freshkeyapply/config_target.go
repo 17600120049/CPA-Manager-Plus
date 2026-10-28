@@ -14,7 +14,7 @@ func (s *Service) ConfigTarget(ctx context.Context, generation uint64) (string, 
 	if s == nil {
 		return "", ErrUnavailable
 	}
-	if s.managed {
+	if s.profile == ProfileManaged {
 		p, err := s.operationTarget(ctx, generation)
 		if err != nil {
 			return "", err
@@ -69,7 +69,7 @@ func (s *Service) ConfigTarget(ctx context.Context, generation uint64) (string, 
 // that needs the authority itself must call the same profile through ConfigTarget
 // and must not copy this predicate's observations.
 func (s *Service) DefaultInstallCPAAuthorityProven(ctx context.Context) bool {
-	if s == nil || !s.managed {
+	if s == nil || s.profile != ProfileManaged {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
