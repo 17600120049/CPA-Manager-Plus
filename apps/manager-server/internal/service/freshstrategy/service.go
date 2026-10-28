@@ -99,6 +99,10 @@ type Request struct {
 	ExpectedRuntimeGeneration model.RuntimeGeneration    `json:"expectedRuntimeGeneration,omitempty"`
 	ExpectedArtifactID        model.RuntimeArtifactID    `json:"expectedArtifactId,omitempty"`
 	AdoptSourceClass          bootstrap.AdoptSourceClass `json:"adoptSourceClass,omitempty"`
+	// PluginsEnabled is the wizard's explicit plugin opt-in. It is accepted only
+	// for a New Managed install and is persisted with the checkpoint, so a retry
+	// or a Supervisor restart reads the decision instead of the browser.
+	PluginsEnabled bool `json:"pluginsEnabled,omitempty"`
 	// Loaded only by the application from the existing protected Fresh store.
 	AdoptionCiphertext string `json:"-"`
 }
@@ -149,6 +153,12 @@ func (s *Service) Execute(ctx context.Context, op bootstrap.FreshOperation, requ
 	case bootstrap.NewManaged:
 		return scoped.newManaged(ctx, op, request)
 	case bootstrap.ConnectExternal, bootstrap.AdoptExisting:
+		// Plugins are loaded by the Supervisor's own CPA only. An external or
+		// adopted CPA keeps its plugin posture; accepting the flag there would
+		// silently claim a resource this installation does not own.
+		if request.PluginsEnabled {
+			return Result{}, &Blocker{Code: "fresh_strategy_plugin_scope_conflict"}
+		}
 		return scoped.existing(ctx, op, request)
 	default:
 		return Result{}, &Blocker{Code: "fresh_strategy_invalid"}
@@ -172,7 +182,7 @@ func ManagedDestinationIdentity(baseURL string) string {
 // without touching Runtime. The caller must CAS the returned ciphertext before
 // invoking Execute; operationIDSuffix is stable across retries and therefore
 // also names the Supervisor journal entry.
-func (s *Service) managedDestinationSnapshot(op bootstrap.FreshOperation, status model.RuntimeObservedStatus, stage string, bindIdentity bool, operationIDSuffix string) (bootstrap.FreshStrategyCheckpoint, string, error) {
+func (s *Service) managedDestinationSnapshot(op bootstrap.FreshOperation, status model.RuntimeObservedStatus, stage string, bindIdentity bool, operationIDSuffix string, pluginsEnabled bool) (bootstrap.FreshStrategyCheckpoint, string, error) {
 	if s.options.Protector == nil || s.options.DestinationBaseURL == "" {
 		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "managed_destination_connection_unavailable"}
 	}
@@ -185,7 +195,7 @@ func (s *Service) managedDestinationSnapshot(op bootstrap.FreshOperation, status
 		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "management_secret_storage_unavailable"}
 	}
 	managementKey := hex.EncodeToString(keyBytes)
-	destination := model.RuntimeDestinationRequest{OperationID: string(op.Identity.OperationID) + ":" + operationIDSuffix, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: status.ActiveGatewayArtifact.ArtifactID, SourceIdentity: ManagedDestinationIdentity(string(op.Identity.OperationID)), SourceClass: "new_managed", APIKeys: []string{}, ManagementKey: managementKey}
+	destination := model.RuntimeDestinationRequest{OperationID: string(op.Identity.OperationID) + ":" + operationIDSuffix, ExpectedRuntimeIdentity: status.Identity, ExpectedRuntimeGeneration: status.Generation, ExpectedActiveArtifactID: status.ActiveGatewayArtifact.ArtifactID, SourceIdentity: ManagedDestinationIdentity(string(op.Identity.OperationID)), SourceClass: "new_managed", APIKeys: []string{}, ManagementKey: managementKey, PluginsEnabled: pluginsEnabled}
 	data, err := json.Marshal(managedDestinationSnapshot{Destination: destination, BaseURL: baseURL})
 	if err != nil {
 		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "management_secret_storage_unavailable"}
@@ -194,7 +204,7 @@ func (s *Service) managedDestinationSnapshot(op bootstrap.FreshOperation, status
 	if err != nil {
 		return bootstrap.FreshStrategyCheckpoint{}, "", &Blocker{Code: "management_secret_storage_unavailable"}
 	}
-	checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, TargetIdentity: string(status.Identity), TargetGeneration: uint64(status.Generation), TargetArtifactID: string(status.ActiveGatewayArtifact.ArtifactID), Stage: stage}
+	checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, TargetIdentity: string(status.Identity), TargetGeneration: uint64(status.Generation), TargetArtifactID: string(status.ActiveGatewayArtifact.ArtifactID), Stage: stage, PluginsEnabled: pluginsEnabled}
 	if bindIdentity {
 		checkpoint.DestinationConnectionIdentity = ManagedDestinationIdentity(baseURL)
 	}
@@ -229,7 +239,7 @@ func (s *Service) PrepareManagedMigration(ctx context.Context, op bootstrap.Fres
 	if !status.Capabilities.Supports(model.RuntimeCapabilityStageDestination) || !status.Capabilities.Supports(model.RuntimeCapabilityStart) {
 		return result, &Blocker{Code: "managed_target_staging_required"}
 	}
-	checkpoint, ciphertext, err := s.managedDestinationSnapshot(op, status, "committed", false, "managed-migration-destination")
+	checkpoint, ciphertext, err := s.managedDestinationSnapshot(op, status, "committed", false, "managed-migration-destination", op.Strategy.PluginsEnabled)
 	if err != nil {
 		return result, err
 	}
@@ -259,7 +269,7 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 	checkpoint := op.Strategy
 	if checkpoint.Strategy == "" {
 		var snapshotCiphertext string
-		checkpoint, snapshotCiphertext, err = s.managedDestinationSnapshot(op, status, "staged", true, "managed-destination")
+		checkpoint, snapshotCiphertext, err = s.managedDestinationSnapshot(op, status, "staged", true, "managed-destination", request.PluginsEnabled)
 		if err != nil {
 			return result, err
 		}
@@ -270,6 +280,12 @@ func (s *Service) newManaged(ctx context.Context, op bootstrap.FreshOperation, r
 	result.Checkpoint = checkpoint
 	if checkpoint.TargetIdentity != string(status.Identity) || checkpoint.TargetGeneration != uint64(status.Generation) || checkpoint.TargetArtifactID != string(status.ActiveGatewayArtifact.ArtifactID) {
 		return result, &Blocker{Code: "managed_target_identity_mismatch"}
+	}
+	// The opt-in was persisted with the checkpoint and already reached the
+	// Supervisor template. A later attempt presenting another value would claim a
+	// decision this operation never recorded, so it is refused, not adopted.
+	if checkpoint.PluginsEnabled != request.PluginsEnabled {
+		return result, &Blocker{Code: "managed_plugin_optin_conflict"}
 	}
 	if checkpoint.Stage == "committed" && !(checkpoint.DestinationConnectionIdentity == "" && request.AdoptionCiphertext != "") {
 		return result, nil

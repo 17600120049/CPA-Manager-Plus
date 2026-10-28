@@ -32,6 +32,11 @@ type DestinationRequest struct {
 	SourceClass               string      `json:"sourceClass"`
 	APIKeys                   []string    `json:"apiKeys"`
 	ManagementKey             string      `json:"managementKey"`
+	// PluginsEnabled is the install-time opt-in carried by the Fresh operation.
+	// It is a product decision, not a path: the plugin root is always the
+	// Supervisor-owned Gateway directory, so a caller can never direct plugin
+	// discovery elsewhere. Its zero value keeps plugins off.
+	PluginsEnabled bool `json:"pluginsEnabled,omitempty"`
 }
 
 // SourceClassNewManaged is the default Fresh New Managed installation. It has
@@ -376,11 +381,21 @@ func (d *destination) publish(r DestinationRequest, supersedes string) error {
 	// Usage statistics are productized for the default Fresh New Managed
 	// installation only; Adopt and existing sources keep the base template so an
 	// operator's CPA posture is not silently changed.
+	// The plugin root belongs to this Supervisor, never to the source or the
+	// caller: CPA discovers native code there, so a template that let a request
+	// name the directory would be a code-loading path. It sits in the Supervisor
+	// root rather than inside the destination, because publish replaces the
+	// whole destination directory while an installed plugin must survive both a
+	// re-stage and a Runtime restart. It is child-owned so CPA can install into it.
+	pluginDir := filepath.Join(filepath.Dir(d.root), "plugins")
+	if err = ensurePluginDir(pluginDir, d.child); err != nil {
+		return err
+	}
 	usage := r.SourceClass == SourceClassNewManaged
 	config := map[string]any{"config-version": 8, "server": map[string]any{"host": "0.0.0.0", "port": json.Number(d.port)},
 		"management": map[string]any{"allow-remote": true, "secret-key": r.ManagementKey, "disable-control-panel": true, "disable-auto-update-panel": true},
 		"access":     map[string]any{"api-keys": r.APIKeys}, "oauth": map[string]any{"auth-dir": filepath.Join(d.root, "auth")},
-		"plugins": map[string]any{"enabled": false}, "observability": map[string]any{"logs": map[string]any{"logging-to-file": false}, "usage": map[string]any{"usage-statistics-enabled": usage}}}
+		"plugins": map[string]any{"enabled": r.PluginsEnabled, "dir": pluginDir}, "observability": map[string]any{"logs": map[string]any{"logging-to-file": false}, "usage": map[string]any{"usage-statistics-enabled": usage}}}
 	if d.child == nil {
 		config["server"].(map[string]any)["host"] = "127.0.0.1"
 	}
@@ -431,6 +446,41 @@ func (d *destination) publish(r DestinationRequest, supersedes string) error {
 		return errors.Join(err, os.Rename(retired, d.root))
 	}
 	return syncDestinationDirectory(parent)
+}
+
+// ensurePluginDir creates the Supervisor-owned plugin root if it is absent and
+// proves an existing one is a real, trusted directory. It never removes a
+// plugin: the directory outlives a re-staged destination and a Runtime restart,
+// and the child owns it so CPA can install into it. A directory a previous
+// publish already handed to the child therefore stays admissible; anything else
+// (a symlink, a file, a foreign owner) is refused instead of adopted.
+func ensurePluginDir(name string, child *cpaprocess.ChildIdentity) error {
+	info, err := os.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) {
+		if err = os.Mkdir(name, 0o700); err != nil {
+			return err
+		}
+		if info, err = os.Lstat(name); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return ErrPersistenceUnavailable
+	}
+	// The directory is either ours or already handed to the child by an earlier
+	// publish. Anything else is not adopted: without a child there is no identity
+	// to reassign it to, and with one the chown below must actually succeed.
+	if filetrust.RequireCurrentProcessOwner(info) != nil && child == nil {
+		return ErrPersistenceUnavailable
+	}
+	if child != nil {
+		if err = os.Chown(name, int(child.UID), int(child.GID)); err != nil {
+			return errors.Join(ErrPersistenceUnavailable, err)
+		}
+	}
+	return os.Chmod(name, 0o700)
 }
 
 func writeDestinationFile(name string, data []byte, mode os.FileMode) error {

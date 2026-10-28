@@ -135,11 +135,83 @@ func TestDestinationNewManagedStagesProductizedTemplateOnlyOverEmptyGatewayAuth(
 				Enabled bool `json:"usage-statistics-enabled"`
 			} `json:"usage"`
 		} `json:"observability"`
+		Plugins struct {
+			Enabled bool   `json:"enabled"`
+			Dir     string `json:"dir"`
+		} `json:"plugins"`
 	}
+	// The plugin root is the Supervisor's, beside the destination the publish
+	// swaps: the destination directory is replaced whole, so a root inside it
+	// would lose every installed plugin on the first re-stage.
+	pluginRoot := filepath.Join(filepath.Dir(root), "plugins")
 	if json.Unmarshal(data, &config) != nil || config.Server.Port != 8317 || !config.Management.AllowRemote || config.Management.SecretKey != r.ManagementKey ||
-		!config.Management.DisableControlPanel || config.Access.Keys == nil || len(config.Access.Keys) != 0 || config.OAuth.AuthDir != filepath.Join(root, "auth") || !config.Observability.Usage.Enabled {
+		!config.Management.DisableControlPanel || config.Access.Keys == nil || len(config.Access.Keys) != 0 || config.OAuth.AuthDir != filepath.Join(root, "auth") ||
+		!config.Observability.Usage.Enabled || config.Plugins.Enabled || config.Plugins.Dir != pluginRoot {
 		t.Fatalf("New Managed template: %s", data)
 	}
+	info, err := os.Lstat(pluginRoot)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("plugin root: %v %v", info, err)
+	}
+	// An installed plugin survives the next publish unchanged. The destination is
+	// replaced whole, so only a root outside it can keep the plugin.
+	installed := filepath.Join(pluginRoot, "acme.plugin")
+	if err = os.WriteFile(installed, []byte("plugin"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The template decision is immutable for the operation: the Fresh checkpoint
+	// is what the Supervisor was given, so a later attempt cannot silently flip
+	// it. Changing the switch is the management authority's job, not a re-stage.
+	flipped := newManagedRequest(r)
+	flipped.OperationID = "fresh-operation:managed-destination-optin"
+	flipped.PluginsEnabled = true
+	if _, err = f.starter.StageDestination(t.Context(), flipped); err == nil {
+		t.Fatal("a re-stage flipped the persisted plugin opt-in")
+	}
+	if data, err = os.ReadFile(installed); err != nil || string(data) != "plugin" {
+		t.Fatalf("installed plugin lost across a refused publish: %q %v", data, err)
+	}
+	if data, err = os.ReadFile(filepath.Join(root, "config.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if json.Unmarshal(data, &config) != nil || config.Plugins.Enabled {
+		t.Fatalf("refused stage rewrote the destination: %s", data)
+	}
+}
+
+// TestDestinationNewManagedPublishesThePersistedPluginOptIn proves the opt-in is
+// carried by the staged destination rather than a caller default, so a Runtime
+// restart that replays the same snapshot keeps plugins enabled.
+func TestDestinationNewManagedPublishesThePersistedPluginOptIn(t *testing.T) {
+	f, r, root := destinationFixture(t)
+	enabled := newManagedRequest(r)
+	enabled.PluginsEnabled = true
+	if _, err := f.starter.StageDestination(t.Context(), enabled); err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Plugins struct {
+			Enabled bool   `json:"enabled"`
+			Dir     string `json:"dir"`
+		} `json:"plugins"`
+	}
+	pluginRoot := filepath.Join(filepath.Dir(root), "plugins")
+	read := func() {
+		data, err := os.ReadFile(filepath.Join(root, "config.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if json.Unmarshal(data, &config) != nil || !config.Plugins.Enabled || config.Plugins.Dir != pluginRoot {
+			t.Fatalf("plugin template: %s", data)
+		}
+	}
+	read()
+	// A restarted Supervisor loads the same snapshot and replays the recorded
+	// operation instead of deriving a fresh default.
+	if replay, err := f.starter.StageDestination(t.Context(), enabled); err != nil || replay.State != journal.StateSucceeded {
+		t.Fatal("opt-in replay", err)
+	}
+	read()
 }
 
 func TestDestinationNewManagedRejectsUntrustedGatewayAuth(t *testing.T) {

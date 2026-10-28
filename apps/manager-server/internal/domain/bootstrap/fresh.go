@@ -82,13 +82,17 @@ type FreshStrategyCheckpoint struct {
 	// operation ID. Attempt zero is the original operation ID, which keeps every
 	// checkpoint written before this counter existed exactly idempotent.
 	DestinationAttempt uint64                     `json:"destinationAttempt,omitempty"`
-	AdoptionDecisions  []AdoptionResourceDecision `json:"adoptionDecisions,omitempty"`
-	AdoptionResources  []ResourceRef              `json:"adoptionResources,omitempty"`
+	// PluginsEnabled is the install-time plugin opt-in the wizard persisted. It
+	// is a product decision of this Fresh operation, never browser state: the
+	// staged destination template reads it once and the Supervisor writes it.
+	PluginsEnabled    bool                       `json:"pluginsEnabled,omitempty"`
+	AdoptionDecisions []AdoptionResourceDecision `json:"adoptionDecisions,omitempty"`
+	AdoptionResources []ResourceRef              `json:"adoptionResources,omitempty"`
 }
 
 func (c FreshStrategyCheckpoint) validate() error {
 	if c.Strategy == "" {
-		if c.TargetIdentity != "" || c.TargetArtifactID != "" || c.TargetGeneration != 0 || c.Stage != "" || len(c.Unsupported) != 0 || c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || c.DestinationAttempt != 0 || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0 {
+		if c.TargetIdentity != "" || c.TargetArtifactID != "" || c.TargetGeneration != 0 || c.Stage != "" || len(c.Unsupported) != 0 || c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || c.DestinationAttempt != 0 || c.PluginsEnabled || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0 {
 			return errors.New("unowned Fresh strategy checkpoint")
 		}
 		return nil
@@ -100,8 +104,13 @@ func (c FreshStrategyCheckpoint) validate() error {
 		if c.DestinationConnectionIdentity != "" && (!strings.HasPrefix(c.DestinationConnectionIdentity, "managed:") || !validContentDigest(ContentDigest(strings.TrimPrefix(c.DestinationConnectionIdentity, "managed:")))) {
 			return errors.New("invalid managed destination identity")
 		}
-	} else if c.Strategy != AdoptExisting && (c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || c.DestinationAttempt != 0 || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0) {
+	} else if c.Strategy != AdoptExisting && (c.SourceIdentity != "" || c.SourceClass != "" || c.DestinationConnectionIdentity != "" || c.DestinationAttempt != 0 || c.PluginsEnabled || len(c.AdoptionDecisions) != 0 || len(c.AdoptionResources) != 0) {
 		return errors.New("foreign adoption checkpoint")
+	}
+	// Plugins are a Supervisor-owned resource of the Manager's own destination.
+	// An adopted or external CPA keeps its own plugin posture untouched.
+	if c.PluginsEnabled && c.Strategy != NewManaged {
+		return errors.New("foreign plugin opt-in")
 	}
 	if strings.TrimSpace(c.TargetIdentity) == "" || c.TargetGeneration == 0 || len(c.Unsupported) != 0 {
 		return errors.New("invalid Fresh strategy target")
