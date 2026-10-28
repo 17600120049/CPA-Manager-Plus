@@ -3,25 +3,33 @@ package cpa
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 )
 
-// validExternalUsageVersionSupport is the support class of an observed CPA
-// version. External management speaks the v8 contract, so anything below it is
-// refused for writes while safe reads keep working, and a version this Manager
-// was never qualified against is reported rather than trusted.
+// External management speaks the CPA v8 contract, so a CPA that advertises v8 or
+// later is qualified for writes and anything below it is refused for writes
+// while safe reads keep working. A CPA that omits the version header is never
+// assumed to be new enough: the class is reported instead of trusted.
 const (
 	VersionSupportSupported   = "supported"
-	VersionSupportUnverified  = "unverified"
 	VersionSupportUnsupported = "unsupported"
 	VersionSupportUnknown     = "unknown"
 )
 
-// ErrExternalVersionUnsupported reports a user's CPA that advertises a version
-// below the v8 contract this Manager writes. It blocks writes and leaves safe
-// reads alone: the configuration is readable, but every write would target a
-// surface that CPA does not serve.
+const (
+	// ReasonExternalVersionUnsupported is the stable code of every write this
+	// Manager refused because the user's CPA did not prove a v8 contract. It
+	// covers both an old CPA and one whose version could not be read.
+	ReasonExternalVersionUnsupported = "external_cpa_version_unsupported"
+)
+
+// ErrExternalVersionUnsupported reports a user's CPA that did not advertise the
+// v8 contract this Manager writes. It blocks writes and leaves safe reads alone:
+// the configuration is readable, but every write would target a surface CPA does
+// not serve.
 var ErrExternalVersionUnsupported = errors.New("external cpa version unsupported")
 
 // ExternalVersionReport is the version an External CPA advertised together with
@@ -34,39 +42,54 @@ type ExternalVersionReport struct {
 	Reason       string `json:"reason,omitempty"`
 }
 
-// ClassifyExternalVersion maps a CPA version header to its support class. Only
-// the v8 major is qualified; a version this Manager cannot parse is reported as
-// unknown and never blocks a read.
+// ClassifyExternalVersion maps a CPA version header to its support class. The v8
+// major and every later one are the contract this Manager writes; an older major
+// is unsupported, and a version this Manager cannot parse is unknown. Both of the
+// latter refuse writes, because neither proves the surface a write would target,
+// and neither blocks a read.
 func ClassifyExternalVersion(version string) ExternalVersionReport {
 	report := ExternalVersionReport{Version: strings.TrimSpace(version), Support: VersionSupportUnknown}
 	major, ok := majorVersion(report.Version)
-	if !ok {
+	if ok && major >= 8 {
+		report.Support = VersionSupportSupported
 		return report
 	}
-	switch {
-	case major == 8:
-		report.Support = VersionSupportSupported
-	case major < 8:
+	if ok {
 		report.Support = VersionSupportUnsupported
-		report.WriteBlocked = true
-		report.Reason = "external_cpa_version_unsupported"
-	default:
-		report.Support = VersionSupportUnverified
 	}
+	report.WriteBlocked = true
+	report.Reason = ReasonExternalVersionUnsupported
 	return report
 }
 
 // ObserveExternalVersion reads the version a user's CPA advertises through the
 // same authenticated management read every other observation uses, and classifies
-// it. A CPA that does not answer is not evidence of an unsupported version, so the
-// error is returned separately and the caller decides; a CPA that omits the
-// header is reported as unknown rather than guessed.
+// it. A CPA that refuses the credential is the typed ErrManagementRejected
+// blocker; one that cannot be reached is ErrProofUnavailable. Both are returned
+// instead of a classification: neither is evidence about the version.
 func ObserveExternalVersion(ctx context.Context, baseURL string, managementKey string) (ExternalVersionReport, error) {
 	version, err := ObserveManagementAPI(ctx, baseURL, managementKey)
 	if err != nil {
-		return ExternalVersionReport{}, err
+		return ExternalVersionReport{}, externalVersionProbeError(err)
 	}
 	return ClassifyExternalVersion(version), nil
+}
+
+// externalVersionProbeError types one failed probe. ObserveManagementAPI reports
+// a status as plain text, so a 401 is recognized here as CPA's own refusal and
+// everything else stays an unavailable proof: neither may become a version class.
+func externalVersionProbeError(err error) error {
+	var status *managementStatusError
+	if errors.As(err, &status) {
+		if status.code == http.StatusUnauthorized {
+			return fmt.Errorf("%w: %w", ErrManagementRejected, err)
+		}
+		return fmt.Errorf("%w: %w", ErrProofUnavailable, err)
+	}
+	if errors.Is(err, ErrManagementRejected) || errors.Is(err, ErrProofUnavailable) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrProofUnavailable, err)
 }
 
 // majorVersion reads the leading major number of a CPA version tag. CPA versions
