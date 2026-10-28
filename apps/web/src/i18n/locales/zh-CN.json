@@ -4508,6 +4508,22 @@
   "plugin_management": {
     "title": "插件管理",
     "description": "查看已安装和可用的插件，管理启停、配置和入口。",
+    "runtime_title": "插件运行开关",
+    "runtime_description": "控制托管 CPA 是否执行插件。Manager 将该设置写入网关配置；插件目录由运行时发布，本页面不修改它。",
+    "runtime_persisted": "已保存",
+    "runtime_on": "已启用",
+    "runtime_off": "已关闭",
+    "runtime_unset": "未设置",
+    "runtime_toggle": "启用插件",
+    "runtime_toggle_aria": "启用插件运行",
+    "runtime_reconcile": "读回结果",
+    "runtime_pending": "上次写入结果未知，请读回确认实际保存的内容。",
+    "runtime_reconciled": "已读回：新值已保存。",
+    "runtime_not_applied": "已读回：该写入未到达配置。",
+    "runtime_conflict": "读取后配置已被改动，请重新读取后再保存。",
+    "runtime_refused": "当前安装不是插件目录的持有者，无法在此修改开关。",
+    "runtime_save_failed": "插件运行开关未保存。",
+    "runtime_saved_effect_unknown": "已保存。CPA 重载配置后生效。",
     "refresh": "刷新",
     "install_plugin": "安装插件",
     "tabs_aria_label": "插件管理视图",
@@ -4717,7 +4733,6 @@
     "gate_step3_hint": "请输入上方显示的完整标识。"
   },
   "plugin_resource": {
-    "pah_s0_unsupported": "当前私有安全配置已禁用插件页面；插件管理功能仍可使用。",
     "title": "插件页面",
     "page_count": "{{count}} 个页面",
     "load_failed": "加载插件页面失败",
@@ -4726,7 +4741,9 @@
     "not_found": "未找到插件页面",
     "not_found_desc": "当前服务没有声明这个插件页面。",
     "empty_src": "插件页面地址为空",
-    "empty_src_desc": "该插件菜单没有提供可打开的页面地址。"
+    "empty_src_desc": "该插件菜单没有提供可打开的页面地址。",
+    "unsupported_target": "无法显示该插件页面",
+    "unsupported_target_desc": "插件页面必须由本站点的 /v0/resource/plugins/ 命名空间提供。由于插件页面运行在沙箱源中，依赖同源访问、外部地址、data: 与 blob: 的页面不受支持。"
   },
   "system_info": {
     "title": "系统信息",

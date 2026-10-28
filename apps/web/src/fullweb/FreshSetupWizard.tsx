@@ -92,6 +92,10 @@ export function FreshSetupWizard({
   const [baseURL, setBaseURL] = useState('');
   const [cpaKey, setCPAKey] = useState('');
   const [savedKey, setSavedKey] = useState(false);
+  // The plugin opt-in is the operator's explicit decision, so it starts off and
+  // is submitted with the operation that owns it. The Supervisor only ever reads
+  // this persisted value, so a retry cannot silently turn plugins on.
+  const [plugins, setPlugins] = useState(initialOperation.strategy?.pluginsEnabled === true);
   const [target, setTarget] = useState<Target | null>(null);
   const [busy, setBusy] = useState(false);
   // The install-generated Client Key is shown once, on the completion screen of
@@ -262,6 +266,10 @@ export function FreshSetupWizard({
             expectedRuntimeGeneration: checkpoint?.targetGeneration || observed!.runtimeGeneration,
             expectedArtifactId:
               checkpoint?.targetArtifactId || observed!.activeGatewayArtifact.artifactId,
+            // Every New Managed attempt carries the same persisted decision, so a
+            // retried destination publishes what the operator chose and nothing
+            // else. Adoption and External never send it.
+            ...(strategy === 'new_managed' && plugins ? { pluginsEnabled: true } : {}),
           };
         }
         let delivered = '';
@@ -311,6 +319,9 @@ export function FreshSetupWizard({
     [j('key'), operation.adminInitialized ? j('keepKey') : j('keyHidden')],
     [s('consoleAddress'), path],
     ...(strategy === 'connect_external' && baseURL ? [[t('externalBaseURL'), baseURL]] : []),
+    ...(strategy === 'new_managed'
+      ? [['plugins', plugins ? j('enabled') : j('disabled'), 'review-plugins']]
+      : []),
   ];
   return (
     <section className="cpamp-installation" data-testid="fresh-setup-wizard" aria-busy={busy}>
@@ -484,6 +495,22 @@ export function FreshSetupWizard({
                   </div>
                 </div>
               )}
+              {strategy === 'new_managed' && (
+                <div className="journey-field">
+                  <label className="journey-checkline" htmlFor="setup-plugin-optin">
+                    <input
+                      id="setup-plugin-optin"
+                      data-testid="plugin-optin-checkbox"
+                      type="checkbox"
+                      checked={plugins}
+                      disabled={!!operation.strategy?.strategy}
+                      onChange={(e) => setPlugins(e.target.checked)}
+                    />
+                    <span>{j('pluginsOptIn')}</span>
+                  </label>
+                  <p className="journey-help">{j('pluginsOptInHelp')}</p>
+                </div>
+              )}
               <div className="journey-field">
                 <label className="form-label" htmlFor="setup-control-path">
                   {j('routeTitle')}
@@ -535,8 +562,12 @@ export function FreshSetupWizard({
           {(step === 2 || complete) && (
             <>
               <dl className="journey-summary">
-                {summary.map(([label, value]) => (
-                  <div className="journey-summary-row" key={label}>
+                {summary.map(([label, value, testID]) => (
+                  <div
+                    className="journey-summary-row"
+                    key={label}
+                    {...(testID ? { 'data-testid': testID } : {})}
+                  >
                     <FullWebIcon name="check" size={22} />
                     <dt>{label}</dt>
                     <dd>{value}</dd>

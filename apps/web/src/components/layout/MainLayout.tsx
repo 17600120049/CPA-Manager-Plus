@@ -332,10 +332,7 @@ function MainLayoutContent({
   const isPluginResourcePage = routePathname.startsWith('/plugin-pages');
   const showSidebarLabels = !sidebarCollapsed || sidebarOpen;
   const configPluginsEnabled = config?.pluginsEnabled;
-  const pluginControlMenuVisible = isPluginManagementNavVisible({
-    supportsPlugin,
-    pluginsEnabled: configPluginsEnabled,
-  });
+  const pluginControlMenuVisible = isPluginManagementNavVisible({ supportsPlugin });
 
   // 将顶部悬浮控制区高度写入 CSS 变量，供移动端粘性元素和浮层避让。
   useLayoutEffect(() => {

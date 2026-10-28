@@ -139,6 +139,10 @@ func gatewayConfigReply(w http.ResponseWriter, v any, e error) {
 		code, status = "generation_mismatch", http.StatusConflict
 	case errors.Is(e, freshconfig.ErrLegacyUnresolved):
 		code, status = "legacy_operation_unresolved", http.StatusConflict
+	case errors.Is(e, freshconfig.ErrPluginAuthority):
+		// The plugin switch is the managed authority's alone. The page hides the
+		// control instead of offering a write another profile would refuse.
+		code, status = freshconfig.ReasonPluginManagedOnly, http.StatusConflict
 	case errors.Is(e, cpa.ErrSourceConflict), errors.Is(e, freshstore.ErrConflict):
 		code, status = "source_or_operation_conflict", http.StatusConflict
 	case errors.Is(e, cpa.ErrProofUnavailable):

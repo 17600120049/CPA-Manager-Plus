@@ -16,6 +16,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/routing"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/freshbootstrap"
 	healthcontroller "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/controller/health"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/middleware"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/router"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
@@ -33,6 +34,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshrouting"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshstrategy"
+	proxysvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/proxy"
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/updatecheck"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
@@ -100,6 +102,9 @@ type freshApplication struct {
 	keyApply        *freshkeyapply.Service
 	updates         *updatecheck.Service
 	gatewayConfig   *freshconfig.Service
+	// pluginCapability is the short-lived proof behind X-CPA-SUPPORT-PLUGIN.
+	// It is nil until the application knows which connection it serves.
+	pluginCapability *pluginCapabilityProbe
 	legacy          http.Handler
 	legacyCollector *collectorservice.Service
 	collectorWorker *worker.CollectorWorker
@@ -126,7 +131,6 @@ type freshApplication struct {
 	// startIdentityWorker starts the Embedded identity reconciliation loop; a
 	// field so the completion path can be proven to start it once.
 	startIdentityWorker func(context.Context)
-	pahS0               bool
 	// externalSource is the committed Connect External authority. It is the only
 	// source of an External management credential; no environment fallback exists.
 	externalSource freshkeyapply.ExternalSource
@@ -137,7 +141,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	settings := setting.New(opened.DB, opened.Protector)
 	a := &freshApplication{
 		cfg: cfg, store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver),
-		protector: opened.Protector, pahS0: cfg.PAHS0Enabled,
+		protector: opened.Protector,
 		runtimeSettings: settings, runtimeJournal: newFreshRuntimeJournal(opened.DB),
 	}
 	// Fresh owns the SQLite admission and keeps the old app bootstrap bypassed,
@@ -245,6 +249,13 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		// private loopback profile the default Transport dials.
 		a.gatewayConfig.EnableManaged(cfg.CPAUpstreamURL)
 	}
+	// The plugin capability the navigation reads is proven, not assumed: this
+	// installation must be able to show that its saved connection serves the
+	// plugin namespace. A managed install owns that answer through its committed
+	// destination, and any other profile must prove it from CPA's own document.
+	if a.gatewayConfig != nil {
+		a.pluginCapability = newPluginCapabilityProbe(pluginCapabilityTTL, pluginCapabilityProbeTimeout, a.v8PluginCapable)
+	}
 	// Only the build-bound consumer record can grant production qualification.
 	// Pending/missing evidence retains the existing typed strategy blockers. The
 	// strategy's post-Start destination read-back must not race the spawn, so its
@@ -279,6 +290,13 @@ func writeFreshStrategyError(w http.ResponseWriter, err error) {
 }
 
 func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// The plugin capability is a claim about the saved connection, so it is
+	// announced only when that connection proves it; a route existing is not a
+	// capability.
+	withSupportPluginHeader(http.HandlerFunc(a.serve), a.supportPluginCapable).ServeHTTP(w, r)
+}
+
+func (a *freshApplication) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r != nil && r.URL != nil && r.URL.Path == bootstrap.FixedLivenessPath {
 		// Fresh store takeover makes the Manager ready, not the installation or
@@ -303,8 +321,18 @@ func (a *freshApplication) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.privateStagedKeyProof(w, r)
 		return
 	}
+	if a.legacy != nil && r != nil && r.URL != nil && pluginResourceRequest(r) {
+		// Plugin pages must not be answered by the Full Web document handler:
+		// they are proxied so ProxyPluginResource can enforce the opaque-origin
+		// sandbox contract on every response.
+		a.legacy.ServeHTTP(w, r)
+		return
+	}
 	protect := routing.ProtectFixedBootstrap(http.HandlerFunc(a.canonical), a.fixed)
-	httpapi.ProtectBrandResources(protect).ServeHTTP(w, r)
+	// The canonical surface is Full Web's admin API. A sandboxed plugin document
+	// is a cross-site fetch client, so it is refused here as well as in the
+	// legacy router that serves the Foundation-era pages.
+	httpapi.ProtectBrandResources(middleware.RejectCrossSiteAdmin(protect, proxysvc.IsCanonicalPluginResourceRequest)).ServeHTTP(w, r)
 }
 
 func (a *freshApplication) canonical(w http.ResponseWriter, r *http.Request) {
@@ -376,6 +404,8 @@ func (a *freshApplication) canonicalAPI(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case resource == "gateway/config" || strings.HasPrefix(resource, "gateway/config/"):
 		a.gatewayConfiguration(w, r, strings.TrimPrefix(strings.TrimPrefix(resource, "gateway/config"), "/"))
+	case resource == "plugins/runtime" || strings.HasPrefix(resource, "plugins/runtime/"):
+		a.pluginRuntime(w, r, strings.TrimPrefix(strings.TrimPrefix(resource, "plugins/runtime"), "/"))
 	case resource == "settings/update-channel":
 		a.updateChannel(w, r, op)
 	case resource == "api-keys" || strings.HasPrefix(resource, "api-keys/"):
@@ -502,18 +532,6 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
-	// Private P-S0 denies External/Adopt before Host permit,
-	// durable reservation, network source read and Fresh CAS mutation.
-	if a.pahS0 {
-		if err := validatePAHS0Strategy(op.Strategy.Strategy); err != nil {
-			writeFreshStrategyError(w, err)
-			return
-		}
-		if err := requirePAHS0ManagedRequest(request.Strategy); err != nil {
-			writeFreshStrategyError(w, err)
-			return
-		}
-	}
 	if request.ExpectedRevision != op.Revision {
 		// A stale External CAS is a conflict, not an invalid user-supplied target.
 		if request.Strategy == bootstrap.ConnectExternal {
@@ -619,6 +637,9 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		}
 		if result.Connection != nil {
 			record.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: result.Connection.BaseURL, ManagementKey: result.Connection.ManagementKeyCiphertext}
+			// The plugin capability describes the connection that was saved, so a
+			// new connection must not inherit the previous one's answer.
+			a.pluginCapability.forget()
 		}
 		return nil
 	})
@@ -631,6 +652,10 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if result.InitialClientKey != "" {
+		// The managed install just committed its destination, so its plugin answer
+		// is proven against the new authority from the next read, not inherited from
+		// whatever the pre-commit connection reported.
+		a.pluginCapability.forget()
 		// The call that commits the destination is the only reply that carries
 		// the installation's Client Key. It is written once, in the same response
 		// as the committed checkpoint, so the completion screen can show it; the
@@ -724,17 +749,6 @@ func serveExistingFresh(ctx context.Context, cfg config.Config, paths sqliterepo
 	opened, err := fresh.Open(ctx, paths, fresh.OpenOptions{AdminKey: cfg.AdminKey, DataKey: cfg.DataKey})
 	if err != nil {
 		return nil, err
-	}
-	if cfg.PAHS0Enabled {
-		// The Fresh marker does not authorize External or Adopt.
-		record, checkErr := freshstore.New(opened.DB).Load(ctx)
-		if checkErr == nil {
-			checkErr = validatePAHS0Strategy(record.Operation.Strategy.Strategy)
-		}
-		if checkErr != nil {
-			_ = opened.Close()
-			return nil, checkErr
-		}
 	}
 	app := newFreshApplication(opened, cfg, freshDriver(cfg))
 	// Workers started by an in-process completion must use the host lifetime,

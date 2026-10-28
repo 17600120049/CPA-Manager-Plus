@@ -25,6 +25,12 @@ const en = {
   createsHelp: 'A new embedded CPA using the official packaged version',
   noMigration:
     'This is a new installation. No existing CPA history, requests or logs will be imported.',
+  pluginsOptIn: 'Enable plugins',
+  pluginsOptInHelp:
+    'Plugins are native code that run inside the embedded CPA with full access to this installation. Leave this off unless you need them; you can change it later on the plugins page.',
+  plugins: 'Plugins',
+  enabled: 'Enabled',
+  disabled: 'Disabled',
   details: 'Installation details',
   stagePrepare: 'Save the verified installation destination.',
   stageStart: 'Start the official packaged CPA service.',
@@ -128,6 +134,12 @@ const zh: typeof en = {
   creates: '将创建',
   createsHelp: '使用随部署提供的官方版本，创建全新内置 CPA',
   noMigration: '这是全新安装，不会导入已有 CPA 的历史用量、请求记录或日志。',
+  pluginsOptIn: '启用插件运行',
+  pluginsOptInHelp:
+    '插件是运行在内置 CPA 内的原生代码，可完全访问本安装。不需要时请保持关闭；安装后仍可在插件页更改。',
+  plugins: '插件',
+  enabled: '已启用',
+  disabled: '未启用',
   details: '查看安装方案详情',
   stagePrepare: '保存已核实的安装目标。',
   stageStart: '启动随部署提供的官方 CPA 服务。',
@@ -224,6 +236,12 @@ const tw: typeof en = {
   creates: '將建立',
   createsHelp: '使用隨部署提供的官方版本，建立全新內置 CPA',
   noMigration: '這是全新安裝，不會匯入已有 CPA 的歷史用量、請求記錄或日誌。',
+  pluginsOptIn: '啟用外掛執行',
+  pluginsOptInHelp:
+    '外掛是執行在內建 CPA 內的原生程式碼，可完整存取本安裝。不需要時請保持關閉；安裝後仍可在外掛頁變更。',
+  plugins: '外掛',
+  enabled: '已啟用',
+  disabled: '未啟用',
   details: '檢視安裝方案詳情',
   stagePrepare: '儲存已核實的安裝目標。',
   stageStart: '啟動隨部署提供的官方 CPA 服務。',

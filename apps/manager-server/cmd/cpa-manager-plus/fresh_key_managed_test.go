@@ -52,9 +52,13 @@ func (d *managedKeyDestination) document() []byte {
 		"server":         map[string]any{"host": "0.0.0.0", "port": 8317},
 		"management": map[string]any{"allow-remote": true, "secret-key": managedInstallBcrypt,
 			"disable-control-panel": true, "disable-auto-update-panel": true},
-		"access":        map[string]any{"api-keys": keys},
-		"oauth":         map[string]any{"auth-dir": "/runtime/gateway/destination/auth"},
-		"plugins":       map[string]any{"enabled": false},
+		"access": map[string]any{"api-keys": keys},
+		"oauth":  map[string]any{"auth-dir": "/runtime/gateway/destination/auth"},
+		// The Supervisor template publishes both the switch and its own plugin
+		// root; the root is a sibling of the destination directory so an
+		// installed plugin survives a re-stage, and only this closed shape is
+		// the managed posture.
+		"plugins":       map[string]any{"enabled": false, "dir": "/runtime/supervisor/plugins"},
 		"observability": map[string]any{"logs": map[string]any{"logging-to-file": false}, "usage": map[string]any{"usage-statistics-enabled": true}},
 	})
 	return body

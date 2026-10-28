@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
@@ -106,7 +107,9 @@ func migrationFixture(t *testing.T, generation model.RuntimeGeneration, stageErr
 		t.Fatal(err)
 	}
 	service := freshstrategy.New(freshstrategy.Options{Runtime: runtime, Protector: protector, DestinationBaseURL: server.URL, Qualification: bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true}, QualifiedArtifactID: artifact, InitialClientKey: installTestClientKey})
-	app := &freshApplication{store: fresh, strategy: service}
+	// The probe is wired exactly as production wires it, so a test can observe that
+	// a saved connection invalidates the previous plugin answer.
+	app := &freshApplication{store: fresh, strategy: service, pluginCapability: newPluginCapabilityProbe(time.Hour, time.Minute, func(context.Context) bool { return true })}
 	checkpoint := bootstrap.FreshStrategyCheckpoint{Strategy: bootstrap.NewManaged, Stage: "committed", TargetIdentity: string(runtime.status.Identity), TargetGeneration: 7, TargetArtifactID: string(artifact)}
 	if _, err = fresh.Update(t.Context(), id, record.Operation.Revision, func(r *freshstore.Record) error {
 		r.Operation.Strategy = checkpoint
@@ -187,5 +190,26 @@ func TestManagedDestinationMigrationRetiresTerminalStageFailure(t *testing.T) {
 	}
 	if err := app.migrateManagedDestination(t.Context()); err != nil || len(runtime.stages) != 2 {
 		t.Fatalf("completed migration was not idempotent: %v", err)
+	}
+}
+
+// A migration that saves a connection must invalidate the plugin capability: the
+// answer describes the connection that was just replaced, and serving it for up
+// to a TTL would advertise a capability the new connection may not have.
+func TestManagedDestinationMigrationForgetsThePluginCapability(t *testing.T) {
+	app, _, _ := migrationFixture(t, 7, nil)
+	// Prove the old connection first, so the stale answer is observable.
+	app.pluginCapability.launch = func(refresh func()) { refresh() }
+	// A read serves the value known before it, so the proof is visible on the
+	// following read.
+	_ = app.pluginCapability.capable(t.Context())
+	if !app.pluginCapability.capable(t.Context()) {
+		t.Fatal("the pre-migration proof did not land")
+	}
+	if err := app.migrateManagedDestination(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if app.pluginCapability.capable(t.Context()) {
+		t.Fatal("the plugin capability survived a saved connection change")
 	}
 }

@@ -10,9 +10,15 @@
   </head>
   <body>
     <div id="root"></div>
-    <script id="cpamp-routing-context" type="application/json">
+    <!--
+      __CPAMP_CSP_NONCE__ is a build-time literal. The Manager replaces every
+      occurrence with the per-response CSP nonce before serving this document
+      and fails closed (script-src 'none') when any script tag lacks a nonce.
+      Every script tag here must carry the attribute.
+    -->
+    <script id="cpamp-routing-context" type="application/json" nonce="__CPAMP_CSP_NONCE__">
       __CPAMP_ROUTING_CONTEXT__
     </script>
-    <script type="module" src="../src/fullweb/main.tsx"></script>
+    <script type="module" src="../src/fullweb/main.tsx" nonce="__CPAMP_CSP_NONCE__"></script>
   </body>
 </html>

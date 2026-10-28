@@ -4502,6 +4502,22 @@
   "plugin_management": {
     "title": "插件管理",
     "description": "查看已安裝和可用的插件，管理啟停、設定和入口。",
+    "runtime_title": "插件執行開關",
+    "runtime_description": "控制託管 CPA 是否執行插件。Manager 將此設定寫入閘道設定；插件目錄由執行時發布，本頁面不修改它。",
+    "runtime_persisted": "已儲存",
+    "runtime_on": "已啟用",
+    "runtime_off": "已關閉",
+    "runtime_unset": "未設定",
+    "runtime_toggle": "啟用插件",
+    "runtime_toggle_aria": "啟用插件執行",
+    "runtime_reconcile": "讀回結果",
+    "runtime_pending": "上次寫入結果未知，請讀回確認實際儲存的內容。",
+    "runtime_reconciled": "已讀回：新值已儲存。",
+    "runtime_not_applied": "已讀回：該寫入未到達設定。",
+    "runtime_conflict": "讀取後設定已被變更，請重新讀取後再儲存。",
+    "runtime_refused": "目前安裝不是插件目錄的持有者，無法在此修改開關。",
+    "runtime_save_failed": "插件執行開關未儲存。",
+    "runtime_saved_effect_unknown": "已儲存。CPA 重新載入設定後生效。",
     "refresh": "重新整理",
     "install_plugin": "安裝插件",
     "tabs_aria_label": "插件管理視圖",
@@ -4719,7 +4735,9 @@
     "not_found": "未找到插件頁面",
     "not_found_desc": "目前服務沒有宣告這個插件頁面。",
     "empty_src": "插件頁面地址為空",
-    "empty_src_desc": "該插件選單沒有提供可開啟的頁面地址。"
+    "empty_src_desc": "該插件選單沒有提供可開啟的頁面地址。",
+    "unsupported_target": "無法顯示該插件頁面",
+    "unsupported_target_desc": "插件頁面必須由本網站自身的 /v0/resource/plugins/ 命名空間提供。由於插件頁面在沙箱來源中執行，依賴同源存取、外部位址、data: 與 blob: 的頁面不受支援。"
   },
   "system_info": {
     "title": "系統資訊",

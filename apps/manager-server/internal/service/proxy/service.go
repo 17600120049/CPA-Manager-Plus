@@ -178,19 +178,73 @@ func (s *Service) ProxyPluginManagementWithCallerAuth(w http.ResponseWriter, r *
 }
 
 func (s *Service) ProxyPluginResource(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, error)) {
-	if !IsCPAPluginResourcePath(r.URL.Path) {
-		writeError(w, http.StatusNotFound, errors.New("proxy path must be under /v0/resource/plugins/"))
+	if !s.admitPluginResource(w, r, writeError) {
 		return
 	}
-	s.proxyToSavedSetup(w, r, writeError, true, true)
+	s.proxyPluginResource(w, r, writeError, true)
 }
 
 func (s *Service) ProxyPluginResourceWithCallerAuth(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, error)) {
-	if !IsCPAPluginResourcePath(r.URL.Path) {
-		writeError(w, http.StatusNotFound, errors.New("proxy path must be under /v0/resource/plugins/"))
+	if !s.admitPluginResource(w, r, writeError) {
 		return
 	}
-	s.proxyToSavedSetup(w, r, writeError, false, true)
+	s.proxyPluginResource(w, r, writeError, false)
+}
+
+// admitPluginResource applies the request-side isolation policy for plugin
+// resources.
+//
+// The method is deliberately not restricted here, and that is a statement about
+// this proxy rather than about what CPA serves. CPA's plugin resource namespace
+// is read-only: a pluginapi.ResourceRoute is the plugin's own page ("the
+// management UI menu label for this GET resource") and the plugin host answers
+// only GET, so a write forwarded from here comes back 404. A plugin that needs
+// input registers a Management route, which is credentialed and unreachable from
+// the sandbox - the official Codex Invite plugin posts to
+// /v0/management/codex-invite/invite, not under its resource prefix.
+//
+// The proxy does not invent a method veto for a namespace it does not own: it
+// forwards what the caller sent and lets CPA answer, which is also what the
+// compatibility suite pins. Isolation does not depend on the method - the
+// sandbox CSP, the response-header allowlist and the redirect confinement below
+// apply to a write exactly as to a read.
+//
+// The caller-auth branch keeps its v1.11.11 invariant: an unauthenticated
+// request is forwarded with its own (absent) authorization and never borrows the
+// saved CPA management key.
+func (s *Service) admitPluginResource(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, error)) bool {
+	if !IsCPAPluginResourcePath(r.URL.Path) {
+		writeError(w, http.StatusNotFound, errors.New("proxy path must be under /v0/resource/plugins/"))
+		return false
+	}
+	if !pluginResourceFetchMetadataAllowed(r.Header) {
+		writeError(w, http.StatusForbidden, errors.New("plugin resource request rejected by fetch metadata policy"))
+		return false
+	}
+	return true
+}
+
+// proxyPluginResource proxies one admitted plugin resource request and rewrites
+// the response into an opaque-origin sandbox document, refusing redirects and
+// cookies that would otherwise leave the plugin's own prefix.
+func (s *Service) proxyPluginResource(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, error), useSavedManagementKey bool) {
+	pluginPrefix := pluginResourceRequestPrefix(r.URL.Path)
+	if pluginPrefix == "" {
+		writeError(w, http.StatusNotFound, errors.New("plugin resource path must name one plugin"))
+		return
+	}
+	// The plugin prefix is granted before the upstream is known; a later
+	// failure can only narrow the response, never widen it.
+	s.proxyWithResponseHook(w, r, writeError, useSavedManagementKey, true, func(response *http.Response) error {
+		location := response.Header.Get("Location")
+		if location != "" {
+			if !pluginResourceRedirectAllowed(location, r.URL.Path, pluginPrefix) {
+				return errPluginResourceRedirectOutsidePrefix
+			}
+		}
+		applyPluginResourceSandboxHeaders(response.Header)
+		return nil
+	})
 }
 
 func (s *Service) proxyWithSavedManagementKey(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, error)) {
@@ -202,6 +256,13 @@ func (s *Service) proxyWithSavedManagementKey(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Service) proxyToSavedSetup(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, error), useSavedManagementKey bool, rewritePluginOrigin bool) {
+	s.proxyWithResponseHook(w, r, writeError, useSavedManagementKey, rewritePluginOrigin, nil)
+}
+
+// proxyWithResponseHook is proxyToSavedSetup with an extra response-rewrite
+// step. The hook runs before the ownership bookkeeping so a rejected response
+// cannot be mistaken for a successful mutation.
+func (s *Service) proxyWithResponseHook(w http.ResponseWriter, r *http.Request, writeError func(http.ResponseWriter, int, error), useSavedManagementKey bool, rewritePluginOrigin bool, rewriteResponse func(*http.Response) error) {
 	setup, ok, err := s.resolveSetup(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -344,6 +405,14 @@ func (s *Service) proxyToSavedSetup(w http.ResponseWriter, r *http.Request, writ
 	}
 	proxy.ModifyResponse = func(response *http.Response) error {
 		responseProcessed = true
+		if rewriteResponse != nil {
+			// Plugin resource isolation runs first: a response that violates the
+			// sandbox contract must fail the request before any mutation
+			// bookkeeping treats it as successful.
+			if err := rewriteResponse(response); err != nil {
+				return err
+			}
+		}
 		if credentialDeleteIntentID != "" {
 			switch deleteOutcome {
 			case identitystoreports.CredentialDeleteSuccess:

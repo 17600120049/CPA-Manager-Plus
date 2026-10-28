@@ -54,18 +54,6 @@ func New(appCtx *app.Context) http.Handler {
 	mux.HandleFunc("/usage-service/runtime/updates", middleware.WithCORS(appCtx.Config, cpaUpdates.Handle))
 	mux.HandleFunc("/usage-service/runtime/updates/", middleware.WithCORS(appCtx.Config, cpaUpdates.Handle))
 	mux.HandleFunc("/health", middleware.WithCORS(appCtx.Config, healthHandler.Health))
-	// Never published by Ingress; only the private shared Host namespace can
-	// check that the same Manager process enforces the resource-deny guard.
-	mux.HandleFunc("/internal/pah-s0/resource-guard", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		if !appCtx.Config.PAHS0Enabled || r.Method != http.MethodGet ||
-			r.URL.Path != "/internal/pah-s0/resource-guard" ||
-			r.URL.EscapedPath() != r.URL.Path || r.URL.RawQuery != "" {
-			http.NotFound(w, r)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
 	// The legacy application is selected only after startup admission and
 	// initialization. Fresh and pending startup use separate handlers and must
 	// never emit this explicit legacy-mode acknowledgement. Public Ingress
@@ -92,10 +80,17 @@ func New(appCtx *app.Context) http.Handler {
 	mux.HandleFunc("/management.html", panelHandler.ManagementHTML)
 	mux.HandleFunc("/", rootHandler(appCtx, usageHandler, modelPriceHandler, apiKeyAliasHandler, accountActionHandler, codexInspectionHandler, dashboardHandler, monitoringHandler, quotaSnapshotHandler, managerConfigHandler, proxyHandler))
 
-		var routes http.Handler = mux
-	if appCtx.Config.PAHS0Enabled {
-		routes = pahS0DenyResources(routes)
-	}
+	var routes http.Handler = mux
+	// Admin authorization is a request header, so a cross-site caller cannot
+	// gain authority by being cross-site. The rejection still matters: it stops
+	// a sandboxed plugin document from using this API as a confused deputy, and
+	// it keeps the admin surface unreachable from any origin other than the one
+	// that served the Console. Plugin resources are exempt because they carry
+	// their own fail-closed policy and must stay reachable from the sandbox. The
+	// exemption is the canonical request shape, not a raw prefix: an encoded or
+	// dot-segment path never reaches the proxy as a plugin resource, so it must
+	// not skip the cross-site check either.
+	routes = middleware.RejectCrossSiteAdmin(routes, proxysvc.IsCanonicalPluginResourceRequest)
 	return middleware.Recovery(middleware.RequestLogger(routingdomain.ProtectFixedDiscovery(routes, routingdomain.DiscoveryHandler{})))
 }
 
@@ -167,7 +162,14 @@ func rootHandler(
 			return
 		}
 		if proxysvc.IsCPAPluginResourcePath(r.URL.Path) {
-			middleware.WithCORS(appCtx.Config, proxyHandler.CPAResource)(w, r)
+			// No CORS middleware here. A plugin resource response is rewritten
+			// into the opaque-origin sandbox contract by the proxy itself, which
+			// sets the one Access-Control-Allow-Origin that applies. Wrapping it
+			// in WithCORS as well emits two Access-Control-Allow-Origin values
+			// (this one and the CPA upstream's), and a browser rejects the
+			// response outright, so the sandboxed plugin could not read its own
+			// resource.
+			proxyHandler.CPAResource(w, r)
 			return
 		}
 		if r.URL.Path == "/" {

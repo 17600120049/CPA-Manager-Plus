@@ -114,6 +114,11 @@ const (
 	// management credential. It is distinct from an unavailable authority
 	// because only rebinding the connection resolves it.
 	ReasonManagementRejected = "external_management_key_rejected"
+	// ReasonPluginManagedOnly answers every profile that does not own the
+	// Supervisor-published plugin root. The plugin switch is the managed
+	// authority's alone, so it fails closed instead of borrowing a value another
+	// CPA owns.
+	ReasonPluginManagedOnly = "plugin_switch_requires_managed_install"
 )
 
 // ErrGenerationMismatch refuses a save the browser built against another CPA
@@ -125,6 +130,11 @@ var ErrGenerationMismatch = errors.New("gateway config target generation mismatc
 // field operation. Resolving that operation reads the document, so a newer write
 // would let it observe a value it never wrote.
 var ErrLegacyUnresolved = errors.New("legacy config operation is unresolved")
+
+// ErrPluginAuthority refuses the plugin runtime switch on any profile but the
+// install-derived managed authority. The plugin root belongs to the Supervisor's
+// destination, so no other profile can prove what the switch applies to.
+var ErrPluginAuthority = errors.New("plugin switch requires the managed authority")
 
 // ProfileLimits is the write shape one profile accepts. The private H1 profile is
 // the only one that reserves a single leaf per operation and has no delete, so it
@@ -305,6 +315,56 @@ func (s *Service) EnableExternal(authority ExternalAuthority) {
 	s.external = authority
 }
 
+// scope is one closed write surface over the shared journal, CAS and read-back
+// machinery. The gateway page and the plugin runtime switch are two scopes: the
+// page never projects a plugin leaf and the plugin route never projects a page
+// group, so neither widens the other while both write through one journal.
+type scope struct {
+	// leafPaths and groupIDs are the ordered projections of this scope.
+	leafPaths   func() []string
+	groupIDs    func() []string
+	lookupGroup func(string) (cpa.ConfigGroup, bool)
+	lookupLeaf  func(string) (cpa.ConfigLeaf, bool)
+	// parseValue decodes one exact written value of this scope's leaves.
+	parseValue func(string, json.RawMessage) (any, error)
+	// ruleFamilies marks the scope that owns the whole payload rule families.
+	ruleFamilies bool
+	// managedOnly marks a scope only the install-derived managed authority may
+	// read or write.
+	managedOnly bool
+}
+
+var gatewayConfigScope = scope{
+	leafPaths:    cpa.ConfigLeafPaths,
+	groupIDs:     cpa.ConfigGroupIDs,
+	lookupGroup:  cpa.LookupConfigGroup,
+	lookupLeaf:   cpa.LookupConfigLeaf,
+	parseValue:   cpa.ParseConfigLeafValue,
+	ruleFamilies: true,
+}
+
+// ownsGroup reports whether a journaled group belongs to this scope. The gateway
+// page also owns the shared payload-rules journal, which is not a page group, so
+// membership is a scope question and never a plain page-group lookup.
+func (sc scope) ownsGroup(id string) bool {
+	if sc.ruleFamilies && id == cpa.ConfigRulesGroupID {
+		return true
+	}
+	_, ok := sc.lookupGroup(id)
+	return ok
+}
+
+// pluginConfigScope is the Supervisor-owned plugin root switch: one managed-only
+// group whose single leaf the admin may flip.
+var pluginConfigScope = scope{
+	leafPaths:   cpa.PluginConfigLeafPaths,
+	groupIDs:    cpa.PluginConfigGroupIDs,
+	lookupGroup: cpa.LookupPluginConfigGroup,
+	lookupLeaf:  cpa.LookupPluginConfigLeaf,
+	parseValue:  cpa.ParsePluginConfigLeafValue,
+	managedOnly: true,
+}
+
 // authority is the resolved source of one page read or write.
 type authority struct {
 	mode     string
@@ -319,8 +379,39 @@ type authority struct {
 
 // resolve proves the profile this service was constructed with and returns the
 // authority for exactly the committed target generation. A record that does not
-// match that authority is never a write path.
-func (s *Service) resolve(ctx context.Context, r freshstore.Record) (authority, error) {
+// match that authority is never a write path. A managed-only scope resolves to a
+// closed refusal on every other profile.
+func (s *Service) resolve(ctx context.Context, r freshstore.Record, sc scope) (authority, error) {
+	auth, err := s.resolveProfile(ctx, r)
+	if !sc.managedOnly {
+		return auth, err
+	}
+	if err != nil || auth.mode != ModeManaged {
+		// The plugin switch belongs to the Supervisor-owned destination, so a
+		// profile that does not own that CPA fails closed: no read borrowed from
+		// another CPA and no write to one.
+		//
+		// A transient proof failure on a managed install is not the same fact as
+		// "this install does not own the plugin root": reporting the profile
+		// reason would tell the operator their install is the wrong shape and
+		// hide the switch. This service's own profile is managed, so a proof that
+		// could not be taken right now stays ErrProofUnavailable and the caller
+		// retries instead of concluding anything about the install.
+		if err != nil && s.managed {
+			return authority{
+				mode:    auth.mode,
+				capable: Capability{Mode: auth.mode, Reason: ReasonUnavailable},
+			}, err
+		}
+		return authority{
+			mode:    auth.mode,
+			capable: Capability{Mode: auth.mode, Reason: ReasonPluginManagedOnly},
+		}, ErrPluginAuthority
+	}
+	return auth, nil
+}
+
+func (s *Service) resolveProfile(ctx context.Context, r freshstore.Record) (authority, error) {
 	op := r.Operation
 	if s.target == nil && s.external == nil {
 		return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
@@ -407,8 +498,16 @@ func (s *Service) resolve(ctx context.Context, r freshstore.Record) (authority, 
 	}
 }
 
-// Read projects the whole page.
-func (s *Service) Read(ctx context.Context) (View, error) {
+// Read projects the whole gateway page.
+func (s *Service) Read(ctx context.Context) (View, error) { return s.read(ctx, gatewayConfigScope) }
+
+// ReadPlugins projects the plugin runtime switch. It is a scope of its own: the
+// managed authority answers it, every other profile is closed.
+func (s *Service) ReadPlugins(ctx context.Context) (View, error) {
+	return s.read(ctx, pluginConfigScope)
+}
+
+func (s *Service) read(ctx context.Context, sc scope) (View, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r, err := s.store.Load(ctx)
@@ -419,8 +518,14 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 		Capability:    Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable},
 		Generation:    strconv.FormatUint(r.Operation.Strategy.TargetGeneration, 10),
 		GroupsInvalid: r.ConfigGroupsInvalid,
+		// A projection is always an array on the wire: a scope without groups,
+		// leaves or families (the plugin switch has one of the first two and no
+		// families) must not hand the page a null to branch on.
+		Groups:   []GroupView{},
+		Fields:   []FieldView{},
+		Families: []FamilyView{},
 	}
-	auth, _ := s.resolve(ctx, r)
+	auth, _ := s.resolve(ctx, r, sc)
 	view.Capability = auth.capable
 	view.ProfileLimits = auth.limits
 	journal := r.ConfigGroups
@@ -438,10 +543,11 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 			document = nil
 		}
 	}
-	// A group whose latest operation is still unknown blocks its own writes.
+	// A group whose latest operation is still unknown blocks its own writes. The
+	// journal is shared, so a group outside this scope is never a blocker here.
 	blocked := map[string]string{}
 	for id, entry := range journal {
-		if entry == nil {
+		if entry == nil || !sc.ownsGroup(id) {
 			continue
 		}
 		if operation, ok := entry.Operations[entry.Latest]; ok && operation.State == "unknown" {
@@ -454,7 +560,10 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 	// surfaced AS the group's operation, on every profile: it carries the request
 	// ID and the unknown state the page reconciles from, so the group can be
 	// unlocked. Without it the page says "reconcile it" and has no way to.
-	private := auth.mode == ModePrivate
+	// The private H1 profile's own projection is a gateway-page concept. A
+	// managed-only scope never resolves for that profile, so its groups are never
+	// the private subset: it stays the closed projection of its own table.
+	private := auth.mode == ModePrivate && !sc.managedOnly
 	fieldOperations := map[string]*freshstore.ConfigGroupOperation{}
 	if private {
 		for _, id := range cpa.PrivateConfigGroups() {
@@ -472,8 +581,8 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 			}
 		}
 	} else {
-		for _, id := range cpa.ConfigGroupIDs() {
-			group, ok := cpa.LookupConfigGroup(id)
+		for _, id := range sc.groupIDs() {
+			group, ok := sc.lookupGroup(id)
 			if !ok {
 				continue
 			}
@@ -491,17 +600,17 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 			blocked[id] = ReasonLegacyUnresolved
 		}
 	}
-	if !private && unresolvedLegacyField(r, cpa.ConfigRulesGroupID) && blocked[cpa.ConfigRulesGroupID] == "" {
+	if sc.ruleFamilies && !private && unresolvedLegacyField(r, cpa.ConfigRulesGroupID) && blocked[cpa.ConfigRulesGroupID] == "" {
 		blocked[cpa.ConfigRulesGroupID] = ReasonLegacyUnresolved
 	}
 	// A private-profile group is writable only if it holds a private leaf. Every
 	// other group of that profile stays readable and read-only.
-	groupIDs := cpa.ConfigGroupIDs()
+	groupIDs := sc.groupIDs()
 	if private {
 		groupIDs = cpa.PrivateConfigGroups()
 	}
 	for _, id := range groupIDs {
-		group, ok := cpa.LookupConfigGroup(id)
+		group, ok := sc.lookupGroup(id)
 		if private {
 			group, ok = cpa.LookupPrivateConfigGroup(id)
 		}
@@ -544,8 +653,8 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 		entry.Writable = auth.capable.Writable && !view.GroupsInvalid && blocked[id] == ""
 		view.Groups = append(view.Groups, entry)
 	}
-	for _, path := range cpa.ConfigLeafPaths() {
-		leaf, _ := cpa.LookupConfigLeaf(path)
+	for _, path := range sc.leafPaths() {
+		leaf, _ := sc.lookupLeaf(path)
 		field := FieldView{Path: path, Type: string(leaf.Type), Kind: string(leaf.Kind), Group: leaf.Group, Presence: "unknown"}
 		if inherited, ok := cpa.ConfigLeafInheritable(path); ok {
 			field.Inherit = &inherited
@@ -573,35 +682,37 @@ func (s *Service) Read(ctx context.Context) (View, error) {
 		}
 		view.Fields = append(view.Fields, field)
 	}
-	var rulesOperation *freshstore.ConfigGroupOperation
-	if entry := journal[cpa.ConfigRulesGroupID]; entry != nil {
-		if operation, ok := entry.Operations[entry.Latest]; ok {
-			copied := operation.Clone()
-			rulesOperation = &copied
-		}
-	}
-	for _, id := range cpa.ConfigRuleFamilyIDs() {
-		family, _ := cpa.LookupConfigRuleFamily(id)
-		item := FamilyView{Family: family.Family, Path: family.Path, ReadOnly: true, Operation: rulesOperation}
-		if document != nil {
-			if value, presence := cpa.LookupConfigValue(document, family.Path); presence == cpa.ConfigPresent {
-				if rules, ok := value.([]any); ok {
-					item.Rules = rules
-				}
+	if sc.ruleFamilies {
+		var rulesOperation *freshstore.ConfigGroupOperation
+		if entry := journal[cpa.ConfigRulesGroupID]; entry != nil {
+			if operation, ok := entry.Operations[entry.Latest]; ok {
+				copied := operation.Clone()
+				rulesOperation = &copied
 			}
-			item.Baseline = familyBaseline(document, family.Path)
 		}
-		item.Writable = auth.capable.RulesWritable && !view.GroupsInvalid && blocked[cpa.ConfigRulesGroupID] == ""
-		item.ReadOnly = !item.Writable
-		switch reason, isBlocked := blocked[cpa.ConfigRulesGroupID]; {
-		case view.GroupsInvalid:
-			item.Reason = ReasonJournalInvalid
-		case isBlocked:
-			item.Reason = reason
-		case !auth.capable.RulesWritable:
-			item.Reason = firstReason(auth.capable.Reason, ReasonUnavailable)
+		for _, id := range cpa.ConfigRuleFamilyIDs() {
+			family, _ := cpa.LookupConfigRuleFamily(id)
+			item := FamilyView{Family: family.Family, Path: family.Path, ReadOnly: true, Operation: rulesOperation}
+			if document != nil {
+				if value, presence := cpa.LookupConfigValue(document, family.Path); presence == cpa.ConfigPresent {
+					if rules, ok := value.([]any); ok {
+						item.Rules = rules
+					}
+				}
+				item.Baseline = familyBaseline(document, family.Path)
+			}
+			item.Writable = auth.capable.RulesWritable && !view.GroupsInvalid && blocked[cpa.ConfigRulesGroupID] == ""
+			item.ReadOnly = !item.Writable
+			switch reason, isBlocked := blocked[cpa.ConfigRulesGroupID]; {
+			case view.GroupsInvalid:
+				item.Reason = ReasonJournalInvalid
+			case isBlocked:
+				item.Reason = reason
+			case !auth.capable.RulesWritable:
+				item.Reason = firstReason(auth.capable.Reason, ReasonUnavailable)
+			}
+			view.Families = append(view.Families, item)
 		}
-		view.Families = append(view.Families, item)
 	}
 	return view, nil
 }
@@ -669,6 +780,16 @@ func canonicalDigest(value any) string {
 // Operation returns the ORIGINAL operation of one request ID. Reconciliation is
 // explicit and read-only: an unknown operation is never replayed.
 func (s *Service) Operation(ctx context.Context, id string, reconcile bool) (freshstore.ConfigGroupOperation, error) {
+	return s.operation(ctx, gatewayConfigScope, id, reconcile)
+}
+
+// PluginOperation returns the ORIGINAL plugin switch operation of one request ID,
+// with the same read-back-only reconciliation as the gateway page.
+func (s *Service) PluginOperation(ctx context.Context, id string, reconcile bool) (freshstore.ConfigGroupOperation, error) {
+	return s.operation(ctx, pluginConfigScope, id, reconcile)
+}
+
+func (s *Service) operation(ctx context.Context, sc scope, id string, reconcile bool) (freshstore.ConfigGroupOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !freshkeys.ValidRequestID(id) {
@@ -678,15 +799,18 @@ func (s *Service) Operation(ctx context.Context, id string, reconcile bool) (fre
 	if err != nil {
 		return freshstore.ConfigGroupOperation{}, err
 	}
-	for _, entry := range r.ConfigGroups {
-		if entry == nil {
+	for group, entry := range r.ConfigGroups {
+		if entry == nil || !sc.ownsGroup(group) {
 			continue
 		}
 		if operation, ok := entry.Operations[id]; ok {
 			if !reconcile || operation.State != "unknown" {
 				return operation, nil
 			}
-			auth, resolveErr := s.resolve(ctx, r)
+			auth, resolveErr := s.resolve(ctx, r, sc)
+			if errors.Is(resolveErr, ErrPluginAuthority) {
+				return operation, resolveErr
+			}
 			if resolveErr != nil || !auth.capable.Readable {
 				return operation, cpa.ErrApplyUnknown
 			}
@@ -696,6 +820,9 @@ func (s *Service) Operation(ctx context.Context, id string, reconcile bool) (fre
 	// A field operation journaled before the page became group-based is still
 	// readable and reconcilable; it is never writable again.
 	for _, path := range cpa.ConfigLeafPaths() {
+		if _, ok := sc.lookupLeaf(path); !ok {
+			continue
+		}
 		entry := r.Config[path]
 		if entry == nil {
 			continue
@@ -707,7 +834,7 @@ func (s *Service) Operation(ctx context.Context, id string, reconcile bool) (fre
 		if !reconcile || operation.State != "unknown" {
 			return legacyView(operation), nil
 		}
-		auth, resolveErr := s.resolve(ctx, r)
+		auth, resolveErr := s.resolve(ctx, r, sc)
 		if resolveErr != nil {
 			return legacyView(operation), cpa.ErrApplyUnknown
 		}
@@ -748,4 +875,37 @@ func fieldGroup(path string) string {
 		return leaf.Group
 	}
 	return "legacy"
+}
+
+// SupportsPlugins proves whether this saved connection can serve plugin
+// resources end to end. It answers from the CPA's own configuration document: a
+// build that exposes the plugin section there can serve a plugin page, and one
+// that cannot produce the document cannot serve the plugin switch either.
+//
+// It is a capability question about the connection, never a write, so it never
+// touches the journal and never needs a profile that may write.
+func (s *Service) SupportsPlugins(ctx context.Context) bool {
+	r, err := s.store.Load(ctx)
+	if err != nil {
+		return false
+	}
+	auth, err := s.resolveProfile(ctx, r)
+	if err != nil {
+		return false
+	}
+	if auth.wire == nil || auth.secret == "" {
+		return false
+	}
+	document, err := auth.wire.ReadConfigDocument(ctx, auth.secret)
+	if err != nil {
+		return false
+	}
+	plugins, ok := document["plugins"].(map[string]any)
+	if !ok {
+		return false
+	}
+	// The directory the Supervisor owns is what makes the namespace servable;
+	// `enabled` says nothing about capability and may legitimately be false.
+	_, hasDir := plugins["dir"]
+	return hasDir
 }
