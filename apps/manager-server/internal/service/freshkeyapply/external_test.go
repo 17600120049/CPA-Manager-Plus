@@ -35,7 +35,10 @@ type fakeExternalCPA struct {
 	rejectOnce  bool
 	rejectEvery bool
 	writes      int
-	server      *httptest.Server
+	// onKeyRead runs before each client-key read, so a test can act as the user
+	// editing their own CPA between the reads of one write.
+	onKeyRead func(f *fakeExternalCPA)
+	server    *httptest.Server
 }
 
 // config renders the CPA configuration the client-key list lives in. The list is
@@ -65,6 +68,9 @@ func newFakeExternalCPA(t *testing.T, keys ...string) *fakeExternalCPA {
 		}
 		switch {
 		case r.URL.Path == "/v8/management/config/access/api-keys" && r.Method == http.MethodGet:
+			if f.onKeyRead != nil {
+				f.onKeyRead(f)
+			}
 			_ = json.NewEncoder(w).Encode(f.keys)
 		case r.URL.Path == "/v8/management/config.yaml" && r.Method == http.MethodGet:
 			_, _ = w.Write(f.config())
@@ -640,5 +646,66 @@ func TestExternalKeyListReportsARejectedCredential(t *testing.T) {
 	})
 	if _, _, err = moved.ExternalKeyList(ctx, keys); !errors.Is(err, cpa.ErrExternalTargetMoved) {
 		t.Fatalf("list on a moved target = %v", err)
+	}
+}
+
+// Apply replaces the CPA's whole list, so it never builds that list from a read the
+// user has since edited: a credential they revoked directly on their CPA is not
+// added back by the read this Manager took before that edit.
+func TestExternalApplyRefusesAConcurrentExternalEdit(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	present, presentSecret := harness.staged(t, strings.Repeat("1", 32))
+	if _, err := harness.service.Apply(ctx, present, 1); err != nil {
+		t.Fatal(err)
+	}
+	staged, stagedSecret := harness.staged(t, strings.Repeat("2", 32))
+	reads := 0
+	harness.cpa.onKeyRead = func(f *fakeExternalCPA) {
+		reads++
+		if reads == 2 {
+			// The user revokes their credential on their own CPA between the read
+			// this write was built from and the read that gates it.
+			f.keys = slices.DeleteFunc(f.keys, func(key string) bool { return key == presentSecret })
+		}
+	}
+	harness.cpa.writes = 0
+	if _, err := harness.service.Apply(ctx, staged, 1); !errors.Is(err, cpa.ErrSourceConflict) {
+		t.Fatalf("apply over an external edit = %v", err)
+	}
+	if harness.cpa.writes != 0 {
+		t.Fatal("a list built from a stale read was written")
+	}
+	if slices.Contains(harness.cpa.keys, stagedSecret) {
+		t.Fatal("the staged key was written over the user's edit")
+	}
+	if slices.Contains(harness.cpa.keys, presentSecret) {
+		t.Fatal("the credential the user revoked was added back")
+	}
+}
+
+// A journaled operation owns the key set until it settles: Apply refuses instead of
+// writing a list the journal's step is about to change.
+func TestExternalApplyRefusesWhileAnOperationIsJournaled(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	target, _ := harness.staged(t, strings.Repeat("3", 32))
+	keeper, _ := harness.staged(t, strings.Repeat("4", 32))
+	if _, err := harness.service.Apply(ctx, target, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := harness.service.Apply(ctx, keeper, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := harness.service.Prepare(ctx, strings.Repeat("5", 32), target, keeper, "revoke", 1); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	staged, stagedSecret := harness.staged(t, strings.Repeat("6", 32))
+	harness.cpa.writes = 0
+	if _, err := harness.service.Apply(ctx, staged, 1); !errors.Is(err, freshkeys.ErrConflict) {
+		t.Fatalf("apply while an operation is journaled = %v", err)
+	}
+	if harness.cpa.writes != 0 || slices.Contains(harness.cpa.keys, stagedSecret) {
+		t.Fatal("an apply during a journaled operation reached the user's CPA")
 	}
 }

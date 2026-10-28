@@ -293,10 +293,21 @@ func (s *Service) externalSecretPresent(ctx context.Context, rawID string, snaps
 // written again, so a replay never duplicates a credential; the write itself is
 // sent exactly once, and a refused management credential is the typed blocker,
 // never a retry reason.
+//
+// The write replaces the CPA's whole list, so it never builds that list from a
+// read the user has since edited: the document digest and the membership are read
+// again immediately before the PUT and a change there is a source conflict with no
+// write at all. A journaled operation owns the key set until it settles, exactly as
+// the managed Apply is bound by its own journal.
 func (s *Service) externalApply(ctx context.Context, id string, generation uint64) (State, error) {
 	result := State{KeyID: id, RuntimeState: "effect_unknown"}
 	if _, err := s.keys.Detail(ctx, id); err != nil {
 		return result, err
+	}
+	if latest, err := s.repo.LatestOperation(ctx); err != nil {
+		return result, err
+	} else if latest != nil && latest.Outcome != "committed" {
+		return result, freshkeys.ErrConflict
 	}
 	result.ManagerStaged = true
 	install, err := s.externalTarget(ctx, generation)
@@ -315,8 +326,20 @@ func (s *Service) externalApply(ctx context.Context, id string, generation uint6
 		if slices.Contains(snapshot.Keys, secret) {
 			return nil
 		}
+		after := append(slices.Clone(snapshot.Keys), secret)
+		// The list was built from this one read. The read that gates the write must
+		// show the same document and the same membership, or the user changed their
+		// CPA under it — a credential they revoked directly on the CPA is never
+		// added back by a stale list.
+		again, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
+		if err != nil {
+			return err
+		}
+		if again.SourceSHA256 != snapshot.SourceSHA256 || !sameKeys(again.Keys, snapshot.Keys) {
+			return cpa.ErrSourceConflict
+		}
 		result.Attempted = true
-		if err = w.ExternalWriteKeySet(ctx, install.ManagementKey, append(slices.Clone(snapshot.Keys), secret)); err != nil {
+		if err = w.ExternalWriteKeySet(ctx, install.ManagementKey, after); err != nil {
 			return err
 		}
 		back, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
