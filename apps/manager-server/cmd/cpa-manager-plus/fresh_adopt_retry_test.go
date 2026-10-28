@@ -425,3 +425,38 @@ func TestFreshAdoptUnresolvedDestinationKeepsTheAttempt(t *testing.T) {
 		})
 	}
 }
+
+// A lost reply leaves attempt zero unresolved, and the resend must present the
+// frozen protected snapshot. The source management key is only compared there,
+// and the admitted class is unchanged, so the snapshot comparison itself is the
+// guard that refuses a differently derived snapshot.
+func TestFreshAdoptLostReplyRefusesADifferentSnapshot(t *testing.T) {
+	fixture := newAdoptRetryFixture(t)
+	fixture.runtime.stageErr = errLostAdoptResponse
+	if response := fixture.strategy(t, fixture.record, fixture.request); response.Code != http.StatusConflict {
+		t.Fatalf("lost stage reply: %d %s", response.Code, response.Body.String())
+	}
+	unresolved := fixture.reload(t)
+	if unresolved.Operation.Strategy.DestinationAttempt != 0 || unresolved.Operation.Revision != fixture.record.Operation.Revision {
+		t.Fatalf("lost reply advanced the attempt: %+v", unresolved.Operation.Strategy)
+	}
+	stages := len(fixture.runtime.stages)
+
+	changed := fixture.request
+	if changed.AdoptSourceClass != bootstrap.AdoptNetworkExisting {
+		t.Fatalf("fixture class = %q", changed.AdoptSourceClass)
+	}
+	changed.ManagementKey = "different-source-secret"
+	response := fixture.strategy(t, unresolved, changed)
+	var blocker freshstrategy.Blocker
+	if response.Code != http.StatusConflict || json.Unmarshal(response.Body.Bytes(), &blocker) != nil || blocker.Code != "fresh_strategy_owner_conflict" {
+		t.Fatalf("different snapshot after a lost reply: %d %s", response.Code, response.Body.String())
+	}
+	after := fixture.reload(t)
+	if after.Operation.Revision != unresolved.Operation.Revision || after.Operation.Strategy.DestinationAttempt != 0 || after.AdoptionCiphertext != unresolved.AdoptionCiphertext {
+		t.Fatalf("refused different snapshot mutated the record: revision=%d %+v", after.Operation.Revision, after.Operation.Strategy)
+	}
+	if len(fixture.runtime.stages) != stages {
+		t.Fatalf("refused different snapshot issued a destination operation: %+v", fixture.runtime.stages)
+	}
+}
