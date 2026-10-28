@@ -48,8 +48,6 @@ type Service struct {
 	keyPermit     func(context.Context, string, string) (KeyPermit, error)
 	source        ManagedSource
 	endpoint      string
-	// profile is the one installation authority this service was built for. It
-	// is set at construction and decides which durable checkpoint facts count.
 	profile       string
 	keyOperations bool
 	startedAtMS   int64
