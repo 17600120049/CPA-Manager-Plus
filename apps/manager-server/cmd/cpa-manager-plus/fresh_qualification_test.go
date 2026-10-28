@@ -138,7 +138,12 @@ func TestFreshProductionQualificationCannotBeExtendedByHTTPOrRestart(t *testing.
 	}
 }
 
-func TestFreshAdoptCanonicalDeniedBeforeSourceAndStateMutation(t *testing.T) {
+// The canonical surface shares one admission point with the claim-authenticated
+// one: `legacy_managed` and an unspecified class stay refused with their own
+// typed code, and an admitted `network_existing` proceeds to the strategy
+// adapter. Every refusal below happens before the source GET and before any
+// Manager checkpoint mutation, so none of them has a side effect.
+func TestFreshAdoptCanonicalRefusalsHaveNoSourceOrStateEffect(t *testing.T) {
 	app, closeApp := newA3TestApp(t)
 	defer closeApp()
 	var sourceCalls atomic.Int32
@@ -152,15 +157,22 @@ func TestFreshAdoptCanonicalDeniedBeforeSourceAndStateMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sourceClass := range []bootstrap.AdoptSourceClass{
-		bootstrap.AdoptNetworkExisting, bootstrap.AdoptLegacyManaged,
+	for _, item := range []struct {
+		sourceClass bootstrap.AdoptSourceClass
+		blocker     string
+	}{
+		// Admitted, then refused only because this fixture has no destination
+		// Runtime capability. It is still typed, and still before the source.
+		{bootstrap.AdoptNetworkExisting, "adoption_destination_staging_required"},
+		{bootstrap.AdoptLegacyManaged, "adoption_source_class_refused"},
+		{bootstrap.AdoptSourceNone, "adoption_source_class_refused"},
 	} {
 		body, err := json.Marshal(struct {
 			Identity         bootstrap.FreshIdentity `json:"identity"`
 			ExpectedRevision uint64                  `json:"expectedRevision"`
 			freshstrategy.Request
 		}{before.Operation.Identity, before.Operation.Revision, freshstrategy.Request{
-			Strategy: bootstrap.AdoptExisting, AdoptSourceClass: sourceClass,
+			Strategy: bootstrap.AdoptExisting, AdoptSourceClass: item.sourceClass,
 			BaseURL: source.URL, ManagementKey: "private-source-secret",
 		}})
 		if err != nil {
@@ -170,12 +182,13 @@ func TestFreshAdoptCanonicalDeniedBeforeSourceAndStateMutation(t *testing.T) {
 		request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
 		response := httptest.NewRecorder()
 		app.canonicalAPI(response, request)
-		if response.Code != http.StatusServiceUnavailable || response.Body.Len() != 0 {
-			t.Fatalf("unapproved canonical Adopt %s: %d %s", sourceClass, response.Code, response.Body.String())
+		var blocker freshstrategy.Blocker
+		if response.Code != http.StatusConflict || json.Unmarshal(response.Body.Bytes(), &blocker) != nil || blocker.Code != item.blocker {
+			t.Fatalf("canonical Adopt %q: %d %s", item.sourceClass, response.Code, response.Body.String())
 		}
 		after, err := app.store.Load(t.Context())
 		if err != nil || !reflect.DeepEqual(before, after) || sourceCalls.Load() != 0 {
-			t.Fatalf("Adopt touched source or Manager state: %v", err)
+			t.Fatalf("Adopt %q touched source or Manager state: %v", item.sourceClass, err)
 		}
 	}
 }
