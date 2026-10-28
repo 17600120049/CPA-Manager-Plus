@@ -140,7 +140,7 @@ func (s *Service) externalAuthority(ctx context.Context) (ExternalInstall, error
 		}
 		return ExternalInstall{}, ErrExternalUnavailable
 	}
-	if install.Checkpoint == 0 || install.BaseURL == "" || len(install.ManagementKey) != 64 ||
+	if install.Checkpoint == 0 || install.BaseURL == "" || !cpa.ValidV8ManagementKey(install.ManagementKey) ||
 		!validExternalIdentity(install.Identity) || install.Identity != ExternalIdentity(install.BaseURL) {
 		return ExternalInstall{}, ErrExternalUnavailable
 	}

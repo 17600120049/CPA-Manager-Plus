@@ -89,7 +89,7 @@ func externalInstallSource(store freshstore.Store, protector *security.Protector
 			return freshkeyapply.ExternalInstall{}, freshkeyapply.ErrUnavailable
 		}
 		key, err := protector.UnprotectString(record.Connection.ManagementKey)
-		if err != nil || len(key) != 64 {
+		if err != nil || !cpa.ValidV8ManagementKey(key) {
 			return freshkeyapply.ExternalInstall{}, freshkeyapply.ErrUnavailable
 		}
 		return freshkeyapply.ExternalInstall{

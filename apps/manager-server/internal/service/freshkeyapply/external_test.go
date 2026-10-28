@@ -182,7 +182,7 @@ func TestExternalAuthorityFailsClosed(t *testing.T) {
 		edit  func(ExternalInstall) ExternalInstall
 		cause error
 	}{
-		{"short credential", func(i ExternalInstall) ExternalInstall { i.ManagementKey = "short"; return i }, nil},
+		{"unusable credential", func(i ExternalInstall) ExternalInstall { i.ManagementKey = " leading-space"; return i }, nil},
 		{"empty address", func(i ExternalInstall) ExternalInstall { i.BaseURL = ""; return i }, nil},
 		{"no checkpoint", func(i ExternalInstall) ExternalInstall { i.Checkpoint = 0; return i }, nil},
 		{"foreign identity", func(i ExternalInstall) ExternalInstall {
@@ -504,4 +504,29 @@ func mustID(t *testing.T, raw string) identity.APIKeyID {
 		t.Fatal(err)
 	}
 	return parsed
+}
+
+// The management credential is chosen by the user and Connect External accepts any
+// printable key up to 4096 characters (cpa/v8.go). Only that rule may refuse one
+// here: an exact-length check would report a usable installation as unavailable.
+func TestExternalAuthorityUsesTheConnectExternalKeyRule(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	install := ExternalInstall{
+		Identity:      ExternalIdentity("https://cpa.example"),
+		Checkpoint:    1,
+		BaseURL:       "https://cpa.example",
+		ManagementKey: "short-key-2024",
+	}
+	service := NewExternal(nil, harness.keys, func(context.Context) (ExternalInstall, error) { return install, nil })
+	if _, key, err := service.ExternalTarget(ctx, 1); err != nil || key != install.ManagementKey {
+		t.Fatalf("a %d-character management key = %q, %v", len(install.ManagementKey), key, err)
+	}
+	for _, refused := range []string{"", " padded ", "line\nbreak", strings.Repeat("k", 4097)} {
+		install.ManagementKey = refused
+		service.externalSource = func(context.Context) (ExternalInstall, error) { return install, nil }
+		if _, _, err := service.ExternalTarget(ctx, 1); !errors.Is(err, ErrExternalUnavailable) {
+			t.Fatalf("a key the Connect External rule refuses was accepted: %q", refused)
+		}
+	}
 }

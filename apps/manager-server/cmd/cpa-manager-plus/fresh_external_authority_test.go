@@ -29,7 +29,14 @@ type externalAuthorityCPA struct {
 
 func newExternalAuthorityCPA(t *testing.T) *externalAuthorityCPA {
 	t.Helper()
-	f := &externalAuthorityCPA{management: externalAuthorityManagement}
+	return newExternalAuthorityCPAWith(t, externalAuthorityManagement)
+}
+
+// newExternalAuthorityCPAWith is the same CPA holding another management
+// credential, so a test can prove which key shapes the authority accepts.
+func newExternalAuthorityCPAWith(t *testing.T, management string) *externalAuthorityCPA {
+	t.Helper()
+	f := &externalAuthorityCPA{management: management}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer "+f.management {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -54,9 +61,17 @@ func newExternalAuthorityCPA(t *testing.T) *externalAuthorityCPA {
 // CPA and returns the application that administers it.
 func externalAuthorityApp(t *testing.T, targetIdentity string) (*freshApplication, *externalAuthorityCPA) {
 	t.Helper()
+	return externalAuthorityAppWith(t, externalAuthorityManagement, targetIdentity, nil)
+}
+
+// externalAuthorityAppWith is the same commit with the management credential and
+// the committed record under the caller's control, so the authority's refusals can
+// be tested one at a time.
+func externalAuthorityAppWith(t *testing.T, management, targetIdentity string, edit func(*freshstore.Record)) (*freshApplication, *externalAuthorityCPA) {
+	t.Helper()
 	app, closeApp := newA3TestApp(t)
 	t.Cleanup(closeApp)
-	cpaServer := newExternalAuthorityCPA(t)
+	cpaServer := newExternalAuthorityCPAWith(t, management)
 	baseURL, err := cpa.NormalizeV8BaseURL(cpaServer.server.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +94,9 @@ func externalAuthorityApp(t *testing.T, targetIdentity string) (*freshApplicatio
 		}
 		r.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: baseURL, ManagementKey: protected}
 		r.Operation.ProductComplete = true
+		if edit != nil {
+			edit(r)
+		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -157,4 +175,30 @@ func (a *freshApplication) keyApplyKeys(t *testing.T, requestID string) freshkey
 		t.Fatal(err)
 	}
 	return result
+}
+
+// TestExternalAuthorityAcceptsTheConnectExternalKeyShape proves the production
+// source accepts the key Connect External accepts — any printable key up to 4096
+// characters (cpa/v8.go) — instead of an exact 64 characters. External management
+// keys are chosen by the user, so a length rule would turn every other user's
+// installation into an unavailable target.
+func TestExternalAuthorityAcceptsTheConnectExternalKeyShape(t *testing.T) {
+	const management = "short-key-2024"
+	app, cpaServer := externalAuthorityAppWith(t, management, "", nil)
+	endpoint, key, err := app.keyApply.ExternalTarget(t.Context(), 1)
+	if err != nil {
+		t.Fatalf("a %d-character management key was refused: %v", len(management), err)
+	}
+	if endpoint != cpaServer.server.URL || key != management {
+		t.Fatalf("resolved %q %q", endpoint, key)
+	}
+	// The same CPA accepts that key on a real read, so the authority is not the
+	// only place the shape is admitted.
+	cpaServer.reads.Store(0)
+	if _, err = cpa.NewTransportForEndpoint(cpaServer.server.URL).ExternalKeySnapshot(t.Context(), management); err != nil {
+		t.Fatalf("the user's CPA refused the short management key: %v", err)
+	}
+	if cpaServer.reads.Load() == 0 {
+		t.Fatal("the read-back never reached the user's CPA")
+	}
 }
