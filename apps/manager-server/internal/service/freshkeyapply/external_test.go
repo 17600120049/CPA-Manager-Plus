@@ -521,9 +521,9 @@ func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed, err := harness.service.ExternalKeyList(ctx, keys)
-	if err != nil {
-		t.Fatal(err)
+	listed, unverified, err := harness.service.ExternalKeyList(ctx, keys)
+	if err != nil || unverified {
+		t.Fatalf("listed %d keys, unverified=%v, err=%v", len(listed), unverified, err)
 	}
 	if len(listed) != 2 {
 		t.Fatalf("listed %d keys", len(listed))
@@ -535,7 +535,7 @@ func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
 	}
 	// A key the CPA no longer carries is not claimed.
 	harness.cpa.keys = slices.DeleteFunc(harness.cpa.keys, func(key string) bool { return key == appliedSecret })
-	listed, err = harness.service.ExternalKeyList(ctx, keys)
+	listed, _, err = harness.service.ExternalKeyList(ctx, keys)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,9 +546,9 @@ func TestExternalKeyListReportsTheCPAsPresence(t *testing.T) {
 	}
 	// Another profile's list is returned untouched.
 	private := New(nil, harness.keys, nil)
-	same, err := private.ExternalKeyList(ctx, keys)
-	if err != nil || len(same) != len(keys) {
-		t.Fatalf("non-external list = %d %v", len(same), err)
+	same, unverified, err := private.ExternalKeyList(ctx, keys)
+	if err != nil || unverified || len(same) != len(keys) {
+		t.Fatalf("non-external list = %d unverified=%v %v", len(same), unverified, err)
 	}
 	if string(pending) == "" {
 		t.Fatal("pending key missing")
@@ -587,5 +587,58 @@ func TestExternalAuthorityUsesTheConnectExternalKeyRule(t *testing.T) {
 		if _, _, err := service.ExternalTarget(ctx, 1); !errors.Is(err, ErrExternalUnavailable) {
 			t.Fatalf("a key the Connect External rule refuses was accepted: %q", refused)
 		}
+	}
+}
+
+// The key list is the Manager's own record when the user's CPA cannot be read, and
+// it says so. An outage is not a blocker: hiding the staged keys behind an error
+// would report the Manager's own knowledge as unknown.
+func TestExternalKeyListSurvivesACPAOutage(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	id, _ := harness.staged(t, strings.Repeat("a", 32))
+	if _, err := harness.service.Apply(ctx, id, 1); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := harness.keys.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The CPA is unreachable: the list still answers with the Manager's keys and
+	// marks their presence unverified.
+	harness.cpa.server.Close()
+	listed, unverified, err := harness.service.ExternalKeyList(ctx, keys)
+	if err != nil {
+		t.Fatalf("an unreachable CPA failed the list: %v", err)
+	}
+	if !unverified || len(listed) != 1 || string(listed[0].ID) != id {
+		t.Fatalf("outage list = %d keys, unverified=%v", len(listed), unverified)
+	}
+	if listed[0].RuntimeState == "effective_observed" {
+		t.Fatal("a list read from an unreachable CPA claimed an observed effect")
+	}
+}
+
+// A credential the user's CPA refuses is the typed blocker on the list: no read can
+// settle it, and only a rebind resolves it.
+func TestExternalKeyListReportsARejectedCredential(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	harness.staged(t, strings.Repeat("a", 32))
+	keys, err := harness.keys.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness.cpa.rejectEvery = true
+	if _, _, err = harness.service.ExternalKeyList(ctx, keys); !errors.Is(err, cpa.ErrManagementRejected) {
+		t.Fatalf("list on a rejected credential = %v", err)
+	}
+	// A moved target is the other blocker: the keys are not an effect of the CPA
+	// the checkpoint no longer names.
+	moved := NewExternal(nil, harness.keys, func(context.Context) (ExternalInstall, error) {
+		return ExternalInstall{}, cpa.ErrExternalTargetMoved
+	})
+	if _, _, err = moved.ExternalKeyList(ctx, keys); !errors.Is(err, cpa.ErrExternalTargetMoved) {
+		t.Fatalf("list on a moved target = %v", err)
 	}
 }

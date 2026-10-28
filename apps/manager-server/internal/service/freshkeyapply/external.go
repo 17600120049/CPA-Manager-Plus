@@ -230,11 +230,16 @@ func (s *Service) ExternalKeyPresence(ctx context.Context, ids []identity.APIKey
 // ExternalKeyList is the key list as the user's CPA answers it. Every staged key
 // carries the presence read back from that CPA, so the page never reports an
 // effect this Manager merely intended: a key the CPA does not carry stays
-// "not_applied" until its install is proven. The list of another profile is
-// returned unchanged.
-func (s *Service) ExternalKeyList(ctx context.Context, keys []freshkeys.Key) ([]freshkeys.Key, error) {
+// "not_applied" until its install is proven.
+//
+// The Manager's own records are the list either way. A CPA that cannot be read is
+// not a blocker — it is reported as unverified, so an outage never hides the keys
+// the Manager staged. A credential the CPA refuses and a target it no longer names
+// are blockers: no read can settle them, and only a rebind resolves them. The list
+// of another profile is returned unchanged.
+func (s *Service) ExternalKeyList(ctx context.Context, keys []freshkeys.Key) ([]freshkeys.Key, bool, error) {
 	if s == nil || s.profile != ProfileExternal {
-		return keys, nil
+		return keys, false, nil
 	}
 	ids := make([]identity.APIKeyID, 0, len(keys))
 	for _, key := range keys {
@@ -242,7 +247,10 @@ func (s *Service) ExternalKeyList(ctx context.Context, keys []freshkeys.Key) ([]
 	}
 	present, err := s.ExternalKeyPresence(ctx, ids)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, cpa.ErrManagementRejected) || errors.Is(err, cpa.ErrExternalTargetMoved) {
+			return nil, true, err
+		}
+		return keys, true, nil
 	}
 	annotated := make([]freshkeys.Key, 0, len(keys))
 	for _, key := range keys {
@@ -253,7 +261,7 @@ func (s *Service) ExternalKeyList(ctx context.Context, keys []freshkeys.Key) ([]
 		}
 		annotated = append(annotated, key)
 	}
-	return annotated, nil
+	return annotated, false, nil
 }
 
 // ExternalKeyPresenceOf is ExternalKeyPresence for one key, for the routes that

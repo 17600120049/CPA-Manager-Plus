@@ -25,8 +25,11 @@ const externalAuthorityManagement = "0123456789abcdef0123456789abcdef0123456789a
 // External authority needs to derive its generation.
 type externalAuthorityCPA struct {
 	management string
-	reads      atomic.Int32
-	server     *httptest.Server
+	// reject makes the CPA refuse every management read, as a rotated credential
+	// does.
+	reject atomic.Bool
+	reads  atomic.Int32
+	server *httptest.Server
 }
 
 func newExternalAuthorityCPA(t *testing.T) *externalAuthorityCPA {
@@ -40,7 +43,7 @@ func newExternalAuthorityCPAWith(t *testing.T, management string) *externalAutho
 	t.Helper()
 	f := &externalAuthorityCPA{management: management}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+f.management {
+		if f.reject.Load() || r.Header.Get("Authorization") != "Bearer "+f.management {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -236,5 +239,47 @@ func TestExternalSurfacesReportAMovedTarget(t *testing.T) {
 	}
 	if cpaServer.reads.Load() != 0 {
 		t.Fatalf("a moved target was contacted %d times", cpaServer.reads.Load())
+	}
+}
+
+// TestExternalKeyListRouteAnswersWithoutACPA proves the list route never hides the
+// Manager's own keys behind an outage, and never turns a blocker it cannot settle
+// into a bare 503: the staged keys stay visible and unverified, while a refused
+// credential is the typed code the page acts on.
+func TestExternalKeyListRouteAnswersWithoutACPA(t *testing.T) {
+	app, cpaServer := externalAuthorityApp(t, "")
+	created := app.keyApplyKeys(t, strings.Repeat("a", 32))
+	call := func() *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, "/control/api/v2/api-keys", nil)
+		request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+		response := httptest.NewRecorder()
+		app.canonicalAPI(response, request)
+		return response
+	}
+	healthy := call()
+	if healthy.Code != http.StatusOK || strings.Contains(healthy.Body.String(), `"presenceUnverified":true`) {
+		t.Fatalf("list with a readable CPA = %d %s", healthy.Code, healthy.Body.String())
+	}
+	// The CPA is unreachable: the Manager's keys are the list, marked unverified.
+	cpaServer.server.Close()
+	outage := call()
+	if outage.Code != http.StatusOK {
+		t.Fatalf("list during a CPA outage = %d %s", outage.Code, outage.Body.String())
+	}
+	if !strings.Contains(outage.Body.String(), `"presenceUnverified":true`) ||
+		!strings.Contains(outage.Body.String(), string(created.Key.ID)) {
+		t.Fatalf("outage list hid the staged key or claimed verification: %s", outage.Body.String())
+	}
+	// A refused credential is a blocker with its own code.
+	app2, cpa2 := externalAuthorityApp(t, "")
+	app2.keyApplyKeys(t, strings.Repeat("b", 32))
+	cpa2.reject.Store(true)
+	request := httptest.NewRequest(http.MethodGet, "/control/api/v2/api-keys", nil)
+	request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+	response := httptest.NewRecorder()
+	app2.canonicalAPI(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), freshconfig.ReasonManagementRejected) {
+		t.Fatalf("list on a refused credential = %d %s", response.Code, response.Body.String())
 	}
 }
