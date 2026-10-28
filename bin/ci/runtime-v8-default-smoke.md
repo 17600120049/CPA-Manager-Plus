@@ -7,18 +7,19 @@ It changes the normal final Docker target, not a release channel or Gateway admi
 ## Build and isolation contract
 
 A build without --target (or with --target runtime) selects the official
-router-for-me/CLIProxyAPI v8.0.13 pin, tag commit
-d7914afdedca7af95ee974a42453dc49fc1388ce. Both archive and extracted executable
+router-for-me/CLIProxyAPI v8.0.45 pin, tag commit
+ad8bdd3f20bef44f0684b8a6096a216b2c76040d. Both archive and extracted executable
 SHA256 are mandatory. There are no version/hash override arguments or v7 fallback.
 
 | Platform | Official archive SHA256 | Executable / manifest artifactId suffix |
 | --- | --- | --- |
-| linux/amd64 | 50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3 | b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41 |
-| linux/arm64 | f7ff98a128075ea8437dadd58a88f429a401e452a42ef7119304139185f5344f | 9dfe80b79f8466b4e56d51d71869ce759021942a9279e43dbea92eda21b994d7 |
+| linux/amd64 | e9e3a33a489d8a94ea9bd4b8eb4bb9286a978c3df11dc4c49f5ef393ef0fdc68 | 343084d9ea53eb144b2871074c84aa28d9a1faa7923ad1547319bafe2e9968cc |
+| linux/arm64 | 8a7582e98501f414fee1ab691d44fb56ce59db01f21cbd521a414cb358b66394 | 19198e8eac7a55db0c219d376bb801b0b954ad823c3ea3e445042b4c80fde124 |
 
-The official Release API asset digests were checked live on 2026-10-20.
-The arm64 archive was independently downloaded and hashed before pinning its
-extracted executable. The existing v8 download stage is reused for both platforms.
+The official Release asset digests were checked live on 2026-10-28 for v8.0.45.
+Both archives were downloaded and hashed before pinning their extracted
+executable, and the v8.0.45 LICENSE bytes are unchanged from the previous pin.
+The existing v8 download stage is reused for both platforms.
 Other architectures fail with an explicit no-v7-fallback error.
 
 The normal v8 seed is config.v8.default.seed.yaml, SHA256
@@ -93,14 +94,18 @@ the normal v8 image. CI separately builds the normal multiarch images, runs the
 normal v8 smoke, tests unsupported-architecture rejection, then runs these
 explicit historical suites. Scope selection includes the new test files.
 
-## Observed results — 2026-10-20
+## Observed results — 2026-10-20 (CPA v8.0.13 pin)
+
+These results were observed against the previous **v8.0.13** pin. They describe
+that run's pin, not the current v8.0.45 contract; v8.0.45 evidence is recorded in
+bin/ci/runtime-v8-bundle-smoke.md and the committed harness evidence.
 
 Local Docker Desktop Engine 27.3.1 on Linux/amd64 6.10.14-linuxkit.
 
 | Check | Result |
 | --- | --- |
 | Default linux/amd64 build without --target | PASS |
-| Default image binary, live /proc executable, manifest v8.0.13 and v8 seed | PASS |
+| Default image binary, live /proc executable, manifest v8.0.13 and v8 seed (v8.0.13 pin) | PASS |
 | Manifest root:root 0444; child UID/GID 10001; CPA cannot read token/write Supervisor or marker | PASS |
 | New-volume Supervisor identity, offline -> start -> ready, CPA healthz | PASS |
 | No/wrong Key via Ingress on models/chat/responses/messages/v1beta models | PASS: all 503 Pending |
@@ -132,7 +137,7 @@ Local Docker Desktop Engine 27.3.1 on Linux/amd64 6.10.14-linuxkit.
 Normal amd64 local image config ID:
 sha256:9f6fd0fba422ec496fcc2a243392b94d0de6492b7b60468dbaa680c27fde35cd.
 This is an image config ID, not an OCI manifest digest. No registry RepoDigest
-exists because nothing was published. The downloaded arm64 manifest is
+exists because nothing was published. The downloaded arm64 manifest of that run is
 schemaVersion 1 / engine cpa / version 8.0.13 and matches its actual binary hash.
 The Dockerfile supports arm64 packaging from verified bytes; a complete arm64
 runtime is not locally qualified. Keep that UNKNOWN visible to independent review.

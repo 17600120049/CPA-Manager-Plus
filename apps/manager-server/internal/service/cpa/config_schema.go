@@ -43,7 +43,7 @@ const (
 
 // ConfigLeaf is one writable CPA YAML leaf of the gateway page.
 //
-// Every path below exists in CPA v8.0.45 (tag d7914af) and is addressed through
+// Every path below exists in CPA v8.0.45 (tag ad8bdd3f) and is addressed through
 // its canonical v8 name: internal/config/config_v8.go builds the same alias
 // projection the management GET/PATCH endpoints apply before serving a path.
 type ConfigLeaf struct {

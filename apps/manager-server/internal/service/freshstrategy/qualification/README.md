@@ -121,7 +121,7 @@ and the constrained v0 response shape; it does **not** attest the remote source
 binary SHA. The reference binary hashes above identify the CI test executable,
 not arbitrary operator-selected production sources. The runtime adapter fails
 closed before interpreting any body when the declared version is missing or
-different. CPA v8.0.13 still serves `/v0/management/config` with a
+different. CPA v8.0.45 still serves `/v0/management/config` with a
 legacy-shaped body; it is rejected by version metadata, never treated as legacy.
 
 Client-key adoption resources use a separate, class-specific evidence chain
