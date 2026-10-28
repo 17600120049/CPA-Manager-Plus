@@ -18,6 +18,13 @@ import (
 // owns.
 var ErrManagementRejected = errors.New("external cpa management credential rejected")
 
+// ErrExternalTargetMoved reports a committed External target that no longer names
+// the connection this Manager holds: the address the user configured changed after
+// the installation was committed. It is a typed blocker, not an unavailable
+// target — the installation exists — and only a rebind can reach it again, so no
+// surface may treat it as a retry or as a missing proof.
+var ErrExternalTargetMoved = errors.New("external cpa target moved")
+
 // ExternalKeySnapshot is the user's CPA client-key list together with the digest
 // of the configuration that list belongs to. An External CPA owns its own
 // posture, key naming and extra credentials, so the only facts this Manager may

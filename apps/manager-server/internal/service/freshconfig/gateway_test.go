@@ -11,6 +11,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 )
 
 // managedTargets is the page's own pin of the managed profile contract: a
@@ -879,5 +880,42 @@ func TestUnresolvedLegacyFieldOperationBlocksItsGroup(t *testing.T) {
 	}
 	if len(wire.patches) != 0 {
 		t.Fatal("blocked save reached CPA")
+	}
+}
+
+// externalTargets is the real External surface rule, not a stub: the page asks the
+// key authority's own discriminator exactly as production wires it.
+func externalTargets() func(bootstrap.FreshOperation) bool {
+	return freshkeyapply.NewExternal(nil, nil, nil).TargetsFunc(freshkeyapply.SurfaceGatewayConfig)
+}
+
+// TestExternalProfileReportsAMovedTarget proves a connection the checkpoint no
+// longer names is its own blocker on the page. The installation exists, so it is
+// neither an unavailable authority nor a missing proof: only rebinding the
+// connection reaches it again, and nothing here contacts the old address.
+func TestExternalProfileReportsAMovedTarget(t *testing.T) {
+	wire := &fakeWire{document: map[string]any{"routing": map[string]any{"strategy": "round-robin"}}}
+	store := &memoryStore{record: managedRecord()}
+	store.record.Operation.Strategy = bootstrap.FreshStrategyCheckpoint{
+		Strategy: bootstrap.ConnectExternal, Stage: "committed", TargetIdentity: "external:sha256:" + strings.Repeat("b", 64), TargetGeneration: 1,
+	}
+	store.record.Connection = &model.ManagerCPAConnectionConfig{CPABaseURL: "https://committed.test", ManagementKey: "cpamp_protected_envelope"}
+	service := New(store, nil, nil)
+	service.wire = wire
+	service.transport = nil
+	service.EnableExternal(func(context.Context, uint64) (string, string, error) {
+		return "", "", cpa.ErrExternalTargetMoved
+	})
+	service.targets = externalTargets()
+	service.externalWire = func(string) configWire { return wire }
+	view, err := service.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Capability.Readable || view.Capability.Writable || view.Capability.Reason != ReasonTargetMoved {
+		t.Fatalf("moved target treated as another mode: %+v", view.Capability)
+	}
+	if wire.reads != 0 {
+		t.Fatal("a moved target was contacted")
 	}
 }

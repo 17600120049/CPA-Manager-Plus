@@ -135,6 +135,11 @@ func (s *Service) externalAuthority(ctx context.Context) (ExternalInstall, error
 		if errors.Is(err, cpa.ErrManagementRejected) {
 			return ExternalInstall{}, cpa.ErrManagementRejected
 		}
+		// A moved target is the committed installation's own blocker: it is
+		// reported as such on every surface instead of as a missing proof.
+		if errors.Is(err, cpa.ErrExternalTargetMoved) {
+			return ExternalInstall{}, cpa.ErrExternalTargetMoved
+		}
 		if errors.Is(err, ErrGeneration) || errors.Is(err, cpa.ErrSourceConflict) || errors.Is(err, cpa.ErrApplyUnknown) {
 			return ExternalInstall{}, err
 		}

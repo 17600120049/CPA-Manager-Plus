@@ -78,6 +78,11 @@ func (a *freshApplication) initialClientKey(w http.ResponseWriter, r *http.Reque
 			// rebinding the connection resolves it, so it is never a retry.
 			code = freshconfig.ReasonManagementRejected
 			w.WriteHeader(409)
+		case errors.Is(err, cpa.ErrExternalTargetMoved):
+			// The connection no longer names the committed target: the target is
+			// not missing, it moved, and only a rebind reaches it again.
+			code = freshconfig.ReasonTargetMoved
+			w.WriteHeader(409)
 		case errors.Is(err, freshkeyapply.ErrUnavailable), errors.Is(err, freshkeyapply.ErrExternalUnavailable):
 			code = "s1_host_proof_unavailable"
 			w.WriteHeader(409)

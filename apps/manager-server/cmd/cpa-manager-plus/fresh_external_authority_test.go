@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshstore"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 )
@@ -129,15 +131,15 @@ func TestExternalAuthorityResolvesTheCommittedConnection(t *testing.T) {
 	}
 }
 
-// TestExternalAuthorityRefusesAConnectionTheCheckpointDoesNotName proves the
-// committed target and the live connection must be the same CPA. Without the
-// digest comparison a connection the user edited to another CPA would be
-// followed silently — a rebind this path must never perform — so the authority
-// refuses and never contacts that CPA.
-func TestExternalAuthorityRefusesAConnectionTheCheckpointDoesNotName(t *testing.T) {
+// TestExternalAuthorityReportsAMovedTarget proves the committed target and the
+// live connection must be the same CPA. A connection the user edited to another
+// CPA is never followed silently — a rebind this path does not perform — and it is
+// reported as the typed blocker it is, not as a missing proof: the installation
+// exists, so the page can offer the rebind the next slice ships.
+func TestExternalAuthorityReportsAMovedTarget(t *testing.T) {
 	app, cpaServer := externalAuthorityApp(t, "external:sha256:"+strings.Repeat("c", 64))
-	if _, _, err := app.keyApply.ExternalTarget(t.Context(), 1); !errors.Is(err, freshkeyapply.ErrExternalUnavailable) {
-		t.Fatalf("foreign connection identity = %v", err)
+	if _, _, err := app.keyApply.ExternalTarget(t.Context(), 1); !errors.Is(err, cpa.ErrExternalTargetMoved) {
+		t.Fatalf("moved target = %v", err)
 	}
 	if cpaServer.reads.Load() != 0 {
 		t.Fatal("a connection the checkpoint does not name was contacted")
@@ -200,5 +202,39 @@ func TestExternalAuthorityAcceptsTheConnectExternalKeyShape(t *testing.T) {
 	}
 	if cpaServer.reads.Load() == 0 {
 		t.Fatal("the read-back never reached the user's CPA")
+	}
+}
+
+// TestExternalSurfacesReportAMovedTarget proves a moved target is the typed
+// blocker on every External surface — the key list, the key install and the key
+// operation — instead of a missing host proof the page cannot act on. Nothing
+// reaches a CPA the committed checkpoint no longer names.
+func TestExternalSurfacesReportAMovedTarget(t *testing.T) {
+	app, cpaServer := externalAuthorityApp(t, "external:sha256:"+strings.Repeat("c", 64))
+	created := app.keyApplyKeys(t, strings.Repeat("a", 32))
+	call := func(method, resource, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(method, "/control/api/v2/"+resource, bytes.NewBufferString(body))
+		request.Header.Set("Authorization", "Bearer "+strategyTestAdmin)
+		if body != "" {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		response := httptest.NewRecorder()
+		app.canonicalAPI(response, request)
+		return response
+	}
+	for _, scenario := range []struct{ method, resource, body string }{
+		{http.MethodGet, "api-keys", ""},
+		{http.MethodPost, "api-keys/" + string(created.Key.ID) + "/initial-install", `{}`},
+		{http.MethodPost, "api-keys/" + string(created.Key.ID) + "/revocation",
+			`{"requestId":"` + strings.Repeat("d", 32) + `","keeperId":"` + strings.Repeat("e", 32) + `","mode":"revoke"}`},
+	} {
+		response := call(scenario.method, scenario.resource, scenario.body)
+		if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), freshconfig.ReasonTargetMoved) {
+			t.Fatalf("%s %s on a moved target = %d %s", scenario.method, scenario.resource, response.Code, response.Body.String())
+		}
+	}
+	if cpaServer.reads.Load() != 0 {
+		t.Fatalf("a moved target was contacted %d times", cpaServer.reads.Load())
 	}
 }

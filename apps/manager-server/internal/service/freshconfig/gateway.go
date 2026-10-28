@@ -114,6 +114,10 @@ const (
 	// management credential. It is distinct from an unavailable authority
 	// because only rebinding the connection resolves it.
 	ReasonManagementRejected = "external_management_key_rejected"
+	// ReasonTargetMoved reports the committed External target no longer naming the
+	// connection this Manager holds. The installation exists, so it is not an
+	// unavailable authority: only rebinding the connection reaches it again.
+	ReasonTargetMoved = "external_target_moved"
 	// ReasonPluginManagedOnly answers every profile that does not own the
 	// Supervisor-published plugin root. The plugin switch is the managed
 	// authority's alone, so it fails closed instead of borrowing a value another
@@ -446,6 +450,9 @@ func (s *Service) resolveProfile(ctx context.Context, r freshstore.Record) (auth
 			// into an unavailable authority.
 			if errors.Is(err, cpa.ErrManagementRejected) {
 				return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonManagementRejected}}, cpa.ErrManagementRejected
+			}
+			if errors.Is(err, cpa.ErrExternalTargetMoved) {
+				return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonTargetMoved}}, cpa.ErrExternalTargetMoved
 			}
 			return authority{mode: ModeUnavailable, capable: Capability{Mode: ModeUnavailable, Reason: ReasonUnavailable}}, cpa.ErrProofUnavailable
 		}

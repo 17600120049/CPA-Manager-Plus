@@ -9,6 +9,8 @@ import (
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 )
@@ -59,6 +61,17 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 		if a.keyApply != nil && a.keyApply.Profile() == freshkeyapply.ProfileExternal &&
 			a.keyApply.Targets(op, freshkeyapply.SurfaceKeyOperation) {
 			keys, err = a.keyApply.ExternalKeyList(r.Context(), keys)
+			if errors.Is(err, cpa.ErrExternalTargetMoved) {
+				// The connection no longer names the committed target. The staged
+				// keys are not an effect of any CPA, so the list is a typed blocker
+				// rather than a stale 200.
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				writeFreshJSON(w, struct {
+					Code string `json:"code"`
+				}{freshconfig.ReasonTargetMoved})
+				return
+			}
 			if err != nil {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
