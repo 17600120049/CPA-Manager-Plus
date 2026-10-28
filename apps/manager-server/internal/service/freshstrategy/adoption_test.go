@@ -265,8 +265,9 @@ func TestAdoptionStagesEncryptedSnapshotBeforeDestinationAndVerifiesActualAuth(t
 
 // A source that authenticates but carries no client Key has nothing to adopt,
 // and adopting it would install a destination whose client authentication is
-// disabled. The refusal is its own typed blocker, it happens before the source
-// is read, and no destination operation is issued.
+// disabled. The refusal is its own typed blocker answered by that single source
+// GET, so it happens before any destination operation or checkpoint mutation and
+// no destination operation is issued.
 func TestAdoptionRefusesAZeroKeySourceBeforeAnyDestinationOperation(t *testing.T) {
 	sourceReads := 0
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

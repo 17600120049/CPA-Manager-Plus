@@ -455,13 +455,14 @@ that handoff, so an authenticated `POST strategy` naming
 `adopt_existing`/`network_existing` is that operator's own intent and needs no
 second Host permit. The service no longer answers 503 for it.
 
-What stays refused is narrower than before, and every refusal happens before the
-source `GET`, the Runtime stage/start or any Manager checkpoint mutation, so a
-refusal has no side effect:
+What stays refused is narrower than before, and every refusal happens before any
+destination operation or Manager checkpoint mutation, so a refusal has no side
+effect. (The zero-Key refusal below is the one exception in ordering: it *is* the
+single source `GET`, answered by that read.)
 
 | input | result |
 | --- | --- |
-| `adopt_existing` with `legacy_managed`, or with no source class | `adoption_source_class_refused` (400); a v7/CPAMP-managed source is Upgrade's path, and adoption never guesses a generation |
+| `adopt_existing` with `legacy_managed`, or with no source class | `adoption_source_class_refused` (409); a v7/CPAMP-managed source is Upgrade's path, and adoption never guesses a generation |
 | `adopt_existing`/`network_existing` whose source authenticates but carries no client Key | `adoption_source_empty` (409); see below |
 | `adopt_existing` with a stale `expectedRevision` | 400, not a retryable conflict |
 | any target whose qualified consumer is not accepted in `consumer.json` | fail-closed before any probe |
@@ -481,9 +482,12 @@ container mounts its own volume and never the Manager store. A repo test asserts
 that topology against `docker-compose.yml` so the claim anchor, the Fresh CAS and
 the Key records cannot silently become reachable from the Runtime child.
 
-Adoption completes into a `committed` checkpoint plus the protected destination
-snapshot, exactly like New Managed. It writes its own `external:sha256:` target
-identity and keeps `strategy = adopt_existing`; the prefixes are never merged.
+Adoption stops at a `committed` checkpoint plus the protected destination
+snapshot in this lane; `POST complete` still answers 409 for
+`strategy = adopt_existing` (`fresh.go:418`), so adoption does not yet reach
+product completion the way New Managed does. Completion arrives in a later
+slice. What it already writes is its own `external:sha256:` target identity, and
+it keeps `strategy = adopt_existing`; the prefixes are never merged.
 
 #### Retry after a terminal destination failure
 
@@ -514,10 +518,12 @@ bounded by `bootstrap.MaxAdoptionDestinationRetry = 1`:
 
 `adoption.go` is one of the files behind `consumerImplementationSHA256`, so any
 change to this retry or refusal logic invalidates the accepted consumer record
-until both the Runtime destination pin and the class-specific adoption evidence
-are recomputed and re-emitted from a real run. That is why this lane re-emitted
-the `network_existing` and `legacy_managed` resource reports/traces and the
-legacy-transition report/observation rather than editing a digest by hand.
+until that consumer implementation digest is recomputed and the class-specific
+adoption evidence is re-emitted from a real run. The Runtime destination pin does
+not move for this change; only the consumer digest is recomputed. That is why
+this lane re-emitted the `network_existing` and `legacy_managed` resource
+reports/traces and the legacy-transition report/observation rather than editing a
+digest by hand.
 
 Adopt stays unreachable from the web UI in this lane: the wizard's only
 actionable strategy is still **New embedded installation**, and the Full Web

@@ -122,7 +122,7 @@ func newAdoptRetryFixture(t *testing.T) *adoptRetryFixture {
 	target := adoptV8Destination(t, runtime)
 	app := newFreshApplication(opened, config.Config{}, nil)
 	app.strategy = freshstrategy.New(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: target.URL,
-		Qualification:     bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true},
+		Qualification:       bootstrap.CPAQualification{ManagementGeneration: "v8", ArtifactQualified: true, RequiredProfileQualified: true},
 		QualifiedArtifactID: artifact, AdoptionResources: acceptedClientAPIKeysDecision()})
 	request := freshstrategy.Request{Strategy: bootstrap.AdoptExisting, AdoptSourceClass: bootstrap.AdoptNetworkExisting,
 		BaseURL: fixture.source.URL, ManagementKey: adoptTestSourceKey,
