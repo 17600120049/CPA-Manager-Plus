@@ -280,9 +280,23 @@ exactly these places:
 The Supervisor stage snapshot is not a new disclosure path: it has always held
 `ManagementKey` and the `network_existing`/legacy `APIKeys` in plaintext under
 the same `0600` Supervisor-only rule, and the child `config.yaml` must be
-plaintext for CPA to work. Manager's own volume holds no plaintext form of
-either credential, which the round-3 acceptance probe verified for the raw key
-and its hex and base64 encodings.
+plaintext for CPA to work. Manager keeps only the protected form, and the
+committed acceptance script (`bin/ci/fresh-new-installation.mjs`) checks the
+boundary it can observe from inside the disposable installation rather than
+scanning Manager's volume for encodings:
+
+- the raw installer Client Key, like every other secret the run touches, must not
+  appear in `docker compose logs` output;
+- the Manager volume's persistent identity files and its `settings` digest are
+  byte-identical before and after a completed-operation replay, so the replay
+  neither rewrites the checkpoint nor rewrites a credential;
+- the committing `POST strategy` reply carries the key exactly once with
+  `Cache-Control: no-store`, a replay of the committed operation omits both the
+  field and the key, `POST api-keys/<APIKeyID>/secret` returns it with the same
+  header, and the Key list never carries a plaintext secret.
+
+Anything beyond those checks — for example scanning the Manager volume for the
+key's hex and base64 encodings — is out-of-band verification, not CI evidence.
 
 After commit, `freshkeyapply.Service.DefaultInstallCPAAuthorityProven` in
 `apps/manager-server/internal/service/freshkeyapply/config_target.go` is the
