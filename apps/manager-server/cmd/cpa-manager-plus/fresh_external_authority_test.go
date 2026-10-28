@@ -88,7 +88,8 @@ func externalAuthorityApp(t *testing.T, targetIdentity string) (*freshApplicatio
 
 // TestExternalAuthorityResolvesTheCommittedConnection is the positive half: the
 // committed External checkpoint plus the protected Manager connection resolve to
-// the user's CPA and to the configuration digest read back from it.
+// the user's CPA. The authority is those two durable facts alone, so resolving it
+// never contacts the CPA and an outage there cannot hide the target.
 func TestExternalAuthorityResolvesTheCommittedConnection(t *testing.T) {
 	app, cpaServer := externalAuthorityApp(t, "")
 	endpoint, management, err := app.keyApply.ExternalTarget(t.Context(), 1)
@@ -101,8 +102,8 @@ func TestExternalAuthorityResolvesTheCommittedConnection(t *testing.T) {
 	if management != externalAuthorityManagement {
 		t.Fatal("the protected management credential was not decrypted")
 	}
-	if cpaServer.reads.Load() == 0 {
-		t.Fatal("the configuration digest was not read back from the user's CPA")
+	if cpaServer.reads.Load() != 0 {
+		t.Fatalf("resolving the authority contacted the user's CPA %d times", cpaServer.reads.Load())
 	}
 	// A checkpoint the page does not hold is a generation mismatch, not a target.
 	if _, _, err = app.keyApply.ExternalTarget(t.Context(), 2); !errors.Is(err, freshkeyapply.ErrGeneration) {

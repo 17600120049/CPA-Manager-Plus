@@ -2,6 +2,7 @@ package freshkeyapply
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"time"
 
@@ -10,6 +11,11 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeys"
 )
+
+// errExternalSettled is the in-process signal that the step a call was about to
+// write is already shown by the user's CPA. It never leaves this package: the
+// reconcile settles the journal from that read-back and returns the operation.
+var errExternalSettled = errors.New("external key step already settled")
 
 // externalPrepare journals one revoke/replace intent for the user's CPA after
 // proving, by read-back, that the CPA is in exactly the state the intent starts
@@ -35,7 +41,7 @@ func (s *Service) externalPrepare(ctx context.Context, id, target, keeper, mode 
 		}
 		// The user's CPA is administered by the user, so it may carry credentials
 		// this Manager never staged. The step acts on exactly one of them: the
-		// credential it removes must be carried, and that is the whole condition.
+		// credential it removes must be carried.
 		if old == next || !slices.Contains(snapshot.Keys, old) {
 			return cpa.ErrSourceConflict
 		}
@@ -56,9 +62,9 @@ func (s *Service) externalPrepare(ctx context.Context, id, target, keeper, mode 
 	}
 	o := repo.Operation{
 		ID: id, TargetID: target, KeeperID: keeper, Mode: mode,
-		// The journal records the digest-derived generation, not the checkpoint
-		// number: that is the value a later step is bound to, and it changes as
-		// soon as the user edits the configuration this Manager last observed.
+		// The journal records the connection identity, not the checkpoint number
+		// and not a configuration digest: the identity is what a later step is
+		// bound to, and it survives every edit the user makes to their own CPA.
 		RunID: install.Identity, Generation: install.Generation(),
 		Revision: 1, Outcome: "pending", Steps: steps, CreatedAtMS: time.Now().UnixMilli(),
 	}
@@ -104,18 +110,37 @@ func (s *Service) externalCheckOperation(ctx context.Context, o *repo.Operation,
 		return r, ErrExternalUnavailable
 	}
 	for i, step := range o.Steps {
-		if step.State == "unattempted" {
-			r.NextStep = step.Name
-			return r, nil
-		}
 		if step.State == "observed" && i < len(o.Steps)-1 {
 			continue
 		}
-		err = s.keyPair(ctx, o.TargetID, o.KeeperID, o.Outcome == "committed", func(old, next string) error {
-			return s.awaitExternalKeySet(ctx, w, install, step.Name, old, next)
-		})
-		if err != nil {
-			return r, err
+		switch {
+		case step.State == "attempted" || step.State == "observed":
+			err = s.keyPair(ctx, o.TargetID, o.KeeperID, o.Outcome == "committed", func(old, next string) error {
+				return s.awaitExternalKeyStep(ctx, w, install, step.Name, old, next)
+			})
+			if err != nil {
+				return r, err
+			}
+		default:
+			// A step that was never written is normally only named. The user's
+			// CPA may however already show the fact that step would establish —
+			// an edit between Prepare and Continue, or the same key revoked by
+			// hand — and then the read-back is the terminal state: the journal
+			// settles here instead of staying pending and blocking every later
+			// operation.
+			held := false
+			err = s.keyPair(ctx, o.TargetID, o.KeeperID, false, func(old, next string) error {
+				var readErr error
+				held, readErr = s.externalStepHeld(ctx, w, install, step.Name, old, next)
+				return readErr
+			})
+			if err != nil {
+				return r, err
+			}
+			if !held {
+				r.NextStep = step.Name
+				return r, nil
+			}
 		}
 		if o.Outcome != "committed" {
 			o.Steps[i].State = "observed"
@@ -135,23 +160,38 @@ func (s *Service) externalCheckOperation(ctx context.Context, o *repo.Operation,
 	return r, nil
 }
 
-// awaitExternalKeySet requires the stated membership to hold across spaced
-// reads of the user's CPA. Membership is the fact this Manager owns: an External
-// CPA may carry credentials it never staged, so a whole-list comparison would
-// report a conflict for a correct write.
-func (s *Service) awaitExternalKeySet(ctx context.Context, w externalWire, install ExternalInstall, step, old, next string) error {
-	// The step's own fact: a revoke leaves the removed credential absent, and the
-	// add step of a replace leaves the replacement carried.
-	want, reject := []string{next}, []string{old}
-	if step == "add" {
-		want, reject = []string{next}, nil
+// externalStepHeld reports one read of the user's CPA: a revoke step has ended
+// when the credential it removes is gone, and an add step has ended when the
+// credential it introduces is carried. That is the whole fact the step owns.
+func (s *Service) externalStepHeld(ctx context.Context, w externalWire, install ExternalInstall, step, old, next string) (bool, error) {
+	snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
+	if err != nil {
+		return false, err
 	}
+	return externalStepSettled(snapshot.Keys, step, old, next), nil
+}
+
+// externalStepSettled reports the post-state of one step: a revoke removes the
+// target, and the add step of a replace carries the replacement. Membership is
+// the fact this Manager owns: an External CPA may carry credentials it never
+// staged, and the user may edit it at any time, so a whole-list comparison or a
+// whole-document digest would report a conflict for a correct write.
+func externalStepSettled(keys []string, step, old, next string) bool {
+	if step == "add" {
+		return slices.Contains(keys, next)
+	}
+	return !slices.Contains(keys, old)
+}
+
+// awaitExternalKeyStep requires the fact of one step to hold across spaced reads
+// of the user's CPA, so a lost reply is resolved by what the CPA shows.
+func (s *Service) awaitExternalKeyStep(ctx context.Context, w externalWire, install ExternalInstall, step, old, next string) error {
 	for n := range 3 {
-		snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
+		held, err := s.externalStepHeld(ctx, w, install, step, old, next)
 		if err != nil {
 			return err
 		}
-		if !externalSatisfied(snapshot.Keys, want, reject) {
+		if !held {
 			return cpa.ErrApplyUnknown
 		}
 		if n < 2 {
@@ -162,27 +202,7 @@ func (s *Service) awaitExternalKeySet(ctx context.Context, w externalWire, insta
 			}
 		}
 	}
-	snapshot, err := w.ExternalKeySnapshot(ctx, install.ManagementKey)
-	if err != nil || !externalSatisfied(snapshot.Keys, want, reject) {
-		return cpa.ErrApplyUnknown
-	}
 	return nil
-}
-
-// externalSatisfied reports the stated membership of one read-back: every wanted
-// credential is carried and every rejected one is not.
-func externalSatisfied(keys, want, reject []string) bool {
-	for _, key := range want {
-		if !slices.Contains(keys, key) {
-			return false
-		}
-	}
-	for _, key := range reject {
-		if slices.Contains(keys, key) {
-			return false
-		}
-	}
-	return true
 }
 
 // externalContinue writes the next unattempted step of one journaled External
@@ -220,17 +240,22 @@ func (s *Service) externalContinue(ctx context.Context, o *repo.Operation, index
 		if err != nil {
 			return err
 		}
-		if snapshot.SourceSHA256 != grant.SourceSHA256 {
+		// The start state of this step, read at the moment of the write: the
+		// credential the step acts on is carried, and a revoke never removes the
+		// last one. A step whose end state the user's CPA already shows is settled
+		// by read-back instead: no write is sent for work that is already done.
+		if !slices.Contains(snapshot.Keys, old) || (step == "revoke" && len(snapshot.Keys) <= 1) {
+			if externalStepSettled(snapshot.Keys, step, old, next) {
+				return errExternalSettled
+			}
+			if step == "revoke" && len(snapshot.Keys) <= 1 {
+				return ErrLastKey
+			}
 			return cpa.ErrSourceConflict
 		}
-		if step == "revoke" && len(snapshot.Keys) <= 1 {
-			return ErrLastKey
-		}
-		// A revoke removes the target and keeps the keeper; the add step of a
-		// replace only requires both to be carried, since the user's CPA may
-		// already hold the replacement.
-		if !externalSatisfied(snapshot.Keys, []string{old}, nil) ||
-			(step == "revoke" && len(snapshot.Keys) <= 1) {
+		// The document this grant was derived from, compared immediately before the
+		// single PUT: an edit the user made in between is never written over.
+		if snapshot.SourceSHA256 != grant.SourceSHA256 {
 			return cpa.ErrSourceConflict
 		}
 		if !s.keyGrantHeld(ctx, grant, o.ID, step) || time.Now().UnixMilli() >= grant.ExpiresAtMS {
@@ -268,6 +293,9 @@ func (s *Service) externalContinue(ctx context.Context, o *repo.Operation, index
 		o.Revision++
 		return writeErr
 	})
+	if errors.Is(err, errExternalSettled) {
+		return s.externalCheckOperation(ctx, o, generation)
+	}
 	if err != nil {
 		return OperationResult{Operation: o, RuntimeState: "effect_unknown"}, err
 	}

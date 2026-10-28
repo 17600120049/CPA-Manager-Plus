@@ -40,15 +40,6 @@ func ExternalIdentity(baseURL string) string {
 	return externalIdentityPrefix + hex.EncodeToString(digest[:])
 }
 
-// ExternalGeneration derives the proof generation of one External target from the
-// committed connection identity and the digest of the configuration read back
-// from the user's CPA. Neither half is request input, so a caller cannot choose
-// the generation it is authorized against.
-func ExternalGeneration(connectionIdentity, configSHA256 string) string {
-	digest := sha256.Sum256([]byte(connectionIdentity + "\n" + configSHA256))
-	return externalIdentityPrefix + hex.EncodeToString(digest[:])
-}
-
 func validExternalIdentity(value string) bool {
 	return len(value) == len(externalIdentityPrefix)+64 &&
 		value[:len(externalIdentityPrefix)] == externalIdentityPrefix &&
@@ -56,14 +47,11 @@ func validExternalIdentity(value string) bool {
 }
 
 // ExternalInstall is the durable authority of a committed External installation.
-// It is re-derived from the checkpoint, the protected Manager connection and a
-// read-back of the user's CPA on every call; no credential is cached.
+// It is re-derived from the checkpoint and the protected Manager connection on
+// every call; no credential is cached.
 type ExternalInstall struct {
 	// Identity is external:sha256:<digest of the normalized committed address>.
 	Identity string
-	// ConfigSHA256 is the digest of the configuration read back from the user's
-	// CPA when this authority was resolved.
-	ConfigSHA256 string
 	// Checkpoint is the committed strategy generation the page and the key
 	// journal pass back, exactly as the managed destination's is.
 	Checkpoint uint64
@@ -73,17 +61,24 @@ type ExternalInstall struct {
 	ManagementKey string
 }
 
-// Generation binds the connection identity to the read-back configuration. A
-// configuration the user changed afterwards is a different generation, so a step
-// granted against the previous one never authorizes a write against the new one.
+// Generation is the durable generation of one External target, and it is the
+// connection identity alone. A user's CPA is administered by the user: its
+// configuration changes for reasons this Manager does not control, not least its
+// own key writes, which land in the same document the digest would cover. Binding
+// the journal to that digest would therefore invalidate every External operation
+// after its own successful write and wedge the journal forever. The configuration
+// digest is a per-step grant CAS instead: it is read immediately before each PUT
+// and compared there (see externalKeyGrant and externalContinue).
 func (i ExternalInstall) Generation() string {
-	return ExternalGeneration(i.Identity, i.ConfigSHA256)
+	return i.Identity
 }
 
 // ExternalSource reloads and validates the External authority on every call. It
-// MUST fail closed with ErrExternalUnavailable when the checkpoint, the protected
-// connection or the read-back is unavailable, and it MUST return
-// cpa.ErrManagementRejected when the user's CPA refuses the credential.
+// MUST fail closed with ErrExternalUnavailable when the checkpoint or the
+// protected connection is unavailable, and with ErrExternalTargetMoved when the
+// connection no longer names the committed target. It never contacts the user's
+// CPA: an outage there is a property of a single read-back, not of the authority,
+// so a credential CPA refuses stays the typed blocker of the read that met it.
 type ExternalSource func(context.Context) (ExternalInstall, error)
 
 // externalWire is the External CPA v8 surface this authority drives. There is no
@@ -129,8 +124,8 @@ func (s *Service) externalPermit() (Permit, error) {
 }
 
 // externalAuthority resolves and validates the committed External target. The
-// generation is recomputed from the identity and the read-back digest, so a
-// source that returns anything else is refused rather than trusted.
+// identity must name the address the connection holds, so a source that answers
+// about a different CPA is refused rather than trusted.
 func (s *Service) externalAuthority(ctx context.Context) (ExternalInstall, error) {
 	if s == nil || s.profile != ProfileExternal || s.externalSource == nil {
 		return ExternalInstall{}, ErrExternalUnavailable
@@ -145,8 +140,8 @@ func (s *Service) externalAuthority(ctx context.Context) (ExternalInstall, error
 		}
 		return ExternalInstall{}, ErrExternalUnavailable
 	}
-	if install.Checkpoint == 0 || len(install.ManagementKey) != 64 || install.BaseURL == "" ||
-		!validExternalIdentity(install.Identity) || !identity.IsValidSHA256Hex(install.ConfigSHA256) {
+	if install.Checkpoint == 0 || install.BaseURL == "" || len(install.ManagementKey) != 64 ||
+		!validExternalIdentity(install.Identity) || install.Identity != ExternalIdentity(install.BaseURL) {
 		return ExternalInstall{}, ErrExternalUnavailable
 	}
 	return install, nil

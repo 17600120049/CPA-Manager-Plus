@@ -30,7 +30,6 @@ const externalManagement = "0123456789abcdef0123456789abcdef0123456789abcdef0123
 // client-key list and one management credential, and it answers exactly the
 // three v8 routes this Manager drives.
 type fakeExternalCPA struct {
-	config      string
 	keys        []string
 	management  string
 	rejectOnce  bool
@@ -39,10 +38,21 @@ type fakeExternalCPA struct {
 	server      *httptest.Server
 }
 
+// config renders the CPA configuration the client-key list lives in. The list is
+// part of that document, exactly as it is on a real CPA, so this Manager's own
+// writes change the document digest.
+func (f *fakeExternalCPA) config() []byte {
+	keys := make([]any, 0, len(f.keys))
+	for _, key := range f.keys {
+		keys = append(keys, key)
+	}
+	data, _ := json.Marshal(map[string]any{"config-version": 8, "access": map[string]any{"api-keys": keys}})
+	return data
+}
+
 func newFakeExternalCPA(t *testing.T, keys ...string) *fakeExternalCPA {
 	t.Helper()
 	f := &fakeExternalCPA{
-		config:     `{"config-version":8,"access":{"api-keys":[]}}`,
 		keys:       keys,
 		management: externalManagement,
 	}
@@ -57,7 +67,7 @@ func newFakeExternalCPA(t *testing.T, keys ...string) *fakeExternalCPA {
 		case r.URL.Path == "/v8/management/config/access/api-keys" && r.Method == http.MethodGet:
 			_ = json.NewEncoder(w).Encode(f.keys)
 		case r.URL.Path == "/v8/management/config.yaml" && r.Method == http.MethodGet:
-			_, _ = w.Write([]byte(f.config))
+			_, _ = w.Write(f.config())
 		case r.URL.Path == "/v8/management/config/access/api-keys" && r.Method == http.MethodPut:
 			f.writes++
 			if f.rejectOnce {
@@ -88,17 +98,13 @@ func newFakeExternalCPA(t *testing.T, keys ...string) *fakeExternalCPA {
 	return f
 }
 
-// source is the External authority of this fake CPA: the configuration digest is
-// read from the CPA itself, exactly as the production source does.
+// source is the External authority of this fake CPA: the committed connection and
+// its management credential. It never contacts the CPA, exactly as the production
+// source does not.
 func (f *fakeExternalCPA) source() ExternalSource {
 	return func(context.Context) (ExternalInstall, error) {
-		snapshot, err := cpa.NewTransportForEndpoint(f.server.URL).ExternalKeySnapshot(context.Background(), f.management)
-		if err != nil {
-			return ExternalInstall{}, err
-		}
 		return ExternalInstall{
 			Identity:      ExternalIdentity(f.server.URL),
-			ConfigSHA256:  snapshot.SourceSHA256,
 			Checkpoint:    1,
 			BaseURL:       f.server.URL,
 			ManagementKey: f.management,
@@ -143,7 +149,11 @@ func (h *externalHarness) staged(t *testing.T, requestID string) (string, string
 	return string(result.Key.ID), result.CreatedSecret
 }
 
-func TestExternalGenerationBindsTheConnectionToTheReadBack(t *testing.T) {
+// The journal generation is the connection identity and nothing else. A user's CPA
+// configuration is theirs to edit, and this Manager's own key writes land in the
+// same document, so a configuration digest in the generation would invalidate
+// every operation after its own successful write.
+func TestExternalGenerationIsTheConnectionIdentity(t *testing.T) {
 	identity := ExternalIdentity("https://cpa.example")
 	if !validExternalIdentity(identity) {
 		t.Fatalf("identity = %q", identity)
@@ -152,17 +162,13 @@ func TestExternalGenerationBindsTheConnectionToTheReadBack(t *testing.T) {
 	if identity != "external:sha256:"+hex.EncodeToString(digest[:]) {
 		t.Fatalf("identity is not the address digest: %q", identity)
 	}
-	one := ExternalGeneration(identity, strings.Repeat("a", 64))
-	if one != ExternalGeneration(identity, strings.Repeat("a", 64)) {
-		t.Fatal("generation is not a function of its facts")
+	install := ExternalInstall{Identity: identity, Checkpoint: 1, BaseURL: "https://cpa.example", ManagementKey: externalManagement}
+	if install.Generation() != identity {
+		t.Fatalf("generation = %q, want the connection identity", install.Generation())
 	}
-	for _, other := range []string{
-		ExternalGeneration(identity, strings.Repeat("b", 64)),
-		ExternalGeneration(ExternalIdentity("https://other.example"), strings.Repeat("a", 64)),
-	} {
-		if other == one {
-			t.Fatal("a changed connection or read-back kept the generation")
-		}
+	other := ExternalInstall{Identity: ExternalIdentity("https://other.example")}
+	if other.Generation() == identity {
+		t.Fatal("a changed connection kept the generation")
 	}
 }
 
@@ -183,7 +189,10 @@ func TestExternalAuthorityFailsClosed(t *testing.T) {
 			i.Identity = "managed:sha256:" + strings.Repeat("c", 64)
 			return i
 		}, nil},
-		{"unreadable digest", func(i ExternalInstall) ExternalInstall { i.ConfigSHA256 = ""; return i }, nil},
+		{"identity of another address", func(i ExternalInstall) ExternalInstall {
+			i.BaseURL = "https://other.example"
+			return i
+		}, nil},
 		{"rejected credential", func(i ExternalInstall) ExternalInstall { return i }, cpa.ErrManagementRejected},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
@@ -320,6 +329,60 @@ func TestExternalRevokeAndLastKeyProtection(t *testing.T) {
 	}
 }
 
+// An edit the user makes between Prepare and Continue settles by read-back. The
+// journal's generation is the connection, so the edit never invalidates it; the
+// step's own fact is what it settles on, so the operation reaches a terminal state
+// and the next operation on the same connection is still accepted.
+func TestExternalOperationSettlesWhenTheUserEditsBetweenPrepareAndContinue(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	target, targetSecret := harness.staged(t, strings.Repeat("2", 32))
+	keeper, keeperSecret := harness.staged(t, strings.Repeat("3", 32))
+	if _, err := harness.service.Apply(ctx, target, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := harness.service.Apply(ctx, keeper, 1); err != nil {
+		t.Fatal(err)
+	}
+	result, err := harness.service.Prepare(ctx, strings.Repeat("4", 32), target, keeper, "revoke", 1)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	// The user revokes the credential the operation was going to remove, directly
+	// on their own CPA, before the Manager continues.
+	harness.cpa.keys = slices.DeleteFunc(harness.cpa.keys, func(key string) bool { return key == targetSecret })
+	writes := harness.cpa.writes
+	result, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1)
+	if err != nil {
+		t.Fatalf("continue after the user's own edit: %v", err)
+	}
+	if result.Operation == nil || result.Operation.Outcome != "committed" {
+		t.Fatalf("the settled operation = %+v", result.Operation)
+	}
+	if harness.cpa.writes != writes {
+		t.Fatal("a step whose fact already held was written again")
+	}
+	if !slices.Contains(harness.cpa.keys, keeperSecret) {
+		t.Fatal("the keeper credential was lost")
+	}
+	// The journal is terminal, so the next operation is accepted: an operation
+	// stuck at an unknown effect would have refused it at BeginOperation.
+	next, nextSecret := harness.staged(t, strings.Repeat("5", 32))
+	if _, err = harness.service.Apply(ctx, next, 1); err != nil {
+		t.Fatalf("apply after a settled operation: %v", err)
+	}
+	result, err = harness.service.Prepare(ctx, strings.Repeat("6", 32), keeper, next, "revoke", 1)
+	if err != nil {
+		t.Fatalf("prepare after a settled operation: %v", err)
+	}
+	if _, err = harness.service.ContinueOperation(ctx, result.Operation.ID, 1); err != nil {
+		t.Fatalf("continue after a settled operation: %v", err)
+	}
+	if slices.Contains(harness.cpa.keys, keeperSecret) || !slices.Contains(harness.cpa.keys, nextSecret) {
+		t.Fatalf("the later operation did not take effect: %v", harness.cpa.keys)
+	}
+}
+
 // A 401 from the user's CPA is the typed blocker on every External write: it is
 // reported as such, never retried, and never followed by another write.
 func TestExternalRejectedManagementKeyIsNeverRetried(t *testing.T) {
@@ -339,8 +402,10 @@ func TestExternalRejectedManagementKeyIsNeverRetried(t *testing.T) {
 	if harness.cpa.writes != 0 {
 		t.Fatalf("a rejected credential still wrote: %d", harness.cpa.writes)
 	}
-	// The authority itself reports the same typed blocker to the page.
-	if _, _, err := harness.service.ExternalTarget(ctx, 1); !errors.Is(err, cpa.ErrManagementRejected) {
+	// The authority is the committed connection alone, so it still resolves: the
+	// refusal is the typed blocker of the read that met it and never a claim about
+	// the target itself.
+	if _, _, err := harness.service.ExternalTarget(ctx, 1); err != nil {
 		t.Fatalf("authority on a rejected credential = %v", err)
 	}
 }
