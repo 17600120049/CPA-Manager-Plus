@@ -845,7 +845,7 @@ except OSError:print('unreachable')`,
   );
   report.peerCPA = peerVerdict;
   pass(
-    'zero Client Keys: all tested Gateway paths remain Pending; anonymous peer cannot read CPA'
+    'before admission: all tested Gateway paths remain Pending; the anonymous peer cannot read the key-protected CPA'
   );
   // Data layer: the installed deployment must read real CPA management data,
   // install one Client Key and have CPA authenticate it. The committed default
@@ -876,22 +876,50 @@ except OSError:print('unreachable')`,
   recordDataLayer('cpamp resource bridge reads CPA /auth-files', 'PASS', {
     files: authFiles.files.length,
   });
-  const createdKeyResponse = await fetch(origin + '/console/api/v2/api-keys', {
-    method: 'POST',
-    headers: { ...adminHeaders, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId: randomBytes(16).toString('hex') }),
+  // The installation minted exactly one Client Key and staged the destination
+  // with it, so CPA starts with client authentication on. The list proves that
+  // canonical record exists; the on-demand secret read is the only way to get
+  // the plaintext back.
+  const listResponse = await fetch(origin + '/console/api/v2/api-keys', {
+    headers: adminHeaders,
   });
+  assert.equal(listResponse.status, 200, 'the Client Key list must be readable');
+  const listed = await listResponse.json();
+  assert(Array.isArray(listed.keys), 'Client Key list payload must be a list of keys');
+  const installKeyRecord = listed.keys.find((key) => key.origin === 'installer');
+  assert(installKeyRecord, 'the installation must own exactly one installer Client Key');
   assert.equal(
-    createdKeyResponse.status,
-    201,
-    'a Fresh Client Key must be created with a one-time secret'
+    listed.keys.filter((key) => key.origin === 'installer').length,
+    1,
+    'the installation must own exactly one installer Client Key'
   );
-  const createdKey = await createdKeyResponse.json();
-  assert.match(createdKey.createdSecret, /^cpamp_sk_[a-f0-9]{64}$/);
-  assert.equal(createdKey.key.maskedPreview, 'cpamp_sk_…' + createdKey.createdSecret.slice(-4));
-  secretValues.push(createdKey.createdSecret);
+  assert.match(installKeyRecord.maskedPreview, /^sk-…[A-Za-z0-9]{4}$/);
+  assert(!('createdSecret' in installKeyRecord), 'the list must never carry a plaintext key');
+  const secretResponse = await fetch(
+    origin + '/console/api/v2/api-keys/' + installKeyRecord.id + '/secret',
+    {
+      method: 'POST',
+      headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+      body: '{}',
+    }
+  );
+  const secretBody = await secretResponse.text();
+  assert.equal(
+    secretResponse.status,
+    200,
+    'the on-demand Client Key read must return the install secret: ' +
+      secretResponse.status +
+      ' ' +
+      secretBody.trim()
+  );
+  assert.equal(secretResponse.headers.get('cache-control'), 'no-store');
+  const installKey = JSON.parse(secretBody).secret;
+  assert.match(installKey, /^sk-[A-Za-z0-9]{64}$/);
+  assert.equal(installKeyRecord.maskedPreview, 'sk-…' + installKey.slice(-4));
+  secretValues.push(installKey);
+  // The install route observes that already-installed key and writes nothing.
   const installKeyResponse = await fetch(
-    origin + '/console/api/v2/api-keys/' + createdKey.key.id + '/initial-install',
+    origin + '/console/api/v2/api-keys/' + installKeyRecord.id + '/initial-install',
     {
       method: 'POST',
       headers: { ...adminHeaders, 'Content-Type': 'application/json' },
@@ -902,7 +930,7 @@ except OSError:print('unreachable')`,
   assert.equal(
     installKeyResponse.status,
     200,
-    'Client Key initial install must configure the managed CPA: ' +
+    'Client Key initial install must observe the managed CPA: ' +
       installKeyResponse.status +
       ' ' +
       installKeyBody.trim()
@@ -915,9 +943,27 @@ except OSError:print('unreachable')`,
     'installed Client Key records the durable attempt'
   );
   assert.equal(installedState.cpaConfigured, true, 'installed Client Key is configured in CPA');
-  recordDataLayer('Client Key installed into CPA', 'PASS', {
+  assert.equal(installedState.installAvailable, false, 'no second initial install remains');
+  recordDataLayer('installation Client Key installed in CPA', 'PASS', {
     runtimeState: installedState.runtimeState,
   });
+  // A key created later can never consume that single install journal, and CPA
+  // already has a non-empty client set, so a second install is refused.
+  const createdKeyResponse = await fetch(origin + '/console/api/v2/api-keys', {
+    method: 'POST',
+    headers: { ...adminHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId: randomBytes(16).toString('hex') }),
+  });
+  assert.equal(
+    createdKeyResponse.status,
+    201,
+    'a Fresh workspace Client Key must be created with a one-time secret'
+  );
+  const createdKey = await createdKeyResponse.json();
+  assert.match(createdKey.createdSecret, /^cpamp_sk_[a-f0-9]{64}$/);
+  assert.equal(createdKey.key.maskedPreview, 'cpamp_sk_…' + createdKey.createdSecret.slice(-4));
+  assert.equal(createdKey.key.origin, 'workspace');
+  secretValues.push(createdKey.createdSecret);
   // CPA acceptance is proven where this deployment publishes CPA: the Compose
   // network (CPAMP_SMOKE_MODEL_TARGET default) or the Ingress Gateway, which
   // admits an installed Client Key once Manager proves the default Managed
@@ -964,29 +1010,31 @@ except OSError:print('unreachable')`;
     // answer 500/503, so this must never be reported as a real model success.
     'CPA authenticates the installed Client Key on a model request (non-401)',
   ];
-  const accepted = cpaProbe(modelsProbe, createdKey.createdSecret);
+  const accepted = cpaProbe(modelsProbe, installKey);
   assert.equal(accepted, '200', 'installed Client Key must read the CPA model API: ' + accepted);
   recordDataLayer(cpaChecks[0], 'PASS', { status: 200 });
   const rejected = cpaProbe(modelsProbe, 'cpamp_sk_' + '0'.repeat(64));
   assert.equal(rejected, '401', 'unknown Client Key must be rejected: ' + rejected);
   recordDataLayer(cpaChecks[1], 'PASS', { status: 401 });
-  const modelStatus = cpaProbe(chatProbe, createdKey.createdSecret);
+  const modelStatus = cpaProbe(chatProbe, installKey);
   assert(
     /^[1-5][0-9]{2}$/.test(modelStatus) && modelStatus !== '401',
     'CPA must authenticate the installed Client Key on one model request: ' + modelStatus
   );
   recordDataLayer(cpaChecks[2], 'PASS', { status: Number(modelStatus) });
-  // The Ingress Gateway admits the installed Client Key once Manager proves the
-  // default Managed authority; the zero-key phase above stays the negative
+  // The Ingress Gateway admits the installation key once Manager proves the
+  // default Managed authority. The pre-completion read stays the negative
   // control. Ingress re-reads Manager within 1s after a negative answer, so the
-  // first request after the install may still observe the Pending placeholder.
+  // first request right after completion may still observe the Pending
+  // placeholder. The destination never starts keyless, so CPA rejects the
+  // anonymous call whether or not admission has already been granted.
   const admitted = async (label) => {
     let status = 0;
     await wait(async () => {
       const response = await fetch(origin + '/v1/chat/completions', {
         method: 'POST',
         headers: {
-          Authorization: 'Bearer ' + createdKey.createdSecret,
+          Authorization: 'Bearer ' + installKey,
           'Content-Type': 'application/json',
         },
         body: '{}',
