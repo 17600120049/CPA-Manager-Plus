@@ -238,8 +238,10 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		a.gatewayConfig.EnableManaged(cfg.CPAUpstreamURL)
 	}
 	// Only the build-bound consumer record can grant production qualification.
-	// Pending/missing evidence retains the existing typed strategy blockers.
-	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: runtime, Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL})
+	// Pending/missing evidence retains the existing typed strategy blockers. The
+	// strategy's post-Start destination read-back must not race the spawn, so its
+	// Runtime client waits for the Supervisor's readiness observation first.
+	a.strategy = freshstrategy.NewProduction(freshstrategy.Options{Runtime: freshReadyStartRuntime(runtime), Protector: opened.Protector, DestinationBaseURL: cfg.CPAUpstreamURL})
 	a.runtime = runtime
 	// Normal Fresh initialization is authorized by the admitted installation
 	// and its Admin/session. Retain the opt-in private harness restriction only
