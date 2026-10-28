@@ -376,9 +376,18 @@ func (r *repository) Update(ctx context.Context, id bootstrap.FreshIdentity, rev
 		return Record{}, ErrConflict
 	}
 	if before.Operation.Strategy.Strategy == bootstrap.AdoptExisting {
+		// An adoption checkpoint is frozen once written, with exactly two
+		// permitted transitions: its stage may advance, and — only while it is
+		// still staged — a terminal Supervisor failure may retire the attempt.
+		// The second is monotonic and bounded, so a committed adoption can never
+		// advance past the attempt that succeeded, and no other field may move.
 		frozen := before.Operation.Strategy
 		frozen.Stage = v.Operation.Strategy.Stage
-		if !reflect.DeepEqual(frozen, v.Operation.Strategy) || before.Operation.Strategy.Stage == "committed" && v.Operation.Strategy.Stage != "committed" {
+		frozen.DestinationAttempt = v.Operation.Strategy.DestinationAttempt
+		if !reflect.DeepEqual(frozen, v.Operation.Strategy) || before.Operation.Strategy.Stage == "committed" && v.Operation.Strategy.Stage != "committed" ||
+			v.Operation.Strategy.DestinationAttempt < before.Operation.Strategy.DestinationAttempt ||
+			v.Operation.Strategy.DestinationAttempt > bootstrap.MaxAdoptionDestinationRetry ||
+			before.Operation.Strategy.Stage == "committed" && v.Operation.Strategy.DestinationAttempt != before.Operation.Strategy.DestinationAttempt {
 			return Record{}, ErrConflict
 		}
 	}

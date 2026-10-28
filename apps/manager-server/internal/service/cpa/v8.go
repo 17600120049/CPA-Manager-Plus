@@ -31,6 +31,13 @@ const (
 	V8ReadUnavailable        V8ReadError = "management_safe_read_unavailable"
 	V8InvalidConfig          V8ReadError = "management_v8_config_invalid"
 	V8InvalidConnection      V8ReadError = "management_connection_invalid"
+	// V8AdoptionSourceEmpty is the typed adoption refusal of a source that
+	// authenticates but carries no client Key. CPA v8 disables client
+	// authentication when its Key list is empty, so adopting such a source
+	// would install a destination every caller can reach anonymously. It is
+	// distinct from V8InvalidConfig: the body is well formed, the source simply
+	// has nothing to adopt, and the browser needs that specific reason.
+	V8AdoptionSourceEmpty V8ReadError = "management_adoption_source_empty"
 )
 
 // V8ConfigObservation intentionally drops config values: config may contain
@@ -228,7 +235,13 @@ func readV8ConfigWithClient(ctx context.Context, client *http.Client, baseURL, m
 		observation.ResourceSections = append(observation.ResourceSections, "unknown_cpa_native_resource")
 	}
 	if adoptionKeys != nil {
-		if len(clientKeys) == 0 || len(clientKeys) > 128 {
+		// A well-formed source with no client Key has nothing to adopt and would
+		// leave client authentication disabled on the destination, so it is
+		// refused before any destination mutation with its own typed reason.
+		if len(clientKeys) == 0 {
+			return V8ConfigObservation{}, V8AdoptionSourceEmpty
+		}
+		if len(clientKeys) > 128 {
 			return V8ConfigObservation{}, V8InvalidConfig
 		}
 		keys := make([]string, 0, len(clientKeys))

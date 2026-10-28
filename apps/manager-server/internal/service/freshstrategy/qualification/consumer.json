@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "managementGeneration": "v8",
-  "implementationSha256": "7b011cb63d7b84cad9c833ddad8cdb32d0451fd981c27b095f232dd78ff484e4",
+  "implementationSha256": "766c6c9cf445dad210f87ff15105381ed97de55d9d62ec40c38308c454242328",
   "archiveSha256": "50ecffb47fdd81c8c5a9825a73a7a905ab66342337e274f39c4276b92d3533f3",
   "binarySha256": "b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
   "artifactId": "sha256:b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41",
@@ -131,8 +131,8 @@
       "adoptionEvidence": {
         "profile": "CPA8-ADOPT-RESOURCE-r1",
         "manifestSha256": "563ef299810ce576636df6bd5ebf39a0554d54e5b8bde31b8606405c4d2ac3be",
-        "reportSha256": "c08f041d59eaae02e05a8319aa3564a98b8a809a4c0cc80de28d9c9993ae26b0",
-        "implementationHead": "58069aa1afcd83dd78e561059a474aad3092b9cb",
+        "reportSha256": "23e222a1935629a011095fe0e979a254cc60baa8253bb8756f9418f07d3dee82",
+        "implementationHead": "62ca3f86ef786601b9d70700f660cd5ae2617639",
         "readCaseRef": "fresh-network-client-api-keys-read",
         "replayCaseRef": "fresh-network-client-api-keys-replay",
         "verifyCaseRef": "fresh-network-client-api-keys-verify"
@@ -193,8 +193,8 @@
       "adoptionEvidence": {
         "profile": "CPA8-ADOPT-RESOURCE-r1",
         "manifestSha256": "7388022d21d2d6502449c311bc5379e4e954db0030912e73a2607d809fefb5f2",
-        "reportSha256": "02e559c4f25e6b62aa8bb4fcda0e01b8c37b18672a3acae1a0d76bd3b757fdae",
-        "implementationHead": "58069aa1afcd83dd78e561059a474aad3092b9cb",
+        "reportSha256": "cc7cb297de1273745c0a6e096f5e3f24950bd1f0ab55c59ac88c838291e35c70",
+        "implementationHead": "62ca3f86ef786601b9d70700f660cd5ae2617639",
         "readCaseRef": "fresh-legacy-client-api-keys-read",
         "replayCaseRef": "fresh-legacy-client-api-keys-replay",
         "verifyCaseRef": "fresh-legacy-client-api-keys-verify"
@@ -203,9 +203,9 @@
         "profile": "CPA8-STAGE-r1",
         "caseRef": "fresh-legacy-managed-stage-v8-r1",
         "manifestSha256": "316f7452e29145039eb856dee65cfc15c2f0bdc86e839be4cc4b43d8a1794694",
-        "reportSha256": "989e5057192f3e0e0816e8fbc7292741bbbab2fa56ff51c78514676801720cb9",
-        "implementationHead": "58069aa1afcd83dd78e561059a474aad3092b9cb",
-        "evidenceSha256": "a57761c0a22bd119b8f49b846d82b1b5006933667672f4167e0501d28e12cec4",
+        "reportSha256": "e4b6587b31ba2a32da69030df233f6e2cfe3adf7a9e676266a392547c0761517",
+        "implementationHead": "62ca3f86ef786601b9d70700f660cd5ae2617639",
+        "evidenceSha256": "c6f975de08aa502b078250e7113f0dc7c041277aa950a54e3d05b43482e26fcb",
         "legacyVersion": "v7.0.12",
         "legacyArchiveSha256": "8afc9ed4c89a50a5ffce5d122a9bb93442c5b8ff3d8c6f07b7a274c719109b74",
         "legacyBinarySha256": "1eb108b85ad554b92bab9f5a85af433d7c2e1b951bb192b639d73605d4593d1a"

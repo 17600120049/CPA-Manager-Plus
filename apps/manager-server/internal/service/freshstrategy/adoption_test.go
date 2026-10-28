@@ -262,3 +262,84 @@ func TestAdoptionStagesEncryptedSnapshotBeforeDestinationAndVerifiesActualAuth(t
 		})
 	}
 }
+
+// A source that authenticates but carries no client Key has nothing to adopt,
+// and adopting it would install a destination whose client authentication is
+// disabled. The refusal is its own typed blocker answered by that single source
+// GET, so it happens before any destination operation or checkpoint mutation and
+// no destination operation is issued.
+func TestAdoptionRefusesAZeroKeySourceBeforeAnyDestinationOperation(t *testing.T) {
+	sourceReads := 0
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/v8/management/config" || r.Header.Get("Authorization") != "Bearer source-management" {
+			t.Error("zero-key refusal reached an unexpected source surface")
+			w.WriteHeader(403)
+			return
+		}
+		sourceReads++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"source-auth"},"access":{"api-keys":[]}}`))
+	}))
+	defer source.Close()
+	artifact := model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))
+	runtime := &adoptionRuntime{managedRuntime: managedRuntime{status: model.RuntimeObservedStatus{Identity: "destination-runtime", Generation: 3, ProtocolVersion: "v1", State: model.RuntimeStateReady, Capabilities: model.RuntimeCapabilities{model.RuntimeCapabilityStart, model.RuntimeCapabilityStageDestination}, ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact}}}}
+	protector, _ := security.NewProtector([]byte("test-only-adoption-data-key"))
+	options := Options{Runtime: runtime, Protector: protector, Qualification: qualified(), QualifiedArtifactID: artifact, AdoptionResources: acceptedKeys(), DestinationBaseURL: "http://127.0.0.1:1"}
+	request := Request{Strategy: bootstrap.AdoptExisting, BaseURL: source.URL, ManagementKey: "source-management", ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact, AdoptSourceClass: bootstrap.AdoptNetworkExisting}
+	result, err := New(options).Execute(t.Context(), operation(), request)
+	var blocker *Blocker
+	if !errors.As(err, &blocker) || blocker.Code != "adoption_source_empty" {
+		t.Fatalf("zero-key source: %+v %v", result, err)
+	}
+	if sourceReads != 1 || result.AdoptionCiphertext != "" || result.Checkpoint.Strategy != "" || !result.GatewayPending || !result.SourcePreserved {
+		t.Fatalf("zero-key refusal had effects: reads=%d %+v", sourceReads, result)
+	}
+	if len(runtime.stages) != 0 || len(runtime.starts) != 0 {
+		t.Fatal("zero-key refusal staged or started a destination")
+	}
+}
+
+// Adopting a v7 or Manager-managed source is Upgrade's path, and an unspecified
+// class never guesses which generation to read. Both are refused with their own
+// code before the source is touched and before the destination moves, while the
+// admitted class proceeds to the adapter.
+func TestAdoptionRefusesLegacyAndUnspecifiedSourceClasses(t *testing.T) {
+	var sourceReads atomic.Int32
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sourceReads.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"config-version":8,"server":{"port":8317},"oauth":{"auth-dir":"source-auth"},"access":{"api-keys":["source-client"]}}`))
+	}))
+	defer source.Close()
+	artifact := model.RuntimeArtifactID("sha256:" + strings.Repeat("a", 64))
+	runtime := &adoptionRuntime{managedRuntime: managedRuntime{status: model.RuntimeObservedStatus{Identity: "destination-runtime", Generation: 3, ProtocolVersion: "v1", State: model.RuntimeStateReady, Capabilities: model.RuntimeCapabilities{model.RuntimeCapabilityStart, model.RuntimeCapabilityStageDestination}, ActiveGatewayArtifact: &model.ActiveGatewayArtifact{Engine: "cpa", ArtifactID: artifact}}}}
+	protector, _ := security.NewProtector([]byte("test-only-adoption-data-key"))
+	options := Options{Runtime: runtime, Protector: protector, Qualification: qualified(), QualifiedArtifactID: artifact, AdoptionResources: acceptedKeys(), DestinationBaseURL: "http://127.0.0.1:1"}
+	for _, item := range []struct {
+		class   bootstrap.AdoptSourceClass
+		blocker string
+	}{
+		// Legacy adoption needs its own accepted staging transition, which this
+		// fixture does not carry.
+		{bootstrap.AdoptLegacyManaged, "adoption_source_qualification_required"},
+		// The adapter is the backstop for a class the HTTP admission already
+		// refuses: no qualification is scoped to a missing class, so it never
+		// guesses a generation to read.
+		{bootstrap.AdoptSourceNone, "adoption_source_qualification_required"},
+	} {
+		request := Request{Strategy: bootstrap.AdoptExisting, BaseURL: source.URL, ManagementKey: "source-management", ExpectedRuntimeIdentity: runtime.status.Identity, ExpectedRuntimeGeneration: 3, ExpectedArtifactID: artifact, AdoptSourceClass: item.class}
+		result, err := New(options).Execute(t.Context(), operation(), request)
+		var blocker *Blocker
+		if !errors.As(err, &blocker) || blocker.Code != item.blocker {
+			t.Fatalf("class %q: %+v %v", item.class, result, err)
+		}
+		if result.Checkpoint.Strategy != "" || result.AdoptionCiphertext != "" {
+			t.Fatalf("class %q persisted a checkpoint", item.class)
+		}
+	}
+	// Neither refusal is the empty-source reason: the class itself is refused,
+	// so the source is never read and the source reader is never reached.
+	if sourceReads.Load() != 0 || len(runtime.stages) != 0 || len(runtime.starts) != 0 {
+		t.Fatalf("refused class touched source or destination: reads=%d", sourceReads.Load())
+	}
+}

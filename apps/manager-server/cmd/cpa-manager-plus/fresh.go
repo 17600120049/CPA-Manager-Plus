@@ -524,12 +524,16 @@ func (a *freshApplication) executeStrategy(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	// Accepted CPA source/destination qualification is not Host takeover
-	// authority. Fresh Adopt has no approved production writer or Host permit.
-	// Keep both canonical and fixed Bootstrap fail-closed before source GET,
-	// Runtime stage/start or any Manager checkpoint mutation.
-	if request.Strategy == bootstrap.AdoptExisting {
-		w.WriteHeader(http.StatusServiceUnavailable)
+	// A valid Fresh claim session is the whole trust anchor of an adoption: the
+	// host operator who ran `initialize` alone holds this handoff, so an
+	// authenticated strategy request is the operator's own intent and needs no
+	// second Host permit. Only the source classes the product does not adopt stay
+	// refused, and they are refused before the source GET, Runtime stage/start or
+	// any Manager checkpoint mutation, so no refusal has a side effect.
+	if request.Strategy == bootstrap.AdoptExisting && request.AdoptSourceClass != bootstrap.AdoptNetworkExisting {
+		// A v7 or CPAMP-managed source is Upgrade's path. A missing class is
+		// equally inadmissible: adoption never guesses which generation it reads.
+		writeFreshStrategyError(w, &freshstrategy.Blocker{Code: "adoption_source_class_refused"})
 		return
 	}
 	if request.ExpectedRevision != op.Revision {
@@ -682,13 +686,21 @@ func (a *freshApplication) validateInstallationSession(record freshstore.Record,
 // attempt by exactly one against the current revision, keeps every other
 // checkpoint field, and never rewrites a checkpoint that already published its
 // destination; a committed destination is not retryable by construction.
+//
+// Adoption retires attempts on the same terms, bounded by
+// MaxAdoptionDestinationRetry: an adoption gets its original attempt plus exactly
+// one retry, and the third terminal failure is reported without a retirement.
 func (a *freshApplication) retireDestinationAttempt(ctx context.Context, op bootstrap.FreshOperation, checkpoint bootstrap.FreshStrategyCheckpoint, guard func(freshstore.Record) error) error {
-	if checkpoint.Strategy != bootstrap.NewManaged || checkpoint.DestinationAttempt == 0 || checkpoint.DestinationConnectionIdentity != "" && checkpoint.Stage == "committed" {
+	if checkpoint.Strategy != bootstrap.NewManaged && checkpoint.Strategy != bootstrap.AdoptExisting ||
+		checkpoint.DestinationAttempt == 0 || checkpoint.DestinationConnectionIdentity != "" && checkpoint.Stage == "committed" {
+		return freshstore.ErrConflict
+	}
+	if checkpoint.Strategy == bootstrap.AdoptExisting && checkpoint.DestinationAttempt > bootstrap.MaxAdoptionDestinationRetry {
 		return freshstore.ErrConflict
 	}
 	_, err := a.store.Update(ctx, op.Identity, op.Revision, func(record *freshstore.Record) error {
 		current := record.Operation.Strategy
-		if current.Strategy != bootstrap.NewManaged || current.DestinationConnectionIdentity != "" && current.Stage == "committed" || current.DestinationAttempt+1 != checkpoint.DestinationAttempt {
+		if current.Strategy != checkpoint.Strategy || current.DestinationConnectionIdentity != "" && current.Stage == "committed" || current.DestinationAttempt+1 != checkpoint.DestinationAttempt {
 			return freshstore.ErrConflict
 		}
 		if guard != nil {
