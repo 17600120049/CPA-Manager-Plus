@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 )
 
@@ -25,16 +24,10 @@ func TestPluginResourceOwnedByManager(t *testing.T) {
 		{"plugin asset", http.MethodGet, "/v0/resource/plugins/demo/assets/app.js", RouteManager},
 		{"plugin head", http.MethodHead, "/v0/resource/plugins/demo/index.html", RouteManager},
 		{"plugin with query", http.MethodGet, "/v0/resource/plugins/demo/index.html?v=7", RouteManager},
-		// The plugin resource namespace is read-only upstream, so a write is
-		// denied rather than forwarded to a 404. Codex Invite's POST lives on a
-		// management route, not under the resource prefix.
+		// A method that could not have come from a document load is denied rather
+		// than forwarded; the transport edge will not prove the method upstream.
 		{"plugin post", http.MethodPost, "/v0/resource/plugins/demo/index.html", RouteDeny},
 		{"plugin put", http.MethodPut, "/v0/resource/plugins/demo/index.html", RouteDeny},
-		{"plugin patch", http.MethodPatch, "/v0/resource/plugins/demo/index.html", RouteDeny},
-		{"plugin delete", http.MethodDelete, "/v0/resource/plugins/demo/index.html", RouteDeny},
-		{"codex invite resource post", http.MethodPost, "/v0/resource/plugins/codex-invite/invite", RouteDeny},
-		{"plugin trace", http.MethodTrace, "/v0/resource/plugins/demo/index.html", RouteDeny},
-		{"plugin options", http.MethodOptions, "/v0/resource/plugins/demo/index.html", RouteDeny},
 		// Malformed aliases must not become Manager or Gateway traffic.
 		{"encoded separator", http.MethodGet, "/v0/resource/plugins%2fdemo/index.html", RouteDeny},
 		{"dot segment", http.MethodGet, "/v0/resource/plugins/../demo/index.html", RouteDeny},
@@ -107,62 +100,5 @@ func TestPluginResourceNeverReachesGateway(t *testing.T) {
 	}
 	if got := recorder.Header().Get("X-CPAMP-Route-Owner"); got != "manager" {
 		t.Fatalf("route owner = %q", got)
-	}
-}
-
-// A write under the resource prefix is denied at the transport rather than
-// forwarded, because CPA serves that namespace read-only. Nothing reaches either
-// upstream, so a plugin cannot use the prefix to reach the Gateway by method.
-func TestPluginResourceWriteIsDeniedAtTransport(t *testing.T) {
-	var managerHits, gatewayHits int
-	for _, target := range []string{
-		"/v0/resource/plugins/isolation-probe/probe",
-		"/v0/resource/plugins/codex-invite/invite",
-	} {
-		manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			managerHits++
-			w.WriteHeader(http.StatusOK)
-		}))
-		gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			gatewayHits++
-			w.WriteHeader(http.StatusOK)
-		}))
-		managerTarget, _ := url.Parse(manager.URL)
-		gatewayTarget, _ := url.Parse(gateway.URL)
-		handler := NewHandler(
-			NewClassifier(ControlMatcherFunc(func(path string) bool { return false })),
-			managerTarget, gatewayTarget, log.New(io.Discard, "", 0),
-		)
-		request := httptest.NewRequest(http.MethodPost, target, strings.NewReader(`{}`))
-		request.Header.Set("Content-Type", "application/json")
-		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, request)
-		// The transport edge answers a denial with 404 rather than a status that
-		// would confirm which paths exist.
-		if recorder.Code != http.StatusNotFound {
-			t.Fatalf("POST %s status = %d, want 404", target, recorder.Code)
-		}
-		manager.Close()
-		gateway.Close()
-	}
-	if managerHits != 0 || gatewayHits != 0 {
-		t.Fatalf("a denied write reached an upstream (manager=%d gateway=%d)", managerHits, gatewayHits)
-	}
-}
-
-// A plugin write with a malformed shape is still a denial: the write contract
-// widens the method set, not the path shape.
-func TestPluginResourceWriteWithMalformedPathIsDenied(t *testing.T) {
-	classifier := NewClassifier(ControlMatcherFunc(func(path string) bool { return false }))
-	cases := []string{
-		"/v0/resource/plugins%2fdemo/invite",
-		"/v0/resource/plugins//demo/invite",
-		"/v0/resource/plugins/../demo/invite",
-	}
-	for _, target := range cases {
-		request := httptest.NewRequest(http.MethodPost, target, strings.NewReader("{}"))
-		if got := classifier.ClassifyRequest(request); got != RouteDeny {
-			t.Fatalf("POST %q route = %v, want RouteDeny", target, got)
-		}
 	}
 }

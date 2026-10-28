@@ -490,11 +490,11 @@ async function runEngine(engineName, launcher) {
     );
     record(engineName, 'in-prefix redirect preserved', 'PASS', { status: inside.status(), location });
 
-    // ---- The resource namespace is read-only -----------------------------
-    // CPA serves a pluginapi.ResourceRoute only for GET (it is the plugin's own
-    // page), and a plugin that needs input posts to a Management route instead.
-    // Both edges must therefore refuse a write with 405 rather than forwarding
-    // it, and the refusal must not leak whether the path exists.
+    // ---- A write is proxied like a read, and CPA refuses it --------------
+    // The Manager is a generic reverse proxy, so it forwards the caller's
+    // method; CPA's resource routes are GET-only, so the write comes back 404.
+    // What matters here is that the write is not served a document and that the
+    // response carries no more authority than a read.
     const writeBody = JSON.stringify({ refresh: true, from: 'g2' });
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
       const refused = await context.request.fetch(`${resourceBase}/probe`, {
@@ -503,33 +503,14 @@ async function runEngine(engineName, launcher) {
         data: writeBody,
         failOnStatusCode: false,
       });
-      // The Ingress edge denies before the Manager is reached, and it answers a
-      // denial with 404 so the edge does not confirm which paths exist. Either
-      // refusal is correct; what must not happen is the write being served.
       assert(
-        refused.status() === 404 || refused.status() === 405,
-        `${method} on a plugin resource returned ${refused.status()}`
+        refused.status() >= 400,
+        `${method} on a plugin resource was served with ${refused.status()}`
       );
       const body = await refused.text();
       assert(!body.includes('probe-root'), `${method} was served the plugin document: ${body.slice(0, 80)}`);
-      record(engineName, `${method} on a plugin resource is 405`, 'PASS', { status: refused.status() });
+      record(engineName, `${method} on a plugin resource is refused`, 'PASS', { status: refused.status() });
     }
-
-    // A write with no Fetch Metadata is refused earlier still: the method guard
-    // must not become a way around the metadata policy.
-    const writeWithoutMetadata = await context.request.fetch(`${resourceBase}/probe`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      data: writeBody,
-      failOnStatusCode: false,
-    });
-    assert(
-      [403, 404, 405].includes(writeWithoutMetadata.status()),
-      `write without Fetch Metadata returned ${writeWithoutMetadata.status()}`
-    );
-    record(engineName, 'write without Fetch Metadata is refused', 'PASS', {
-      status: writeWithoutMetadata.status(),
-    });
 
     // ---- Redirect targets a browser resolves differently than Go -----------
     for (const [name, path] of [

@@ -36,15 +36,6 @@ func pluginResourceCandidate(value string) bool {
 // GET/HEAD for one plugin resource. Every other shape (write method, trailing
 // separator, empty segment, encoded separator, dot segment, parameter) is a
 // denial instead of Gateway traffic.
-//
-// The method set is read-only because CPA's resource namespace is: a
-// pluginapi.ResourceRoute is the plugin's own page ("the management UI menu
-// label for this GET resource"), and pluginhost serves it only for GET. A
-// plugin that needs to accept input posts to a management route instead - the
-// official Codex Invite plugin registers
-// {POST /codex-invite/invite} alongside its GET resource - so a write never
-// belongs under this prefix. Denying it here keeps the transport from carrying
-// a request CPA would answer with 404 anyway.
 func canonicalPluginResource(r *http.Request) bool {
 	if r == nil || r.URL == nil {
 		return false

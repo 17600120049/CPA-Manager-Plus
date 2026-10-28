@@ -71,9 +71,9 @@ GitHub Release 列表可能受到仓库权限、网络、代理或 API rate limi
 - 沙箱给页面的是**不透明来源**，这才是失去管理权限的原因。它**并不**限制插件的网络访问：插件 CSP 不含任何 fetch 指令，因此页面可以从任意来源加载资源、向任意来源发送数据；插件资源以 `Access-Control-Allow-Origin: *` 提供，页面因此也能读取其他插件的资源。请把插件页面当作恰好在 Console 框架内运行的不可信第三方代码，而不是网络受限的页面。
 - 依赖同源访问的插件（例如直接读取 Console 存储、依赖 Console 下的相对路径 API 或使用同源 Cookie 的页面）**不受支持**。界面会显示“无法显示该插件页面”的说明，而不会降级为同源加载。
 
-插件资源命名空间**只读**：仅接受 `GET` 与 `HEAD`，其余方法在 Ingress 边缘与 Manager 两处都会被 405 拒绝。这与 CPA 一致：`ResourceRoute` 就是插件自己的页面（“the management UI menu label for this GET resource”），CPA 的插件宿主只对 GET 提供服务。
+插件资源命名空间在 CPA 侧是只读的：`pluginapi.ResourceRoute` 就是插件自己的页面（“the management UI menu label for this GET resource”），CPA 的插件宿主只对 GET 提供服务。需要接收输入的插件应注册 Management 路由——官方 Codex Invite 插件用 GET 从 `/v0/resource/plugins/codex-invite/invite` 提供页面，把发送动作 POST 到 `/v0/management/codex-invite/invite`。
 
-需要接收输入的插件应注册 Management 路由。官方 Codex Invite 插件正是如此：它用 GET 从 `/v0/resource/plugins/codex-invite/invite` 提供页面，把发送动作 POST 到 `/v0/management/codex-invite/invite`。这类管理调用需要凭据，沙箱内部无法访问。
+Manager 的插件代理是通用反向代理，会按调用方使用的方法原样转发，因此写入确实会到达 CPA；CPA 因资源路由只支持 GET 而返回 404。隔离本身与请求方法无关：沙箱 CSP、响应头白名单、跳转限制与 Fetch Metadata 策略对写入与读取一视同仁。
 
 Manager 还会对每个插件资源请求校验 Fetch Metadata：缺少 `Sec-Fetch-Site` 的请求一律返回 403，来自管理界面的 `script`、`worker`、`style`、`font` 等非文档型子资源请求也会被拒绝。拦下管理界面加载插件代码的是这项校验，而不是 CSP；管理站点的 CSP 并不按路径排除插件 URL。
 

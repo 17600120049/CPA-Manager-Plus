@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
@@ -37,25 +36,5 @@ func TestAPIKeysManagementRequiresCPAMPAdminBeforeProxy(t *testing.T) {
 		if response.Code != http.StatusUnauthorized {
 			t.Fatalf("%s status=%d", method, response.Code)
 		}
-	}
-}
-
-// The plugin resource namespace is read-only upstream, so the Manager refuses a
-// write here rather than forwarding it to a 404. Refusing locally keeps the
-// reason visible and stops an unauthenticated caller from making the Manager
-// reach CPA at all.
-func TestCPAResourceRefusesWrites(t *testing.T) {
-	handler := &Handler{}
-	for _, method := range []string{
-		http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete,
-	} {
-		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(method, "/v0/resource/plugins/demo/probe", strings.NewReader("{}"))
-		handler.CPAResource(recorder, request)
-		if recorder.Code != http.StatusMethodNotAllowed {
-			t.Fatalf("%s status = %d, want 405", method, recorder.Code)
-		}
-		// The guard runs before any dependency is touched, which is why a zero
-		// Handler is safe here and why CPA is never contacted.
 	}
 }
