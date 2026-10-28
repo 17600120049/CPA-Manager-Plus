@@ -56,8 +56,9 @@ func sha256Hex(data []byte) string {
 
 // validateEdits accepts only a well-shaped request for this group: a known leaf,
 // a shape the leaf can carry, no duplicate path and the two product rules CPAMP
-// owns. Value bounds stay CPA's.
-func validateEdits(group cpa.ConfigGroup, edits []Edit) ([]freshstore.ConfigGroupEdit, error) {
+// owns. Value bounds stay CPA's. parseValue is the group's own scope, so a leaf
+// of another scope is never a known leaf here.
+func validateEdits(group cpa.ConfigGroup, edits []Edit, parseValue func(string, json.RawMessage) (any, error)) ([]freshstore.ConfigGroupEdit, error) {
 	if len(edits) == 0 || len(edits) > len(group.Leaves) {
 		return nil, ErrInvalid
 	}
@@ -82,7 +83,7 @@ func validateEdits(group cpa.ConfigGroup, edits []Edit) ([]freshstore.ConfigGrou
 			if len(edit.Value) == 0 {
 				return nil, ErrInvalid
 			}
-			value, err := cpa.ParseConfigLeafValue(edit.Path, edit.Value)
+			value, err := parseValue(edit.Path, edit.Value)
 			if err != nil {
 				return nil, ErrInvalid
 			}
@@ -108,7 +109,16 @@ func validateEdits(group cpa.ConfigGroup, edits []Edit) ([]freshstore.ConfigGrou
 // ValidateGroupRequest rejects everything the page contract does not allow
 // before any journal or CPA write happens.
 func ValidateGroupRequest(groupID string, q GroupRequest) error {
-	group, ok := cpa.LookupConfigGroup(groupID)
+	return validateGroupRequest(gatewayConfigScope, groupID, q)
+}
+
+// ValidatePluginGroupRequest is the same closed contract for the plugin scope.
+func ValidatePluginGroupRequest(groupID string, q GroupRequest) error {
+	return validateGroupRequest(pluginConfigScope, groupID, q)
+}
+
+func validateGroupRequest(sc scope, groupID string, q GroupRequest) error {
+	group, ok := sc.lookupGroup(groupID)
 	if !ok {
 		return ErrInvalid
 	}
@@ -118,7 +128,7 @@ func ValidateGroupRequest(groupID string, q GroupRequest) error {
 	if !freshkeysValidRequestID(q.RequestID) {
 		return ErrInvalid
 	}
-	if _, err := validateEdits(group, q.Edits); err != nil {
+	if _, err := validateEdits(group, q.Edits, sc.parseValue); err != nil {
 		return err
 	}
 	return nil
@@ -167,16 +177,28 @@ func isHex(value string, size int) bool {
 	return err == nil
 }
 
-// SaveGroup performs exactly one group save. The journal entry is durable before
-// the first CPA write, so a lost response is resolved by reading back.
+// SaveGroup performs exactly one gateway page group save. The journal entry is
+// durable before the first CPA write, so a lost response is resolved by reading
+// back.
 func (s *Service) SaveGroup(ctx context.Context, groupID string, q GroupRequest) (freshstore.ConfigGroupOperation, error) {
+	return s.saveGroup(ctx, gatewayConfigScope, groupID, q)
+}
+
+// SavePluginGroup performs exactly one plugin runtime switch save through the
+// same journal, CAS and read-back path as the page. Only the managed authority
+// resolves for this scope, so every other profile is refused before a read.
+func (s *Service) SavePluginGroup(ctx context.Context, groupID string, q GroupRequest) (freshstore.ConfigGroupOperation, error) {
+	return s.saveGroup(ctx, pluginConfigScope, groupID, q)
+}
+
+func (s *Service) saveGroup(ctx context.Context, sc scope, groupID string, q GroupRequest) (freshstore.ConfigGroupOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	group, ok := cpa.LookupConfigGroup(groupID)
+	group, ok := sc.lookupGroup(groupID)
 	if !ok {
 		return freshstore.ConfigGroupOperation{}, ErrInvalid
 	}
-	edits, err := validateEdits(group, q.Edits)
+	edits, err := validateEdits(group, q.Edits, sc.parseValue)
 	if err == nil && (validateExpected(q.Expected) != nil || !freshkeysValidRequestID(q.RequestID)) {
 		err = ErrInvalid
 	}
@@ -187,8 +209,11 @@ func (s *Service) SaveGroup(ctx context.Context, groupID string, q GroupRequest)
 	if err != nil {
 		return freshstore.ConfigGroupOperation{}, err
 	}
-	auth, err := s.resolve(ctx, r)
-	if err != nil || auth.wire == nil {
+	auth, err := s.resolve(ctx, r, sc)
+	if err != nil {
+		return freshstore.ConfigGroupOperation{}, err
+	}
+	if auth.wire == nil {
 		return freshstore.ConfigGroupOperation{}, cpa.ErrProofUnavailable
 	}
 	if !auth.capable.Writable {
@@ -283,7 +308,7 @@ func (s *Service) SaveFamily(ctx context.Context, familyID string, q FamilyReque
 	if err != nil {
 		return freshstore.ConfigGroupOperation{}, err
 	}
-	auth, err := s.resolve(ctx, r)
+	auth, err := s.resolve(ctx, r, gatewayConfigScope)
 	if err != nil || auth.wire == nil {
 		return freshstore.ConfigGroupOperation{}, cpa.ErrProofUnavailable
 	}

@@ -7,19 +7,22 @@ import { pluginsApi } from '@/services/api';
 import { useAuthStore, useThemeStore } from '@/stores';
 import { getErrorMessage, isRecord } from '@/utils/helpers';
 import type { PluginListResponse } from '@/types';
-import {
-  createPluginHostStyleBridge,
-  type PluginHostStyleBridge,
-} from './pluginHostStyle';
+import { createPluginHostStyleBridge, type PluginHostStyleBridge } from './pluginHostStyle';
 import {
   collectPluginResourceEntries,
+  isDemoPluginDocument,
   PLUGIN_RESOURCES_REFRESH_EVENT,
   resolvePluginAssetURL,
 } from './pluginResources';
 import styles from './PluginResourcePage.module.scss';
 
-const hasStatus = (error: unknown, status: number) =>
-  isRecord(error) && error.status === status;
+// The plugin document runs in an opaque origin. Scripts and forms stay
+// enabled because plugin pages are interactive; everything that would let the
+// page reach the admin session - same-origin access, popups, top navigation,
+// downloads - is deliberately absent.
+export const PLUGIN_FRAME_SANDBOX = 'allow-scripts allow-forms';
+
+const hasStatus = (error: unknown, status: number) => isRecord(error) && error.status === status;
 
 const safeDecodeURIComponent = (value = '') => {
   try {
@@ -34,30 +37,7 @@ const parseMenuIndex = (value = '') => {
   return Number.isInteger(index) && index >= 0 ? index : -1;
 };
 
-// This branch is compiled into the disposable P-S0 Manager image. It never
-// evaluates, navigates to or creates an iframe from any plugin menu URL.
 export function PluginResourcePage() {
-  if (import.meta.env.VITE_CPAMP_PAH_S0 === '1') {
-    return <PAHS0UnsupportedPluginPage />;
-  }
-  return <LegacyPluginResourcePage />;
-}
-
-function PAHS0UnsupportedPluginPage() {
-  const { t } = useTranslation();
-  return (
-    <div className={styles.page}>
-      <div className={styles.stateShell}>
-        <EmptyState
-          title={t('plugin_resource.unavailable')}
-          description={t('plugin_resource.pah_s0_unsupported')}
-        />
-      </div>
-    </div>
-  );
-}
-
-function LegacyPluginResourcePage() {
   const { t } = useTranslation();
   const params = useParams<{ pluginId: string; menuIndex: string }>();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
@@ -122,7 +102,17 @@ function LegacyPluginResourcePage() {
     return entries.find((entry) => entry.pluginID === pluginID && entry.menuIndex === menuIndex);
   }, [data?.plugins, menuIndex, pluginID]);
 
-  const iframeSrc = resource ? resolvePluginAssetURL(resource.menu.path, apiBase) : '';
+  // Only same-origin plugin resource paths are supported; anything else is
+  // reported as an unsupported plugin page instead of being loaded. The
+  // published demo site has no Manager proxy behind it, so its own mock
+  // documents are the single, build-time-only exception.
+  const declaredPath = resource?.menu.path.trim() ?? '';
+  const iframeSrc = resource
+    ? isDemoPluginDocument(declaredPath)
+      ? declaredPath
+      : resolvePluginAssetURL(declaredPath, apiBase)
+    : '';
+  const unsupportedTarget = Boolean(declaredPath) && !iframeSrc;
 
   const refreshPluginHostStyle = useCallback(() => {
     const iframe = iframeRef.current;
@@ -179,6 +169,13 @@ function LegacyPluginResourcePage() {
             description={t('plugin_resource.not_found_desc')}
           />
         </div>
+      ) : unsupportedTarget ? (
+        <div className={styles.stateShell}>
+          <EmptyState
+            title={t('plugin_resource.unsupported_target')}
+            description={t('plugin_resource.unsupported_target_desc')}
+          />
+        </div>
       ) : !iframeSrc ? (
         <div className={styles.stateShell}>
           <EmptyState
@@ -192,8 +189,8 @@ function LegacyPluginResourcePage() {
           className={styles.frame}
           src={iframeSrc}
           title={resource.label}
+          sandbox={PLUGIN_FRAME_SANDBOX}
           referrerPolicy="no-referrer"
-          allow="clipboard-read; clipboard-write"
           onLoad={handleIframeLoad}
         />
       )}

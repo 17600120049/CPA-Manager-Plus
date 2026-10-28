@@ -198,7 +198,7 @@ func (t *Transport) InstallOne(ctx context.Context, proof TargetProof, managemen
 // proofPosture is the expected destination posture of the CPA management
 // source. The zero value is the private S1 seed: loopback only, remote
 // management disabled, usage statistics off, fixed Gateway auth directory and
-// plugins disabled with the Supervisor-owned plugin root. Fields are
+// plugins published at the Supervisor-owned plugin root. Fields are
 // server-owned facts of the destination template, never caller input.
 type proofPosture struct {
 	managed         bool
@@ -206,7 +206,6 @@ type proofPosture struct {
 	allowRemote     bool
 	usageStatistics bool
 	authDir         string
-	relaxedPlugins  bool
 }
 
 // privateProofPosture is the attested private S1 seed; it is the zero value.
@@ -214,9 +213,9 @@ var privateProofPosture = proofPosture{}
 
 // managedProofPosture is the default new_managed destination: the Supervisor
 // template binds 0.0.0.0 with a child identity, enables remote management and
-// usage statistics, disables plugins without publishing their root, and keeps
-// its own Gateway auth directory.
-var managedProofPosture = proofPosture{managed: true, host: "0.0.0.0", allowRemote: true, usageStatistics: true, relaxedPlugins: true}
+// usage statistics, publishes the Supervisor-owned plugin root, and keeps its
+// own Gateway auth directory.
+var managedProofPosture = proofPosture{managed: true, host: "0.0.0.0", allowRemote: true, usageStatistics: true}
 
 // looksLikeBcrypt reports whether CPA persisted a bcrypt digest. CPA hashes a
 // plaintext secret-key at load and rewrites the file; a plaintext value here
@@ -309,19 +308,25 @@ func (p proofPosture) matches(data []byte) bool {
 			return false
 		}
 	}
-	var enabled bool
+	// Plugins are a Supervisor-owned resource. On the default destination the
+	// enabled switch is the operator's own decision, so either value is the
+	// template's; on the private empty seed plugins stay disabled. What both pin
+	// is the directory, which must be exactly a Supervisor-owned plugin root, and
+	// the closed key set: a store source, a per-plugin config or an auth revision
+	// is a posture this Manager never wrote.
 	var plugins map[string]json.RawMessage
 	var pluginDir string
-	if json.Unmarshal(root["plugins"], &plugins) != nil || !bytes.Equal(plugins["enabled"], []byte("false")) || json.Unmarshal(plugins["enabled"], &enabled) != nil || enabled {
+	var enabled bool
+	if json.Unmarshal(root["plugins"], &plugins) != nil || len(plugins) != 2 ||
+		(!bytes.Equal(plugins["enabled"], []byte("true")) && !bytes.Equal(plugins["enabled"], []byte("false"))) ||
+		json.Unmarshal(plugins["enabled"], &enabled) != nil ||
+		json.Unmarshal(plugins["dir"], &pluginDir) != nil || !p.validPluginDir(pluginDir) {
 		return false
 	}
-	if p.relaxedPlugins {
-		if len(plugins) != 1 {
-			return false
-		}
-	} else if len(plugins) != 2 || json.Unmarshal(plugins["dir"], &pluginDir) != nil || pluginDir != "/runtime/gateway/plugins" {
+	if !p.managed && enabled {
 		return false
 	}
+
 	var observability struct {
 		Logs struct {
 			LoggingToFile bool `json:"logging-to-file"`
@@ -373,6 +378,21 @@ func (p proofPosture) validAuthDir(dir string) bool {
 		return dir == "/runtime/gateway/auth"
 	}
 	return strings.HasPrefix(dir, "/") && strings.HasSuffix(dir, "/destination/auth") && !strings.Contains(dir, "..")
+}
+
+// privatePluginDir is the private S1 seed's plugin root.
+const privatePluginDir = "/runtime/gateway/plugins"
+
+// validPluginDir accepts the private fixed path, or (default installs) the
+// Supervisor-owned plugin root. The immutable destination is
+// <supervisorRoot>/destination, which publish replaces whole, so the plugin root
+// is its sibling <supervisorRoot>/plugins: it survives every re-staged
+// destination and a Runtime restart, and no request can point it elsewhere.
+func (p proofPosture) validPluginDir(dir string) bool {
+	if !p.managed {
+		return dir == privatePluginDir
+	}
+	return strings.HasPrefix(dir, "/") && strings.HasSuffix(dir, "/supervisor/plugins") && !strings.Contains(dir, "..")
 }
 
 func emptyProofConfig(data []byte) bool { return privateProofPosture.matches(data) }

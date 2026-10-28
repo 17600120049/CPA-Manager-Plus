@@ -98,6 +98,8 @@ func serveFullWeb(w http.ResponseWriter, r *http.Request, prefix string, dist fs
 	// Vite base './' keeps lazy imports relative to their module, while entry
 	// references are rebound once here for pathname deep-link refresh.
 	data = bytes.ReplaceAll(data, []byte(`"./assets/`), []byte(`"`+html.EscapeString(prefix)+`/assets/`))
+	data, policy := applyAdminDocumentCSP(data)
+	w.Header().Set("Content-Security-Policy", policy)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(data))
 }

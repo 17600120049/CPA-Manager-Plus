@@ -226,3 +226,57 @@ func TestRuleFamiliesRejectDuplicatePathsAndBadShapes(t *testing.T) {
 		t.Fatal("unknown family accepted")
 	}
 }
+
+// TestPluginScopeIsSeparateFromTheGatewayPage pins the plugin runtime switch as
+// its own scope: the accepted gateway page stays at 39 leaves / 11 groups and the
+// plugin group is not a gateway group, so neither route can reach the other's
+// leaves.
+func TestPluginScopeIsSeparateFromTheGatewayPage(t *testing.T) {
+	if got := PluginConfigLeafPaths(); len(got) != 1 || got[0] != "plugins.enabled" {
+		t.Fatalf("plugin leaves %v", got)
+	}
+	if got := PluginConfigGroupIDs(); len(got) != 1 || got[0] != PluginConfigGroupID {
+		t.Fatalf("plugin groups %v", got)
+	}
+	group, ok := LookupPluginConfigGroup(PluginConfigGroupID)
+	if !ok || group.Prefix != "plugins" || len(group.Leaves) != 1 {
+		t.Fatalf("plugin group %+v", group)
+	}
+	// The gateway page never projects or accepts a plugin path.
+	if _, ok := LookupConfigLeaf("plugins.enabled"); ok {
+		t.Fatal("the plugin leaf is in the gateway leaf table")
+	}
+	if _, ok := LookupConfigGroup(PluginConfigGroupID); ok {
+		t.Fatal("the plugin group is in the gateway group table")
+	}
+	if _, ok := LookupPluginConfigLeaf("routing.strategy"); ok {
+		t.Fatal("the plugin scope accepts a gateway leaf")
+	}
+	// plugins.dir stays out of both tables: the Supervisor owns the plugin root.
+	if _, ok := LookupPluginConfigLeaf("plugins.dir"); ok {
+		t.Fatal("the plugin root is a writable page leaf")
+	}
+	for _, path := range PluginConfigLeafPaths() {
+		if path == "" || strings.HasPrefix(path, "plugins.dir") {
+			t.Fatalf("plugin leaf %q", path)
+		}
+	}
+	// The switch is a boolean shape and nothing else.
+	for _, raw := range []string{`true`, `false`} {
+		value, err := ParsePluginConfigLeafValue("plugins.enabled", json.RawMessage(raw))
+		if err != nil || value.(bool) != (raw == "true") {
+			t.Fatalf("%s parsed to %v err=%v", raw, value, err)
+		}
+	}
+	for _, raw := range []string{`"true"`, `1`, `null`, `{}`} {
+		if _, err := ParsePluginConfigLeafValue("plugins.enabled", json.RawMessage(raw)); err == nil {
+			t.Fatalf("%s accepted as the switch", raw)
+		}
+	}
+	if _, err := ParsePluginConfigLeafValue("routing.strategy", json.RawMessage(`"round-robin"`)); err == nil {
+		t.Fatal("the plugin parser accepted a gateway leaf")
+	}
+	if _, err := ParseConfigLeafValue("plugins.enabled", json.RawMessage(`true`)); err == nil {
+		t.Fatal("the gateway parser accepted the plugin leaf")
+	}
+}

@@ -47,3 +47,35 @@ func TestLegacyRouterExplicitModeAcknowledgement(t *testing.T) {
 		}
 	}
 }
+
+// A plugin resource answers its own CORS contract: the proxy sets exactly one
+// Access-Control-Allow-Origin on the rewritten sandbox response. Wrapping the
+// same route in WithCORS as well put a second value on the response, and a
+// browser refuses any response carrying two, so the sandboxed plugin document
+// could not read its own resource. The route must not write CORS itself.
+func TestPluginResourceRouteLeavesCORSHeadersToTheProxy(t *testing.T) {
+	appCtx := &app.Context{}
+	appCtx.Config.CORSOrigins = []string{"*"}
+	handler := New(appCtx)
+
+	// No deployment or admin session exists here, so the handler refuses well
+	// before any upstream call. That is the point: whatever CORS header is
+	// present came from the router, not from a proxied CPA response.
+	req := httptest.NewRequest(http.MethodGet, "http://example.test/v0/resource/plugins/isolation-probe/probe", nil)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.Header.Set("Sec-Fetch-Dest", "iframe")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if got := recorder.Header().Values("Access-Control-Allow-Origin"); len(got) != 0 {
+		t.Fatalf("router wrote Access-Control-Allow-Origin for a plugin resource: %v", got)
+	}
+
+	// A normal admin route keeps the deployment's CORS answer.
+	adminReq := httptest.NewRequest(http.MethodGet, "http://example.test/status", nil)
+	adminRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(adminRecorder, adminReq)
+	if got := adminRecorder.Header().Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != "*" {
+		t.Fatalf("admin route CORS = %v, want [\"*\"]", got)
+	}
+}

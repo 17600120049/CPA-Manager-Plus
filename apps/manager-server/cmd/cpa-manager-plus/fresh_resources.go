@@ -181,6 +181,8 @@ func legacyBridgePathAllowed(resource, method string) bool {
 		return allowed(http.MethodGet, http.MethodPatch, http.MethodDelete)
 	case "v0/management/reset-quota":
 		return allowed(http.MethodPost)
+	case "v0/management/plugins", "v0/management/plugin-store":
+		return allowed(http.MethodGet)
 	case "status", "health", "v1/models", "models":
 		return allowed(http.MethodGet)
 	default:
@@ -244,6 +246,28 @@ func legacyBridgeDynamicPathAllowed(resource, method string, allowed func(...str
 		case "complete":
 			return allowed(http.MethodPost)
 		}
+	}
+	if len(parts) == 2 && parts[0] == "plugin-store" && safeBridgePathSegment(parts[1]) {
+		return allowed(http.MethodPost)
+	}
+	if len(parts) == 3 && parts[0] == "plugin-store" && safeBridgePathSegment(parts[1]) && parts[2] == "install" {
+		return allowed(http.MethodPost)
+	}
+	if len(parts) == 2 && parts[0] == "plugins" && safeBridgePathSegment(parts[1]) {
+		return allowed(http.MethodDelete)
+	}
+	if len(parts) == 3 && parts[0] == "plugins" && safeBridgePathSegment(parts[1]) {
+		switch parts[2] {
+		case "enabled":
+			return allowed(http.MethodPatch)
+		case "config":
+			return allowed(http.MethodGet, http.MethodPut, http.MethodPatch)
+		case "quota":
+			return allowed(http.MethodGet, http.MethodPost, http.MethodDelete)
+		}
+	}
+	if len(parts) == 4 && parts[0] == "plugins" && safeBridgePathSegment(parts[1]) && parts[2] == "quota" && parts[3] == "reset" {
+		return allowed(http.MethodPost)
 	}
 	return false
 }

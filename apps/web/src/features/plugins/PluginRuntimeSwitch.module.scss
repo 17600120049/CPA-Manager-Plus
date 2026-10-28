@@ -1,0 +1,77 @@
+.switchSurface {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.switchCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.switchTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.switchDescription {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.switchReadout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 2px;
+}
+
+.readoutItem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.readoutLabel {
+  color: var(--text-tertiary);
+  font-weight: 700;
+}
+
+.switchNotice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--warning-text);
+}
+
+.switchControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .switchSurface {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .switchControls {
+    justify-content: flex-start;
+  }
+}

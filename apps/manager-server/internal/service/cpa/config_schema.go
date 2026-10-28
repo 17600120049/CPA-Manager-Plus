@@ -221,25 +221,46 @@ var gatewayGroups = []ConfigGroup{
 	{ID: "xai", Prefix: "upstream.xai", Leaves: []string{"upstream.xai.inject-x-search"}},
 }
 
+// PluginConfigGroupID is the page group of the plugin runtime switch. It is a
+// scope of its own and NOT a gateway page group: the accepted gateway page is
+// complete without it, and the plugin route projects no gateway leaf.
+const PluginConfigGroupID = "plugins"
+
+// pluginLeaves is the closed write scope of the plugin runtime switch. The key
+// exists in CPA v8's own configuration document; `plugins.dir` is deliberately
+// absent because the Supervisor owns the plugin root, and a page that could
+// repoint plugin discovery would be a native-code path.
+var pluginLeaves = []ConfigLeaf{
+	{Path: "plugins.enabled", Type: ConfigLeafBool, Kind: ConfigKindBool, Group: PluginConfigGroupID},
+}
+
+// pluginGroups is the plugin scope's group table: one group, one leaf, and the
+// switch's own parent mapping as its PATCH prefix.
+var pluginGroups = []ConfigGroup{
+	{ID: PluginConfigGroupID, Prefix: "plugins", Leaves: []string{"plugins.enabled"}},
+}
+
 var (
-	gatewayLeafIndex    = buildLeafIndex()
-	gatewayGroupIndex   = buildGroupIndex()
+	gatewayLeafIndex    = buildLeafIndex(gatewayLeaves)
+	gatewayGroupIndex   = buildGroupIndex(gatewayGroups)
 	gatewayFamilyIndex  = buildFamilyIndex()
+	pluginLeafIndex     = buildLeafIndex(pluginLeaves)
+	pluginGroupIndex    = buildGroupIndex(pluginGroups)
 	privateConfigLeaves = buildPrivateLeaves()
 	privateConfigGroups = buildPrivateGroups()
 )
 
-func buildLeafIndex() map[string]ConfigLeaf {
-	index := make(map[string]ConfigLeaf, len(gatewayLeaves))
-	for _, leaf := range gatewayLeaves {
+func buildLeafIndex(leaves []ConfigLeaf) map[string]ConfigLeaf {
+	index := make(map[string]ConfigLeaf, len(leaves))
+	for _, leaf := range leaves {
 		index[leaf.Path] = leaf
 	}
 	return index
 }
 
-func buildGroupIndex() map[string]ConfigGroup {
-	index := make(map[string]ConfigGroup, len(gatewayGroups))
-	for _, group := range gatewayGroups {
+func buildGroupIndex(groups []ConfigGroup) map[string]ConfigGroup {
+	index := make(map[string]ConfigGroup, len(groups))
+	for _, group := range groups {
 		index[group.ID] = group
 	}
 	return index
@@ -326,6 +347,38 @@ func LookupConfigGroup(id string) (ConfigGroup, bool) {
 func LookupConfigRuleFamily(family string) (ConfigRuleFamily, bool) {
 	entry, ok := gatewayFamilyIndex[family]
 	return entry, ok
+}
+
+// PluginConfigGroupIDs returns the plugin scope's groups in order.
+func PluginConfigGroupIDs() []string {
+	ids := make([]string, 0, len(pluginGroups))
+	for _, group := range pluginGroups {
+		ids = append(ids, group.ID)
+	}
+	return ids
+}
+
+// LookupPluginConfigGroup is the group membership test of the plugin scope. It
+// is a separate table from the gateway page: neither scope can name the other's
+// group, so a plugin save is never a gateway group save.
+func LookupPluginConfigGroup(id string) (ConfigGroup, bool) {
+	group, ok := pluginGroupIndex[id]
+	return group, ok
+}
+
+// PluginConfigLeafPaths returns the plugin scope's leaves in page order.
+func PluginConfigLeafPaths() []string {
+	paths := make([]string, 0, len(pluginLeaves))
+	for _, leaf := range pluginLeaves {
+		paths = append(paths, leaf.Path)
+	}
+	return paths
+}
+
+// LookupPluginConfigLeaf is the leaf membership test of the plugin scope.
+func LookupPluginConfigLeaf(path string) (ConfigLeaf, bool) {
+	leaf, ok := pluginLeafIndex[path]
+	return leaf, ok
 }
 
 // ConfigRuleFamilyIDs returns every rule family identifier in page order.
@@ -503,11 +556,29 @@ func NormalizeConfigValue(value any) any {
 	return value
 }
 
-// ParseConfigLeafValue decodes one exact JSON value of a leaf. Null, composite
-// values and trailing data are rejected; presence is reported separately.
+// ParseConfigLeafValue decodes one exact JSON value of a gateway leaf. Null,
+// composite values and trailing data are rejected; presence is reported
+// separately.
 func ParseConfigLeafValue(path string, raw json.RawMessage) (any, error) {
 	leaf, ok := gatewayLeafIndex[path]
-	if !ok || len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+	if !ok {
+		return nil, ErrInvalidConfigPath
+	}
+	return parseConfigLeafValue(leaf, raw)
+}
+
+// ParsePluginConfigLeafValue decodes one exact JSON value of a plugin-scope leaf.
+// It never accepts a gateway leaf: one scope is not a superset of the other.
+func ParsePluginConfigLeafValue(path string, raw json.RawMessage) (any, error) {
+	leaf, ok := pluginLeafIndex[path]
+	if !ok {
+		return nil, ErrInvalidConfigPath
+	}
+	return parseConfigLeafValue(leaf, raw)
+}
+
+func parseConfigLeafValue(leaf ConfigLeaf, raw json.RawMessage) (any, error) {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return nil, ErrInvalidConfigPath
 	}
 	switch leaf.Type {

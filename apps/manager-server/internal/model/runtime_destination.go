@@ -13,6 +13,9 @@ type RuntimeDestinationRequest struct {
 	SourceClass               string            `json:"sourceClass"`
 	APIKeys                   []string          `json:"apiKeys"`
 	ManagementKey             string            `json:"managementKey"`
+	// PluginsEnabled is the install-time plugin opt-in. The plugin directory is
+	// never carried here: the Supervisor owns it.
+	PluginsEnabled bool `json:"pluginsEnabled,omitempty"`
 }
 
 func (r RuntimeDestinationRequest) Validate() error {

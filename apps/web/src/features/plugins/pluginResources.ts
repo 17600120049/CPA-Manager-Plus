@@ -14,13 +14,16 @@ export const notifyPluginResourcesChanged = (options?: { delayMs?: number }) => 
   dispatch();
 };
 
+// Plugin management stays reachable whenever the deployment can serve plugins,
+// including while the global switch is off. That page is where the switch lives,
+// and its disabled state renders an explicit "the global switch is off" notice,
+// so hiding the entry would leave an administrator with no way back on besides
+// editing config by hand. Only the plugin's own menus depend on the switch.
 export const isPluginManagementNavVisible = ({
   supportsPlugin,
-  pluginsEnabled,
 }: {
   supportsPlugin: boolean;
-  pluginsEnabled?: boolean | null;
-}) => supportsPlugin && pluginsEnabled !== false;
+}) => supportsPlugin;
 
 export const isPluginResourceNavVisible = ({
   supportsPlugin,
@@ -47,13 +50,62 @@ export const getPluginTitle = (plugin: PluginListEntry) =>
 export const buildPluginResourceRoute = (pluginID: string, menuIndex: number) =>
   `/plugin-pages/${encodeURIComponent(pluginID)}/${menuIndex}`;
 
+export const PLUGIN_RESOURCE_PATH_PREFIX = '/v0/resource/plugins/';
+
+// A plugin page may only be loaded from this deployment's own plugin resource
+// namespace. External http(s), data:, blob: and bare relative targets are
+// unsupported: the sandbox document is served with an opaque-origin CSP, so
+// only a same-origin prefix URL keeps the response under Manager control.
+export const isSupportedPluginResourcePath = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith(PLUGIN_RESOURCE_PATH_PREFIX)) return false;
+  // Reject scheme-relative and backslash aliases, encoded separators, and any
+  // dot segment that would escape the namespace after normalization. Percent
+  // encoding is refused outright: the Manager's plugin resource predicate only
+  // admits paths whose escaped form equals the decoded form, so an encoded
+  // segment could never be served and only exists to smuggle a traversal.
+  if (/[\\\s%]/.test(trimmed)) return false;
+  if (trimmed.includes('//') || trimmed.includes('/./') || trimmed.includes('/../')) return false;
+  if (trimmed.endsWith('/..') || trimmed.endsWith('/.')) return false;
+  // One plugin id segment must be present.
+  const rest = trimmed.slice(PLUGIN_RESOURCE_PATH_PREFIX.length);
+  if (!rest) return false;
+  // The namespace is served from the origin root, not below the Manager API
+  // prefix, so the remainder must stay a plain relative path.
+  return !/^[a-z][a-z0-9+.-]*:/i.test(rest) && !rest.startsWith('/');
+};
+
+// The published demo site has no Manager to serve plugin resources, so its
+// fixtures are self-contained mock documents. The constant is a build-time
+// literal, so this branch disappears from the Manager-served Full Web build.
+export const isDemoPluginDocument = (value: string): boolean =>
+  __DEMO_SITE__ && /^data:text\/html[;,]/.test(value.trim());
+
+const documentOrigin = (): string => {
+  if (typeof window === 'undefined') return '';
+  const origin = window.location?.origin;
+  return typeof origin === 'string' ? origin : '';
+};
+
+// Plugin resources are answered at the origin root by the Manager proxy. The
+// console's configured API base therefore contributes only its origin: the
+// `/api/v2/cpamp` namespace never serves plugin documents, and a cross-origin
+// base cannot satisfy the admin document's `frame-src 'self'` policy or the
+// Manager's opaque-origin sandbox response contract.
 export const resolvePluginAssetURL = (value: string, apiBase: string) => {
   const trimmed = value.trim();
-  if (!trimmed) return '';
-  if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed;
-  if (!trimmed.startsWith('/')) return trimmed;
+  if (!isSupportedPluginResourcePath(trimmed)) return '';
+
+  const origin = documentOrigin();
+  if (!origin) return '';
   const base = normalizeApiBase(apiBase);
-  return base ? `${base}${trimmed}` : trimmed;
+  if (!base) return `${origin}${trimmed}`;
+  try {
+    if (new URL(base).origin !== origin) return '';
+  } catch {
+    return '';
+  }
+  return `${origin}${trimmed}`;
 };
 
 export const buildRepositoryURL = (repository: string) => {

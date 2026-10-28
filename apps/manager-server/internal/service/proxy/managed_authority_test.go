@@ -78,6 +78,10 @@ func TestPluginResourceUsesManagedCompletionMirror(t *testing.T) {
 	st := store.New(db, protector)
 	svc := New(managerconfig.New(config.Config{}, st, nil), st)
 	req := httptest.NewRequest(http.MethodGet, "/v0/resource/plugins/example", nil)
+	// The Console frames a plugin page same-origin; that document load is the
+	// only same-origin destination the plugin resource policy admits.
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Sec-Fetch-Dest", "iframe")
 	recorder := httptest.NewRecorder()
 	svc.ProxyPluginResource(recorder, req, func(w http.ResponseWriter, status int, err error) {
 		http.Error(w, err.Error(), status)

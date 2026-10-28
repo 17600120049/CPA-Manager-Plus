@@ -4510,6 +4510,22 @@
   "plugin_management": {
     "title": "Plugin Management",
     "description": "Review installed and available plugins, then manage status, settings, and links.",
+    "runtime_title": "Plugin runtime",
+    "runtime_description": "Turns plugin execution on or off in the managed CPA. The Manager writes this setting to the gateway configuration; the plugin directory is published by the runtime, not by this page.",
+    "runtime_persisted": "Saved",
+    "runtime_on": "On",
+    "runtime_off": "Off",
+    "runtime_unset": "Not set",
+    "runtime_toggle": "Enable plugins",
+    "runtime_toggle_aria": "Enable plugin execution",
+    "runtime_reconcile": "Read back result",
+    "runtime_pending": "The last write has an unknown result. Read it back to confirm what was saved.",
+    "runtime_reconciled": "Read back: the new value is saved.",
+    "runtime_not_applied": "Read back: the write did not reach the configuration.",
+    "runtime_conflict": "The configuration changed after this page read it. Read again before saving.",
+    "runtime_refused": "This installation does not own the plugin root, so the switch cannot be changed here.",
+    "runtime_save_failed": "The plugin switch was not saved.",
+    "runtime_saved_effect_unknown": "Saved. CPA applies it when it reloads the configuration.",
     "refresh": "Refresh",
     "install_plugin": "Install Plugin",
     "tabs_aria_label": "Plugin management views",
@@ -4719,7 +4735,6 @@
     "gate_step3_hint": "Enter the exact identifier shown above."
   },
   "plugin_resource": {
-    "pah_s0_unsupported": "Plugin pages are disabled in this private security profile. Plugin management remains available.",
     "title": "Plugin Page",
     "page_count": "{{count}} pages",
     "load_failed": "Failed to load plugin page",
@@ -4728,7 +4743,9 @@
     "not_found": "Plugin page not found",
     "not_found_desc": "The current service does not declare this plugin page.",
     "empty_src": "Plugin page URL is empty",
-    "empty_src_desc": "This plugin menu does not provide a page URL that can be opened."
+    "empty_src_desc": "This plugin menu does not provide a page URL that can be opened.",
+    "unsupported_target": "This plugin page cannot be displayed",
+    "unsupported_target_desc": "Plugin pages must be served from this deployment's own /v0/resource/plugins/ namespace. Same-origin-dependent, external, data: and blob: pages are not supported because plugin pages run in a sandboxed origin."
   },
   "system_info": {
     "title": "System Info",

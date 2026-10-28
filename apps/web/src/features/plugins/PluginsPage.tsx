@@ -46,6 +46,7 @@ import {
 import { waitForPluginState } from './pluginPolling';
 import { buildPluginDisplay, type PluginStatusTone } from './pluginDisplay';
 import { PluginStorePage } from './PluginStorePage';
+import { PluginRuntimeSwitch } from './PluginRuntimeSwitch';
 import {
   buildPluginConfigPatch,
   createPluginConfigDraft,
@@ -640,6 +641,8 @@ function InstalledPluginsView({
       {data && !data.pluginsEnabled ? (
         <div className={styles.warningBox}>{t('plugin_management.global_disabled_hint')}</div>
       ) : null}
+
+      <PluginRuntimeSwitch onApplied={() => void loadPlugins()} />
 
       <section className={styles.tabSurface}>
         <div className={styles.controlPanel}>

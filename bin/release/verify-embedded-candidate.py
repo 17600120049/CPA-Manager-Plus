@@ -176,7 +176,6 @@ def check_manager_linker_identity(raw_flags, module, source_sha):
     expected = {
         module + "/internal/buildinfo.SourceCommit": source_sha,
         module + "/internal/buildinfo.Version": CANDIDATE_VERSION,
-        module + "/internal/buildinfo.PAHS0WebBundle": "0",
     }
     require(assignments == expected, "Manager compiled source/version stamp mismatch")
 

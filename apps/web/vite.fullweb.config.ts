@@ -32,6 +32,29 @@ function loadingBoundaryEvidence(): Plugin {
   };
 }
 
+// Manager replaces every occurrence of this literal with the per-response CSP
+// nonce and fails closed (script-src 'none') when any script element lacks it.
+// Vite regenerates the module entry tag for the bundled JS and drops attributes
+// it does not own, so the placeholder is restamped after Vite's HTML transform
+// instead of relying on the source index.html alone.
+const CSP_NONCE_PLACEHOLDER = '__CPAMP_CSP_NONCE__';
+
+function cspNoncePlaceholder(): Plugin {
+  return {
+    name: 'fullweb-csp-nonce-placeholder',
+    enforce: 'post',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html) {
+        return html.replace(
+          /<script(?![^>]*\bnonce=)([^>]*)>/gi,
+          `<script nonce="${CSP_NONCE_PLACEHOLDER}"$1>`
+        );
+      },
+    },
+  };
+}
+
 // Full Web is a separate browser entry. Panel's single-file settings never
 // participate in this build. Relative chunks resolve against their module URL;
 // Manager binds the HTML asset references to the verified canonical prefix.
@@ -44,7 +67,7 @@ export default defineConfig({
     __DEMO_SITE__: 'false',
     __APP_VERSION__: JSON.stringify(process.env.VERSION || 'dev'),
   },
-  plugins: [react(), loadingBoundaryEvidence()],
+  plugins: [react(), loadingBoundaryEvidence(), cspNoncePlaceholder()],
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   css: {
     modules: {

@@ -25,7 +25,10 @@ func (h *handler) submitDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid_request", "invalid destination request")
 		return
 	}
-	fields := map[string]any{"operationId": &request.OperationID, "expectedRuntimeIdentity": &request.ExpectedRuntimeIdentity, "expectedRuntimeGeneration": &request.ExpectedRuntimeGeneration, "expectedActiveArtifactId": &request.ExpectedActiveArtifactID, "sourceIdentity": &request.SourceIdentity, "sourceClass": &request.SourceClass, "apiKeys": &request.APIKeys, "managementKey": &request.ManagementKey}
+	// Every field is decoded into its own typed destination, so the closed key
+	// set is the request contract: a key this map does not name is refused, and
+	// a named key is still validated by DestinationRequest.Validate.
+	fields := map[string]any{"operationId": &request.OperationID, "expectedRuntimeIdentity": &request.ExpectedRuntimeIdentity, "expectedRuntimeGeneration": &request.ExpectedRuntimeGeneration, "expectedActiveArtifactId": &request.ExpectedActiveArtifactID, "sourceIdentity": &request.SourceIdentity, "sourceClass": &request.SourceClass, "apiKeys": &request.APIKeys, "managementKey": &request.ManagementKey, "pluginsEnabled": &request.PluginsEnabled}
 	seen := map[string]bool{}
 	for d.More() {
 		token, e := d.Token()
