@@ -354,3 +354,39 @@ func TestFreshAdoptAdmissionKeepsOnlyTheLegacyRefusal(t *testing.T) {
 		t.Fatalf("admission mutated Fresh authority: %+v %v", after.Operation.Strategy, err)
 	}
 }
+
+// A terminal destination start failure retires the attempt on exactly the same
+// terms as a stage failure: the failed start is replaced under the next
+// operation ID, and the second terminal start failure stays a plain blocker, so
+// adoption never loops the Supervisor's terminal journal.
+func TestFreshAdoptRetiresExactlyOneStartAttempt(t *testing.T) {
+	fixture := newAdoptRetryFixture(t)
+	fixture.runtime.startState = model.RuntimeOperationFailed
+	base := string(fixture.record.Operation.Identity.OperationID) + ":adopt-destination"
+
+	first := fixture.strategy(t, fixture.record, fixture.request)
+	if first.Code != http.StatusConflict || !strings.Contains(first.Body.String(), "adoption_destination_start_failed") {
+		t.Fatalf("terminal start failure: %d %s", first.Code, first.Body.String())
+	}
+	retired := fixture.reload(t)
+	if retired.Operation.Revision != fixture.record.Operation.Revision+1 || retired.Operation.Strategy.DestinationAttempt != 1 ||
+		retired.Operation.Strategy.Stage != "staged" || retired.AdoptionCiphertext != fixture.record.AdoptionCiphertext {
+		t.Fatalf("first terminal start failure was not retired exactly once: revision=%d %+v", retired.Operation.Revision, retired.Operation.Strategy)
+	}
+	if len(fixture.runtime.stages) != 1 || fixture.runtime.stages[0].OperationID != base || len(fixture.runtime.starts) != 1 || fixture.runtime.starts[0].OperationID != base+":start" {
+		t.Fatalf("first attempt operations = %+v %+v", fixture.runtime.stages, fixture.runtime.starts)
+	}
+
+	second := fixture.strategy(t, retired, fixture.request)
+	if second.Code != http.StatusConflict || !strings.Contains(second.Body.String(), "adoption_destination_start_failed") {
+		t.Fatalf("retry terminal start failure: %d %s", second.Code, second.Body.String())
+	}
+	final := fixture.reload(t)
+	if final.Operation.Revision != retired.Operation.Revision || final.Operation.Strategy.DestinationAttempt != 1 || final.Operation.Strategy.Stage != "staged" {
+		t.Fatalf("second terminal start failure advanced the attempt: revision=%d %+v", final.Operation.Revision, final.Operation.Strategy)
+	}
+	if len(fixture.runtime.stages) != 2 || fixture.runtime.stages[1].OperationID != base+":attempt-1" ||
+		len(fixture.runtime.starts) != 2 || fixture.runtime.starts[1].OperationID != base+":attempt-1:start" {
+		t.Fatalf("retry operations = %+v %+v", fixture.runtime.stages, fixture.runtime.starts)
+	}
+}
