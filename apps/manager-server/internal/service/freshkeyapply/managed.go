@@ -144,6 +144,15 @@ func (s *Service) Targets(op bootstrap.FreshOperation, surface Surface) bool {
 		// Key install, key operations and chat admission require the managed
 		// strategy as well; an adopted checkpoint is never a key write path here.
 		return op.Strategy.Strategy == bootstrap.NewManaged
+	case ProfileExternal:
+		// The user's own CPA: keys and its configuration page are managed through
+		// the committed connection. This Manager owns no Runtime there, so chat
+		// admission and gateway admission are never answered by it.
+		if op.Strategy.Strategy != bootstrap.ConnectExternal ||
+			!validExternalIdentity(op.Strategy.TargetIdentity) {
+			return false
+		}
+		return surface != SurfaceChatAdmission
 	}
 	return false
 }

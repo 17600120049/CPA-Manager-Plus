@@ -58,6 +58,11 @@ func (s *Service) KeyOperationsEnabled() bool {
 	if s == nil || !s.keyOperations {
 		return false
 	}
+	if s.profile == ProfileExternal {
+		// The External journal is the Manager's own; the private profile's
+		// source-file fence describes a config authority External never has.
+		return true
+	}
 	if s.h1 != nil {
 		return os.Getenv("CPAMP_PRIVATE_CONFIG_AUTHORITY") == "1"
 	}
@@ -127,7 +132,10 @@ func (s *Service) Prepare(ctx context.Context, id, target, keeper, mode string, 
 		if previous.TargetID != target || previous.KeeperID != keeper || previous.Mode != mode {
 			return result, repo.ErrConflict
 		}
-		return s.checkOperation(ctx, previous, generation)
+		return s.check(ctx, previous, generation)
+	}
+	if s.profile == ProfileExternal {
+		return s.externalPrepare(ctx, id, target, keeper, mode, generation)
 	}
 	p, err := s.operationTarget(ctx, generation)
 	if err != nil {
@@ -270,6 +278,15 @@ func (s *Service) CheckOperation(ctx context.Context, id string, generation uint
 	}
 	if o == nil {
 		return OperationResult{RuntimeState: "effect_unknown"}, nil
+	}
+	return s.check(ctx, o, generation)
+}
+
+// check dispatches one journaled operation to the profile that wrote it. Both
+// loops reconcile by reading their target and neither ever resends a step.
+func (s *Service) check(ctx context.Context, o *repo.Operation, generation uint64) (OperationResult, error) {
+	if s.profile == ProfileExternal {
+		return s.externalCheckOperation(ctx, o, generation)
 	}
 	return s.checkOperation(ctx, o, generation)
 }
@@ -433,7 +450,7 @@ func (s *Service) ContinueOperation(ctx context.Context, id string, generation u
 		return r, freshkeys.ErrNotFound
 	}
 	// Always reconcile first. An attempted unknown step is never sent again.
-	r, err = s.checkOperation(ctx, o, generation)
+	r, err = s.check(ctx, o, generation)
 	if err != nil {
 		return r, err
 	}
@@ -456,6 +473,9 @@ func (s *Service) ContinueOperation(ctx context.Context, id string, generation u
 	}
 	if s.h1 != nil {
 		return s.continueH1(ctx, o, index, generation)
+	}
+	if s.profile == ProfileExternal {
+		return s.externalContinue(ctx, o, index, generation)
 	}
 	p, err := s.operationTarget(ctx, generation)
 	if err != nil {

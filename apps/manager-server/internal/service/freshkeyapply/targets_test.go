@@ -65,11 +65,15 @@ func TestTargetsSelectsTheProfileOfTheService(t *testing.T) {
 
 	private := New(nil, nil, nil)
 	managed := NewManaged(nil, nil, nil, "http://127.0.0.1:8317", nil)
+	external := NewExternal(nil, nil, nil)
 	if private.profile != ProfilePrivate {
 		t.Fatalf("New profile = %q", private.profile)
 	}
 	if managed.profile != ProfileManaged {
 		t.Fatalf("NewManaged profile = %q", managed.profile)
+	}
+	if external.profile != ProfileExternal {
+		t.Fatalf("NewExternal profile = %q", external.profile)
 	}
 	var nilService *Service
 	t.Run("nil", func(t *testing.T) {
@@ -112,6 +116,43 @@ func TestTargetsSelectsTheProfileOfTheService(t *testing.T) {
 	})
 	t.Run("private refuses an external checkpoint", func(t *testing.T) {
 		sameAnswer(t, private, operation(externalCheckpoint), false, canonicalSurfaces...)
+	})
+	t.Run("external owns the external target on the managed surfaces", func(t *testing.T) {
+		sameAnswer(t, external, operation(externalCheckpoint), true, SurfaceKeyInstall, SurfaceKeyOperation, SurfaceGatewayConfig)
+	})
+	t.Run("external never answers chat admission", func(t *testing.T) {
+		sameAnswer(t, external, operation(externalCheckpoint), false, SurfaceChatAdmission)
+	})
+	t.Run("external refuses a managed destination", func(t *testing.T) {
+		sameAnswer(t, external, operation(managedCheckpoint), false, canonicalSurfaces...)
+	})
+	t.Run("external refuses the private target", func(t *testing.T) {
+		sameAnswer(t, external, operation(privateCheckpoint), false, canonicalSurfaces...)
+	})
+	t.Run("external refuses an adopted checkpoint", func(t *testing.T) {
+		sameAnswer(t, external, operation(adoptedPrivate), false, canonicalSurfaces...)
+	})
+	t.Run("external refuses a staged checkpoint", func(t *testing.T) {
+		staged := externalCheckpoint
+		staged.Stage = "validated"
+		sameAnswer(t, external, operation(staged), false, canonicalSurfaces...)
+	})
+	t.Run("external refuses an unbound checkpoint", func(t *testing.T) {
+		unbound := externalCheckpoint
+		unbound.TargetIdentity = ""
+		sameAnswer(t, external, operation(unbound), false, canonicalSurfaces...)
+	})
+	t.Run("external refuses a foreign connection identity", func(t *testing.T) {
+		foreign := externalCheckpoint
+		foreign.TargetIdentity = "managed:sha256:" + strings.Repeat("d", 64)
+		sameAnswer(t, external, operation(foreign), false, canonicalSurfaces...)
+	})
+	t.Run("external profiles stay mutually exclusive", func(t *testing.T) {
+		for _, service := range []*Service{managed, private} {
+			if service.Targets(operation(externalCheckpoint), SurfaceKeyInstall) {
+				t.Fatal("a non-External profile accepted the External checkpoint")
+			}
+		}
 	})
 	t.Run("unknown surface is answered by the strictest rule", func(t *testing.T) {
 		if private.Targets(operation(adoptedPrivate), Surface("unrecognized")) {
