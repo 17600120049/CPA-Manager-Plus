@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -98,5 +99,53 @@ func TestServeManagementHTMLStampsOperatorSuppliedPanel(t *testing.T) {
 	}
 	if strings.Contains(recorder.Body.String(), `nonce="stale"`) {
 		t.Fatalf("a stale artifact nonce survived: %s", recorder.Body.String())
+	}
+}
+
+// A `<script>` string inside JavaScript is program source, not a tag. Stamping
+// it rewrites the program: the real panel contains
+// `innerHTML=`<script><\/script>“ at offset ~110786, which only survives because
+// the literal is a template string. The scan must copy element bodies verbatim.
+func TestStampLegacyPanelLeavesScriptLiteralsAlone(t *testing.T) {
+	document := `<!doctype html><html><body>` +
+		"<script>var t=`<script><\\/script>`;var u='<script>';</script>" +
+		"<script type=\"module\">x()</script>" +
+		"</body></html>"
+
+	stamped, ok := stampLegacyPanelScripts([]byte(document), "abc123")
+	if !ok {
+		t.Fatal("a document with script elements was reported as unstampable")
+	}
+	text := string(stamped)
+
+	// Exactly the two real opening tags carry the nonce, no more.
+	if got := strings.Count(text, `nonce="abc123"`); got != 2 {
+		t.Fatalf("stamped nonce count = %d, want 2:\n%s", got, text)
+	}
+	// The literals are byte-identical to the source.
+	if !strings.Contains(text, "var t=`<script><\\/script>`") {
+		t.Fatalf("script literal was rewritten:\n%s", text)
+	}
+	if !strings.Contains(text, "var u='<script>'") {
+		t.Fatalf("script literal in single quotes was rewritten:\n%s", text)
+	}
+}
+
+// The built panel really does contain such a literal, so the stamper is exercised
+// against it rather than only against a synthetic case.
+func TestStampLegacyPanelOnBuiltPanelKeepsProgramSource(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "httpapi", "web", "management.html"))
+	if err != nil {
+		t.Skipf("built panel not present: %v", err)
+	}
+	stamped, ok := stampLegacyPanelScripts(raw, "abc123")
+	if !ok {
+		t.Fatal("the built panel has no script elements")
+	}
+	// Every occurrence of the nonce must be an attribute on a real opening tag,
+	// which means the count equals the number of script elements.
+	open := strings.Count(strings.ToLower(string(raw)), "<script")
+	if got := strings.Count(string(stamped), `nonce="abc123"`); got != open {
+		t.Fatalf("stamped %d of %d script elements", got, open)
 	}
 }

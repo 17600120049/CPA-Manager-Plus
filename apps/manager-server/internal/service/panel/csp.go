@@ -32,6 +32,8 @@ const legacyPanelFailClosedCSP = "script-src 'none'; object-src 'none'; base-uri
 var (
 	legacyScriptOpenTag = regexp.MustCompile(`(?is)<script(\s[^>]*)?>`)
 	legacyNonceAttr     = regexp.MustCompile(`(?i)\snonce="[^"]*"`)
+	// The closing tag ends an element whose body must not be rewritten.
+	legacyScriptCloseTag = regexp.MustCompile(`(?i)</script\s*>`)
 )
 
 func legacyPanelNonce() (string, error) {
@@ -77,25 +79,48 @@ func applyLegacyPanelCSP(document []byte) ([]byte, string) {
 }
 
 // stampLegacyPanelScripts returns a copy of the document with the nonce on every
-// script element. It reports false when the document has no script element at
-// all: that means the served artifact is not the built panel, so it is not
+// real script element. It reports false when the document has no script element
+// at all: that means the served artifact is not the built panel, so it is not
 // trusted with script execution either.
+//
+// The scan alternates between tags and script bodies: after stamping an opening
+// tag it copies everything up to the matching `</script` unchanged. A regex over
+// the whole document would also match `<script>` text inside JavaScript - the
+// real panel contains `innerHTML=`<script><\/script>“ at offset ~110786 - and
+// stamping that rewrites the program's source, which happens to survive only
+// while the literal is a template string.
 func stampLegacyPanelScripts(document []byte, nonce string) ([]byte, bool) {
-	matches := legacyScriptOpenTag.FindAllIndex(document, -1)
-	if len(matches) == 0 {
-		return document, false
-	}
-	stamped := make([]byte, 0, len(document)+len(matches)*(len(nonce)+9))
-	last := 0
-	for _, match := range matches {
-		stamped = append(stamped, document[last:match[0]]...)
+	stamped := make([]byte, 0, len(document)+32)
+	position := 0
+	stampedAny := false
+	for {
+		tag := legacyScriptOpenTag.FindIndex(document[position:])
+		if tag == nil {
+			break
+		}
+		open := position + tag[0]
+		close := position + tag[1]
+		stamped = append(stamped, document[position:open]...)
 		// Drop any nonce the artifact already carries, so the value this response
 		// serves is the only one that matches its policy.
-		tag := legacyNonceAttr.ReplaceAll(document[match[0]:match[1]], nil)
-		stamped = append(stamped, tag[:len(tag)-1]...)
+		opening := legacyNonceAttr.ReplaceAll(document[open:close], nil)
+		stamped = append(stamped, opening[:len(opening)-1]...)
 		stamped = append(stamped, ` nonce="`+nonce+`">`...)
-		last = match[1]
+		stampedAny = true
+
+		// Copy the element's body verbatim up to its closing tag.
+		body := legacyScriptCloseTag.FindIndex(document[close:])
+		if body == nil {
+			// An opening tag with no close: copy the rest untouched and stop, so a
+			// truncated document is served as it is rather than half-rewritten.
+			stamped = append(stamped, document[close:]...)
+			position = len(document)
+			break
+		}
+		end := close + body[1]
+		stamped = append(stamped, document[close:end]...)
+		position = end
 	}
-	stamped = append(stamped, document[last:]...)
-	return stamped, true
+	stamped = append(stamped, document[position:]...)
+	return stamped, stampedAny
 }
