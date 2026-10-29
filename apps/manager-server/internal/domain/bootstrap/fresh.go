@@ -65,6 +65,13 @@ type FreshRoutingCheckpoint struct {
 	Committed   bool                 `json:"committed"`
 }
 
+// MaxAdoptionDestinationRetry bounds how far adoption may advance the shared
+// destination attempt counter. Adoption starts one attempt, and each terminal
+// Supervisor failure retires it, so an operator gets the original attempt plus
+// exactly one retry. A third attempt is not authorized: the second failure has
+// no new information, and the operator must reconcile the target instead.
+const MaxAdoptionDestinationRetry = 1
+
 type FreshStrategyCheckpoint struct {
 	Strategy                      CPAStrategy      `json:"strategy,omitempty"`
 	TargetIdentity                string           `json:"targetIdentity,omitempty"`
@@ -76,12 +83,15 @@ type FreshStrategyCheckpoint struct {
 	SourceClass                   AdoptSourceClass `json:"sourceClass,omitempty"`
 	DestinationConnectionIdentity string           `json:"destinationConnectionIdentity,omitempty"`
 	// DestinationAttempt is the durable index of the current Supervisor
-	// destination operation for a managed install. The Supervisor journal never
-	// resumes a terminal operation, so a terminally failed stage or start must
-	// advance this counter and re-issue the same destination under a new
-	// operation ID. Attempt zero is the original operation ID, which keeps every
-	// checkpoint written before this counter existed exactly idempotent.
-	DestinationAttempt uint64                     `json:"destinationAttempt,omitempty"`
+	// destination operation for a Manager-staged destination. The Supervisor
+	// journal never resumes a terminal operation, so a terminally failed stage or
+	// start must advance this counter and re-issue the same destination under a
+	// new operation ID. Attempt zero is the original operation ID, which keeps
+	// every checkpoint written before this counter existed exactly idempotent.
+	// A New Managed install may retire attempts as often as its target fails, but
+	// an adoption is additionally bounded by MaxAdoptionDestinationRetry, and a
+	// committed adoption can never advance past the attempt that succeeded.
+	DestinationAttempt uint64 `json:"destinationAttempt,omitempty"`
 	// PluginsEnabled is the install-time plugin opt-in the wizard persisted. It
 	// is a product decision of this Fresh operation, never browser state: the
 	// staged destination template reads it once and the Supervisor writes it.
@@ -125,7 +135,7 @@ func (c FreshStrategyCheckpoint) validate() error {
 			return errors.New("invalid external Fresh strategy checkpoint")
 		}
 	case AdoptExisting:
-		if c.DestinationAttempt != 0 || !validContentDigest(ContentDigest(c.TargetArtifactID)) || (c.Stage != "staged" && c.Stage != "committed") ||
+		if c.DestinationAttempt > MaxAdoptionDestinationRetry || !validContentDigest(ContentDigest(c.TargetArtifactID)) || (c.Stage != "staged" && c.Stage != "committed") ||
 			(c.SourceClass != AdoptNetworkExisting && c.SourceClass != AdoptLegacyManaged) || !validExternalIdentity(c.SourceIdentity) || !validExternalIdentity(c.DestinationConnectionIdentity) || c.SourceIdentity == c.DestinationConnectionIdentity ||
 			!validFreshAdoptionInventory(c.AdoptionResources, c.AdoptionDecisions) {
 			return errors.New("invalid adoption checkpoint")

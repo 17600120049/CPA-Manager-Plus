@@ -68,9 +68,12 @@ one-time credential: do not paste it into issues, service logs or evidence.
 
 After signing in, the installation wizard continues the same durable operation:
 
-1. Choose **New embedded installation**. Adopt cannot execute; External remains
-   a Host-authorized connection checkpoint and cannot finish installation. The
-   Fresh flow does not upgrade existing product data.
+1. Choose **New embedded installation**. External remains a Host-authorized
+   connection checkpoint and cannot finish installation. The Fresh flow does not
+   upgrade existing product data. The `adopt_existing`/`network_existing` service
+   path is admitted (see [Adopt `network_existing`](#adopt-network_existing)),
+   but the wizard still offers no Adopt action, so it stays unreachable from the
+   browser in this lane.
 2. Review the Console address and packaged official CPA version, then select
    **Check deployment**. Manager reads the Runtime through its existing
    Host-configured authenticated transport. There is no Runtime JSON input,
@@ -527,7 +530,9 @@ Supervisor reports a terminal `failed`. An unresolved outcome (transport
 error, `accepted`, `running`) keeps the attempt, so a retry replays the
 operation that may still be running rather than racing a second one, and two
 browser retries at the same revision cannot fork attempts. The legacy
-migration uses the same counter.
+migration uses the same counter, and so does `adopt_existing`: its extra bound
+is described in [Retry after a terminal destination
+failure](#retry-after-a-terminal-destination-failure).
 
 The Runtime admits a replacement stage only under a new operation ID, only for
 the identical destination, and only with terminal evidence that the superseded
@@ -602,6 +607,89 @@ Manager ownership, and the private `/internal/...` namespaces are denied before
 either upstream. Legacy deployments keep the existing `204` authority contract
 unchanged.
 
+### Adopt `network_existing`
+
+Adoption takes over an already running CPA v8 that the operator points at. It is
+admitted on the same Fresh claim the New Managed flow uses, and on nothing else:
+the host operator who ran `cpa-manager-plus initialize` is the only holder of
+that handoff, so an authenticated `POST strategy` naming
+`adopt_existing`/`network_existing` is that operator's own intent and needs no
+second Host permit. The service no longer answers 503 for it.
+
+What stays refused is narrower than before, and every refusal happens before any
+destination operation or Manager checkpoint mutation, so a refusal has no side
+effect. (The zero-Key refusal below is the one exception in ordering: it *is* the
+single source `GET`, answered by that read.)
+
+| input | result |
+| --- | --- |
+| `adopt_existing` with `legacy_managed`, or with no source class | `adoption_source_class_refused` (409); a v7/CPAMP-managed source is Upgrade's path, and adoption never guesses a generation |
+| `adopt_existing`/`network_existing` whose source authenticates but carries no client Key | `adoption_source_empty` (409); see below |
+| `adopt_existing` with a stale `expectedRevision` | 400, not a retryable conflict |
+| any target whose qualified consumer is not accepted in `consumer.json` | fail-closed before any probe |
+
+The zero-Key refusal is a distinct typed error, not a generic read failure.
+`cpa.ReadV8AdoptionSnapshot` returns `V8AdoptionSourceEmpty` when the source
+answered a well-formed v8 config whose `access.api-keys` is empty, and
+`freshstrategy.adopt` maps only that error to `adoption_source_empty`. CPA v8
+disables client authentication when its Key list is empty, so adopting such a
+source would install a destination reachable by any anonymous Compose peer. A
+transport error, an unauthenticated read, a v0-only source or any other malformed
+body keeps the ordinary `adoption_source_read_unavailable` code, and the browser
+is told the source could not be read rather than that it was empty.
+
+The Manager data volume is mounted only into `cpamp-manager`; the Runtime
+container mounts its own volume and never the Manager store. A repo test asserts
+that topology against `docker-compose.yml` so the claim anchor, the Fresh CAS and
+the Key records cannot silently become reachable from the Runtime child.
+
+Adoption stops at a `committed` checkpoint plus the protected destination
+snapshot in this lane; `POST complete` still answers 409 for
+`strategy = adopt_existing` (`fresh.go:418`), so adoption does not yet reach
+product completion the way New Managed does. Completion arrives in a later
+slice. What it already writes is its own `external:sha256:` target identity, and
+it keeps `strategy = adopt_existing`; the prefixes are never merged.
+
+#### Retry after a terminal destination failure
+
+Adoption shares the durable `destinationAttempt` counter with New Managed, and
+`retireDestinationAttempt` now retires an adoption attempt on the same terms,
+bounded by `bootstrap.MaxAdoptionDestinationRetry = 1`:
+
+- the destination operation ID is derived from the attempt index
+  (`<base>` for attempt zero, `<base>:attempt-<n>` afterwards), so a replay of
+  the same attempt is byte-identical and stays idempotent, while a retired
+  attempt is a genuinely new Supervisor operation;
+- an adoption gets its original attempt plus exactly one retry. A second
+  terminal `failed` is reported as a plain blocker with no retirement, because it
+  carries no new information and the operator must reconcile the target instead
+  of looping;
+- only terminal Supervisor evidence may advance the counter. A transport error,
+  an `accepted`/`running` result, an invalid result or a foreign
+  identity/generation is `adoption_destination_stage_unresolved` or
+  `..._start_unresolved` and keeps the attempt, so the retry replays the
+  operation that may still be running rather than racing a second one;
+- a committed adoption is not retryable by construction: both the adapter and
+  the retirement CAS refuse a checkpoint that already published its destination
+  connection, so a successful attempt can never be superseded;
+- a resend after a lost first reply is only accepted with identical parameters.
+  A resend that changes the source URL, the management secret, the source class
+  or the expected Runtime identity is a conflict and mutates nothing, so a lost
+  response cannot be used to swap the source under an in-flight attempt.
+
+`adoption.go` is one of the files behind `consumerImplementationSHA256`, so any
+change to this retry or refusal logic invalidates the accepted consumer record
+until that consumer implementation digest is recomputed and the class-specific
+adoption evidence is re-emitted from a real run. The Runtime destination pin does
+not move for this change; only the consumer digest is recomputed. That is why
+this lane re-emitted the `network_existing` and `legacy_managed` resource
+reports/traces and the legacy-transition report/observation rather than editing a
+digest by hand.
+
+Adopt stays unreachable from the web UI in this lane: the wizard's only
+actionable strategy is still **New embedded installation**, and the Full Web
+Adopt flow is a later step.
+
 ### Existing-install migration
 
 On Manager startup, a completed legacy default record with a committed
@@ -649,3 +737,14 @@ pins and the observation bytes they bind were recomputed/re-emitted on
 maintainer decision, ahead of independent re-acceptance; writing an acceptance
 record is not part of this implementation lane, and the retained independent
 review is unchanged.
+
+The adoption subset of that re-acceptance is narrower and already pinned by a
+real run: `TestDestinationRealCPAV8` and
+`TestAdoptionExactCPAV8WithSupervisor` were re-run in a
+`linux/amd64` container against the exact CPA v8.0.13 candidate and the pinned
+CPA v7.0.12 historical source, and the emitted
+`network_existing`/`legacy_managed` resource chains plus the legacy transition
+observation are what `consumer.json` now binds. Re-running those two harnesses
+is reproducible: two independent container runs produced byte-identical
+emission. Adoption acceptance still needs an independent reviewer; a green run
+is not acceptance.
