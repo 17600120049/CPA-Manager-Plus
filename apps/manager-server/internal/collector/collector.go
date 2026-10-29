@@ -111,7 +111,7 @@ func (m *Manager) Start(ctx context.Context, cfg RuntimeConfig) {
 	if runtimeHandler, ok := handler.(UsageRuntimeConfigHandler); ok {
 		go runtimeHandler.UpdateRuntimeConfig(runCtx, cfg)
 	}
-	go m.run(runCtx, cfg)
+	go m.run(runCtx, cancel, cfg)
 }
 
 func (m *Manager) Stop() {
@@ -160,55 +160,85 @@ func (m *Manager) SetAuthRejectionHandler(handler func()) {
 	m.authRejected = handler
 }
 
-// refuseAuth stops the run and reports the refusal. It is called from inside a
-// run loop, so the cancel it triggers is what ends the loop: the report runs
-// after the Collector is already stopping.
-func (m *Manager) refuseAuth() {
+// refuseAuth stops one run and reports the refusal. It acts only on the run that
+// met it: the cancel func is that run's own, and a run whose context is already
+// cancelled has been superseded by a restart, so its late reply must neither stop
+// the new Collector nor record a blocker for a credential the new run does not
+// use. LastError is left exactly as it is — the refusal is reported through the
+// handler, and a stop is not evidence that an earlier error never happened.
+func (m *Manager) refuseAuth(ctx context.Context, cancel context.CancelFunc) {
+	if ctx != nil && ctx.Err() != nil {
+		return
+	}
 	m.setStatus(func(status *Status) {
 		status.Collector = "stopped"
-		status.LastError = ""
 	})
-	m.mu.Lock()
-	cancel := m.cancel
-	report := m.authRejected
-	m.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
+	m.mu.Lock()
+	report := m.authRejected
+	m.mu.Unlock()
 	if report != nil {
 		report()
 	}
 }
 
-// isAuthRefusal reports a management credential the CPA itself refused. A Redis
-// error frame or an HTTP 401/403 is the server answering; a plain transport error
-// is not an answer and stays retryable.
-func isAuthRefusal(err error) bool {
-	var reply *resp.ErrorReply
-	return errors.As(err, &reply) || errors.Is(err, httpqueue.ErrRejected)
+// authRefusals are CPA's own replies to a management authentication it refused:
+// the messages its RESP protocol writes for an invalid or missing key, a banned
+// address, disabled remote management, and the NOAUTH it answers a command with.
+// The list is deliberately closed. CPA answers other frames too — its home mode
+// greets every RESP connection with `ERR redis usage output disabled in home
+// mode` before any command — and treating those as a refused credential would
+// stop a Collector that used to fall back to the HTTP queue instead.
+var authRefusals = []string{
+	"NOAUTH Authentication required.",
+	"ERR invalid management key",
+	"ERR missing management key",
+	"ERR remote management key not set",
+	"ERR remote management disabled",
+	"ERR IP banned due to too many failed attempts",
 }
 
-func (m *Manager) run(ctx context.Context, cfg RuntimeConfig) {
+// isAuthRefusal reports a management credential the CPA itself refused. Only the
+// replies above and an HTTP 401/403 from the usage queue qualify: the server
+// answered and refused this credential. Any other error frame, and any plain
+// transport error, is not an answer about the credential and stays retryable.
+func isAuthRefusal(err error) bool {
+	var reply *resp.ErrorReply
+	if errors.As(err, &reply) {
+		message := strings.TrimSpace(reply.Message)
+		for _, refusal := range authRefusals {
+			if strings.HasPrefix(message, refusal) {
+				return true
+			}
+		}
+		return false
+	}
+	return errors.Is(err, httpqueue.ErrRejected)
+}
+
+func (m *Manager) run(ctx context.Context, cancel context.CancelFunc, cfg RuntimeConfig) {
 	mode := collectorMode(valueOr(cfg.CollectorMode, m.base.CollectorMode))
 
 	if mode == "subscribe" {
-		m.runSubscribe(ctx, cfg, mode)
+		m.runSubscribe(ctx, cancel, cfg, mode)
 		return
 	}
-	if mode == "auto" && m.runSubscribe(ctx, cfg, mode) {
+	if mode == "auto" && m.runSubscribe(ctx, cancel, cfg, mode) {
 		return
 	}
 	if mode == "http" {
-		m.runHTTP(ctx, cfg, mode)
+		m.runHTTP(ctx, cancel, cfg, mode)
 		return
 	}
-	if mode == "auto" && m.runHTTP(ctx, cfg, mode) {
+	if mode == "auto" && m.runHTTP(ctx, cancel, cfg, mode) {
 		return
 	}
-	m.runRESP(ctx, cfg)
+	m.runRESP(ctx, cancel, cfg)
 }
 
-func (m *Manager) runSubscribe(ctx context.Context, cfg RuntimeConfig, mode string) bool {
+func (m *Manager) runSubscribe(ctx context.Context, cancel context.CancelFunc, cfg RuntimeConfig, mode string) bool {
 	channel := valueOr(cfg.Queue, m.base.Queue)
 	backoff := time.Second
 	subscribed := false
@@ -238,11 +268,17 @@ func (m *Manager) runSubscribe(ctx context.Context, cfg RuntimeConfig, mode stri
 		}
 		if err := client.Auth(cfg.ManagementKey); err != nil {
 			_ = client.Close()
+			// A reply can land after a restart superseded this run. It says
+			// nothing about the Collector now running — and that one uses another
+			// credential — so the run ends here without stopping or reporting.
+			if ctx.Err() != nil {
+				return true
+			}
 			if isAuthRefusal(err) {
 				// The CPA answered and refused this management credential. That
 				// is terminal: another attempt is one more failed authentication
 				// against a CPA that bans the address after a handful of them.
-				m.refuseAuth()
+				m.refuseAuth(ctx, cancel)
 				return true
 			}
 			if mode == "auto" && !subscribed {
@@ -332,7 +368,7 @@ func (m *Manager) consumeSubscribe(ctx context.Context, cfg RuntimeConfig, clien
 	}
 }
 
-func (m *Manager) runHTTP(ctx context.Context, cfg RuntimeConfig, mode string) bool {
+func (m *Manager) runHTTP(ctx context.Context, cancel context.CancelFunc, cfg RuntimeConfig, mode string) bool {
 	client := httpqueue.New(cfg.CPAUpstreamURL, cfg.ManagementKey)
 	backoff := time.Second
 
@@ -352,11 +388,11 @@ func (m *Manager) runHTTP(ctx context.Context, cfg RuntimeConfig, mode string) b
 			})
 			return false
 		}
-		if isAuthRefusal(err) {
+		if ctx.Err() == nil && isAuthRefusal(err) {
 			// The CPA answered and refused the management credential. That is
 			// terminal until the connection is rebound, and every retry would be
 			// another failed authentication against a CPA that bans the address.
-			m.refuseAuth()
+			m.refuseAuth(ctx, cancel)
 			return true
 		}
 		if err != nil {
@@ -367,7 +403,7 @@ func (m *Manager) runHTTP(ctx context.Context, cfg RuntimeConfig, mode string) b
 	}
 }
 
-func (m *Manager) runRESP(ctx context.Context, cfg RuntimeConfig) {
+func (m *Manager) runRESP(ctx context.Context, cancel context.CancelFunc, cfg RuntimeConfig) {
 	queue := valueOr(cfg.Queue, m.base.Queue)
 	popSide := valueOr(cfg.PopSide, m.base.PopSide)
 	backoff := time.Second
@@ -385,8 +421,13 @@ func (m *Manager) runRESP(ctx context.Context, cfg RuntimeConfig) {
 		}
 		if err := client.Auth(cfg.ManagementKey); err != nil {
 			_ = client.Close()
+			// A superseded run's late reply is not about the Collector running
+			// now: the run ends without stopping it or recording its blocker.
+			if ctx.Err() != nil {
+				return
+			}
 			if isAuthRefusal(err) {
-				m.refuseAuth()
+				m.refuseAuth(ctx, cancel)
 				return
 			}
 			m.markError("auth", err)
