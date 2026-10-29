@@ -446,6 +446,45 @@ send. A probe that answers 401 stays the credential blocker and a probe that
 cannot reach the CPA stays `ErrProofUnavailable`; neither is reported as a
 version class.
 
+#### Key usage from the user's CPA
+
+The Collector has no host-supplied authority on External: it reads the committed
+connection through the same `externalSource` the key surfaces use, so an
+uncommitted or foreign connection can never become a collection source. Staged
+keys bind their source to the installation identity `external:sha256:<digest>`,
+never to a raw address and never to a managed destination — another CPA is
+another identity, so a rebind to a different address cannot inherit this
+history.
+
+Because the Collector writes the `usage-statistics-enabled` switch on a CPA this
+Manager does not own, that write is the one action here that needs the
+administrator, not the connection: `POST external/usage` with
+`{"requestId","confirmEnableStatistics":true}` is the only path that sets it, and
+an unconfirmed start collects nothing rather than defaulting to yes. The write is
+proven by reading the switch back; an unproven switch starts no Collector,
+because a Collector against a CPA that records nothing would present an empty
+window as a live one. The confirmation is a process-lifetime decision, so a
+restart asks again instead of assuming last session's approval.
+
+A start is claimed only when it actually happened. `MarkCollectionStart` runs
+after a Collector is live — and, on Managed and External, after its first
+authenticated management read succeeded, because a live phase alone is not
+evidence — and `collectionStarted` reports that latch rather than the absence of
+a refusal, so an installation that never attempted a start reports no coverage
+instead of a zero. `blockedReason` carries the stable code of the last refused start
+(`usage_statistics_disabled`, `usage_collector_unavailable`,
+`usage_collection_authority_unavailable`, `external_cpa_authority_unavailable`,
+`external_cpa_version_unsupported`, `external_management_key_rejected`), and
+`external/usage` reports it beside `statisticsEnabled`, `collector` and
+`cpaVersion`.
+
+A 401 from the user's CPA stops collection and surfaces
+`external_management_key_rejected`: retrying would collect from a CPA this
+Manager has just proven it cannot authenticate to, so the Collector is stopped
+and only a rebind restarts it. Starting collection on an unsupported version is
+refused with `external_cpa_version_unsupported` before the statistics write, for
+the same reason the write gate exists.
+
 #### Rebind after a rotated management credential
 
 The user's CPA is theirs to administer, so a rotated management credential is a
