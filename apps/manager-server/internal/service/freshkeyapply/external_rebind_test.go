@@ -64,26 +64,26 @@ func newRebindHarness(t *testing.T, management string) *rebindHarness {
 func TestExternalRebindPersistsOnlyAProvenCredential(t *testing.T) {
 	harness := newRebindHarness(t, strings.Repeat("a", 64))
 	rotated := strings.Repeat("b", 64)
-	record, err := harness.service.Rebind(t.Context(), harness.store, harness.protector, 1, "", rotated)
+	result, err := harness.service.Rebind(t.Context(), harness.store, harness.protector, 1, "", rotated)
 	if err != nil {
 		t.Fatalf("rebind: %v", err)
 	}
-	if record.Operation.Revision != 2 {
-		t.Fatalf("revision = %d, want 2", record.Operation.Revision)
+	if result.Record.Operation.Revision != 2 {
+		t.Fatalf("revision = %d, want 2", result.Record.Operation.Revision)
 	}
-	if record.Operation.Strategy.TargetGeneration != 1 {
-		t.Fatalf("the installation generation moved to %d", record.Operation.Strategy.TargetGeneration)
+	if result.Record.Operation.Strategy.TargetGeneration != 1 {
+		t.Fatalf("the installation generation moved to %d", result.Record.Operation.Strategy.TargetGeneration)
 	}
-	if record.Operation.Strategy.TargetIdentity != ExternalIdentity("https://cpa.example") {
-		t.Fatalf("the identity changed to %q", record.Operation.Strategy.TargetIdentity)
+	if result.Record.Operation.Strategy.TargetIdentity != ExternalIdentity("https://cpa.example") {
+		t.Fatalf("the identity changed to %q", result.Record.Operation.Strategy.TargetIdentity)
 	}
-	if record.Connection.CPABaseURL != "https://cpa.example" {
-		t.Fatalf("the address changed to %q", record.Connection.CPABaseURL)
+	if result.Record.Connection.CPABaseURL != "https://cpa.example" {
+		t.Fatalf("the address changed to %q", result.Record.Connection.CPABaseURL)
 	}
-	if record.Connection.ManagementKey == rotated {
+	if result.Record.Connection.ManagementKey == rotated {
 		t.Fatal("the credential was persisted in plaintext")
 	}
-	plain, err := harness.protector.UnprotectString(record.Connection.ManagementKey)
+	plain, err := harness.protector.UnprotectString(result.Record.Connection.ManagementKey)
 	if err != nil || plain != rotated {
 		t.Fatalf("the stored envelope does not decrypt to the candidate: %v", err)
 	}
@@ -131,10 +131,6 @@ func TestExternalRebindRefusesAnUnprovenCredential(t *testing.T) {
 			name: "another address", key: rotated, url: "https://other.example",
 			want: ErrRebindRefused,
 		},
-		{
-			name: "the credential already stored", key: strings.Repeat("a", 64),
-			want: ErrRebindRefused,
-		},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			harness := newRebindHarness(t, strings.Repeat("a", 64))
@@ -147,11 +143,11 @@ func TestExternalRebindRefusesAnUnprovenCredential(t *testing.T) {
 				}
 				return scenario.probe()
 			}
-			record, err := harness.service.Rebind(t.Context(), harness.store, harness.protector, 1, scenario.url, scenario.key)
+			result, err := harness.service.Rebind(t.Context(), harness.store, harness.protector, 1, scenario.url, scenario.key)
 			if !errors.Is(err, scenario.want) {
 				t.Fatalf("rebind = %v, want %v", err, scenario.want)
 			}
-			if record.Operation.Revision != 0 {
+			if result.Record.Operation.Revision != 0 {
 				t.Fatal("a refused rebind answered a record")
 			}
 			if harness.store.rebounds != 0 {

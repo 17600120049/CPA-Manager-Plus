@@ -258,17 +258,17 @@ func TestExternalRebindIsAdminOnlyAndRefusesStaleGenerations(t *testing.T) {
 	probes := cpaServer.probes.Load()
 	rebound, err := app.keyApply.Rebind(t.Context(), app.store.(externalRebindStore), app.protector, 99,
 		"", externalAuthorityManagement)
-	if !errors.Is(err, freshkeyapply.ErrGeneration) || rebound.Operation.Revision != 0 {
+	if !errors.Is(err, freshkeyapply.ErrGeneration) || rebound.Record.Operation.Revision != 0 {
 		t.Fatalf("stale generation rebind = %+v %v", rebound, err)
 	}
 	if cpaServer.probes.Load() != probes {
 		t.Fatal("a stale request reached the CPA")
 	}
-	// A rebind to the credential already stored changes nothing and is refused:
-	// the installation would otherwise claim a rotation that never happened.
+	// A rebind to the credential already stored is a re-verify: the CPA answers
+	// the stored key, so the blocker clears without a rotation being claimed.
 	response := rebindCall(t, app, rebindBody("", externalAuthorityManagement))
-	if response.Code != http.StatusConflict || strings.Contains(response.Body.String(), "rebound") {
-		t.Fatalf("rebind with the stored credential = %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "reverified") {
+		t.Fatalf("re-verify with the stored credential = %d %s", response.Code, response.Body.String())
 	}
 }
 

@@ -507,8 +507,12 @@ backoff retry loop would have converted the user's rotation into an outage withi
 about a minute; the reported refusal clears the started latch, so
 `collectionStarted` reads false and `blockedReason` carries the code. Nothing
 restarts collection until an administrator rebinds the connection: a successful
-rebind stops any surviving Collector and starts a new one with the stored
-credential, so the replaced key is never sent again. Starting collection on an
+rebind — a rotation, or a re-verify of the stored key — stops any surviving
+Collector and starts a new one that authenticates, so a refused key is never sent
+again. The refusal is also recorded durably, and the browser-driven reads
+(`external/usage`, the key list, runtime status, the gateway read) answer it as
+`external_management_key_rejected` without contacting the CPA at all: those pages
+refresh, and five refreshes would otherwise reach the ban on their own. Starting collection on an
 unsupported version is refused with `external_cpa_version_unsupported` before the
 statistics write, for the same reason the write gate exists.
 
@@ -532,6 +536,16 @@ refuse it) and is the only way out of
    both compatibility mirrors (`manager_config_v1`, `setup`) and bumps the record
    revision.
 
+The way back does not require a new key. The common cause of a rejected
+credential is the address ban, which expires, so rebinding with the credential
+already stored is a **re-verify** (`status: "reverified"`): the same one
+authenticated read runs, the recorded refusal is cleared, and collection restarts
+— but nothing is persisted and the record revision is untouched, because no
+credential changed. A re-verify the CPA still refuses answers with the same
+refusal a rotation would. The practical instruction is therefore: wait out the
+CPA ban window, then rebind with the current key (or the new one, if it really was
+rotated).
+
 The **address is never changed**: a different address is a different
 installation, and reaching it is a reconnect that commits its own checkpoint.
 The installation identity — the address digest — therefore survives, and with it
@@ -539,8 +553,8 @@ every key-usage binding, so a rebind never mixes one CPA's history into
 another's. The Connect External target generation is pinned to `1` by the
 contract and is not bumped here; the record revision is the CAS a rebind moves,
 and the credential a later write resolves is always the one the record holds at
-that moment. A candidate equal to the stored credential is refused rather than
-reported as a rotation. A rebind to a credential the CPA refuses, to an
+that moment. A candidate equal to the stored credential is a re-verify, never a
+rotation. A rebind to a credential the CPA refuses, to an
 unsupported version, to another address, or against a revision that moved during
 the verification is refused with its own code
 (`external_management_key_rejected`, `external_cpa_version_unsupported`,

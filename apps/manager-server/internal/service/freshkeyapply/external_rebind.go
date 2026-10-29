@@ -24,6 +24,15 @@ var ErrRebindRefused = errors.New("external rebind refused")
 // an installation is only worth rebinding to a credential its own CPA answers.
 type ExternalRebindVerifier func(ctx context.Context, baseURL string, managementKey string) (cpa.ExternalVersionReport, error)
 
+// ExternalRebindResult is what a rebind did. Reverified is the same-key case: the
+// stored credential authenticated again, so the installation is unchanged and only
+// the rejected state needs clearing. Record is the installation as it now stands —
+// the rebound record, or the untouched one on a re-verify.
+type ExternalRebindResult struct {
+	Record     freshstore.Record
+	Reverified bool
+}
+
 // ObserveExternalRebindCredential is the production verifier: one authenticated
 // management read that also classifies the version the CPA advertises.
 func ObserveExternalRebindCredential(ctx context.Context, baseURL string, managementKey string) (cpa.ExternalVersionReport, error) {
@@ -53,21 +62,26 @@ type externalRebindStore interface {
 // what makes every write prepared against the previous credential a mismatch
 // instead of a write against a credential this Manager no longer holds.
 //
+// A candidate equal to the stored credential is a re-verify instead of a
+// rotation: the user's CPA may simply have been banning this address, and the way
+// out of that blocker must not require inventing a credential. It does the same
+// one read, persists nothing, and leaves the revision alone.
+//
 // The address is never changed here: a different address is a different
 // installation, and reaching it is a reconnect rather than a rebind.
 func (s *Service) Rebind(ctx context.Context, store externalRebindStore, admin *security.Protector, generation uint64,
-	baseURL string, managementKey string) (freshstore.Record, error) {
+	baseURL string, managementKey string) (ExternalRebindResult, error) {
 	if s == nil || s.profile != ProfileExternal || store == nil || admin == nil {
-		return freshstore.Record{}, ErrExternalUnavailable
+		return ExternalRebindResult{}, ErrExternalUnavailable
 	}
 	if !cpa.ValidV8ManagementKey(managementKey) {
 		// A credential CPA itself could never accept is refused before any read:
 		// the shape rule is the same one every write enforces.
-		return freshstore.Record{}, ErrRebindRefused
+		return ExternalRebindResult{}, ErrRebindRefused
 	}
 	install, err := s.externalTarget(ctx, generation)
 	if err != nil {
-		return freshstore.Record{}, err
+		return ExternalRebindResult{}, err
 	}
 	if strings.TrimSpace(baseURL) == "" {
 		// The committed address is the only address a rebind may reach. A caller
@@ -75,13 +89,7 @@ func (s *Service) Rebind(ctx context.Context, store externalRebindStore, admin *
 		baseURL = install.BaseURL
 	}
 	if baseURL != install.BaseURL {
-		return freshstore.Record{}, ErrRebindRefused
-	}
-	if managementKey == install.ManagementKey {
-		// The candidate is the credential already stored. A rebind would move the
-		// revision and claim a rotation that never happened, so it is refused
-		// instead of reported as success.
-		return freshstore.Record{}, ErrRebindRefused
+		return ExternalRebindResult{}, ErrRebindRefused
 	}
 	// The revision is read here, before the verification that may take as long as
 	// one CPA round trip: the write below is conditional on this exact revision, so
@@ -89,14 +97,36 @@ func (s *Service) Rebind(ctx context.Context, store externalRebindStore, admin *
 	// overwritten by a rebind decided against stale state.
 	record, err := store.Load(ctx)
 	if err != nil {
-		return freshstore.Record{}, ErrExternalUnavailable
+		return ExternalRebindResult{}, ErrExternalUnavailable
 	}
 	if record.Operation.Strategy.Strategy != bootstrap.ConnectExternal {
-		return freshstore.Record{}, ErrExternalUnavailable
+		return ExternalRebindResult{}, ErrExternalUnavailable
 	}
 	verify := s.externalRebindVerifier
 	if verify == nil {
 		verify = ObserveExternalRebindCredential
+	}
+	if managementKey == install.ManagementKey {
+		// The candidate is the credential already stored, which makes this a
+		// re-verify rather than a rotation: the common cause of a rejected key is
+		// a ban window that has since passed, and until now the only way out of
+		// that blocker was to supply a credential nobody had rotated. One
+		// authenticated read decides it. Nothing is persisted and the revision is
+		// untouched, because no credential changed; a candidate the CPA still
+		// refuses answers with the same refusal a rotation would, so the page
+		// keeps its blocker and gains no false success.
+		report, err := verify(ctx, install.BaseURL, managementKey)
+		switch {
+		case errors.Is(err, cpa.ErrManagementClientForbidden):
+			return ExternalRebindResult{}, cpa.ErrManagementClientForbidden
+		case errors.Is(err, cpa.ErrManagementRejected):
+			return ExternalRebindResult{}, cpa.ErrManagementRejected
+		case err != nil:
+			return ExternalRebindResult{}, err
+		case report.WriteBlocked:
+			return ExternalRebindResult{}, cpa.ErrExternalVersionUnsupported
+		}
+		return ExternalRebindResult{Record: record, Reverified: true}, nil
 	}
 	report, err := verify(ctx, install.BaseURL, managementKey)
 	switch {
@@ -104,20 +134,20 @@ func (s *Service) Rebind(ctx context.Context, store externalRebindStore, admin *
 		// CPA refused this client, not the credential: an address ban or a
 		// disabled remote management. It is reported unchanged so the page can
 		// say that the same key may work again once the window passes.
-		return freshstore.Record{}, cpa.ErrManagementClientForbidden
+		return ExternalRebindResult{}, cpa.ErrManagementClientForbidden
 	case errors.Is(err, cpa.ErrManagementRejected):
 		// The user's CPA refused the candidate, so nothing was proven and nothing
 		// may be persisted. It is reported as the same typed rejection the reads
 		// carry, so the page keeps asking for a credential instead of a retry.
-		return freshstore.Record{}, cpa.ErrManagementRejected
+		return ExternalRebindResult{}, cpa.ErrManagementRejected
 	case err != nil:
-		return freshstore.Record{}, err
+		return ExternalRebindResult{}, err
 	case report.WriteBlocked:
-		return freshstore.Record{}, cpa.ErrExternalVersionUnsupported
+		return ExternalRebindResult{}, cpa.ErrExternalVersionUnsupported
 	}
 	ciphertext, err := admin.ProtectString(managementKey)
 	if err != nil {
-		return freshstore.Record{}, ErrExternalUnavailable
+		return ExternalRebindResult{}, ErrExternalUnavailable
 	}
 	next := model.ManagerCPAConnectionConfig{CPABaseURL: install.BaseURL, ManagementKey: ciphertext}
 	rebound, err := store.RebindConnection(ctx, record.Operation.Identity, record.Operation.Revision, next)
@@ -127,12 +157,12 @@ func (s *Service) Rebind(ctx context.Context, store externalRebindStore, admin *
 			// revision above was read — during the verification included. The page
 			// re-reads and asks again: guessing which of the two writes won would
 			// persist a credential the user did not intend.
-			return freshstore.Record{}, ErrGeneration
+			return ExternalRebindResult{}, ErrGeneration
 		}
 		if errors.Is(err, freshstore.ErrRebindRefused) {
-			return freshstore.Record{}, ErrRebindRefused
+			return ExternalRebindResult{}, ErrRebindRefused
 		}
-		return freshstore.Record{}, ErrExternalUnavailable
+		return ExternalRebindResult{}, ErrExternalUnavailable
 	}
-	return rebound, nil
+	return ExternalRebindResult{Record: rebound}, nil
 }

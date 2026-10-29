@@ -78,16 +78,27 @@ func (a *freshApplication) externalRebindRoute(w http.ResponseWriter, r *http.Re
 		a.writeExternalRebindError(w, err)
 		return
 	}
+	// The credential was proven with one authenticated read, so whatever the CPA
+	// refused before is now answered. Clearing it is what ends the local blocker:
+	// the reads resume, and a re-verify leaves the installation itself untouched.
+	a.clearExternalRejection(r.Context())
 	// The connection changed under every cached authority, so the capabilities
-	// proven against the previous credential are forgotten rather than reused.
-	a.pluginCapability.forget()
-	// A rebind is the only resolution of a refused credential, so collection is
-	// restarted on the new one. The old Collector is stopped explicitly: it may
-	// still be retrying the replaced credential, and starting a second run over
-	// it would leave two pollers authenticating against a CPA that bans the
-	// address after a handful of failures.
+	// proven against the previous credential are forgotten rather than reused. A
+	// re-verify changed no credential, so it has nothing to forget.
+	if !rebound.Reverified {
+		a.pluginCapability.forget()
+	}
+	// Either outcome is the resolution of a refused credential, so collection is
+	// restarted on the credential that now authenticates. The old Collector is
+	// stopped explicitly: it may still be retrying the refused key, and starting a
+	// second run over it would leave two pollers authenticating against a CPA that
+	// bans the address after a handful of failures.
 	a.stopUsageCollection(r.Context())
 	a.startUsageCollection(op)
+	status := "rebound"
+	if rebound.Reverified {
+		status = "reverified"
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeFreshJSON(w, struct {
 		Identity   string `json:"identity"`
@@ -95,10 +106,10 @@ func (a *freshApplication) externalRebindRoute(w http.ResponseWriter, r *http.Re
 		Status     string `json:"status"`
 		Revision   uint64 `json:"revision"`
 	}{
-		Identity:   rebound.Operation.Strategy.TargetIdentity,
-		Generation: rebound.Operation.Strategy.TargetGeneration,
-		Status:     "rebound",
-		Revision:   rebound.Operation.Revision,
+		Identity:   rebound.Record.Operation.Strategy.TargetIdentity,
+		Generation: rebound.Record.Operation.Strategy.TargetGeneration,
+		Status:     status,
+		Revision:   rebound.Record.Operation.Revision,
 	})
 }
 
@@ -115,7 +126,12 @@ type externalRebindStore interface {
 // authentications, or remote management disabled for it. The code is the same
 // rejection either way; the ban is the one refusal that a retry of the same
 // credential can resolve, so it is the one that says so.
-const externalRebindForbiddenDetail = "the CPA replaced this key or is refusing this client; if its address is banned, retry after the ban window"
+const externalRebindForbiddenDetail = "the CPA replaced this key or is refusing this client; if its address is banned, wait out the ban window and then rebind with the current key"
+
+// externalRebindRejectedDetail is the same instruction for a 401: the candidate is
+// not the key this CPA holds. Supplying the current key again is still worth
+// trying when it was never rotated, because that rebind re-verifies it.
+const externalRebindRejectedDetail = "the CPA does not accept this key; if it was never rotated, wait out any ban window and rebind with the current key"
 
 // writeExternalRebindError maps a refused rebind to its typed answer. No branch
 // carries the credential, the address or any text from the user's CPA.
@@ -130,9 +146,10 @@ func (a *freshApplication) writeExternalRebindError(w http.ResponseWriter, err e
 		// tells the page not to ask for a new key first.
 		status, code, detail = http.StatusConflict, freshconfig.ReasonManagementRejected, externalRebindForbiddenDetail
 	case errors.Is(err, cpa.ErrManagementRejected):
-		// The candidate credential is not the one this CPA accepts: the page asks
-		// for the real one instead of offering a retry.
-		status, code = http.StatusConflict, freshconfig.ReasonManagementRejected
+		// The candidate credential is not the one this CPA accepts. The page asks
+		// for the real one — and says that re-supplying the stored one re-verifies
+		// it, which is the way back when the key was never rotated.
+		status, code, detail = http.StatusConflict, freshconfig.ReasonManagementRejected, externalRebindRejectedDetail
 	case errors.Is(err, cpa.ErrExternalVersionUnsupported):
 		status, code = http.StatusConflict, freshconfig.ReasonVersionUnsupported
 	case errors.Is(err, freshkeyapply.ErrRebindRefused):
