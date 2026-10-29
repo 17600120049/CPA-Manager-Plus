@@ -780,5 +780,51 @@
       }
     },
     "digest": "sha256:ee28b34060e987587704d184e71a0e03d806ab1aab8cdc4ac21300846d7649d9"
+  },
+  "v1.14.10": {
+    "info": {
+      "schema_version": 1,
+      "release": {
+        "version": "v1.14.10",
+        "stage": "stable",
+        "source_commit": "a67ed8834a914ab24c36d2490fa6bb6d4166724c"
+      },
+      "content": {
+        "summary": {
+          "zh": "新增跨提供商凭证置顶，修复 CPA 模型排除规则展示、历史价格恢复、插件默认配置及页面参数同步，并补齐 CPA v8 API Key 分组只读代理。",
+          "en": "Adds cross-provider credential pinning and fixes model exclusion precedence, historical pricing recovery, plugin defaults, URL state sync, and read-only CPA v8 API-key group proxying."
+        },
+        "notes": {
+          "zh": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.10/docs/release-notes/v1.14.10-zh.md",
+          "en": "https://github.com/seakee/CPA-Manager-Plus/blob/v1.14.10/docs/release-notes/v1.14.10-en.md"
+        }
+      },
+      "update": {
+        "breaking": false,
+        "migration_required": false,
+        "minimum_direct_upgrade_version": null,
+        "upgrade_guide_url": "https://github.com/seakee/CPA-Manager-Plus/releases/tag/v1.14.10"
+      },
+      "distribution": {
+        "docker": {
+          "image": "seakee/cpa-manager-plus",
+          "version_tag": "v1.14.10"
+        },
+        "native": {
+          "assets": [
+            "cpa-manager-plus_v1.14.10_darwin_amd64.tar.gz",
+            "cpa-manager-plus_v1.14.10_darwin_arm64.tar.gz",
+            "cpa-manager-plus_v1.14.10_linux_amd64.tar.gz",
+            "cpa-manager-plus_v1.14.10_linux_arm64.tar.gz",
+            "cpa-manager-plus_v1.14.10_windows_amd64.zip",
+            "cpa-manager-plus_v1.14.10_windows_arm64.zip"
+          ]
+        }
+      },
+      "compatibility": {
+        "minimum_cpa_version": "v7.3.4"
+      }
+    },
+    "digest": "sha256:2af5ac44fc2c86e57ec615380b8819563fe09c8be7ff312cb829bc434151a22c"
   }
 }
