@@ -183,6 +183,27 @@ func TestExternalRebindReportsAStaleRecord(t *testing.T) {
 	}
 }
 
+// TestExternalRebindDetectsARevisionChangeDuringVerification proves the revision
+// the write is conditional on was read before the candidate was proven. A record
+// edited during the verification — the window a real CPA round trip opens — must
+// conflict: reading the revision afterwards would compare the CAS against the
+// state this rebind itself last saw and overwrite the concurrent edit.
+func TestExternalRebindDetectsARevisionChangeDuringVerification(t *testing.T) {
+	harness := newRebindHarness(t, strings.Repeat("a", 64))
+	harness.service.externalRebindVerifier = func(context.Context, string, string) (cpa.ExternalVersionReport, error) {
+		// Another save lands while the candidate is being verified.
+		harness.store.record.Operation.Revision++
+		return cpa.ClassifyExternalVersion("v8.0.13"), nil
+	}
+	_, err := harness.service.Rebind(t.Context(), harness.store, harness.protector, 1, "", strings.Repeat("b", 64))
+	if !errors.Is(err, ErrGeneration) {
+		t.Fatalf("revision change during verification = %v, want a generation mismatch", err)
+	}
+	if harness.store.rebounds != 0 {
+		t.Fatal("a rebind decided against a stale revision wrote the record")
+	}
+}
+
 // TestExternalRebindNeedsTheCommittedGeneration proves the authority's own
 // generation check runs first: a rebind against another generation never probes
 // the CPA.
@@ -218,8 +239,13 @@ func (s *rebindStore) Update(context.Context, bootstrap.FreshIdentity, uint64, f
 	return freshstore.Record{}, errors.New("unsupported")
 }
 
-func (s *rebindStore) RebindConnection(_ context.Context, _ bootstrap.FreshIdentity, _ uint64, next model.ManagerCPAConnectionConfig) (freshstore.Record, error) {
+func (s *rebindStore) RebindConnection(_ context.Context, _ bootstrap.FreshIdentity, revision uint64, next model.ManagerCPAConnectionConfig) (freshstore.Record, error) {
 	if s.conflict {
+		return freshstore.Record{}, freshstore.ErrConflict
+	}
+	// The real store compares the revision it is given, so a rebind decided
+	// against a record that has since moved conflicts here too.
+	if revision != s.record.Operation.Revision {
 		return freshstore.Record{}, freshstore.ErrConflict
 	}
 	s.rebounds++

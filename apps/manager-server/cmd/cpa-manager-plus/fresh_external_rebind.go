@@ -81,7 +81,13 @@ func (a *freshApplication) externalRebindRoute(w http.ResponseWriter, r *http.Re
 	// The connection changed under every cached authority, so the capabilities
 	// proven against the previous credential are forgotten rather than reused.
 	a.pluginCapability.forget()
-	a.resetUsageStart()
+	// A rebind is the only resolution of a refused credential, so collection is
+	// restarted on the new one. The old Collector is stopped explicitly: it may
+	// still be retrying the replaced credential, and starting a second run over
+	// it would leave two pollers authenticating against a CPA that bans the
+	// address after a handful of failures.
+	a.stopUsageCollection(r.Context())
+	a.startUsageCollection(op)
 	w.Header().Set("Cache-Control", "no-store")
 	writeFreshJSON(w, struct {
 		Identity   string `json:"identity"`
@@ -103,11 +109,26 @@ type externalRebindStore interface {
 	freshstore.ConnectionRebinder
 }
 
+// externalRebindForbiddenDetail is the administrator-facing explanation of a
+// 403 from the user's CPA. CPA answers 401 to a credential it does not hold and
+// 403 to a client it refuses: an address banned after too many failed
+// authentications, or remote management disabled for it. The code is the same
+// rejection either way; the ban is the one refusal that a retry of the same
+// credential can resolve, so it is the one that says so.
+const externalRebindForbiddenDetail = "the CPA replaced this key or is refusing this client; if its address is banned, retry after the ban window"
+
 // writeExternalRebindError maps a refused rebind to its typed answer. No branch
 // carries the credential, the address or any text from the user's CPA.
 func (a *freshApplication) writeExternalRebindError(w http.ResponseWriter, err error) {
 	status, code := http.StatusServiceUnavailable, "external_rebind_unavailable"
+	detail := ""
 	switch {
+	case errors.Is(err, cpa.ErrManagementClientForbidden):
+		// CPA refused this client rather than the credential: it is a ban or a
+		// disabled remote management, so the same candidate is worth one retry
+		// once the window has passed. The code is unchanged; the detail is what
+		// tells the page not to ask for a new key first.
+		status, code, detail = http.StatusConflict, freshconfig.ReasonManagementRejected, externalRebindForbiddenDetail
 	case errors.Is(err, cpa.ErrManagementRejected):
 		// The candidate credential is not the one this CPA accepts: the page asks
 		// for the real one instead of offering a retry.
@@ -130,6 +151,7 @@ func (a *freshApplication) writeExternalRebindError(w http.ResponseWriter, err e
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	writeFreshJSON(w, struct {
-		Code string `json:"code"`
-	}{code})
+		Code   string `json:"code"`
+		Detail string `json:"detail,omitempty"`
+	}{code, detail})
 }

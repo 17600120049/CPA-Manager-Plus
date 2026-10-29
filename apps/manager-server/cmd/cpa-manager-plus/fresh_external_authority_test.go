@@ -34,6 +34,9 @@ type externalAuthorityCPA struct {
 	// reject makes the CPA refuse every management read, as a rotated credential
 	// does.
 	reject atomic.Bool
+	// forbid makes the CPA answer 403 instead of 401, which is what it does to a
+	// banned address or one with remote management disabled.
+	forbid atomic.Bool
 	reads  atomic.Int32
 	// writes counts PUT/PATCH/DELETE attempts, so a refused save can prove it
 	// never reached the CPA while its reads still did.
@@ -52,6 +55,10 @@ func newExternalAuthorityCPAWith(t *testing.T, management string) *externalAutho
 	t.Helper()
 	f := &externalAuthorityCPA{management: management, version: "v8.0.13"}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if f.forbid.Load() {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		if f.reject.Load() || r.Header.Get("Authorization") != "Bearer "+f.management {
 			w.WriteHeader(http.StatusUnauthorized)
 			return

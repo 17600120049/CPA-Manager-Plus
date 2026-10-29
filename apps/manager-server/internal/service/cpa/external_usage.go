@@ -33,8 +33,10 @@ func FetchExternalUsageStatistics(ctx context.Context, baseURL string, key strin
 		return false, err
 	}
 	switch code {
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case http.StatusUnauthorized:
 		return false, ErrManagementRejected
+	case http.StatusForbidden:
+		return false, ErrManagementClientForbidden
 	case http.StatusOK:
 	default:
 		return false, ErrProofUnavailable
@@ -59,8 +61,10 @@ func SetExternalUsageStatistics(ctx context.Context, baseURL string, key string,
 		return err
 	}
 	switch code {
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case http.StatusUnauthorized:
 		return ErrManagementRejected
+	case http.StatusForbidden:
+		return ErrManagementClientForbidden
 	}
 	if code < 200 || code >= 300 {
 		return ErrProofUnavailable

@@ -3,7 +3,6 @@ package cpa
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -67,29 +66,65 @@ func ClassifyExternalVersion(version string) ExternalVersionReport {
 // it. A CPA that refuses the credential is the typed ErrManagementRejected
 // blocker; one that cannot be reached is ErrProofUnavailable. Both are returned
 // instead of a classification: neither is evidence about the version.
+//
+// The probe travels over the same transport every External write uses — no proxy,
+// no redirect, one five-second budget — so the hop it judges is the hop a write
+// would reach. A probe on a different transport could report a version this
+// Manager never writes to.
 func ObserveExternalVersion(ctx context.Context, baseURL string, managementKey string) (ExternalVersionReport, error) {
-	version, err := ObserveManagementAPI(ctx, baseURL, managementKey)
+	endpoint, err := NormalizeV8BaseURL(baseURL)
 	if err != nil {
-		return ExternalVersionReport{}, externalVersionProbeError(err)
+		return ExternalVersionReport{}, ErrProofUnavailable
+	}
+	return NewTransportForEndpoint(endpoint).ObserveVersion(ctx, managementKey)
+}
+
+// ObserveVersion is the version probe of one resolved External target, on the
+// transport that target is written through.
+func (t *Transport) ObserveVersion(ctx context.Context, managementKey string) (ExternalVersionReport, error) {
+	version, err := t.observeVersion(ctx, managementKey)
+	if err != nil {
+		return ExternalVersionReport{}, err
 	}
 	return ClassifyExternalVersion(version), nil
 }
 
-// externalVersionProbeError types one failed probe. ObserveManagementAPI reports
-// a status as plain text, so a 401 is recognized here as CPA's own refusal and
-// everything else stays an unavailable proof: neither may become a version class.
-func externalVersionProbeError(err error) error {
-	var status *managementStatusError
-	if errors.As(err, &status) {
-		if status.code == http.StatusUnauthorized {
-			return fmt.Errorf("%w: %w", ErrManagementRejected, err)
-		}
-		return fmt.Errorf("%w: %w", ErrProofUnavailable, err)
+// observeVersion performs the one authenticated read the probe is made of and
+// returns the advertised version, which may be empty.
+func (t *Transport) observeVersion(ctx context.Context, managementKey string) (string, error) {
+	if t == nil || t.client == nil || !validManagementKey(managementKey) {
+		return "", ErrProofUnavailable
 	}
-	if errors.Is(err, ErrManagementRejected) || errors.Is(err, ErrProofUnavailable) {
-		return err
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, t.endpoint+"/v0/management/config", nil)
+	if err != nil {
+		return "", ErrProofUnavailable
 	}
-	return fmt.Errorf("%w: %w", ErrProofUnavailable, err)
+	request.Header.Set("Authorization", "Bearer "+managementKey)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cache-Control", "no-store")
+	response, err := t.client.Do(request)
+	if err != nil {
+		return "", ErrProofUnavailable
+	}
+	defer response.Body.Close()
+	switch {
+	case response.StatusCode >= 200 && response.StatusCode < 300:
+	case response.StatusCode == http.StatusUnauthorized:
+		return "", ErrManagementRejected
+	case response.StatusCode == http.StatusForbidden:
+		// CPA answers 403, not 401, when it refuses this client rather than the
+		// credential: a banned address, or remote management disabled for it. It
+		// is the same blocker for the caller, kept apart only because a ban
+		// expires.
+		return "", ErrManagementClientForbidden
+	default:
+		return "", ErrProofUnavailable
+	}
+	version := strings.TrimSpace(response.Header.Get("X-CPA-Version"))
+	if version == "" {
+		version = strings.TrimSpace(response.Header.Get("X-Server-Version"))
+	}
+	return version, nil
 }
 
 // majorVersion reads the leading major number of a CPA version tag. CPA versions

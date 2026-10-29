@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -181,6 +182,54 @@ func TestExternalRebindRefusesAnUnsupportedVersion(t *testing.T) {
 	}
 	if after.Connection.ManagementKey != before.Connection.ManagementKey {
 		t.Fatal("an unsupported version was still persisted")
+	}
+}
+
+// TestExternalRebindExplainsAForbiddenAnswer proves a CPA that answers 403 —
+// what it does to an address banned for too many failed authentications, or one
+// whose remote management is disabled — is reported with the same rejection code
+// and a detail that keeps the same credential worth retrying. The ban is
+// temporary, so asking for a new key first would send the administrator after a
+// credential that was never the problem.
+func TestExternalRebindExplainsAForbiddenAnswer(t *testing.T) {
+	app, cpaServer := externalAuthorityApp(t, "")
+	before, err := app.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated := strings.Repeat("6", 64)
+	cpaServer.forbid.Store(true)
+	response := rebindCall(t, app, rebindBody("", rotated))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("rebind against a refusing client = %d %s", response.Code, response.Body.String())
+	}
+	var answer struct {
+		Code   string `json:"code"`
+		Detail string `json:"detail"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &answer); err != nil {
+		t.Fatalf("decode refusal: %v (%s)", err, response.Body.String())
+	}
+	if answer.Code != freshconfig.ReasonManagementRejected {
+		t.Fatalf("code = %q, want the rejection code the 401 uses", answer.Code)
+	}
+	if !strings.Contains(answer.Detail, "ban") {
+		t.Fatalf("detail = %q, want the ban window named", answer.Detail)
+	}
+	if strings.Contains(response.Body.String(), rotated) {
+		t.Fatal("the refusal echoed the candidate credential")
+	}
+	after, err := app.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Connection.ManagementKey != before.Connection.ManagementKey {
+		t.Fatal("a refused rebind persisted the candidate")
+	}
+	// The probe, the statistics read and the key read all report the same code
+	// for the same answer, so the page has one blocker to explain.
+	if _, _, err = app.keyApply.ExternalTarget(t.Context(), 1); err != nil {
+		t.Fatalf("authority on a refusing client = %v", err)
 	}
 }
 

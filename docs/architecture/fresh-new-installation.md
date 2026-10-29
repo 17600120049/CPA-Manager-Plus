@@ -419,13 +419,18 @@ a baseline re-read, and rule families stay read-only.
 The key list is the Manager's own record plus the presence read back from the
 CPA. A CPA that cannot be read leaves that list intact and reports
 `presenceUnverified: true`, so an outage hides nothing this Manager knows and
-nothing in the list claims an observed effect. A 401 from the user's CPA is
-`cpa.ErrManagementRejected`, surfaced as `external_management_key_rejected`, and
-a committed target the connection no longer names is
+nothing in the list claims an observed effect. A credential the user's CPA
+refuses — its own 401, and its 403 to a client it bans or whose remote management
+it disables — is `cpa.ErrManagementRejected`, surfaced as
+`external_management_key_rejected`; the 403 variant wraps it and adds a `detail`
+on the rebind answer, because a ban expires and the same credential may then
+work. A committed target the connection no longer names is
 `cpa.ErrExternalTargetMoved`, surfaced as `external_target_moved` on every
 External surface. Both are typed blockers, not an unavailable proof and not a
-retry reason: no write follows either, and only rebinding the connection
-resolves them.
+retry reason: no write follows either. The difference is the way back — a
+refused credential is resolved by rebinding the connection, while a moved target
+is **refused** by rebind (`external_rebind_refused`, since the address is never
+changed there) and needs a reconnect, which commits its own checkpoint.
 
 #### The CPA version decides what may be written
 
@@ -445,8 +450,17 @@ the refusal instead of offering a write that would fail.
 The gate sits on one point per profile: the External key wire wraps its single
 PUT, and the key journal and the gateway saves ask it before they record an
 intent, so an unsupported CPA never holds a pending operation it could never
-send. A probe that answers 401 stays the credential blocker and a probe that
-cannot reach the CPA stays `ErrProofUnavailable`; neither is reported as a
+send. The key journal asks it again immediately before each step is marked
+`attempted`, and a refusal there leaves that step `unattempted`: a CPA that
+changed class between `Prepare` and `Continue` sends no request, and the step can
+still be taken once it serves the contract again instead of the journal
+answering `ErrApplyUnknown` forever.
+
+The probe travels on the transport the writes use — no proxy, no redirect
+followed, one five-second budget — so the hop it judges is the hop a write
+reaches. A probe that answers 401 stays the credential blocker, one that answers
+403 is the same blocker tagged `ErrManagementClientForbidden`, and one that
+cannot reach the CPA stays `ErrProofUnavailable`; none of them is reported as a
 version class.
 
 #### Key usage from the user's CPA
@@ -466,8 +480,10 @@ administrator, not the connection: `POST external/usage` with
 an unconfirmed start collects nothing rather than defaulting to yes. The write is
 proven by reading the switch back; an unproven switch starts no Collector,
 because a Collector against a CPA that records nothing would present an empty
-window as a live one. The confirmation is a process-lifetime decision, so a
-restart asks again instead of assuming last session's approval.
+window as a live one. The confirmation is consumed by the one start attempt it
+authorises: a later replay of the same completion, or a restart, asks again
+instead of reusing an approval nobody renewed, and a confirm while collection is
+already live is a no-op rather than a restart.
 
 A start is claimed only when it actually happened. `MarkCollectionStart` runs
 after a Collector is live — and, on Managed and External, after its first
@@ -481,12 +497,20 @@ instead of a zero. `blockedReason` carries the stable code of the last refused s
 `external/usage` reports it beside `statisticsEnabled`, `collector` and
 `cpaVersion`.
 
-A 401 from the user's CPA stops collection and surfaces
-`external_management_key_rejected`: retrying would collect from a CPA this
-Manager has just proven it cannot authenticate to, so the Collector is stopped
-and only a rebind restarts it. Starting collection on an unsupported version is
-refused with `external_cpa_version_unsupported` before the statistics write, for
-the same reason the write gate exists.
+A refused credential — CPA's 401 to a key it no longer holds, or its 403 to a
+banned client — stops collection and surfaces
+`external_management_key_rejected`. Both paths are covered: a start attempt meets
+it on its own authenticated read, and a Collector already running meets it on
+its first refused poll. In the second case the Collector stops itself and reports
+back, because a CPA bans an address after five failed authentications, so the
+backoff retry loop would have converted the user's rotation into an outage within
+about a minute; the reported refusal clears the started latch, so
+`collectionStarted` reads false and `blockedReason` carries the code. Nothing
+restarts collection until an administrator rebinds the connection: a successful
+rebind stops any surviving Collector and starts a new one with the stored
+credential, so the replaced key is never sent again. Starting collection on an
+unsupported version is refused with `external_cpa_version_unsupported` before the
+statistics write, for the same reason the write gate exists.
 
 #### Rebind after a rotated management credential
 
@@ -497,10 +521,14 @@ refuse it) and is the only way out of
 `external_management_key_rejected`. The order is the safety:
 
 1. the candidate must pass the rule Connect External itself applies;
-2. it is proven against the committed address with one authenticated read that
-   also classifies the version, so nothing is persisted for a credential that
-   does not authenticate or that does not serve the contract;
-3. it is encrypted and written in a transaction that replaces the connection and
+2. the record revision is read, and it is the revision the write below is
+   conditional on — a save, a key write or another rebind that lands during the
+   verification therefore conflicts instead of being overwritten;
+3. the candidate is proven against the committed address with one authenticated
+   read on the write transport that also classifies the version, so nothing is
+   persisted for a credential that does not authenticate or that does not serve
+   the contract;
+4. it is encrypted and written in a transaction that replaces the connection and
    both compatibility mirrors (`manager_config_v1`, `setup`) and bumps the record
    revision.
 
@@ -513,11 +541,14 @@ contract and is not bumped here; the record revision is the CAS a rebind moves,
 and the credential a later write resolves is always the one the record holds at
 that moment. A candidate equal to the stored credential is refused rather than
 reported as a rotation. A rebind to a credential the CPA refuses, to an
-unsupported version, to another address, or against a stale revision is refused
-with its own code (`external_management_key_rejected`,
-`external_cpa_version_unsupported`, `external_rebind_refused`,
-`external_rebind_stale_generation`), and no reply carries the credential, the
-address or any text from the CPA.
+unsupported version, to another address, or against a revision that moved during
+the verification is refused with its own code
+(`external_management_key_rejected`, `external_cpa_version_unsupported`,
+`external_rebind_refused`, `external_rebind_stale_generation`). A 403 from the
+CPA is the same `external_management_key_rejected` code the reads use, with a
+`detail` saying the CPA is refusing this key or client and that a retry after the
+ban window may be enough. No reply carries the credential, the address or any
+text from the CPA.
 
 ### Failed stage or start
 
