@@ -961,3 +961,24 @@ func TestExternalStepAsksTheVersionProbeOnce(t *testing.T) {
 		t.Fatal("the credential the step removes is still carried")
 	}
 }
+
+// TestExternalApplyRefusesAnUnsupportedVersionBeforeItsPut proves the install
+// write carries its own gate. The wire has none, so a missing gate here would be
+// a write straight to a CPA that does not serve the v8 contract.
+func TestExternalApplyRefusesAnUnsupportedVersionBeforeItsPut(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	target, _ := harness.staged(t, strings.Repeat("2", 32))
+	harness.service.externalProbe = func(context.Context, string, string) (cpa.ExternalVersionReport, error) {
+		return cpa.ClassifyExternalVersion("v7.2.130"), nil
+	}
+	if _, err := harness.service.Apply(ctx, target, 1); !errors.Is(err, cpa.ErrExternalVersionUnsupported) {
+		t.Fatalf("apply on an unsupported version = %v, want the typed refusal", err)
+	}
+	if harness.cpa.writes != 0 {
+		t.Fatalf("apply wrote to a CPA that does not serve the contract: %d writes", harness.cpa.writes)
+	}
+	if len(harness.cpa.keys) != 0 {
+		t.Fatalf("the CPA's credentials changed: %v", harness.cpa.keys)
+	}
+}
