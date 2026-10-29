@@ -53,11 +53,18 @@ func (a *freshApplication) initialClientKey(w http.ResponseWriter, r *http.Reque
 		writeFreshJSON(w, freshkeyapply.State{KeyID: id, ManagerStaged: true, RuntimeState: "effect_unknown"})
 		return
 	}
+	grant := a.externalReadGrant(r.Context())
 	var result freshkeyapply.State
 	var err error
 	if r.Method == http.MethodPost {
 		result, err = a.keyApply.Apply(r.Context(), id, op.Strategy.TargetGeneration)
 	} else {
+		// The observation reads the CPA, so a credential it already refused is
+		// answered locally instead of presented once more.
+		if grant.Refused {
+			writeExternalManagementRejected(w)
+			return
+		}
 		result, err = a.keyApply.Observe(r.Context(), id, op.Strategy.TargetGeneration)
 	}
 	if err != nil {
@@ -75,7 +82,9 @@ func (a *freshApplication) initialClientKey(w http.ResponseWriter, r *http.Reque
 			w.WriteHeader(409)
 		case errors.Is(err, cpa.ErrManagementRejected):
 			// The user's CPA refused the stored management credential: only
-			// rebinding the connection resolves it, so it is never a retry.
+			// rebinding the connection resolves it, so it is never a retry. The
+			// refusal is remembered, so the reads that follow send nothing.
+			a.noteExternalRejection(r.Context(), grant, err)
 			code = freshconfig.ReasonManagementRejected
 			w.WriteHeader(409)
 		case errors.Is(err, cpa.ErrExternalTargetMoved):

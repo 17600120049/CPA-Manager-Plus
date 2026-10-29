@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -20,12 +22,31 @@ import (
 // rotation into an outage for the person trying to fix it.
 const externalRejectionKey = "fresh_external_rejection_v1"
 
-// externalRejectionRecord is the refused connection and when it was refused. The
-// address digest is the identity the whole External profile is keyed by, so a
-// rebind to another CPA can never inherit this refusal.
+// externalRejectionRecord is the refused connection, the credential envelope that
+// was refused, and when. The address digest is the identity the whole External
+// profile is keyed by, so a rebind to another CPA can never inherit this refusal.
+// The envelope digest is what makes a refusal belong to the key that met it: a
+// rebind replaces the envelope, so a refusal recorded against the previous one
+// stops gating the new key the moment it is stored.
 type externalRejectionRecord struct {
-	Identity string `json:"identity"`
-	AtMS     int64  `json:"atMs"`
+	Identity   string `json:"identity"`
+	Credential string `json:"credential"`
+	AtMS       int64  `json:"atMs"`
+}
+
+// externalReadGrant is the credential one browser-driven read will present, taken
+// when the read starts. Two facts are captured together because they must be the
+// ones the request uses: resolving them again after the answer arrives would name
+// whatever a concurrent rebind stored in the meantime.
+type externalReadGrant struct {
+	// Identity is the committed connection's address digest.
+	Identity string
+	// Credential is the digest of the protected credential envelope in the record
+	// the read resolved. It is not the credential and does not decrypt to it.
+	Credential string
+	// Refused reports that this exact connection and this exact envelope were
+	// already refused, so the read must answer locally.
+	Refused bool
 }
 
 // externalRejection is the durable refusal of the stored External credential.
@@ -43,11 +64,12 @@ func newExternalRejection(db *sql.DB) *externalRejection {
 }
 
 // refused reports whether the CPA has refused the credential of exactly this
-// connection. An unreadable row is not a refusal: this Manager failing to read its
-// own note must not hide the user's data, which is what the read is for.
-func (r *externalRejection) refused(ctx context.Context, identity string) bool {
+// connection and this envelope. An unreadable row is not a refusal: this Manager
+// failing to read its own note must not hide the user's data, which is what the
+// read is for.
+func (r *externalRejection) refused(ctx context.Context, identity, credential string) bool {
 	record, ok := r.load(ctx)
-	return ok && record.Identity == identity
+	return ok && record.Identity == identity && record.Credential == credential
 }
 
 func (r *externalRejection) load(ctx context.Context) (externalRejectionRecord, bool) {
@@ -70,11 +92,11 @@ func (r *externalRejection) load(ctx context.Context) (externalRejectionRecord, 
 // record marks this connection refused. Failing to write the row is not a blocker
 // of the read that met the refusal: that read still answers with the typed code,
 // and the next one simply pays one more request.
-func (r *externalRejection) record(ctx context.Context, identity string) {
-	if r == nil || r.db == nil || identity == "" {
+func (r *externalRejection) record(ctx context.Context, identity, credential string) {
+	if r == nil || r.db == nil || identity == "" || credential == "" {
 		return
 	}
-	raw, err := json.Marshal(externalRejectionRecord{Identity: identity, AtMS: time.Now().UnixMilli()})
+	raw, err := json.Marshal(externalRejectionRecord{Identity: identity, Credential: credential, AtMS: time.Now().UnixMilli()})
 	if err != nil {
 		return
 	}
@@ -96,21 +118,43 @@ func (r *externalRejection) clear(ctx context.Context) {
 	_, _ = r.db.ExecContext(ctx, `delete from settings where key = ?`, externalRejectionKey)
 }
 
-// externalReadRefused reports whether the user's CPA has already refused the stored
-// credential of this committed connection. A browser-driven read asks this before
-// it sends anything: the CPA would answer 401/403 again, and five of those ban the
-// address for thirty minutes.
-func (a *freshApplication) externalReadRefused(ctx context.Context) bool {
-	if a == nil || a.rejection == nil || a.externalSource == nil {
-		return false
+// externalReadGrant captures the credential a browser-driven read is about to
+// present, and whether it was already refused. Every read calls it once, before it
+// sends anything: the CPA would answer 401/403 again, and five of those ban the
+// address for thirty minutes. The same grant is what records a refusal, so an
+// answer that arrives after a rebind is filed against the key that was actually
+// sent rather than the one now stored.
+func (a *freshApplication) externalReadGrant(ctx context.Context) externalReadGrant {
+	if a == nil || a.rejection == nil || a.externalSource == nil || a.store == nil {
+		return externalReadGrant{}
 	}
 	install, err := a.externalSource(ctx)
 	if err != nil {
 		// An unresolvable authority is its own typed blocker further down; it is
 		// not evidence that the credential was refused.
-		return false
+		return externalReadGrant{}
 	}
-	return a.rejection.refused(ctx, install.Identity)
+	record, err := a.store.Load(ctx)
+	if err != nil || record.Connection == nil || record.Connection.ManagementKey == "" {
+		// Without the envelope there is nothing to tell this read apart from one
+		// on a rebound key, so the gate stays open rather than risk hiding the
+		// user's data.
+		return externalReadGrant{}
+	}
+	grant := externalReadGrant{
+		Identity:   install.Identity,
+		Credential: envelopeDigest(record.Connection.ManagementKey),
+	}
+	grant.Refused = a.rejection.refused(ctx, grant.Identity, grant.Credential)
+	return grant
+}
+
+// envelopeDigest is the stable identity of one protected credential envelope. It
+// is a digest of the ciphertext, so it changes exactly when a rebind replaces the
+// credential and never reveals it.
+func envelopeDigest(envelope string) string {
+	sum := sha256.Sum256([]byte(envelope))
+	return "envelope:sha256:" + hex.EncodeToString(sum[:])
 }
 
 // externalReadRefusedError is the typed blocker a refused read answers with
@@ -128,24 +172,17 @@ func writeExternalManagementRejected(w http.ResponseWriter) {
 	}{freshconfig.ReasonManagementRejected})
 }
 
-// noteExternalRejection records a refusal of the stored credential. It runs on the
-// error mapping of every browser-driven read, which is where a CPA refusal is
-// first known. A platform error, a moved target and a version refusal are not
-// refusals of the credential and record nothing.
-func (a *freshApplication) noteExternalRejection(ctx context.Context, err error) {
-	if a == nil || a.rejection == nil || a.externalSource == nil || err == nil {
+// noteExternalRejection files a refusal against the grant the request used. It runs
+// on the error mapping of every browser-driven read, which is where a CPA refusal
+// is first known. Recording the grant — not a fresh resolution — is what keeps a
+// slow refusal sent with the replaced key from gating the rebound one. A platform
+// error, a moved target and a version refusal are not refusals of the credential
+// and record nothing.
+func (a *freshApplication) noteExternalRejection(ctx context.Context, grant externalReadGrant, err error) {
+	if a == nil || a.rejection == nil || err == nil || !errors.Is(err, cpa.ErrManagementRejected) {
 		return
 	}
-	if !errors.Is(err, cpa.ErrManagementRejected) {
-		return
-	}
-	install, resolveErr := a.externalSource(ctx)
-	if resolveErr != nil {
-		// The refusal is about a connection this Manager cannot even name, so
-		// there is no identity to record it against.
-		return
-	}
-	a.rejection.record(ctx, install.Identity)
+	a.rejection.record(ctx, grant.Identity, grant.Credential)
 }
 
 // clearExternalRejection forgets a recorded refusal after a read proved that the

@@ -412,14 +412,15 @@ func (a *freshApplication) runtimeStatus(w http.ResponseWriter, r *http.Request,
 	// again: CPA bans the address after five failed authentications, and this
 	// page polls. The status is the typed blocker, with whatever was last
 	// observed, until a rebind or a re-verify proves the key.
-	if mode == string(model.RuntimeModeExternal) && a.externalReadRefused(r.Context()) {
+	grant := a.externalReadGrant(r.Context())
+	if mode == string(model.RuntimeModeExternal) && grant.Refused {
 		writeFreshJSON(w, freshRuntimeUnknownResponse(mode, freshconfig.ReasonManagementRejected, a.runtimeJournal))
 		return
 	}
 	now := time.Now().UTC()
 	observed, err := statusClient.Status(r.Context())
 	if err != nil {
-		a.noteExternalRejection(r.Context(), err)
+		a.noteExternalRejection(r.Context(), grant, err)
 		writeFreshJSON(w, freshRuntimeUnknownResponse(mode, "runtime_unreachable", a.runtimeJournal))
 		return
 	}

@@ -65,7 +65,8 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 			// five failed authentications ban the address for thirty minutes, and
 			// a page that refreshes is enough to reach that. The blocker is
 			// answered here, before any request leaves this process.
-			if a.externalReadRefused(r.Context()) {
+			grant := a.externalReadGrant(r.Context())
+			if grant.Refused {
 				writeExternalManagementRejected(w)
 				return
 			}
@@ -86,7 +87,7 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 				// The user's CPA refused the stored management credential. The
 				// page must not offer a retry: only a rebind resolves it. The
 				// refusal is remembered, so no later read sends the key again.
-				a.noteExternalRejection(r.Context(), listErr)
+				a.noteExternalRejection(r.Context(), grant, listErr)
 				writeExternalManagementRejected(w)
 				return
 			case listErr != nil:

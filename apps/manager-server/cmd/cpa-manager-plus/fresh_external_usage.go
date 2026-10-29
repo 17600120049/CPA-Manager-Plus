@@ -334,17 +334,18 @@ func (a *freshApplication) externalUsageState(ctx context.Context) (externalUsag
 	// failed authentication against an address CPA is about to ban. The typed
 	// blocker is answered locally until a rebind or a re-verify proves the key
 	// again.
-	if a.rejection.refused(ctx, install.Identity) {
+	grant := a.externalReadGrant(ctx)
+	if grant.Refused {
 		return externalUsageState{}, externalReadRefusedError()
 	}
 	report, err := cpa.ObserveExternalVersion(ctx, install.BaseURL, install.ManagementKey)
 	if err != nil {
-		a.noteExternalRejection(ctx, err)
+		a.noteExternalRejection(ctx, grant, err)
 		return externalUsageState{}, err
 	}
 	enabled, err := cpa.FetchExternalUsageStatistics(ctx, install.BaseURL, install.ManagementKey)
 	if err != nil {
-		a.noteExternalRejection(ctx, err)
+		a.noteExternalRejection(ctx, grant, err)
 		return externalUsageState{}, err
 	}
 	return externalUsageState{

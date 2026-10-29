@@ -99,7 +99,20 @@ func (a *freshApplication) clientKeyOperation(w http.ResponseWriter, r *http.Req
 	}
 	id := strings.TrimPrefix(resource, "api-keys/operations/")
 	if r.Method == http.MethodGet && !strings.Contains(id, "/") {
+		// A credential the user's CPA already refused is not presented again: this
+		// page polls a journaled step, and five failed authentications ban the
+		// address for thirty minutes.
+		grant := a.externalReadGrant(r.Context())
+		if grant.Refused {
+			writeExternalManagementRejected(w)
+			return
+		}
 		result, err := a.keyApply.CheckOperation(r.Context(), id, op.Strategy.TargetGeneration)
+		if errors.Is(err, cpa.ErrManagementRejected) {
+			// The poll is where the refusal is first known, so it is recorded and
+			// the reads that follow answer it without contacting the CPA.
+			a.noteExternalRejection(r.Context(), grant, err)
+		}
 		keyOperationReply(w, result, err)
 		return
 	}

@@ -598,7 +598,7 @@ func TestExternalRejectionStopsBrowserDrivenReads(t *testing.T) {
 	if first.Code != http.StatusConflict || !strings.Contains(first.Body.String(), freshconfig.ReasonManagementRejected) {
 		t.Fatalf("first read = %d %s", first.Code, first.Body.String())
 	}
-	if !h.app.externalReadRefused(t.Context()) {
+	if !h.app.externalReadGrant(t.Context()).Refused {
 		t.Fatal("the refusal was not recorded, so the later reads would send the key again")
 	}
 
@@ -652,7 +652,7 @@ func TestExternalRebindReverifiesTheStoredCredential(t *testing.T) {
 	if after.Connection.ManagementKey != before.Connection.ManagementKey {
 		t.Fatal("a re-verify rewrote the stored credential")
 	}
-	if h.app.externalReadRefused(t.Context()) {
+	if h.app.externalReadGrant(t.Context()).Refused {
 		t.Fatal("the refusal survived a proven credential")
 	}
 	if h.app.legacyCollector.StartCount() <= starts {
@@ -660,5 +660,85 @@ func TestExternalRebindReverifiesTheStoredCredential(t *testing.T) {
 	}
 	if state := decodeExternalUsageState(t, h.call(t, http.MethodGet, "external/usage", "").Body.Bytes()); state.BlockedReason != "" {
 		t.Fatalf("the blocker survived the re-verify: %+v", state)
+	}
+}
+
+// TestExternalRejectionStopsThePollingReads covers the two reads that poll a
+// journaled key step. They are the busiest of all — the page reloads them while a
+// step settles — so an ungated poll is the fastest route to the ban that CPA
+// imposes after five failed authentications.
+func TestExternalRejectionStopsThePollingReads(t *testing.T) {
+	h := newExternalUsageHarness(t)
+	id, _ := h.stagedKey(t)
+	h.cpa.rejects.Store(true)
+
+	// The first poll is what learns the refusal.
+	first := h.call(t, http.MethodGet, "api-keys/operations/"+strings.Repeat("9", 32), "")
+	if first.Code == http.StatusConflict && strings.Contains(first.Body.String(), freshconfig.ReasonManagementRejected) {
+		if !h.app.externalReadGrant(t.Context()).Refused {
+			t.Fatal("the operation poll learned a refusal but did not record it")
+		}
+	} else {
+		// A journal that does not know this id answers without contacting CPA, so
+		// the refusal has to come from the observation read instead.
+		observation := h.call(t, http.MethodGet, "api-keys/"+id+"/initial-install", "")
+		if observation.Code != http.StatusConflict || !strings.Contains(observation.Body.String(), freshconfig.ReasonManagementRejected) {
+			t.Skipf("neither poll reached the CPA: %d %s", observation.Code, observation.Body.String())
+		}
+	}
+
+	requests := h.cpa.requests.Load()
+	for i := 0; i < 3; i++ {
+		for _, resource := range []string{
+			"api-keys/operations/" + strings.Repeat("9", 32),
+			"api-keys/" + id + "/initial-install",
+		} {
+			response := h.call(t, http.MethodGet, resource, "")
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), freshconfig.ReasonManagementRejected) {
+				t.Fatalf("%s after the refusal = %d %s", resource, response.Code, response.Body.String())
+			}
+		}
+	}
+	if sent := h.cpa.requests.Load() - requests; sent != 0 {
+		t.Fatalf("a refused credential was presented %d more times", sent)
+	}
+}
+
+// stagedKey creates one manager-owned key for the read routes that need an id.
+func (h *externalUsageHarness) stagedKey(t *testing.T) (string, string) {
+	t.Helper()
+	result, _, err := h.app.keys.Create(t.Context(), strings.Repeat("b", 32))
+	if err != nil {
+		t.Fatalf("stage key: %v", err)
+	}
+	return string(result.Key.ID), result.CreatedSecret
+}
+
+// TestExternalRejectionBelongsToTheKeyThatSentIt is the rebind race. A read
+// resolves the credential, sends it and is still in flight when the administrator
+// rebinds; the answer then arrives, refusing the key that is no longer stored. If
+// the refusal were filed against whatever the record holds now, the fresh
+// credential would be gated before it was ever sent — the operator would have
+// fixed the rotation and still see the blocker.
+func TestExternalRejectionBelongsToTheKeyThatSentIt(t *testing.T) {
+	h := newExternalUsageHarness(t)
+	// The read resolves the old credential and would present it.
+	grant := h.app.externalReadGrant(t.Context())
+	if grant.Credential == "" {
+		t.Fatal("the grant did not capture the stored envelope")
+	}
+	// The administrator rebinds to a credential the CPA now holds.
+	rotated := strings.Repeat("7", 64)
+	h.cpa.management.Store(rotated)
+	if response := h.call(t, http.MethodPost, "external/rebind", rebindBody("", rotated)); response.Code != http.StatusOK {
+		t.Fatalf("rebind = %d %s", response.Code, response.Body.String())
+	}
+	// The in-flight read answers now, refusing the credential it was sent with.
+	h.app.noteExternalRejection(t.Context(), grant, cpa.ErrManagementRejected)
+	if h.app.externalReadGrant(t.Context()).Refused {
+		t.Fatal("a refusal of the replaced key gated the rebound one")
+	}
+	if response := h.call(t, http.MethodGet, "external/usage", ""); response.Code != http.StatusOK {
+		t.Fatalf("the rebound key was gated: %d %s", response.Code, response.Body.String())
 	}
 }
