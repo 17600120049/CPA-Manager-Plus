@@ -280,6 +280,15 @@ func (s *Service) externalContinue(ctx context.Context, o *repo.Operation, index
 		if !s.keyGrantHeld(ctx, grant, o.ID, step) || time.Now().UnixMilli() >= grant.ExpiresAtMS {
 			return ErrExternalUnavailable
 		}
+		// The version is asked before the step is journaled as attempted: a CPA
+		// that became unsupported — or stopped answering the probe — since Prepare
+		// refuses here, while nothing has been sent. Journaling the attempt first
+		// would leave a step no later read can settle, because no byte of that
+		// write was ever sent, and every later operation of the connection would
+		// then be refused by the unsettled journal.
+		if err := s.externalWriteGate(ctx, install); err != nil {
+			return err
+		}
 		o.Steps[index].State = "attempted"
 		o.Outcome = "unknown"
 		if err = s.repo.SaveOperation(ctx, *o); err != nil {
