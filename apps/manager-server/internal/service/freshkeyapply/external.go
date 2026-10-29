@@ -185,38 +185,16 @@ func (s *Service) externalTarget(ctx context.Context, generation uint64) (Extern
 	return install, nil
 }
 
+// externalKeyWire is the plain wire of one resolved target. It carries no gate:
+// the version refusal is asked explicitly by each write entry point, once, before
+// the request it guards (see externalWriteGate). A gate here would ask it again
+// inside the write, after the journal had already recorded the intent, and a
+// timeout or a version flip there would leave a step `attempted` with no byte sent.
 func (s *Service) externalKeyWire(install ExternalInstall) externalWire {
 	if s.externalWire == nil {
 		return nil
 	}
-	w := s.externalWire(install.BaseURL)
-	if w == nil || s.externalProbe == nil {
-		return w
-	}
-	return externalVersionGate{wire: w, probe: s.externalProbe, baseURL: install.BaseURL}
-}
-
-// externalVersionGate is the External wire with the version refusal in front of
-// its one write. Reads pass through untouched: a version this Manager cannot
-// prove bounds what may be written, never what may be shown. The probe is asked
-// once per write attempt, immediately before it, so a CPA that was upgraded or
-// replaced since the connection was committed is judged as it is now.
-type externalVersionGate struct {
-	wire    externalWire
-	probe   func(context.Context, string, string) (cpa.ExternalVersionReport, error)
-	baseURL string
-}
-
-func (g externalVersionGate) ExternalKeySnapshot(ctx context.Context, management string) (cpa.ExternalKeySnapshot, error) {
-	return g.wire.ExternalKeySnapshot(ctx, management)
-}
-
-func (g externalVersionGate) ExternalWriteKeySet(ctx context.Context, management string, keys []string) error {
-	report, err := g.probe(ctx, g.baseURL, management)
-	if err := externalVersionWriteRefusal(report, err); err != nil {
-		return err
-	}
-	return g.wire.ExternalWriteKeySet(ctx, management, keys)
+	return s.externalWire(install.BaseURL)
 }
 
 // externalWriteRefusal is the one verdict of a version probe in front of a write.
@@ -386,6 +364,12 @@ func (s *Service) externalApply(ctx context.Context, id string, generation uint6
 		if again.SourceSHA256 != snapshot.SourceSHA256 || !sameKeys(again.Keys, snapshot.Keys) {
 			return cpa.ErrSourceConflict
 		}
+		// The version is asked here, once, immediately before the single PUT: the
+		// wire itself carries no gate, so this is the only probe this write costs
+		// and a refusal leaves nothing attempted.
+		if err = s.externalWriteGate(ctx, install); err != nil {
+			return err
+		}
 		result.Attempted = true
 		if err = w.ExternalWriteKeySet(ctx, install.ManagementKey, after); err != nil {
 			return err
@@ -503,6 +487,11 @@ func (a externalKeyAuthority) KeySnapshot(ctx context.Context, management string
 func (a externalKeyAuthority) WriteKeySet(ctx context.Context, management string, keys []string) error {
 	install, w, err := a.resolved(ctx, management)
 	if err != nil {
+		return err
+	}
+	// The same explicit gate the journaled step and the Apply install take, so no
+	// path reaches the user's CPA with a write the version does not allow.
+	if err = a.s.externalWriteGate(ctx, install); err != nil {
 		return err
 	}
 	return w.ExternalWriteKeySet(ctx, install.ManagementKey, keys)

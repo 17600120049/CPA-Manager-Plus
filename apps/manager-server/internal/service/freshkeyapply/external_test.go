@@ -909,3 +909,55 @@ func TestExternalWriteGateKeepsTheProbeBlocker(t *testing.T) {
 		t.Fatal("a write behind a rejected probe reached the user's CPA")
 	}
 }
+
+// A journaled External step asks the version probe exactly once: the gate in front
+// of the journaled intent and the gate in front of the single PUT are the same
+// ask, and the wire itself carries none. The earlier double ask charged two round
+// trips per step and, worse, could refuse inside the write after the journal had
+// already recorded it as attempted.
+func TestExternalStepAsksTheVersionProbeOnce(t *testing.T) {
+	harness := newExternalHarness(t)
+	ctx := context.Background()
+	probes := 0
+	harness.service.externalProbe = func(context.Context, string, string) (cpa.ExternalVersionReport, error) {
+		probes++
+		return cpa.ClassifyExternalVersion("v8.0.13"), nil
+	}
+	target, targetSecret := harness.staged(t, strings.Repeat("2", 32))
+	keeper, _ := harness.staged(t, strings.Repeat("3", 32))
+	if _, err := harness.service.Apply(ctx, target, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := harness.service.Apply(ctx, keeper, 1); err != nil {
+		t.Fatal(err)
+	}
+	if probes != 2 {
+		t.Fatalf("two installs asked the probe %d times, want one each", probes)
+	}
+
+	prepared, err := harness.service.Prepare(ctx, strings.Repeat("4", 32), target, keeper, "revoke", 1)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	if probes != 3 {
+		t.Fatalf("prepare asked the probe %d times in total, want one more", probes)
+	}
+	writes := harness.cpa.writes
+	probes = 0
+	result, err := harness.service.ContinueOperation(ctx, prepared.Operation.ID, 1)
+	if err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if probes != 1 {
+		t.Fatalf("one step asked the probe %d times, want exactly one", probes)
+	}
+	if harness.cpa.writes != writes+1 {
+		t.Fatalf("writes = %d, want exactly one PUT for the step", harness.cpa.writes-writes)
+	}
+	if result.Operation == nil || result.Operation.Outcome != "committed" {
+		t.Fatalf("the step did not settle: %+v", result.Operation)
+	}
+	if slices.Contains(harness.cpa.keys, targetSecret) {
+		t.Fatal("the credential the step removes is still carried")
+	}
+}
