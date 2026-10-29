@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/resp"
 	monitoringsvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/monitoring"
 	quotasnapshotsvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/quotasnapshot"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/store"
@@ -1143,9 +1144,11 @@ func TestRefuseAuthKeepsLastError(t *testing.T) {
 	manager.SetAuthRejectionHandler(func() { rejections++ })
 
 	ctx, cancel := context.WithCancel(context.Background())
-	manager.refuseAuth(ctx, cancel)
-	if manager.Status().LastError != "consume: connection reset" {
-		t.Fatalf("last error = %q, want it preserved", manager.Status().LastError)
+	manager.refuseAuth(ctx, cancel, &resp.ErrorReply{Message: "ERR invalid management key"})
+	// The earlier cause survives, and the refusal is added to it: a stop is not
+	// evidence that the earlier failure never happened.
+	if last := manager.Status().LastError; !strings.HasPrefix(last, "consume: connection reset; management credential refused: ERR invalid management key") {
+		t.Fatalf("last error = %q, want the earlier cause kept and the refusal added", last)
 	}
 	if ctx.Err() == nil {
 		t.Fatal("the refused run was not cancelled")
@@ -1186,4 +1189,37 @@ func TestManagerIgnoresASupersededRunsLateRefusal(t *testing.T) {
 		status := manager.Status()
 		return status.Transport == "resp" && status.Collector == "running"
 	})
+}
+
+// TestManagerRecordsTheRefusalItStoppedOn proves a refused credential is not a
+// silent stop. The legacy Collector installs no rejection handler, so its status
+// page is the only place an operator can learn why collection ended; a stop with
+// an empty LastError leaves them with a stopped Collector and no cause.
+func TestManagerRecordsTheRefusalItStoppedOn(t *testing.T) {
+	upstream := newScriptedCPA(t, "ERR invalid management key")
+	manager := NewManager(testConfig(t, "resp"), newTestStore(t))
+	manager.SetAuthRejectionHandler(func() {})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	manager.Start(ctx, RuntimeConfig{CPAUpstreamURL: upstream.URL(), ManagementKey: "management-key"})
+	waitFor(t, func() bool { return manager.Status().Collector == "stopped" })
+	if last := manager.Status().LastError; !strings.Contains(last, "ERR invalid management key") {
+		t.Fatalf("last error = %q, want the CPA's own refusal", last)
+	}
+}
+
+// TestManagerKeepsAnEarlierErrorWhenTheCredentialIsRefused proves the refusal is
+// added to the record rather than used to erase it: an operator needs both the
+// failure that came first and the refusal that ended the run.
+func TestManagerKeepsAnEarlierErrorWhenTheCredentialIsRefused(t *testing.T) {
+	manager := NewManager(testConfig(t, "http"), newTestStore(t))
+	manager.setStatus(func(status *Status) { status.LastError = "consume: connection reset" })
+	ctx, cancel := context.WithCancel(context.Background())
+
+	manager.refuseAuth(ctx, cancel, &resp.ErrorReply{Message: "NOAUTH Authentication required."})
+	last := manager.Status().LastError
+	if !strings.HasPrefix(last, "consume: connection reset; ") || !strings.Contains(last, "NOAUTH") {
+		t.Fatalf("last error = %q, want both causes", last)
+	}
 }

@@ -179,14 +179,26 @@ func (m *Manager) SetAuthRejectionHandler(handler func()) {
 // met it: the cancel func is that run's own, and a run whose context is already
 // cancelled has been superseded by a restart, so its late reply must neither stop
 // the new Collector nor record a blocker for a credential the new run does not
-// use. LastError is left exactly as it is — the refusal is reported through the
-// handler, and a stop is not evidence that an earlier error never happened.
-func (m *Manager) refuseAuth(ctx context.Context, cancel context.CancelFunc) {
+// use.
+//
+// The refusal itself is recorded as LastError, because a stop with no reason is
+// the worst answer: the legacy Collector installs no handler, so without this it
+// would stop silently and its status page would report a stopped Collector with an
+// empty cause. An earlier error is kept if there is one — the refusal is added to
+// the record, not used to erase why the Collector was already failing.
+func (m *Manager) refuseAuth(ctx context.Context, cancel context.CancelFunc, err error) {
 	if ctx != nil && ctx.Err() != nil {
 		return
 	}
 	m.setStatus(func(status *Status) {
 		status.Collector = "stopped"
+		if message := authRefusalMessage(err); message != "" {
+			if status.LastError == "" {
+				status.LastError = message
+			} else {
+				status.LastError += "; " + message
+			}
+		}
 	})
 	if cancel != nil {
 		cancel()
@@ -213,6 +225,22 @@ var authRefusals = []string{
 	"ERR remote management key not set",
 	"ERR remote management disabled",
 	"ERR IP banned due to too many failed attempts",
+}
+
+// authRefusalMessage is the refusal as it is recorded for an operator. It is CPA's
+// own text when there is one, so the status page says what the CPA said rather than
+// paraphrasing it, and it never carries a credential: CPA's auth frames quote none.
+func authRefusalMessage(err error) string {
+	var reply *resp.ErrorReply
+	if errors.As(err, &reply) {
+		if message := strings.TrimSpace(reply.Message); message != "" {
+			return "management credential refused: " + message
+		}
+	}
+	if errors.Is(err, httpqueue.ErrRejected) {
+		return "management credential refused: the CPA rejected the request"
+	}
+	return ""
 }
 
 // isAuthRefusal reports a management credential the CPA itself refused. Only the
@@ -293,7 +321,7 @@ func (m *Manager) runSubscribe(ctx context.Context, cancel context.CancelFunc, c
 				// The CPA answered and refused this management credential. That
 				// is terminal: another attempt is one more failed authentication
 				// against a CPA that bans the address after a handful of them.
-				m.refuseAuth(ctx, cancel)
+				m.refuseAuth(ctx, cancel, err)
 				return true
 			}
 			if mode == "auto" && !subscribed {
@@ -407,7 +435,7 @@ func (m *Manager) runHTTP(ctx context.Context, cancel context.CancelFunc, cfg Ru
 			// The CPA answered and refused the management credential. That is
 			// terminal until the connection is rebound, and every retry would be
 			// another failed authentication against a CPA that bans the address.
-			m.refuseAuth(ctx, cancel)
+			m.refuseAuth(ctx, cancel, err)
 			return true
 		}
 		if err != nil {
@@ -442,7 +470,7 @@ func (m *Manager) runRESP(ctx context.Context, cancel context.CancelFunc, cfg Ru
 				return
 			}
 			if isAuthRefusal(err) {
-				m.refuseAuth(ctx, cancel)
+				m.refuseAuth(ctx, cancel, err)
 				return
 			}
 			m.markError("auth", err)
