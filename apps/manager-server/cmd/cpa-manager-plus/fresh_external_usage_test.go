@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	usageapp "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/application/identityusage"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
@@ -34,8 +35,15 @@ type externalUsageCPA struct {
 	rejects    atomic.Bool
 	statWrites atomic.Int32
 	queueReads atomic.Int32
-	version    atomic.Value
-	server     *httptest.Server
+	// refusals counts the requests this CPA answered 401 because the presented
+	// credential was not the current one. It is what proves a stopped Collector
+	// sends nothing more and a rebound one sends only the new credential.
+	refusals atomic.Int32
+	// requests counts every request that reached the CPA, so a test can prove a
+	// stopped Collector issues no further traffic at all.
+	requests atomic.Int32
+	version  atomic.Value
+	server   *httptest.Server
 }
 
 func newExternalUsageCPA(t *testing.T, management string) *externalUsageCPA {
@@ -44,7 +52,9 @@ func newExternalUsageCPA(t *testing.T, management string) *externalUsageCPA {
 	f.management.Store(management)
 	f.version.Store("v8.0.13")
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.requests.Add(1)
 		if f.rejects.Load() || r.Header.Get("Authorization") != "Bearer "+f.management.Load().(string) {
+			f.refusals.Add(1)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -281,6 +291,145 @@ func TestExternalUsageCollectionBindsTheConnectionIdentity(t *testing.T) {
 	}
 }
 
+// TestExternalUsageCollectionStopsOnItsOwnRejectedCredential rotates the
+// management credential while the real Collector is polling. The Collector must
+// stop itself on the first refusal — a CPA bans an address after a handful of
+// failed authentications, so retrying is what turns a rotation into an outage —
+// clear the started latch, and record the blocker. A rebind then restarts
+// collection on the new credential, and the replaced one is never sent again.
+func TestExternalUsageCollectionStopsOnItsOwnRejectedCredential(t *testing.T) {
+	h := newExternalUsageHarness(t)
+	h.cpa.enabled.Store(true)
+	h.app.startUsageCollection(h.operation(t))
+	if !h.app.usageCollectionStarted() {
+		t.Fatal("collection did not start on a CPA that accepts the credential")
+	}
+	waitForCondition(t, func() bool { return h.cpa.queueReads.Load() > 0 })
+
+	// The user rotates the management credential on their own CPA.
+	rotated := "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	h.cpa.management.Store(rotated)
+	waitForCondition(t, func() bool { return h.app.usageStartBlock() != "" })
+
+	// The Collector stopped itself, the started latch is gone, and the blocker is
+	// the typed rejection rather than an unexplained stopped Collector.
+	if phase := h.app.collectionPhase(); phase != usageapp.PhaseStopped {
+		t.Fatalf("collector = %s after a refusal, want stopped", phase)
+	}
+	if h.app.usageCollectionStarted() {
+		t.Fatal("a refused Collector still reported coverage")
+	}
+	if reason := h.app.usageStartBlock(); reason != freshconfig.ReasonManagementRejected {
+		t.Fatalf("blocked reason = %q, want %q", reason, freshconfig.ReasonManagementRejected)
+	}
+	// No further request follows: the refusals stop at the ones already made.
+	refusals := h.cpa.refusals.Load()
+	requests := h.cpa.requests.Load()
+	if refusals > 3 {
+		t.Fatalf("the Collector retried a refused credential %d times", refusals)
+	}
+	waitForCondition(t, func() bool {
+		// Nothing may arrive after the Collector reported: give an unbounded
+		// retry loop the chance to prove itself wrong.
+		return h.cpa.requests.Load() > requests
+	}, false)
+	if h.cpa.requests.Load() != requests {
+		t.Fatalf("a stopped Collector sent %d more requests", h.cpa.requests.Load()-requests)
+	}
+
+	// The administrator rebinds the connection with the rotated credential, and
+	// collection restarts on it: the replaced credential is never sent again.
+	response := h.call(t, http.MethodPost, "external/rebind", rebindBody("", rotated))
+	if response.Code != http.StatusOK {
+		t.Fatalf("rebind = %d %s", response.Code, response.Body.String())
+	}
+	if !h.app.usageCollectionStarted() {
+		t.Fatalf("collection did not restart after the rebind (blocked: %q)", h.app.usageStartBlock())
+	}
+	afterRebind := h.cpa.refusals.Load()
+	queueReads := h.cpa.queueReads.Load()
+	waitForCondition(t, func() bool { return h.cpa.queueReads.Load() > queueReads })
+	if h.cpa.refusals.Load() != afterRebind {
+		t.Fatalf("the replaced credential was sent again %d times", h.cpa.refusals.Load()-afterRebind)
+	}
+	state := decodeExternalUsageState(t, h.call(t, http.MethodGet, "external/usage", "").Body.Bytes())
+	if !state.CollectionStarted || state.BlockedReason != "" {
+		t.Fatalf("state after the rebind = %+v", state)
+	}
+}
+
+// waitForCondition polls a condition with a bounded budget. With want=false it
+// returns as soon as the budget expires, which is how a test proves a loop does
+// not run at all.
+func waitForCondition(t *testing.T, condition func() bool, want ...bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		ok := condition()
+		if len(want) > 0 && !want[0] {
+			if time.Now().After(deadline) {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+		if ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("condition was not met within the budget")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestExternalUsageConfirmationIsConsumedByOneAttempt proves the confirmation
+// authorises one enable attempt and nothing more. A replay of the same
+// completion must not write the switch again on its own, and a confirm while
+// collection is already live must neither restart the Collector nor clear the
+// started latch — the running Collector is the same one throughout.
+func TestExternalUsageConfirmationIsConsumedByOneAttempt(t *testing.T) {
+	h := newExternalUsageHarness(t)
+	body := `{"requestId":"` + strings.Repeat("a", 32) + `","confirmEnableStatistics":true}`
+	if response := h.call(t, http.MethodPost, "external/usage", body); response.Code != http.StatusOK {
+		t.Fatalf("confirm = %d %s", response.Code, response.Body.String())
+	}
+	if writes := h.cpa.statWrites.Load(); writes != 1 {
+		t.Fatalf("statistics writes = %d, want exactly one", writes)
+	}
+	queueReads := h.cpa.queueReads.Load()
+	waitForCondition(t, func() bool { return h.cpa.queueReads.Load() > queueReads })
+
+	// The user turns usage statistics off on their own CPA. A replay of the
+	// completion must not turn it back on: the approval it used is spent.
+	h.cpa.enabled.Store(false)
+	h.app.startUsageCollection(h.operation(t))
+	if writes := h.cpa.statWrites.Load(); writes != 1 {
+		t.Fatalf("a replay wrote the switch again: %d writes", writes)
+	}
+
+	// A confirm while collection is live is a no-op: the latch survives and the
+	// Collector is not restarted.
+	if !h.app.usageCollectionStarted() {
+		t.Fatal("collection is not live, so this case would not be proven")
+	}
+	beforeCollector := h.app.collectionPhase()
+	response := h.call(t, http.MethodPost, "external/usage", body)
+	if response.Code != http.StatusOK {
+		t.Fatalf("confirm while live = %d %s", response.Code, response.Body.String())
+	}
+	state := decodeExternalUsageState(t, response.Body.Bytes())
+	if !state.CollectionStarted || state.BlockedReason != "" {
+		t.Fatalf("a confirm while live changed the state: %+v", state)
+	}
+	if h.app.collectionPhase() != beforeCollector {
+		t.Fatalf("a confirm while live restarted the Collector: %s", h.app.collectionPhase())
+	}
+	if writes := h.cpa.statWrites.Load(); writes != 1 {
+		t.Fatalf("a confirm while live wrote the switch: %d writes", writes)
+	}
+}
+
 // TestExternalUsageCollectionStopsOnARejectedCredential proves a 401 stops
 // collection and surfaces the typed blocker instead of retrying.
 func TestExternalUsageCollectionStopsOnARejectedCredential(t *testing.T) {
@@ -428,5 +577,3 @@ func TestManagedUsageStartRecordsCollectionOnlyAfterAuthenticating(t *testing.T)
 		t.Fatal("the managed profile claimed collection without an authenticated sample")
 	}
 }
-
-var _ = config.Config{}

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshkeyapply"
 )
@@ -36,9 +35,11 @@ func rebindBody(baseURL, key string) string {
 
 // TestExternalRebindRotatesTheCommittedCredential proves the admin route replaces
 // the credential of the address this installation already holds: the candidate is
-// proven first, the stored value stays a protected envelope, the generation moves
-// so stale writes conflict, and the installation identity — the address — is
-// unchanged, so the key-usage history stays attributable to the same CPA.
+// proven first, the stored value stays a protected envelope, the record revision
+// moves so a concurrent write conflicts, and the installation identity — the
+// address — is unchanged, so the key-usage history stays attributable to the same
+// CPA. The Connect External target generation is pinned to the installation and
+// does not move for a credential rotation.
 func TestExternalRebindRotatesTheCommittedCredential(t *testing.T) {
 	app, cpaServer := externalAuthorityApp(t, "")
 	before, err := app.store.Load(t.Context())
@@ -109,12 +110,12 @@ func TestExternalRebindRotatesTheCommittedCredential(t *testing.T) {
 // before the user's CPA is contacted at all.
 func TestExternalRebindRefusesAnotherAddress(t *testing.T) {
 	app, cpaServer := externalAuthorityApp(t, "")
-	writes := cpaServer.writes.Load()
+	probes := cpaServer.probes.Load()
 	response := rebindCall(t, app, rebindBody("https://other.example", externalAuthorityManagement))
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "external_rebind_refused") {
 		t.Fatalf("rebind to another address = %d %s", response.Code, response.Body.String())
 	}
-	if cpaServer.writes.Load() != writes {
+	if cpaServer.probes.Load() != probes {
 		t.Fatal("another address was contacted")
 	}
 	record, err := app.store.Load(t.Context())
@@ -137,13 +138,19 @@ func TestExternalRebindRefusesUnusableAndRejectedCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A shape CPA itself could never accept is refused before any read.
-	writes := cpaServer.writes.Load()
+	probes := cpaServer.probes.Load()
 	response := rebindCall(t, app, rebindBody("", " leading-space"))
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "external_rebind_refused") {
 		t.Fatalf("rebind with an unusable key = %d %s", response.Code, response.Body.String())
 	}
-	if cpaServer.writes.Load() != writes {
+	if cpaServer.probes.Load() != probes {
 		t.Fatal("an unusable credential was sent to the CPA")
+	}
+	// The refused credential did reach the CPA, which is what distinguishes this
+	// case from the shape refusal above.
+	response = rebindCall(t, app, rebindBody("", strings.Repeat("8", 64)))
+	if response.Code != http.StatusConflict || cpaServer.probes.Load() == probes {
+		t.Fatalf("a well-shaped refusal never reached the CPA: %d %s", response.Code, response.Body.String())
 	}
 	// A credential the CPA refuses is the typed rejection, and nothing is stored.
 	response = rebindCall(t, app, rebindBody("", strings.Repeat("9", 64)))
@@ -248,13 +255,13 @@ func TestExternalRebindIsAdminOnlyAndRefusesStaleGenerations(t *testing.T) {
 		t.Fatalf("unauthenticated rebind = %d", unauthorized.Code)
 	}
 	// A rebind against a generation the record no longer holds is a mismatch.
-	writes := cpaServer.writes.Load()
+	probes := cpaServer.probes.Load()
 	rebound, err := app.keyApply.Rebind(t.Context(), app.store.(externalRebindStore), app.protector, 99,
 		"", externalAuthorityManagement)
 	if !errors.Is(err, freshkeyapply.ErrGeneration) || rebound.Operation.Revision != 0 {
 		t.Fatalf("stale generation rebind = %+v %v", rebound, err)
 	}
-	if cpaServer.writes.Load() != writes {
+	if cpaServer.probes.Load() != probes {
 		t.Fatal("a stale request reached the CPA")
 	}
 	// A rebind to the credential already stored changes nothing and is refused:
@@ -307,8 +314,5 @@ func TestExternalRebindNeedsACommittedExternalInstallation(t *testing.T) {
 	}
 	if record.Connection != nil {
 		t.Fatal("a refused rebind created a connection")
-	}
-	if _, err = cpa.NormalizeV8BaseURL("https://cpa.test"); err != nil {
-		t.Fatal(err)
 	}
 }

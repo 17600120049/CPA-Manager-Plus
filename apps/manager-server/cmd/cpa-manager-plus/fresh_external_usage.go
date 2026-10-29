@@ -59,12 +59,29 @@ func (a *freshApplication) sampleUsageAuthority(ctx context.Context, baseURL, ma
 	return err
 }
 
-// resetUsageStart clears the latched Collector start so a later attempt may run
-// again. It is used once the credential has been replaced: the refusal that
-// latched the previous start is not a permanent property of the installation.
-// Both success flags are cleared, because a rebind must be able to restart a
-// Collector this process already started: the collection instant itself is
-// idempotent and keeps its earliest value.
+// stopUsageCollection stops the Collector and clears the latched start so a
+// later attempt may run again. It is used once the credential has been replaced:
+// the refusal that latched the previous start is not a permanent property of the
+// installation, and a Collector still polling the replaced credential would be
+// one more failed authentication per attempt. Both success flags are cleared,
+// because a rebind must be able to restart a Collector this process already
+// started: the collection instant itself is idempotent and keeps its earliest
+// value.
+func (a *freshApplication) stopUsageCollection(ctx context.Context) {
+	if a.legacyCollector != nil {
+		_ = a.legacyCollector.Stop(ctx)
+	}
+	a.usageStartMu.Lock()
+	defer a.usageStartMu.Unlock()
+	a.usageStarted = false
+	a.usageCollectorStarted = false
+	a.setUsageStartReason("")
+}
+
+// resetUsageStart clears the latched start without touching a running Collector.
+// The administrator's confirmation changes the premise the previous attempt was
+// refused on, so the start may run again; the Collector itself is left alone
+// because restarting a live one would open the gap this Manager avoids.
 func (a *freshApplication) resetUsageStart() {
 	a.usageStartMu.Lock()
 	defer a.usageStartMu.Unlock()
@@ -140,7 +157,12 @@ func (a *freshApplication) startExternalUsageCollector(ctx context.Context) usag
 		log.Printf("Fresh external usage statistics unavailable: %v", err)
 		return usageStartOutcome{Reason: usageStartReasonExternalUnavailable}
 	case !enabled:
-		if !a.externalUsageConfirmed.Load() {
+		// The confirmation is the authorisation of one write, so it is consumed
+		// by the attempt that reads it: a later replay of this completion, or a
+		// restart, asks again instead of reusing an approval nobody renewed. It
+		// is consumed before the write so a failed enable cannot silently keep
+		// an approval alive for the next replay.
+		if !a.externalUsageConfirmed.CompareAndSwap(true, false) {
 			// Without the confirmation nothing is written to the user's CPA and
 			// nothing is collected, so the window stays unstarted on purpose.
 			return usageStartOutcome{Reason: usageStartReasonStatisticsDisabled}
@@ -189,6 +211,21 @@ func (a *freshApplication) refuseExternalUsage(ctx context.Context, reason strin
 		_ = a.legacyCollector.Stop(ctx)
 	}
 	return usageStartOutcome{Reason: reason}
+}
+
+// reportCollectorAuthRejection is the Collector's own report that the CPA
+// refused the management credential it was running with. The Collector has
+// already stopped itself, so this records the blocker and clears the started
+// latch: a live Collector that kept retrying a rotated credential would turn the
+// user's rotation into an address ban, and a latched start would keep the
+// workspace claiming coverage that no longer exists.
+func (a *freshApplication) reportCollectorAuthRejection() {
+	a.usageStartMu.Lock()
+	defer a.usageStartMu.Unlock()
+	a.usageCollectorStarted = false
+	a.usageStarted = false
+	a.setUsageStartReason(freshconfig.ReasonManagementRejected)
+	log.Printf("Fresh external usage collection stopped: %s", freshconfig.ReasonManagementRejected)
 }
 
 // externalUsageRoute serves the External usage workspace: the collection state
@@ -240,6 +277,19 @@ func (a *freshApplication) confirmExternalUsageCollection(w http.ResponseWriter,
 		// A request without the confirmation would enable a switch the
 		// administrator never approved, so nothing is started.
 		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	// A confirm while collection is already live is a no-op: the switch it would
+	// authorise is already on, and restarting the Collector here would cancel the
+	// running one and open the window this Manager works to avoid. The started
+	// latch is left exactly as it is.
+	if a.usageCollectionStarted() {
+		state, err := a.externalUsageState(r.Context())
+		if err != nil {
+			a.writeExternalUsageError(w, err)
+			return
+		}
+		writeFreshJSON(w, state)
 		return
 	}
 	a.externalUsageConfirmed.Store(true)

@@ -128,7 +128,9 @@ type freshApplication struct {
 	usageStartReason atomic.Value
 	// externalUsageConfirmed records the administrator's explicit confirmation
 	// to enable usage statistics on the user's own CPA. Without it nothing is
-	// written to that CPA and the collection window never opens.
+	// written to that CPA and the collection window never opens. It is
+	// authorisation for one write and is consumed by the attempt that uses it,
+	// so a later replay or a restart asks again.
 	externalUsageConfirmed atomic.Bool
 	// runCtx is the host lifetime of this application. Workers started after an
 	// in-process ProductComplete must outlive the request that triggered them.
@@ -165,6 +167,11 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 	legacyContext := app.FromExistingWithModelsDev(cfg, legacyStore, legacyCollector, time.Now().UnixMilli(), nil, nil, nil, nil, "cpa-manager-plus")
 	a.legacyCollector = legacyCollectorService
 	a.collectorWorker = worker.NewCollectorWorker(cfg, legacyStore, legacyCollectorService)
+	// A CPA that refuses the management credential this Collector runs with is
+	// terminal, not a retry: the Collector stops itself and reports, and this
+	// application records the blocker and drops the started latch so the
+	// workspace stops claiming coverage.
+	legacyCollector.SetAuthRejectionHandler(a.reportCollectorAuthRejection)
 	// The Collector is the only writer of Fresh usage events, so its inserts are
 	// exactly what the canonical identity projection must attribute.
 	a.usageProjection = identityprojection.NewWorker(legacyStore.IdentityProjections)

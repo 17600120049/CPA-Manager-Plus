@@ -41,6 +41,10 @@ type externalAuthorityCPA struct {
 	// writes counts PUT/PATCH/DELETE attempts, so a refused save can prove it
 	// never reached the CPA while its reads still did.
 	writes atomic.Int32
+	// probes counts the requests that reached this CPA at all, refusals included.
+	// A rebind only reads, so counting writes alone would assert something that
+	// is always true; this is the counter that discriminates.
+	probes atomic.Int32
 	server *httptest.Server
 }
 
@@ -55,6 +59,7 @@ func newExternalAuthorityCPAWith(t *testing.T, management string) *externalAutho
 	t.Helper()
 	f := &externalAuthorityCPA{management: management, version: "v8.0.13"}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.probes.Add(1)
 		if f.forbid.Load() {
 			w.WriteHeader(http.StatusForbidden)
 			return

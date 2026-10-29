@@ -70,6 +70,10 @@ type Manager struct {
 	cancel            context.CancelFunc
 	status            Status
 	runtimeCfg        RuntimeConfig
+	// authRejected reports that the CPA refused the management credential this
+	// Collector is running with. The Collector stops itself first: resending a
+	// refused credential is what turns a rotation into an IP ban.
+	authRejected func()
 }
 
 func NewManager(base config.Config, store *store.Store) *Manager {
@@ -145,6 +149,45 @@ func (m *Manager) setStatus(update func(*Status)) {
 	update(&m.status)
 }
 
+// SetAuthRejectionHandler installs the report of a CPA refusal of this
+// Collector's management credential. The Collector stops before it reports: a
+// refused credential is terminal until the connection is rebound, and every
+// further request is one more failed attempt against a CPA that bans an address
+// after a handful of them.
+func (m *Manager) SetAuthRejectionHandler(handler func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.authRejected = handler
+}
+
+// refuseAuth stops the run and reports the refusal. It is called from inside a
+// run loop, so the cancel it triggers is what ends the loop: the report runs
+// after the Collector is already stopping.
+func (m *Manager) refuseAuth() {
+	m.setStatus(func(status *Status) {
+		status.Collector = "stopped"
+		status.LastError = ""
+	})
+	m.mu.Lock()
+	cancel := m.cancel
+	report := m.authRejected
+	m.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if report != nil {
+		report()
+	}
+}
+
+// isAuthRefusal reports a management credential the CPA itself refused. A Redis
+// error frame or an HTTP 401/403 is the server answering; a plain transport error
+// is not an answer and stays retryable.
+func isAuthRefusal(err error) bool {
+	var reply *resp.ErrorReply
+	return errors.As(err, &reply) || errors.Is(err, httpqueue.ErrRejected)
+}
+
 func (m *Manager) run(ctx context.Context, cfg RuntimeConfig) {
 	mode := collectorMode(valueOr(cfg.CollectorMode, m.base.CollectorMode))
 
@@ -195,6 +238,13 @@ func (m *Manager) runSubscribe(ctx context.Context, cfg RuntimeConfig, mode stri
 		}
 		if err := client.Auth(cfg.ManagementKey); err != nil {
 			_ = client.Close()
+			if isAuthRefusal(err) {
+				// The CPA answered and refused this management credential. That
+				// is terminal: another attempt is one more failed authentication
+				// against a CPA that bans the address after a handful of them.
+				m.refuseAuth()
+				return true
+			}
 			if mode == "auto" && !subscribed {
 				return fallback()
 			}
@@ -302,6 +352,13 @@ func (m *Manager) runHTTP(ctx context.Context, cfg RuntimeConfig, mode string) b
 			})
 			return false
 		}
+		if isAuthRefusal(err) {
+			// The CPA answered and refused the management credential. That is
+			// terminal until the connection is rebound, and every retry would be
+			// another failed authentication against a CPA that bans the address.
+			m.refuseAuth()
+			return true
+		}
 		if err != nil {
 			m.markError("http", err)
 			sleep(ctx, backoff)
@@ -328,6 +385,10 @@ func (m *Manager) runRESP(ctx context.Context, cfg RuntimeConfig) {
 		}
 		if err := client.Auth(cfg.ManagementKey); err != nil {
 			_ = client.Close()
+			if isAuthRefusal(err) {
+				m.refuseAuth()
+				return
+			}
 			m.markError("auth", err)
 			sleep(ctx, backoff)
 			backoff = nextBackoff(backoff)
