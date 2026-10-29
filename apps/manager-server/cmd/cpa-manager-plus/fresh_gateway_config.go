@@ -204,7 +204,16 @@ func (a *freshApplication) gatewayConfiguration(w http.ResponseWriter, r *http.R
 		if service == nil {
 			return
 		}
+		// A key the user's CPA already refused is not presented again: this is
+		// the config page's own read, it polls, and five refusals ban the address.
+		if a.externalReadRefused(r.Context()) {
+			gatewayConfigReply(w, freshconfig.View{}, cpa.ErrManagementRejected)
+			return
+		}
 		view, err := service.Read(r.Context())
+		if errors.Is(err, cpa.ErrManagementRejected) {
+			a.noteExternalRejection(r.Context(), err)
+		}
 		gatewayConfigReply(w, view, err)
 	case parts[0] == "groups" && len(parts) == 2:
 		if r.Method != http.MethodPost {

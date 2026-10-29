@@ -47,6 +47,12 @@ func (s *Service) Restart(ctx context.Context, cfg store.ManagerConfig) error {
 	return s.Start(ctx, cfg)
 }
 
+// StartCount is the identity of the running Collector, so a caller can prove a
+// live one was not restarted.
+func (s *Service) StartCount() uint64 {
+	return s.manager.StartCount()
+}
+
 func (s *Service) Status() collectorpkg.Status {
 	return s.manager.Status()
 }

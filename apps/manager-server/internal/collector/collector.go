@@ -74,6 +74,10 @@ type Manager struct {
 	// Collector is running with. The Collector stops itself first: resending a
 	// refused credential is what turns a rotation into an IP ban.
 	authRejected func()
+	// starts counts how many runs this Manager has opened. It is the identity of
+	// the running Collector: every Start supersedes the previous run, so a caller
+	// that must not restart one can prove it did not by seeing this unchanged.
+	starts uint64
 }
 
 func NewManager(base config.Config, store *store.Store) *Manager {
@@ -98,6 +102,7 @@ func (m *Manager) Start(ctx context.Context, cfg RuntimeConfig) {
 		m.cancel = nil
 	}
 	m.runtimeCfg = cfg
+	m.starts++
 	handler := m.usageEventHandler
 	m.status.Collector = "starting"
 	m.status.Upstream = cfg.CPAUpstreamURL
@@ -122,6 +127,16 @@ func (m *Manager) Stop() {
 		m.cancel = nil
 	}
 	m.status.Collector = "stopped"
+}
+
+// StartCount is the identity of the running Collector: one increment per Start.
+// A caller that must not restart a live Collector proves it did not by comparing
+// this before and after, which a phase string alone cannot show — a restart is
+// observable as "starting" only for a moment.
+func (m *Manager) StartCount() uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.starts
 }
 
 func (m *Manager) Status() Status {

@@ -16,6 +16,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/bootstrap"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/freshconfig"
 	runtimeservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/runtime"
 )
 
@@ -407,9 +408,18 @@ func (a *freshApplication) runtimeStatus(w http.ResponseWriter, r *http.Request,
 		writeFreshJSON(w, freshRuntimeUnknownResponse(mode, "runtime_unavailable", a.runtimeJournal))
 		return
 	}
+	// An External CPA that already refused the stored credential is not asked
+	// again: CPA bans the address after five failed authentications, and this
+	// page polls. The status is the typed blocker, with whatever was last
+	// observed, until a rebind or a re-verify proves the key.
+	if mode == string(model.RuntimeModeExternal) && a.externalReadRefused(r.Context()) {
+		writeFreshJSON(w, freshRuntimeUnknownResponse(mode, freshconfig.ReasonManagementRejected, a.runtimeJournal))
+		return
+	}
 	now := time.Now().UTC()
 	observed, err := statusClient.Status(r.Context())
 	if err != nil {
+		a.noteExternalRejection(r.Context(), err)
 		writeFreshJSON(w, freshRuntimeUnknownResponse(mode, "runtime_unreachable", a.runtimeJournal))
 		return
 	}

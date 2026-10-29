@@ -145,6 +145,12 @@ type freshApplication struct {
 	// externalSource is the committed Connect External authority. It is the only
 	// source of an External management credential; no environment fallback exists.
 	externalSource freshkeyapply.ExternalSource
+	// rejection remembers that the user's CPA refused the stored External
+	// credential. Browser-driven reads consult it before they send anything: CPA
+	// bans an address after five failed authentications, so a page that keeps
+	// presenting a key its own CPA already rejected is what turns a rotation into
+	// a thirty-minute outage.
+	rejection *externalRejection
 }
 
 func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshrouting.Driver) *freshApplication {
@@ -154,6 +160,7 @@ func newFreshApplication(opened *fresh.Opened, cfg config.Config, driver freshro
 		cfg: cfg, store: st, authority: fresh.New(st), routing: freshrouting.New(st, driver),
 		protector: opened.Protector,
 		runtimeSettings: settings, runtimeJournal: newFreshRuntimeJournal(opened.DB),
+		rejection: newExternalRejection(opened.DB),
 	}
 	// Fresh owns the SQLite admission and keeps the old app bootstrap bypassed,
 	// but the already-built CPAMP services remain the source of truth for Full

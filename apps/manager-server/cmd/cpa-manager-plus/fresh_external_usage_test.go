@@ -413,7 +413,13 @@ func TestExternalUsageConfirmationIsConsumedByOneAttempt(t *testing.T) {
 	if !h.app.usageCollectionStarted() {
 		t.Fatal("collection is not live, so this case would not be proven")
 	}
-	beforeCollector := h.app.collectionPhase()
+	// The Collector's identity is its start count, not its phase: a restart is
+	// observable as "starting" only for a moment, so a phase comparison passes
+	// whether or not one happened.
+	beforeCollector := h.app.legacyCollector.StartCount()
+	if beforeCollector == 0 {
+		t.Fatal("no Collector was started, so this case would not be proven")
+	}
 	response := h.call(t, http.MethodPost, "external/usage", body)
 	if response.Code != http.StatusOK {
 		t.Fatalf("confirm while live = %d %s", response.Code, response.Body.String())
@@ -422,8 +428,8 @@ func TestExternalUsageConfirmationIsConsumedByOneAttempt(t *testing.T) {
 	if !state.CollectionStarted || state.BlockedReason != "" {
 		t.Fatalf("a confirm while live changed the state: %+v", state)
 	}
-	if h.app.collectionPhase() != beforeCollector {
-		t.Fatalf("a confirm while live restarted the Collector: %s", h.app.collectionPhase())
+	if after := h.app.legacyCollector.StartCount(); after != beforeCollector {
+		t.Fatalf("a confirm while live restarted the Collector: %d starts, was %d", after, beforeCollector)
 	}
 	if writes := h.cpa.statWrites.Load(); writes != 1 {
 		t.Fatalf("a confirm while live wrote the switch: %d writes", writes)
@@ -575,5 +581,84 @@ func TestManagedUsageStartRecordsCollectionOnlyAfterAuthenticating(t *testing.T)
 	h.app.startUsageCollection(h.operation(t))
 	if rows := h.collectionStartRows(t); rows != 0 {
 		t.Fatal("the managed profile claimed collection without an authenticated sample")
+	}
+}
+
+// TestExternalRejectionStopsBrowserDrivenReads proves a refused credential is not
+// presented again by the pages that refresh. CPA bans the calling address for
+// thirty minutes after five failed authentications, so a browser polling this
+// Manager would reach that ban on its own: once the refusal is recorded, every
+// browser-driven read answers the typed blocker locally and sends nothing.
+func TestExternalRejectionStopsBrowserDrivenReads(t *testing.T) {
+	h := newExternalUsageHarness(t)
+	h.cpa.rejects.Store(true)
+
+	// The first read is the one that learns the refusal.
+	first := h.call(t, http.MethodGet, "external/usage", "")
+	if first.Code != http.StatusConflict || !strings.Contains(first.Body.String(), freshconfig.ReasonManagementRejected) {
+		t.Fatalf("first read = %d %s", first.Code, first.Body.String())
+	}
+	if !h.app.externalReadRefused(t.Context()) {
+		t.Fatal("the refusal was not recorded, so the later reads would send the key again")
+	}
+
+	requests := h.cpa.requests.Load()
+	if requests == 0 {
+		t.Fatal("the first read never reached the CPA, so nothing was proven")
+	}
+	for i := 0; i < 4; i++ {
+		for _, resource := range []string{"external/usage", "api-keys", "gateway/config"} {
+			response := h.call(t, http.MethodGet, resource, "")
+			if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), freshconfig.ReasonManagementRejected) {
+				t.Fatalf("%s after the refusal = %d %s", resource, response.Code, response.Body.String())
+			}
+		}
+	}
+	if sent := h.cpa.requests.Load() - requests; sent != 0 {
+		t.Fatalf("a refused credential was presented %d more times", sent)
+	}
+}
+
+// TestExternalRebindReverifiesTheStoredCredential proves the way back when the key
+// never changed. The usual cause of a rejected credential is a ban window that has
+// since passed, so re-supplying the same key must re-verify it, clear the blocker
+// and restart collection — without claiming a rotation that never happened.
+func TestExternalRebindReverifiesTheStoredCredential(t *testing.T) {
+	h := newExternalUsageHarness(t)
+	h.cpa.enabled.Store(true)
+	h.cpa.rejects.Store(true)
+	if response := h.call(t, http.MethodGet, "external/usage", ""); response.Code != http.StatusConflict {
+		t.Fatalf("read on a refusing CPA = %d", response.Code)
+	}
+	before, err := h.app.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	starts := h.app.legacyCollector.StartCount()
+
+	// The ban window passes; the key is unchanged.
+	h.cpa.rejects.Store(false)
+	response := h.call(t, http.MethodPost, "external/rebind", rebindBody("", externalAuthorityManagement))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "reverified") {
+		t.Fatalf("same-key rebind = %d %s", response.Code, response.Body.String())
+	}
+	after, err := h.app.store.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Operation.Revision != before.Operation.Revision {
+		t.Fatalf("a re-verify bumped the revision from %d to %d", before.Operation.Revision, after.Operation.Revision)
+	}
+	if after.Connection.ManagementKey != before.Connection.ManagementKey {
+		t.Fatal("a re-verify rewrote the stored credential")
+	}
+	if h.app.externalReadRefused(t.Context()) {
+		t.Fatal("the refusal survived a proven credential")
+	}
+	if h.app.legacyCollector.StartCount() <= starts {
+		t.Fatal("collection was not restarted on the credential that now authenticates")
+	}
+	if state := decodeExternalUsageState(t, h.call(t, http.MethodGet, "external/usage", "").Body.Bytes()); state.BlockedReason != "" {
+		t.Fatalf("the blocker survived the re-verify: %+v", state)
 	}
 }

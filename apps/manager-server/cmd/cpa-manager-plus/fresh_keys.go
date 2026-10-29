@@ -61,6 +61,14 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 		unverified := false
 		if a.keyApply != nil && a.keyApply.Profile() == freshkeyapply.ProfileExternal &&
 			a.keyApply.Targets(op, freshkeyapply.SurfaceKeyOperation) {
+			// A credential the user's CPA already refused is not presented again:
+			// five failed authentications ban the address for thirty minutes, and
+			// a page that refreshes is enough to reach that. The blocker is
+			// answered here, before any request leaves this process.
+			if a.externalReadRefused(r.Context()) {
+				writeExternalManagementRejected(w)
+				return
+			}
 			var listErr error
 			keys, unverified, listErr = a.keyApply.ExternalKeyList(r.Context(), keys)
 			switch {
@@ -76,12 +84,10 @@ func (a *freshApplication) clientKeys(w http.ResponseWriter, r *http.Request, op
 				return
 			case errors.Is(listErr, cpa.ErrManagementRejected):
 				// The user's CPA refused the stored management credential. The
-				// page must not offer a retry: only a rebind resolves it.
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusConflict)
-				writeFreshJSON(w, struct {
-					Code string `json:"code"`
-				}{freshconfig.ReasonManagementRejected})
+				// page must not offer a retry: only a rebind resolves it. The
+				// refusal is remembered, so no later read sends the key again.
+				a.noteExternalRejection(r.Context(), listErr)
+				writeExternalManagementRejected(w)
 				return
 			case listErr != nil:
 				w.WriteHeader(http.StatusServiceUnavailable)
